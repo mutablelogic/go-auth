@@ -33,6 +33,8 @@ func RegisterHandlers(manager *manager.Manager, router server.HTTPRouter) error 
 	register(UserHandler(manager))
 	register(UserItemHandler(manager))
 	register(AuthHandler(manager))
+	register(ConfigHandler(manager))
+	register(JWKSHandler(manager))
 
 	// Return any errors
 	return result

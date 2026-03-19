@@ -50,8 +50,23 @@ func (server *RunServer) WithManager(ctx server.Cmd, fn func(*manager.Manager, s
 		return fmt.Errorf("database connection is required")
 	}
 
+	// Create a private key, used for signing tokens
+	pem := ctx.GetString("privatekey")
+	if pem == "" {
+		key, err := GeneratePrivateKey()
+		if err != nil {
+			return fmt.Errorf("generate private key: %w", err)
+		}
+		pem, err = PrivateKeyPEM(key)
+		if err != nil {
+			return fmt.Errorf("marshal private key: %w", err)
+		}
+		if err := ctx.Set("privatekey", pem); err != nil {
+			return fmt.Errorf("set private key: %w", err)
+		}
+	}
 	// Create an auth manager
-	manager, err := manager.New(ctx.Context(), conn, "")
+	manager, err := manager.New(ctx.Context(), conn, manager.WithPrivateKey(pem))
 	if err != nil {
 		return err
 	}

@@ -262,4 +262,205 @@ func Test_identity_001(t *testing.T) {
 		assert.Nil(identity)
 		assert.True(errors.Is(err, auth.ErrNotFound))
 	})
+
+	t.Run("LoginWithIdentity", func(t *testing.T) {
+		assert := assert.New(t)
+		require := require.New(t)
+
+		m := newTestManager(t)
+		user, err := m.CreateUser(context.Background(), schema.UserMeta{
+			Name:  "Login Identity User",
+			Email: "login.identity@example.com",
+		}, nil)
+		require.NoError(err)
+		require.NotNil(user)
+
+		_, err = m.CreateIdentity(context.Background(), uuid.UUID(user.ID), schema.IdentityInsert{
+			IdentityKey: schema.IdentityKey{
+				Provider: "https://accounts.google.com",
+				Sub:      "google-sub-123",
+			},
+			IdentityMeta: schema.IdentityMeta{
+				Email: "old@example.com",
+				Claims: map[string]any{
+					"name": "Old Name",
+				},
+			},
+		})
+		require.NoError(err)
+
+		loggedIn, err := m.LoginWithIdentity(context.Background(), schema.IdentityInsert{
+			IdentityKey: schema.IdentityKey{
+				Provider: "https://accounts.google.com",
+				Sub:      "google-sub-123",
+			},
+			IdentityMeta: schema.IdentityMeta{
+				Email: "new@example.com",
+				Claims: map[string]any{
+					"name":  "New Name",
+					"email": "new@example.com",
+				},
+			},
+		})
+		require.NoError(err)
+		require.NotNil(loggedIn)
+		assert.Equal(user.ID, loggedIn.ID)
+		assert.Equal("login.identity@example.com", loggedIn.Email)
+		assert.Equal("New Name", loggedIn.Claims["name"])
+		assert.Equal("new@example.com", loggedIn.Claims["email"])
+
+		identity, err := m.GetIdentity(context.Background(), "https://accounts.google.com", "google-sub-123")
+		require.NoError(err)
+		require.NotNil(identity)
+		assert.Equal("new@example.com", identity.Email)
+		assert.Equal("New Name", identity.Claims["name"])
+	})
+
+	t.Run("LoginWithMissingIdentity", func(t *testing.T) {
+		assert := assert.New(t)
+		require := require.New(t)
+
+		m := newTestManager(t)
+
+		loggedIn, err := m.LoginWithIdentity(context.Background(), schema.IdentityInsert{
+			IdentityKey: schema.IdentityKey{
+				Provider: "https://accounts.google.com",
+				Sub:      "missing-sub",
+			},
+		})
+		require.Error(err)
+		assert.Nil(loggedIn)
+		assert.True(errors.Is(err, auth.ErrBadParameter))
+	})
+
+	t.Run("LoginWithIdentityCreatesUser", func(t *testing.T) {
+		assert := assert.New(t)
+		require := require.New(t)
+
+		m := newTestManager(t)
+
+		loggedIn, err := m.LoginWithIdentity(context.Background(), schema.IdentityInsert{
+			IdentityKey: schema.IdentityKey{
+				Provider: "https://accounts.google.com",
+				Sub:      "new-subject",
+			},
+			IdentityMeta: schema.IdentityMeta{
+				Email: "new.user@example.com",
+				Claims: map[string]any{
+					"name": "New User",
+				},
+			},
+		})
+		require.NoError(err)
+		require.NotNil(loggedIn)
+		assert.Equal("new.user@example.com", loggedIn.Email)
+		assert.Equal("New User", loggedIn.Name)
+		assert.Equal("New User", loggedIn.Claims["name"])
+
+		identity, err := m.GetIdentity(context.Background(), "https://accounts.google.com", "new-subject")
+		require.NoError(err)
+		require.NotNil(identity)
+		assert.Equal(loggedIn.ID, identity.User)
+		assert.Equal("new.user@example.com", identity.Email)
+	})
+
+	t.Run("LoginWithIdentityUsesPreferredUsername", func(t *testing.T) {
+		assert := assert.New(t)
+		require := require.New(t)
+
+		m := newTestManager(t)
+
+		loggedIn, err := m.LoginWithIdentity(context.Background(), schema.IdentityInsert{
+			IdentityKey: schema.IdentityKey{
+				Provider: "https://accounts.google.com",
+				Sub:      "preferred-username-subject",
+			},
+			IdentityMeta: schema.IdentityMeta{
+				Email: "preferred.user@example.com",
+				Claims: map[string]any{
+					"preferred_username": "preferred-user",
+				},
+			},
+		})
+		require.NoError(err)
+		require.NotNil(loggedIn)
+		assert.Equal("preferred-user", loggedIn.Name)
+	})
+
+	t.Run("LoginWithIdentityUsesGivenName", func(t *testing.T) {
+		assert := assert.New(t)
+		require := require.New(t)
+
+		m := newTestManager(t)
+
+		loggedIn, err := m.LoginWithIdentity(context.Background(), schema.IdentityInsert{
+			IdentityKey: schema.IdentityKey{
+				Provider: "https://accounts.google.com",
+				Sub:      "given-family-subject",
+			},
+			IdentityMeta: schema.IdentityMeta{
+				Email: "given.family@example.com",
+				Claims: map[string]any{
+					"given_name":  "Given",
+					"family_name": "Ignored",
+				},
+			},
+		})
+		require.NoError(err)
+		require.NotNil(loggedIn)
+		assert.Equal("Given", loggedIn.Name)
+	})
+
+	t.Run("LoginWithIdentityRejectsExistingEmail", func(t *testing.T) {
+		assert := assert.New(t)
+		require := require.New(t)
+
+		m := newTestManager(t)
+		user, err := m.CreateUser(context.Background(), schema.UserMeta{
+			Name:  "Existing User",
+			Email: "existing.user@example.com",
+		}, nil)
+		require.NoError(err)
+		require.NotNil(user)
+
+		loggedIn, err := m.LoginWithIdentity(context.Background(), schema.IdentityInsert{
+			IdentityKey: schema.IdentityKey{
+				Provider: "https://accounts.google.com",
+				Sub:      "unlinked-subject",
+			},
+			IdentityMeta: schema.IdentityMeta{
+				Email: "existing.user@example.com",
+			},
+		})
+		require.Error(err)
+		assert.Nil(loggedIn)
+		assert.True(errors.Is(err, auth.ErrConflict))
+
+		identity, err := m.GetIdentity(context.Background(), "https://accounts.google.com", "unlinked-subject")
+		require.Error(err)
+		assert.Nil(identity)
+		assert.True(errors.Is(err, auth.ErrNotFound))
+	})
+
+	t.Run("LoginWithIdentityCreateRequiresEmail", func(t *testing.T) {
+		assert := assert.New(t)
+		require := require.New(t)
+
+		m := newTestManager(t)
+
+		loggedIn, err := m.LoginWithIdentity(context.Background(), schema.IdentityInsert{
+			IdentityKey: schema.IdentityKey{
+				Provider: "https://accounts.google.com",
+				Sub:      "no-email-subject",
+			},
+			IdentityMeta: schema.IdentityMeta{
+				Claims: map[string]any{
+					"name": "No Email",
+				},
+			},
+		})
+		require.Error(err)
+		assert.Nil(loggedIn)
+		assert.True(errors.Is(err, auth.ErrBadParameter))
+	})
 }

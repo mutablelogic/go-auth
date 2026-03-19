@@ -33,7 +33,7 @@ func newTestManager(t *testing.T) *manager.Manager {
 	t.Cleanup(func() { c.Close() })
 
 	// Create a new Manager with the test connection and default schema.
-	m, err := manager.New(context.Background(), c, "")
+	m, err := manager.New(context.Background(), c)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -53,7 +53,7 @@ func newCustomSchemaManager(t *testing.T, schemaName string) *manager.Manager {
 		require.NoError(t, pg.SchemaDrop(context.Background(), c, schemaName))
 	})
 
-	m, err := manager.New(context.Background(), c, schemaName)
+	m, err := manager.New(context.Background(), c, manager.WithSchema(schemaName))
 	require.NoError(t, err)
 
 	return m
@@ -67,7 +67,7 @@ func Test_manager_001(t *testing.T) {
 		assert := assert.New(t)
 		require := require.New(t)
 
-		m, err := manager.New(context.Background(), nil, "")
+		m, err := manager.New(context.Background(), nil)
 
 		require.Error(err)
 		assert.Nil(m)

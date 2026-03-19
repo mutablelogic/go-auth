@@ -15,6 +15,7 @@ import (
 
 // Manager wraps a database connection pool scoped to the application schema.
 type Manager struct {
+	opt
 	pg.PoolConn
 }
 
@@ -24,12 +25,19 @@ type Manager struct {
 // New creates a Manager, ensures the schema exists, and bootstraps all
 // database objects from the embedded objects.sql. If schemaName is empty
 // the default schema is used.
-func New(ctx context.Context, pool pg.PoolConn, schemaName string) (*Manager, error) {
+func New(ctx context.Context, pool pg.PoolConn, opts ...Opt) (*Manager, error) {
+	// Set default values
+	self := new(Manager)
+	self.schema = schema.DefaultSchema
+
+	// Check arguments
 	if pool == nil {
 		return nil, fmt.Errorf("pool is required")
 	}
-	if schemaName == "" {
-		schemaName = schema.DefaultSchema
+
+	// Apply options
+	if err := self.apply(opts...); err != nil {
+		return nil, err
 	}
 
 	// Parse and register named queries so bind.Query(...) can resolve them.
@@ -37,16 +45,18 @@ func New(ctx context.Context, pool pg.PoolConn, schemaName string) (*Manager, er
 	if err != nil {
 		return nil, fmt.Errorf("parse queries.sql: %w", err)
 	} else {
-		pool = pool.WithQueries(queries).With("schema", schemaName).(pg.PoolConn)
+		pool = pool.WithQueries(queries).With("schema", self.schema).(pg.PoolConn)
 	}
 
 	// Create objects in the database schema. This is not done in a transaction
-	if err := bootstrap(ctx, pool, schemaName); err != nil {
+	if err := bootstrap(ctx, pool, self.schema); err != nil {
 		return nil, err
+	} else {
+		self.PoolConn = pool
 	}
 
-	// Return a new Manager with the pool connection.
-	return &Manager{PoolConn: pool}, nil
+	// Return the manager
+	return self, nil
 }
 
 ///////////////////////////////////////////////////////////////////////////////

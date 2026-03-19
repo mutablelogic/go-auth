@@ -55,6 +55,46 @@ type IdentityList struct {
 }
 
 ///////////////////////////////////////////////////////////////////////////////
+// LIFECYCLE
+
+func NewIdentityFromClaims(claims map[string]any) (IdentityInsert, error) {
+	issuer, ok := claims["iss"].(string)
+	if !ok || strings.TrimSpace(issuer) == "" {
+		return IdentityInsert{}, auth.ErrBadParameter.With("claims missing iss")
+	}
+	subject, ok := claims["sub"].(string)
+	if !ok || strings.TrimSpace(subject) == "" {
+		return IdentityInsert{}, auth.ErrBadParameter.With("claims missing sub")
+	}
+	email, _ := claims["email"].(string)
+
+	return IdentityInsert{
+		IdentityKey: IdentityKey{
+			Provider: issuer,
+			Sub:      subject,
+		},
+		IdentityMeta: IdentityMeta{
+			Email:  email,
+			Claims: claims,
+		},
+	}, nil
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// PUBLIC METHODS
+
+func (i IdentityInsert) Name() string {
+	for _, key := range []string{"name", "username", "preferred_username", "given_name"} {
+		if name, ok := i.Claims[key].(string); ok {
+			if name := strings.TrimSpace(name); name != "" {
+				return name
+			}
+		}
+	}
+	return strings.TrimSpace(i.Email)
+}
+
+///////////////////////////////////////////////////////////////////////////////
 // PUBLIC METHODS - SELECTOR
 
 // Select binds the identity key and returns the appropriate named query for
