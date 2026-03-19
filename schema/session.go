@@ -41,6 +41,17 @@ type Session struct {
 ///////////////////////////////////////////////////////////////////////////////
 // PUBLIC METHODS - UUID
 
+// SessionIDFromString parses a string into a SessionID, which is a UUID.
+func SessionIDFromString(s string) (SessionID, error) {
+	if uid, err := uuid.Parse(strings.Trim(s, `"`)); err != nil {
+		return SessionID(uuid.Nil), err
+	} else if uid == uuid.Nil {
+		return SessionID(uuid.Nil), auth.ErrBadParameter.With("id cannot be nil")
+	} else {
+		return SessionID(uid), nil
+	}
+}
+
 func (id SessionID) MarshalJSON() ([]byte, error) {
 	return json.Marshal(uuid.UUID(id))
 }
@@ -111,6 +122,19 @@ func (s SessionInsert) Insert(bind *pg.Bind) (string, error) {
 	bind.Set("user", s.User)
 	bind.Set("expires_in", s.ExpiresIn)
 	return bind.Query("session.insert"), nil
+}
+
+// Update delegates mutable session fields to SessionMeta so SessionInsert can
+// satisfy the writer interface used by the query helpers.
+func (s SessionInsert) Update(bind *pg.Bind) error {
+	return SessionMeta{ExpiresIn: s.ExpiresIn}.Update(bind)
+}
+
+// Insert is not supported for SessionMeta because it does not contain the
+// immutable fields required to create a session row.
+func (s SessionMeta) Insert(bind *pg.Bind) (string, error) {
+	_ = bind
+	return "", auth.ErrNotImplemented.With("session meta insert is not supported")
 }
 
 // Update builds a PATCH-style SET clause from whichever fields are non-zero.

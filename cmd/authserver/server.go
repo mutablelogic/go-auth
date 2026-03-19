@@ -3,9 +3,11 @@
 package main
 
 import (
+	"crypto/rsa"
 	"fmt"
 
 	// Packages
+	authcrypto "github.com/djthorpe/go-auth/pkg/crypto"
 	httphandler "github.com/djthorpe/go-auth/pkg/httphandler"
 	manager "github.com/djthorpe/go-auth/pkg/manager"
 	server "github.com/mutablelogic/go-server"
@@ -52,21 +54,27 @@ func (server *RunServer) WithManager(ctx server.Cmd, fn func(*manager.Manager, s
 
 	// Create a private key, used for signing tokens
 	pem := ctx.GetString("privatekey")
+	var key *rsa.PrivateKey
 	if pem == "" {
-		key, err := GeneratePrivateKey()
+		key, err = authcrypto.GeneratePrivateKey()
 		if err != nil {
 			return fmt.Errorf("generate private key: %w", err)
 		}
-		pem, err = PrivateKeyPEM(key)
+		pem, err = authcrypto.PrivateKeyPEM(key)
 		if err != nil {
 			return fmt.Errorf("marshal private key: %w", err)
 		}
 		if err := ctx.Set("privatekey", pem); err != nil {
 			return fmt.Errorf("set private key: %w", err)
 		}
+	} else {
+		key, err = authcrypto.ParsePrivateKeyPEM(pem)
+		if err != nil {
+			return fmt.Errorf("parse private key: %w", err)
+		}
 	}
 	// Create an auth manager
-	manager, err := manager.New(ctx.Context(), conn, manager.WithPrivateKey(pem))
+	manager, err := manager.New(ctx.Context(), conn, manager.WithPrivateKey(key))
 	if err != nil {
 		return err
 	}

@@ -289,7 +289,7 @@ func Test_identity_001(t *testing.T) {
 		})
 		require.NoError(err)
 
-		loggedIn, err := m.LoginWithIdentity(context.Background(), schema.IdentityInsert{
+		loggedIn, session, err := m.LoginWithIdentity(context.Background(), schema.IdentityInsert{
 			IdentityKey: schema.IdentityKey{
 				Provider: "https://accounts.google.com",
 				Sub:      "google-sub-123",
@@ -304,7 +304,9 @@ func Test_identity_001(t *testing.T) {
 		})
 		require.NoError(err)
 		require.NotNil(loggedIn)
+		require.NotNil(session)
 		assert.Equal(user.ID, loggedIn.ID)
+		assert.Equal(loggedIn.ID, session.User)
 		assert.Equal("login.identity@example.com", loggedIn.Email)
 		assert.Equal("New Name", loggedIn.Claims["name"])
 		assert.Equal("new@example.com", loggedIn.Claims["email"])
@@ -322,7 +324,7 @@ func Test_identity_001(t *testing.T) {
 
 		m := newTestManager(t)
 
-		loggedIn, err := m.LoginWithIdentity(context.Background(), schema.IdentityInsert{
+		loggedIn, session, err := m.LoginWithIdentity(context.Background(), schema.IdentityInsert{
 			IdentityKey: schema.IdentityKey{
 				Provider: "https://accounts.google.com",
 				Sub:      "missing-sub",
@@ -330,6 +332,7 @@ func Test_identity_001(t *testing.T) {
 		})
 		require.Error(err)
 		assert.Nil(loggedIn)
+		assert.Nil(session)
 		assert.True(errors.Is(err, auth.ErrBadParameter))
 	})
 
@@ -339,7 +342,7 @@ func Test_identity_001(t *testing.T) {
 
 		m := newTestManager(t)
 
-		loggedIn, err := m.LoginWithIdentity(context.Background(), schema.IdentityInsert{
+		loggedIn, session, err := m.LoginWithIdentity(context.Background(), schema.IdentityInsert{
 			IdentityKey: schema.IdentityKey{
 				Provider: "https://accounts.google.com",
 				Sub:      "new-subject",
@@ -353,9 +356,11 @@ func Test_identity_001(t *testing.T) {
 		})
 		require.NoError(err)
 		require.NotNil(loggedIn)
+		require.NotNil(session)
 		assert.Equal("new.user@example.com", loggedIn.Email)
 		assert.Equal("New User", loggedIn.Name)
 		assert.Equal("New User", loggedIn.Claims["name"])
+		assert.Equal(loggedIn.ID, session.User)
 
 		identity, err := m.GetIdentity(context.Background(), "https://accounts.google.com", "new-subject")
 		require.NoError(err)
@@ -370,7 +375,7 @@ func Test_identity_001(t *testing.T) {
 
 		m := newTestManager(t)
 
-		loggedIn, err := m.LoginWithIdentity(context.Background(), schema.IdentityInsert{
+		loggedIn, session, err := m.LoginWithIdentity(context.Background(), schema.IdentityInsert{
 			IdentityKey: schema.IdentityKey{
 				Provider: "https://accounts.google.com",
 				Sub:      "preferred-username-subject",
@@ -384,7 +389,9 @@ func Test_identity_001(t *testing.T) {
 		})
 		require.NoError(err)
 		require.NotNil(loggedIn)
+		require.NotNil(session)
 		assert.Equal("preferred-user", loggedIn.Name)
+		assert.Equal(loggedIn.ID, session.User)
 	})
 
 	t.Run("LoginWithIdentityUsesGivenName", func(t *testing.T) {
@@ -393,7 +400,7 @@ func Test_identity_001(t *testing.T) {
 
 		m := newTestManager(t)
 
-		loggedIn, err := m.LoginWithIdentity(context.Background(), schema.IdentityInsert{
+		loggedIn, session, err := m.LoginWithIdentity(context.Background(), schema.IdentityInsert{
 			IdentityKey: schema.IdentityKey{
 				Provider: "https://accounts.google.com",
 				Sub:      "given-family-subject",
@@ -408,7 +415,9 @@ func Test_identity_001(t *testing.T) {
 		})
 		require.NoError(err)
 		require.NotNil(loggedIn)
+		require.NotNil(session)
 		assert.Equal("Given", loggedIn.Name)
+		assert.Equal(loggedIn.ID, session.User)
 	})
 
 	t.Run("LoginWithIdentityRejectsExistingEmail", func(t *testing.T) {
@@ -423,7 +432,7 @@ func Test_identity_001(t *testing.T) {
 		require.NoError(err)
 		require.NotNil(user)
 
-		loggedIn, err := m.LoginWithIdentity(context.Background(), schema.IdentityInsert{
+		loggedIn, session, err := m.LoginWithIdentity(context.Background(), schema.IdentityInsert{
 			IdentityKey: schema.IdentityKey{
 				Provider: "https://accounts.google.com",
 				Sub:      "unlinked-subject",
@@ -434,6 +443,7 @@ func Test_identity_001(t *testing.T) {
 		})
 		require.Error(err)
 		assert.Nil(loggedIn)
+		assert.Nil(session)
 		assert.True(errors.Is(err, auth.ErrConflict))
 
 		identity, err := m.GetIdentity(context.Background(), "https://accounts.google.com", "unlinked-subject")
@@ -448,7 +458,7 @@ func Test_identity_001(t *testing.T) {
 
 		m := newTestManager(t)
 
-		loggedIn, err := m.LoginWithIdentity(context.Background(), schema.IdentityInsert{
+		loggedIn, session, err := m.LoginWithIdentity(context.Background(), schema.IdentityInsert{
 			IdentityKey: schema.IdentityKey{
 				Provider: "https://accounts.google.com",
 				Sub:      "no-email-subject",
@@ -461,6 +471,7 @@ func Test_identity_001(t *testing.T) {
 		})
 		require.Error(err)
 		assert.Nil(loggedIn)
+		assert.Nil(session)
 		assert.True(errors.Is(err, auth.ErrBadParameter))
 	})
 }

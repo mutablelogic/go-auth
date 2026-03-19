@@ -5,7 +5,7 @@ import (
 	"errors"
 
 	// Packages
-	"github.com/djthorpe/go-auth"
+	auth "github.com/djthorpe/go-auth"
 	schema "github.com/djthorpe/go-auth/schema"
 	uuid "github.com/google/uuid"
 	pg "github.com/mutablelogic/go-pg"
@@ -63,18 +63,20 @@ func (m *Manager) ListIdentities(ctx context.Context, req schema.IdentityListReq
 	return types.Ptr(result), nil
 }
 
-func (m *Manager) LoginWithIdentity(ctx context.Context, meta schema.IdentityInsert) (*schema.User, error) {
+func (m *Manager) LoginWithIdentity(ctx context.Context, meta schema.IdentityInsert) (*schema.User, *schema.Session, error) {
 	if meta.Provider == "" {
-		return nil, auth.ErrBadParameter.With("issuer is required")
+		return nil, nil, auth.ErrBadParameter.With("issuer is required")
 	}
 	if meta.Sub == "" {
-		return nil, auth.ErrBadParameter.With("sub is required")
+		return nil, nil, auth.ErrBadParameter.With("sub is required")
 	}
 
 	var user schema.UserID
+	var session schema.Session
 	if err := m.PoolConn.Tx(ctx, func(conn pg.Conn) error {
 		// Find an existing identity row with the same (provider, sub) key.
 		var identity schema.Identity
+		createdUser := false
 		if err := conn.Get(ctx, &identity, schema.IdentityKey{Provider: meta.Provider, Sub: meta.Sub}); err != nil {
 			if !errors.Is(dbErr(err), auth.ErrNotFound) {
 				return err
@@ -107,21 +109,38 @@ func (m *Manager) LoginWithIdentity(ctx context.Context, meta schema.IdentityIns
 				return err
 			}
 			user = created.ID
-			return nil
+			createdUser = true
 		} else {
 			user = identity.User
 		}
 
 		// Successful login, update identity with new email/claims and modified_at timestamp.
-		if err := conn.Update(ctx, &identity, identity.IdentityKey, meta.IdentityMeta); err != nil {
-			return err
+		if !createdUser {
+			if err := conn.Update(ctx, &identity, identity.IdentityKey, meta.IdentityMeta); err != nil {
+				return err
+			}
 		}
 
+		// Create a new session for the user.
+		if err := conn.Insert(ctx, &session, schema.SessionInsert{
+			User:      user,
+			ExpiresIn: types.Ptr(m.sessionttl),
+		}); err != nil {
+			return err
+		} else {
+			session.User = user
+		}
+
+		// Return success
 		return nil
 	}); err != nil {
-		return nil, dbErr(err)
+		return nil, nil, dbErr(err)
 	}
 
 	// Return the user associated with the identity, which may have been updated by the transaction.
-	return m.GetUser(ctx, user)
+	user_, err := m.GetUser(ctx, user)
+	if err != nil {
+		return nil, nil, err
+	}
+	return user_, types.Ptr(session), nil
 }

@@ -181,6 +181,24 @@ SET ${patch}
 WHERE id = @id
 RETURNING id, "user", expires_at, created_at, revoked_at;
 
+-- session.refresh
+UPDATE ${"schema"}.session AS session
+SET expires_at = NOW() + @expires_in
+FROM ${"schema"}.user AS user_row
+WHERE session.id = @id
+  AND session."user" = user_row.id
+  AND session.revoked_at IS NULL
+  AND session.expires_at > NOW()
+  AND (user_row.expires_at IS NULL OR user_row.expires_at > NOW())
+  AND (user_row.status IS NULL OR user_row.status = 'active')
+RETURNING session.id, session."user", session.expires_at, session.created_at, session.revoked_at;
+
+-- session.revoke
+UPDATE ${"schema"}.session
+SET revoked_at = NOW()
+WHERE id = @id
+RETURNING id, "user", expires_at, created_at, revoked_at;
+
 -- session.delete
 DELETE FROM ${"schema"}.session
 WHERE id = @id

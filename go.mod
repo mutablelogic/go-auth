@@ -8,7 +8,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/jackc/pgx/v5 v5.8.0
 	github.com/lestrrat-go/jwx/v2 v2.1.6
-	github.com/mutablelogic/go-client v1.4.3
+	github.com/mutablelogic/go-client v1.4.4
 	github.com/mutablelogic/go-pg v1.1.3
 	github.com/mutablelogic/go-server v1.6.17
 	github.com/stretchr/testify v1.11.1

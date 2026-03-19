@@ -1,6 +1,10 @@
 package manager
 
-import "fmt"
+import (
+	"crypto/rsa"
+	"fmt"
+	"time"
+)
 
 ///////////////////////////////////////////////////////////////////////////////
 // TYPES
@@ -9,8 +13,9 @@ import "fmt"
 type Opt func(*opt) error
 
 type opt struct {
-	privateKey string
+	privateKey *rsa.PrivateKey
 	schema     string
+	sessionttl time.Duration
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -31,13 +36,13 @@ func (o *opt) apply(opts ...Opt) error {
 ///////////////////////////////////////////////////////////////////////////////
 // PUBLIC METHODS
 
-// WithPrivateKey stores the PEM-encoded private key for later token-signing use.
-func WithPrivateKey(pem string) Opt {
+// WithPrivateKey stores the RSA private key for later token-signing use.
+func WithPrivateKey(key *rsa.PrivateKey) Opt {
 	return func(o *opt) error {
-		if pem == "" {
+		if key == nil {
 			return fmt.Errorf("private key is required")
 		}
-		o.privateKey = pem
+		o.privateKey = key
 		return nil
 	}
 }
@@ -49,6 +54,17 @@ func WithSchema(name string) Opt {
 			return fmt.Errorf("schema name cannot be empty")
 		}
 		o.schema = name
+		return nil
+	}
+}
+
+// WithSessionTTL sets the session time-to-live duration.
+func WithSessionTTL(ttl time.Duration) Opt {
+	return func(o *opt) error {
+		if ttl <= 0 {
+			return fmt.Errorf("session TTL must be positive")
+		}
+		o.sessionttl = ttl
 		return nil
 	}
 }

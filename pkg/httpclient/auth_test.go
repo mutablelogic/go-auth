@@ -1,28 +1,27 @@
 package httpclient
 
 import (
-	"crypto/rand"
 	"crypto/rsa"
-	"crypto/x509"
-	"encoding/pem"
 	"testing"
 	"time"
 
+	authcrypto "github.com/djthorpe/go-auth/pkg/crypto"
+	oidc "github.com/djthorpe/go-auth/pkg/oidc"
 	jwt "github.com/golang-jwt/jwt/v5"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-func Test_loginToken(t *testing.T) {
+func TestIssueToken(t *testing.T) {
 	t.Run("Valid", func(t *testing.T) {
-		pemValue := mustPrivateKeyPEM(t)
+		key := mustRSAKey(t)
 		claims := jwt.MapClaims{
 			"iss":   "https://issuer.example.com",
 			"email": "alice@example.com",
 		}
 		before := time.Now().UTC()
 
-		token, err := loginToken(pemValue, claims)
+		token, err := oidc.IssueToken(key, claims)
 		require.NoError(t, err)
 		assert.NotEmpty(t, token)
 		assert.Contains(t, claims, "iat")
@@ -34,26 +33,32 @@ func Test_loginToken(t *testing.T) {
 	})
 
 	t.Run("MissingClaims", func(t *testing.T) {
-		_, err := loginToken(mustPrivateKeyPEM(t), nil)
+		_, err := oidc.IssueToken(mustRSAKey(t), nil)
 		require.Error(t, err)
 	})
 
 	t.Run("MissingIssuer", func(t *testing.T) {
-		_, err := loginToken(mustPrivateKeyPEM(t), jwt.MapClaims{"email": "alice@example.com"})
+		_, err := oidc.IssueToken(mustRSAKey(t), jwt.MapClaims{"email": "alice@example.com"})
 		require.Error(t, err)
 	})
 
-	t.Run("MissingPEM", func(t *testing.T) {
-		_, err := loginToken("", jwt.MapClaims{"iss": "https://issuer.example.com"})
-		require.Error(t, err)
+	t.Run("MissingKeyUsesNoneAlgorithm", func(t *testing.T) {
+		token, err := oidc.IssueToken(nil, jwt.MapClaims{"iss": "https://issuer.example.com"})
+		require.NoError(t, err)
+		assert.NotEmpty(t, token)
+
+		parsed, err := jwt.Parse(token, func(token *jwt.Token) (any, error) {
+			assert.Equal(t, jwt.SigningMethodNone.Alg(), token.Method.Alg())
+			return jwt.UnsafeAllowNoneSignatureType, nil
+		})
+		require.NoError(t, err)
+		assert.True(t, parsed.Valid)
 	})
 }
 
-func mustPrivateKeyPEM(t *testing.T) string {
+func mustRSAKey(t *testing.T) *rsa.PrivateKey {
 	t.Helper()
-	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	key, err := authcrypto.GeneratePrivateKey()
 	require.NoError(t, err)
-	data, err := x509.MarshalPKCS8PrivateKey(key)
-	require.NoError(t, err)
-	return string(pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: data}))
+	return key
 }

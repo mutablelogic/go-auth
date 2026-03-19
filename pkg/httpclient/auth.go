@@ -2,11 +2,10 @@ package httpclient
 
 import (
 	"context"
-	"fmt"
-	"time"
+	"crypto/rsa"
 
 	// Packages
-	manager "github.com/djthorpe/go-auth/pkg/manager"
+	oidc "github.com/djthorpe/go-auth/pkg/oidc"
 	authschema "github.com/djthorpe/go-auth/schema"
 	jwt "github.com/golang-jwt/jwt/v5"
 	client "github.com/mutablelogic/go-client"
@@ -15,10 +14,11 @@ import (
 ///////////////////////////////////////////////////////////////////////////////
 // PUBLIC METHODS
 
-// Login encodes the supplied claims into a JWT signed by the supplied PEM key
-// and posts it to /auth/login.
-func (c *Client) Login(ctx context.Context, pem string, claims jwt.MapClaims) (map[string]any, error) {
-	token, err := loginToken(pem, claims)
+// Login encodes the supplied claims into a JWT signed by the supplied RSA
+// private key, or as an unsecured JWT when key is nil, and posts it to
+// /auth/login.
+func (c *Client) Login(ctx context.Context, key *rsa.PrivateKey, claims jwt.MapClaims) (*authschema.TokenResponse, error) {
+	token, err := oidc.IssueToken(key, claims)
 	if err != nil {
 		return nil, err
 	}
@@ -33,40 +33,31 @@ func (c *Client) Login(ctx context.Context, pem string, claims jwt.MapClaims) (m
 	}
 
 	// Exchange the token
-	var response map[string]any
+	var response authschema.TokenResponse
 	if err := c.DoWithContext(ctx, payload, &response, client.OptAbsPath("auth", "login")); err != nil {
 		return nil, err
 	}
 
 	// Return the response
-	return response, nil
+	return &response, nil
 }
 
-///////////////////////////////////////////////////////////////////////////////
-// PRIVATE METHODS
-
-func loginToken(pem string, claims jwt.MapClaims) (string, error) {
-	if len(claims) == 0 {
-		return "", fmt.Errorf("claims cannot be empty")
-	} else if issuer, ok := claims["iss"].(string); !ok || issuer == "" {
-		return "", fmt.Errorf("claims must include a non-empty iss")
-	} else if pem == "" {
-		return "", fmt.Errorf("private key PEM cannot be empty")
-	} else {
-		now := time.Now().UTC()
-
-		// Set iat, nbf, and exp if not already set (issued at, not before, and expiration)
-		if _, ok := claims["iat"]; !ok {
-			claims["iat"] = now.Unix()
-		}
-		if _, ok := claims["nbf"]; !ok {
-			claims["nbf"] = now.Unix()
-		}
-		if _, ok := claims["exp"]; !ok {
-			claims["exp"] = now.Add(time.Hour).Unix()
-		}
-
-		// Sign the claims into a JWT
-		return manager.OIDCSignPEM(pem, claims)
+// Refresh posts a previously issued local token to /auth/refresh and returns
+// the refreshed local session token response.
+func (c *Client) Refresh(ctx context.Context, token string) (*authschema.TokenResponse, error) {
+	payload, err := client.NewJSONRequest(authschema.RefreshRequest{
+		Token: token,
+	})
+	if err != nil {
+		return nil, err
 	}
+
+	// Refresh the token
+	var response authschema.TokenResponse
+	if err := c.DoWithContext(ctx, payload, &response, client.OptAbsPath("auth", "refresh")); err != nil {
+		return nil, err
+	}
+
+	// Return the response
+	return &response, nil
 }

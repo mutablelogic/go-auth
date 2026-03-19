@@ -29,6 +29,7 @@ func New(ctx context.Context, pool pg.PoolConn, opts ...Opt) (*Manager, error) {
 	// Set default values
 	self := new(Manager)
 	self.schema = schema.DefaultSchema
+	self.sessionttl = schema.DefaultSessionTTL
 
 	// Check arguments
 	if pool == nil {
