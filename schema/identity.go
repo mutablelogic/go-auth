@@ -5,25 +5,25 @@ import (
 	"strings"
 	"time"
 
-	auth "github.com/djthorpe/go-auth"
-
 	// Packages
+	auth "github.com/djthorpe/go-auth"
+	uuid "github.com/google/uuid"
 	pg "github.com/mutablelogic/go-pg"
 )
 
 ///////////////////////////////////////////////////////////////////////////////
-// GLOBALS
+// TYPES
 
 // IdentityKey contains the key for an identity.
 type IdentityKey struct {
-	Provider string `db:"provider" json:"provider"`
-	Sub      string `db:"sub" json:"sub"`
+	Provider string `json:"provider"`
+	Sub      string `json:"sub"`
 }
 
 // IdentityMeta contains the mutable fields for an identity.
 type IdentityMeta struct {
-	Email  string         `db:"email" json:"email"`
-	Claims map[string]any `db:"claims" json:"claims"`
+	Email  string         `json:"email"`
+	Claims map[string]any `json:"claims"`
 }
 
 // IdentityInsert contains the fields required to create a new identity.
@@ -36,9 +36,22 @@ type IdentityInsert struct {
 type Identity struct {
 	IdentityKey
 	IdentityMeta
-	User       UserID    `db:"user" json:"user"`
-	CreatedAt  time.Time `db:"created_at" json:"created_at"`
-	ModifiedAt time.Time `db:"modified_at" json:"modified_at"`
+	User       UserID    `json:"user"`
+	CreatedAt  time.Time `json:"created_at"`
+	ModifiedAt time.Time `json:"modified_at"`
+}
+
+// IdentityListRequest contains the query parameters for listing identities.
+type IdentityListRequest struct {
+	pg.OffsetLimit
+	User *uuid.UUID `json:"user,omitempty"`
+}
+
+// IdentityList represents a paginated list of identities.
+type IdentityList struct {
+	pg.OffsetLimit
+	Count uint       `json:"count"`
+	Body  []Identity `json:"body,omitempty"`
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -67,7 +80,30 @@ func (key IdentityKey) Select(bind *pg.Bind, op pg.Op) (string, error) {
 	case pg.Delete:
 		return bind.Query("identity.delete"), nil
 	default:
-		return "", auth.ErrNotImplemented.Withf("unsupported IdentityKeySelector operation %q", op)
+		return "", auth.ErrNotImplemented.Withf("unsupported IdentityKey operation %q", op)
+	}
+}
+
+func (req IdentityListRequest) Select(bind *pg.Bind, op pg.Op) (string, error) {
+	bind.Del("where")
+	if req.User != nil {
+		bind.Append("where", `identity."user" = `+bind.Set("user", *req.User))
+	}
+	if where := bind.Join("where", " AND "); where == "" {
+		bind.Set("where", "")
+	} else {
+		bind.Set("where", "WHERE "+where)
+	}
+	bind.Set("orderby", `ORDER BY identity.provider ASC, identity.sub ASC`)
+
+	// Offset and Limit
+	req.OffsetLimit.Bind(bind, IdentityListMax)
+
+	switch op {
+	case pg.List:
+		return bind.Query("identity.list"), nil
+	default:
+		return "", auth.ErrNotImplemented.Withf("unsupported IdentityListRequest operation %q", op)
 	}
 }
 
@@ -87,6 +123,23 @@ func (i *Identity) Scan(row pg.Row) error {
 		&i.CreatedAt,
 		&i.ModifiedAt,
 	)
+}
+
+func (list *IdentityList) Scan(row pg.Row) error {
+	var identity Identity
+	if err := identity.Scan(row); err != nil {
+		return err
+	}
+	list.Body = append(list.Body, identity)
+	return nil
+}
+
+func (list *IdentityList) ScanCount(row pg.Row) error {
+	if err := row.Scan(&list.Count); err != nil {
+		return err
+	}
+	list.Clamp(uint64(list.Count))
+	return nil
 }
 
 ///////////////////////////////////////////////////////////////////////////////

@@ -6,11 +6,10 @@ import (
 	"strings"
 	"time"
 
-	auth "github.com/djthorpe/go-auth"
-
 	// Packages
-	"github.com/google/uuid"
-	"github.com/mutablelogic/go-pg"
+	auth "github.com/djthorpe/go-auth"
+	uuid "github.com/google/uuid"
+	pg "github.com/mutablelogic/go-pg"
 	types "github.com/mutablelogic/go-server/pkg/types"
 )
 
@@ -26,23 +25,37 @@ type UserID uuid.UUID
 // UserMeta contains the mutable profile fields of a user.
 // Email is the canonical address used to merge logins across providers.
 type UserMeta struct {
-	Name      string         `db:"name" json:"name"`
-	Email     string         `db:"email" json:"email"`
-	Status    *UserStatus    `db:"status" json:"status,omitempty"`
-	Meta      map[string]any `db:"meta" json:"meta,omitempty"`
-	ExpiresAt *time.Time     `db:"expires_at" json:"expires_at,omitzero"`
+	Name      string         `json:"name"`
+	Email     string         `json:"email"`
+	Status    *UserStatus    `json:"status,omitempty"`
+	Meta      map[string]any `json:"meta,omitempty"`
+	ExpiresAt *time.Time     `json:"expires_at,omitzero"`
 }
 
 // User represents a user account in the system. It contains both
 // immutable and mutable fields.
 type User struct {
-	ID         UserID         `db:"id" json:"id"`
-	CreatedAt  time.Time      `db:"created_at" json:"created_at"`
-	ModifiedAt *time.Time     `db:"modified_at" json:"modified_at,omitempty"`
-	Claims     map[string]any `db:"claims" json:"claims,omitempty"`
-	Groups     []string       `db:"groups" json:"groups,omitempty"`
-	Scopes     []string       `db:"scopes" json:"scopes,omitempty"`
+	ID         UserID         `json:"id"`
+	CreatedAt  time.Time      `json:"created_at"`
+	ModifiedAt *time.Time     `json:"modified_at,omitempty"`
+	Claims     map[string]any `json:"claims,omitempty"`
+	Groups     []string       `json:"groups,omitempty"`
+	Scopes     []string       `json:"scopes,omitempty"`
 	UserMeta
+}
+
+// UserListRequest contains the query parameters for listing users.
+type UserListRequest struct {
+	pg.OffsetLimit
+	Email  string       `json:"email,omitempty"`
+	Status []UserStatus `json:"status,omitempty"`
+}
+
+// UserList represents a paginated list of users.
+type UserList struct {
+	pg.OffsetLimit
+	Count uint   `json:"count"`
+	Body  []User `json:"body,omitempty"`
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -69,6 +82,17 @@ var (
 // IsValidUserStatus returns true when status is one of the supported values.
 func IsValidUserStatus(status UserStatus) bool {
 	return slices.Contains(allUserStatus, status)
+}
+
+// UserIDFromString parses a string into a UserID, which is a UUID.
+func UserIDFromString(s string) (UserID, error) {
+	if uid, err := uuid.Parse(strings.Trim(s, `"`)); err != nil {
+		return UserID(uuid.Nil), err
+	} else if uid == uuid.Nil {
+		return UserID(uuid.Nil), auth.ErrBadParameter.With("id cannot be nil")
+	} else {
+		return UserID(uid), nil
+	}
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -113,12 +137,46 @@ func (user UserID) Select(bind *pg.Bind, op pg.Op) (string, error) {
 	}
 }
 
+func (req UserListRequest) Select(bind *pg.Bind, op pg.Op) (string, error) {
+	bind.Del("where")
+
+	if email := canonicalizeEmail(req.Email); email != "" {
+		if !types.IsEmail(email, nil, &email) {
+			return "", auth.ErrBadParameter.Withf("invalid email address %q", req.Email)
+		}
+		bind.Append("where", "user_row.email = "+bind.Set("email", email))
+	}
+	if len(req.Status) > 0 {
+		statuses := make([]string, 0, len(req.Status))
+		for _, status := range req.Status {
+			if !IsValidUserStatus(status) {
+				return "", auth.ErrBadParameter.Withf("invalid user status %q", status)
+			}
+			statuses = append(statuses, string(status))
+		}
+		bind.Append("where", "user_row.status = ANY("+bind.Set("status", statuses)+")")
+	}
+	if where := bind.Join("where", " AND "); where == "" {
+		bind.Set("where", "")
+	} else {
+		bind.Set("where", "WHERE "+where)
+	}
+	bind.Set("orderby", "ORDER BY user_row.email ASC, user_row.id ASC")
+
+	// Offset, Limit and Order by
+	req.OffsetLimit.Bind(bind, UserListMax)
+
+	switch op {
+	case pg.List:
+		return bind.Query("user.list"), nil
+	default:
+		return "", auth.ErrNotImplemented.Withf("unsupported UserListRequest operation %q", op)
+	}
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 // PUBLIC METHODS - READER
 
-// Scan reads a full user row into the receiver.
-// Expected column order: id, name, email, meta, status, created_at,
-// expires_at, modified_at, claims, groups, scopes.
 func (u *User) Scan(row pg.Row) error {
 	return row.Scan(
 		&u.ID,
@@ -133,6 +191,23 @@ func (u *User) Scan(row pg.Row) error {
 		&u.Groups,
 		&u.Scopes,
 	)
+}
+
+func (list *UserList) Scan(row pg.Row) error {
+	var user User
+	if err := user.Scan(row); err != nil {
+		return err
+	}
+	list.Body = append(list.Body, user)
+	return nil
+}
+
+func (list *UserList) ScanCount(row pg.Row) error {
+	if err := row.Scan(&list.Count); err != nil {
+		return err
+	}
+	list.Clamp(uint64(list.Count))
+	return nil
 }
 
 ///////////////////////////////////////////////////////////////////////////////

@@ -14,20 +14,14 @@ CREATE TABLE IF NOT EXISTS ${"schema"}.user (
     "status"      ${"schema"}.USER_STATUS,
     "created_at"  TIMESTAMPTZ NOT NULL DEFAULT now(),
     "expires_at"  TIMESTAMPTZ NULL,
-  "modified_at" TIMESTAMPTZ NULL
+    "modified_at" TIMESTAMPTZ NULL,
+
+    CONSTRAINT user_email_key UNIQUE ("email")
 );
-
-UPDATE ${"schema"}.user
-SET "email" = LOWER(TRIM("email"))
-WHERE "email" IS DISTINCT FROM LOWER(TRIM("email"));
-
-CREATE UNIQUE INDEX IF NOT EXISTS user_email_key
-ON ${"schema"}.user ("email")
-WHERE "email" <> '';
 
 -- auth.identity
 CREATE TABLE IF NOT EXISTS ${"schema"}.identity (
-    "user"        UUID        NOT NULL REFERENCES ${"schema"}.user (id) ON DELETE CASCADE,
+    "user"        UUID        NOT NULL REFERENCES ${"schema"}."user" (id) ON DELETE CASCADE,
     "provider"    TEXT        NOT NULL,
     "sub"         TEXT        NOT NULL,
     "email"       TEXT        NOT NULL DEFAULT '',
@@ -37,3 +31,15 @@ CREATE TABLE IF NOT EXISTS ${"schema"}.identity (
 
     CONSTRAINT identity_pkey PRIMARY KEY ("provider", "sub")
 );
+
+-- auth.session
+CREATE TABLE IF NOT EXISTS ${"schema"}.session (
+    "id"            UUID        NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
+    "user"          UUID        NOT NULL REFERENCES ${"schema"}."user" (id) ON DELETE CASCADE,
+    "expires_at"    TIMESTAMPTZ NOT NULL,
+    "created_at"    TIMESTAMPTZ NOT NULL DEFAULT now(),
+    "revoked_at"    TIMESTAMPTZ NULL
+);
+
+-- auth.session.user_index
+CREATE INDEX IF NOT EXISTS session_user_idx ON ${"schema"}.session ("user");

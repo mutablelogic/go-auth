@@ -29,6 +29,8 @@ func httpErr(err error) error {
 		return httpresponse.ErrNotImplemented.With(err)
 	case auth.ErrInternalServerError:
 		return httpresponse.ErrInternalError.With(err)
+	case auth.ErrInvalidProvider:
+		return httpresponse.ErrNotAuthorized.With(err)
 	default:
 		return httpresponse.ErrInternalError.With(err)
 	}

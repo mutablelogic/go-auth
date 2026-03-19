@@ -31,6 +31,8 @@ func RegisterHandlers(manager *manager.Manager, router server.HTTPRouter) error 
 
 	// Register handlers
 	register(UserHandler(manager))
+	register(UserItemHandler(manager))
+	register(AuthHandler(manager))
 
 	// Return any errors
 	return result

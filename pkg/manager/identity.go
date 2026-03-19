@@ -51,3 +51,11 @@ func (m *Manager) DeleteIdentity(ctx context.Context, provider, sub string) (*sc
 	}
 	return types.Ptr(identity), nil
 }
+
+func (m *Manager) ListIdentities(ctx context.Context, req schema.IdentityListRequest) (*schema.IdentityList, error) {
+	result := schema.IdentityList{OffsetLimit: req.OffsetLimit}
+	if err := m.PoolConn.List(ctx, &result, req); err != nil {
+		return nil, dbErr(err)
+	}
+	return types.Ptr(result), nil
+}

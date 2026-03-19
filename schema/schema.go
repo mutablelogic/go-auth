@@ -14,3 +14,8 @@ var Queries string
 const (
 	DefaultSchema = "auth"
 )
+
+const (
+	IdentityListMax = 100
+	UserListMax     = 100
+)

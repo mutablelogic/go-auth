@@ -116,7 +116,7 @@ func Test_user_001(t *testing.T) {
 		assert.Equal("github", identity.Provider)
 		assert.Equal("alice-identity", identity.Sub)
 
-		fetched, err := m.GetUser(context.Background(), uuid.UUID(created.ID))
+		fetched, err := m.GetUser(context.Background(), created.ID)
 		require.NoError(err)
 		require.NotNil(fetched)
 		assert.Equal(created.ID, fetched.ID)
@@ -155,7 +155,7 @@ func Test_user_001(t *testing.T) {
 		assert.Empty(created.Groups)
 		assert.Empty(created.Scopes)
 
-		fetched, err := m.GetUser(context.Background(), uuid.UUID(created.ID))
+		fetched, err := m.GetUser(context.Background(), created.ID)
 		require.NoError(err)
 		require.NotNil(fetched)
 		assert.Equal(created.ID, fetched.ID)
@@ -167,7 +167,7 @@ func Test_user_001(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 		beforeUpdate := time.Now()
 
-		updated, err := m.UpdateUser(context.Background(), uuid.UUID(created.ID), schema.UserMeta{
+		updated, err := m.UpdateUser(context.Background(), created.ID, schema.UserMeta{
 			Name:  "Alice Updated",
 			Email: "  Alice.Updated@Example.COM  ",
 			Meta: map[string]any{
@@ -188,7 +188,7 @@ func Test_user_001(t *testing.T) {
 		assert.WithinDuration(afterUpdate, *updated.ModifiedAt, 2*time.Second)
 		assert.False(updated.ModifiedAt.Before(beforeUpdate.Add(-2 * time.Second)))
 
-		deleted, err := m.DeleteUser(context.Background(), uuid.UUID(created.ID))
+		deleted, err := m.DeleteUser(context.Background(), created.ID)
 		require.NoError(err)
 		require.NotNil(deleted)
 		assert.Equal(created.ID, deleted.ID)
@@ -196,7 +196,7 @@ func Test_user_001(t *testing.T) {
 		assert.Equal(updated.CreatedAt, deleted.CreatedAt)
 		assert.Equal(updated.ModifiedAt, deleted.ModifiedAt)
 
-		_, err = m.GetUser(context.Background(), uuid.UUID(created.ID))
+		_, err = m.GetUser(context.Background(), created.ID)
 		require.Error(err)
 		assert.True(errors.Is(err, auth.ErrNotFound))
 	})
@@ -207,7 +207,7 @@ func Test_user_001(t *testing.T) {
 
 		m := newTestManager(t)
 
-		user, err := m.GetUser(context.Background(), uuid.New())
+		user, err := m.GetUser(context.Background(), schema.UserID(uuid.New()))
 		require.Error(err)
 		assert.Nil(user)
 		assert.True(errors.Is(err, auth.ErrNotFound))
@@ -238,6 +238,73 @@ func Test_user_001(t *testing.T) {
 		var count countResult
 		require.NoError(m.Get(context.Background(), &count, emailCountSelector{Email: "alice@example.com"}))
 		assert.Equal(1, count.Value)
+	})
+
+	t.Run("ListUsers", func(t *testing.T) {
+		assert := assert.New(t)
+		require := require.New(t)
+
+		m := newTestManager(t)
+		active := schema.UserStatusActive
+		inactive := schema.UserStatusInactive
+
+		fixtures := []schema.UserMeta{
+			{Name: "Alpha", Email: "  alpha@example.com  ", Status: &active},
+			{Name: "Bravo", Email: "  bravo@example.com  ", Status: &inactive},
+			{Name: "Charlie", Email: "  charlie@example.com  ", Status: &active},
+			{Name: "Delta", Email: "  delta@example.com  "},
+		}
+		for _, fixture := range fixtures {
+			created, err := m.CreateUser(context.Background(), fixture, nil)
+			require.NoError(err)
+			require.NotNil(created)
+		}
+
+		limit := uint64(2)
+		paged, err := m.ListUsers(context.Background(), schema.UserListRequest{
+			OffsetLimit: pg.OffsetLimit{Offset: 1, Limit: &limit},
+		})
+		require.NoError(err)
+		require.NotNil(paged)
+		assert.Equal(uint(4), paged.Count)
+		assert.Equal(uint64(1), paged.Offset)
+		require.NotNil(paged.Limit)
+		assert.Equal(uint64(2), *paged.Limit)
+		require.Len(paged.Body, 2)
+		assert.Equal("bravo@example.com", paged.Body[0].Email)
+		assert.Equal("charlie@example.com", paged.Body[1].Email)
+
+		filteredByEmail, err := m.ListUsers(context.Background(), schema.UserListRequest{
+			Email: "  CHARLIE@EXAMPLE.COM  ",
+		})
+		require.NoError(err)
+		require.NotNil(filteredByEmail)
+		assert.Equal(uint(1), filteredByEmail.Count)
+		require.Len(filteredByEmail.Body, 1)
+		assert.Equal("charlie@example.com", filteredByEmail.Body[0].Email)
+
+		filteredByStatus, err := m.ListUsers(context.Background(), schema.UserListRequest{
+			Status: []schema.UserStatus{schema.UserStatusActive},
+		})
+		require.NoError(err)
+		require.NotNil(filteredByStatus)
+		assert.Equal(uint(2), filteredByStatus.Count)
+		require.Len(filteredByStatus.Body, 2)
+		assert.Equal("alpha@example.com", filteredByStatus.Body[0].Email)
+		assert.Equal("charlie@example.com", filteredByStatus.Body[1].Email)
+		assert.Equal(types.Ptr(schema.UserStatusActive), filteredByStatus.Body[0].Status)
+		assert.Equal(types.Ptr(schema.UserStatusActive), filteredByStatus.Body[1].Status)
+
+		largeLimit := uint64(10)
+		clamped, err := m.ListUsers(context.Background(), schema.UserListRequest{
+			OffsetLimit: pg.OffsetLimit{Limit: &largeLimit},
+		})
+		require.NoError(err)
+		require.NotNil(clamped)
+		assert.Equal(uint(4), clamped.Count)
+		require.NotNil(clamped.Limit)
+		assert.Equal(uint64(4), *clamped.Limit)
+		require.Len(clamped.Body, 4)
 	})
 
 	t.Run("CreateInvalidEmail", func(t *testing.T) {

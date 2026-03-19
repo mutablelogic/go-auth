@@ -93,6 +93,29 @@ SELECT
 FROM deleted
 LEFT JOIN deleted_claims ON deleted_claims.id = deleted.id;
 
+-- user.list
+SELECT
+    user_row.id,
+    user_row.name,
+    user_row.email,
+    user_row.meta,
+    user_row.status,
+    user_row.created_at,
+    user_row.expires_at,
+    user_row.modified_at,
+    COALESCE(identity_claims.claims, '{}'::jsonb) AS claims,
+    '{}'::text[] AS groups,
+    '{}'::text[] AS scopes
+FROM ${"schema"}.user AS user_row
+LEFT JOIN LATERAL (
+    SELECT jsonb_object_agg(claim.key, claim.value) AS claims
+      FROM ${"schema"}.identity
+    CROSS JOIN LATERAL jsonb_each(identity.claims) AS claim(key, value)
+      WHERE identity."user" = user_row.id
+) AS identity_claims ON true
+${where}
+${orderby}
+
 -- identity.insert
 INSERT INTO ${"schema"}.identity ("user", provider, sub, email, claims)
   VALUES (@user, @provider, @sub, @email, @claims)
@@ -111,6 +134,19 @@ FROM ${"schema"}.identity AS identity
 WHERE identity.provider = @provider
   AND identity.sub = @sub;
 
+-- identity.list
+SELECT
+    identity."user",
+    identity.provider,
+    identity.sub,
+    identity.email,
+    identity.claims,
+    identity.created_at,
+    identity.modified_at
+FROM ${"schema"}.identity AS identity
+${where}
+${orderby}
+
 -- identity.update
 UPDATE ${"schema"}.identity
 SET modified_at = NOW(), ${patch}
@@ -123,3 +159,29 @@ DELETE FROM ${"schema"}.identity
 WHERE provider = @provider
   AND sub = @sub
 RETURNING "user", provider, sub, email, claims, created_at, modified_at;
+
+-- session.insert
+INSERT INTO ${"schema"}.session ("user", expires_at)
+  VALUES (@user, NOW() + @expires_in)
+  RETURNING id, "user", expires_at, created_at, revoked_at;
+
+-- session.select
+SELECT
+    session.id,
+    session."user",
+    session.expires_at,
+    session.created_at,
+    session.revoked_at
+FROM ${"schema"}.session AS session
+WHERE session.id = @id;
+
+-- session.update
+UPDATE ${"schema"}.session
+SET ${patch}
+WHERE id = @id
+RETURNING id, "user", expires_at, created_at, revoked_at;
+
+-- session.delete
+DELETE FROM ${"schema"}.session
+WHERE id = @id
+RETURNING id, "user", expires_at, created_at, revoked_at;

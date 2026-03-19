@@ -10,6 +10,7 @@ import (
 	auth "github.com/djthorpe/go-auth"
 	schema "github.com/djthorpe/go-auth/schema"
 	uuid "github.com/google/uuid"
+	pg "github.com/mutablelogic/go-pg"
 	assert "github.com/stretchr/testify/assert"
 	require "github.com/stretchr/testify/require"
 )
@@ -18,6 +19,84 @@ import (
 // TESTS
 
 func Test_identity_001(t *testing.T) {
+	t.Run("ListIdentities", func(t *testing.T) {
+		assert := assert.New(t)
+		require := require.New(t)
+
+		m := newTestManager(t)
+
+		userA, err := m.CreateUser(context.Background(), schema.UserMeta{
+			Name:  "User A",
+			Email: "user.a@example.com",
+		}, nil)
+		require.NoError(err)
+		require.NotNil(userA)
+
+		userB, err := m.CreateUser(context.Background(), schema.UserMeta{
+			Name:  "User B",
+			Email: "user.b@example.com",
+		}, nil)
+		require.NoError(err)
+		require.NotNil(userB)
+
+		fixtures := []struct {
+			user     uuid.UUID
+			provider string
+			sub      string
+			email    string
+		}{
+			{user: uuid.UUID(userA.ID), provider: "github", sub: "alpha", email: "alpha@github.example.com"},
+			{user: uuid.UUID(userA.ID), provider: "google", sub: "bravo", email: "bravo@google.example.com"},
+			{user: uuid.UUID(userB.ID), provider: "microsoft", sub: "charlie", email: "charlie@microsoft.example.com"},
+		}
+		for _, fixture := range fixtures {
+			identity, err := m.CreateIdentity(context.Background(), fixture.user, schema.IdentityInsert{
+				IdentityKey:  schema.IdentityKey{Provider: fixture.provider, Sub: fixture.sub},
+				IdentityMeta: schema.IdentityMeta{Email: fixture.email},
+			})
+			require.NoError(err)
+			require.NotNil(identity)
+		}
+
+		limit := uint64(2)
+		paged, err := m.ListIdentities(context.Background(), schema.IdentityListRequest{
+			OffsetLimit: pg.OffsetLimit{Offset: 1, Limit: &limit},
+		})
+		require.NoError(err)
+		require.NotNil(paged)
+		assert.Equal(uint(3), paged.Count)
+		assert.Equal(uint64(1), paged.Offset)
+		require.NotNil(paged.Limit)
+		assert.Equal(uint64(2), *paged.Limit)
+		require.Len(paged.Body, 2)
+		assert.Equal("google", paged.Body[0].Provider)
+		assert.Equal("microsoft", paged.Body[1].Provider)
+
+		userAID := uuid.UUID(userA.ID)
+		filtered, err := m.ListIdentities(context.Background(), schema.IdentityListRequest{
+			User: &userAID,
+		})
+		require.NoError(err)
+		require.NotNil(filtered)
+		assert.Equal(uint(2), filtered.Count)
+		require.Len(filtered.Body, 2)
+		assert.Equal(userA.ID, filtered.Body[0].User)
+		assert.Equal(userA.ID, filtered.Body[1].User)
+		assert.Equal("github", filtered.Body[0].Provider)
+		assert.Equal("google", filtered.Body[1].Provider)
+
+		largeLimit := uint64(10)
+		clamped, err := m.ListIdentities(context.Background(), schema.IdentityListRequest{
+			OffsetLimit: pg.OffsetLimit{Limit: &largeLimit},
+		})
+		require.NoError(err)
+		require.NotNil(clamped)
+		assert.Equal(uint(3), clamped.Count)
+		require.NotNil(clamped.Limit)
+		assert.Equal(uint64(3), *clamped.Limit)
+		require.Len(clamped.Body, 3)
+	})
+
 	t.Run("CreateGetUpdateDelete", func(t *testing.T) {
 		assert := assert.New(t)
 		require := require.New(t)
@@ -68,7 +147,7 @@ func Test_identity_001(t *testing.T) {
 		assert.Equal(created.CreatedAt, fetched.CreatedAt)
 		assert.Equal(created.ModifiedAt, fetched.ModifiedAt)
 
-		fetchedUser, err := m.GetUser(context.Background(), uuid.UUID(user.ID))
+		fetchedUser, err := m.GetUser(context.Background(), user.ID)
 		require.NoError(err)
 		require.NotNil(fetchedUser)
 		assert.Equal("alice", fetchedUser.Claims["login"])
@@ -95,7 +174,7 @@ func Test_identity_001(t *testing.T) {
 		assert.False(updated.ModifiedAt.Before(beforeUpdate.Add(-2 * time.Second)))
 		assert.True(updated.ModifiedAt.After(created.ModifiedAt))
 
-		updatedUser, err := m.GetUser(context.Background(), uuid.UUID(user.ID))
+		updatedUser, err := m.GetUser(context.Background(), user.ID)
 		require.NoError(err)
 		require.NotNil(updatedUser)
 		assert.Equal("alice-updated", updatedUser.Claims["login"])
@@ -116,7 +195,7 @@ func Test_identity_001(t *testing.T) {
 		require.Error(err)
 		assert.True(errors.Is(err, auth.ErrNotFound))
 
-		userWithoutClaims, err := m.GetUser(context.Background(), uuid.UUID(user.ID))
+		userWithoutClaims, err := m.GetUser(context.Background(), user.ID)
 		require.NoError(err)
 		require.NotNil(userWithoutClaims)
 		assert.Empty(userWithoutClaims.Claims)
