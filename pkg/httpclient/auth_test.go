@@ -17,6 +17,7 @@ import (
 	uuid "github.com/google/uuid"
 	assert "github.com/stretchr/testify/assert"
 	require "github.com/stretchr/testify/require"
+	oauth2 "golang.org/x/oauth2"
 )
 
 func TestIssueToken(t *testing.T) {
@@ -206,6 +207,104 @@ func TestClientAuthMethods(t *testing.T) {
 		response, err := client.Refresh(context.Background(), "bad-token")
 		require.Error(err)
 		assert.Nil(response)
+	})
+
+	t.Run("TokenSourceReturnsCurrentToken", func(t *testing.T) {
+		assert := assert.New(t)
+		require := require.New(t)
+
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			t.Fatalf("unexpected refresh request: %s %s", r.Method, r.URL.Path)
+		}))
+		defer server.Close()
+
+		client, err := New(server.URL)
+		require.NoError(err)
+
+		current, err := oidc.IssueToken(nil, jwt.MapClaims{
+			"iss": "https://issuer.example.test",
+			"exp": time.Now().Add(time.Hour).Unix(),
+		})
+		require.NoError(err)
+
+		source, err := client.TokenSource(context.Background(), current)
+		require.NoError(err)
+
+		token, err := source.Token()
+		require.NoError(err)
+		require.NotNil(token)
+		assert.Equal(current, token.AccessToken)
+		assert.Equal("Bearer", token.Type())
+	})
+
+	t.Run("TokenSourceRefreshesExpiredToken", func(t *testing.T) {
+		assert := assert.New(t)
+		require := require.New(t)
+
+		refreshedToken, err := oidc.IssueToken(nil, jwt.MapClaims{
+			"iss": "https://issuer.example.test",
+			"exp": time.Now().Add(time.Hour).Unix(),
+		})
+		require.NoError(err)
+
+		var request authschema.RefreshRequest
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			require.Equal(http.MethodPost, r.Method)
+			require.Equal("/auth/refresh", r.URL.Path)
+			require.NoError(json.NewDecoder(r.Body).Decode(&request))
+
+			w.Header().Set("Content-Type", "application/json")
+			require.NoError(json.NewEncoder(w).Encode(authschema.TokenResponse{Token: refreshedToken}))
+		}))
+		defer server.Close()
+
+		client, err := New(server.URL)
+		require.NoError(err)
+
+		expired, err := oidc.IssueToken(nil, jwt.MapClaims{
+			"iss": "https://issuer.example.test",
+			"exp": time.Now().Add(-time.Hour).Unix(),
+		})
+		require.NoError(err)
+
+		source, err := client.TokenSource(context.Background(), expired)
+		require.NoError(err)
+
+		token, err := source.Token()
+		require.NoError(err)
+		require.NotNil(token)
+		assert.Equal(expired, request.Token)
+		assert.Equal(refreshedToken, token.AccessToken)
+		assert.True(token.Expiry.After(time.Now()))
+	})
+
+	t.Run("TokenSourceRejectsMalformedToken", func(t *testing.T) {
+		assert := assert.New(t)
+		require := require.New(t)
+
+		client, err := New("https://issuer.example.test")
+		require.NoError(err)
+
+		source, err := client.TokenSource(context.Background(), "not-a-jwt")
+		require.Error(err)
+		assert.Nil(source)
+	})
+
+	t.Run("TokenSourceImplementsOAuth2Interface", func(t *testing.T) {
+		client, err := New("https://issuer.example.test")
+		require.NoError(t, err)
+
+		token, err := oidc.IssueToken(nil, jwt.MapClaims{
+			"iss": "https://issuer.example.test",
+			"exp": time.Now().Add(time.Hour).Unix(),
+		})
+		require.NoError(t, err)
+
+		source, err := client.TokenSource(context.Background(), token)
+		require.NoError(t, err)
+
+		_, ok := source.(oauth2.TokenSource)
+		assert.True(t, ok)
 	})
 }
 
