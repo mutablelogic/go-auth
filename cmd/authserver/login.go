@@ -16,6 +16,7 @@ import (
 type ClientCommands struct {
 	Login   LoginCommand   `cmd:"" name:"login" help:"Log in to the auth server with an email address." group:"CLIENT"`
 	Refresh RefreshCommand `cmd:"" name:"refresh" help:"Refresh a previously issued local session token." group:"CLIENT"`
+	Revoke  RevokeCommand  `cmd:"" name:"revoke" help:"Revoke a previously issued local session token." group:"CLIENT"`
 }
 
 type LoginCommand struct {
@@ -25,6 +26,10 @@ type LoginCommand struct {
 }
 
 type RefreshCommand struct {
+	Token string `arg:"" name:"token" help:"Previously issued local session token."`
+}
+
+type RevokeCommand struct {
 	Token string `arg:"" name:"token" help:"Previously issued local session token."`
 }
 
@@ -73,6 +78,25 @@ func (cmd *RefreshCommand) Run(ctx server.Cmd) error {
 	}
 
 	response, err := client.Refresh(ctx.Context(), cmd.Token)
+	if err != nil {
+		return err
+	}
+
+	data, err := json.MarshalIndent(response, "", "  ")
+	if err != nil {
+		return err
+	}
+	fmt.Println(string(data))
+	return nil
+}
+
+func (cmd *RevokeCommand) Run(ctx server.Cmd) error {
+	client, _, err := clientFor(ctx)
+	if err != nil {
+		return err
+	}
+
+	response, err := client.Revoke(ctx.Context(), cmd.Token)
 	if err != nil {
 		return err
 	}

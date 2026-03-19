@@ -14,6 +14,15 @@ import (
 ///////////////////////////////////////////////////////////////////////////////
 // PUBLIC METHODS
 
+// GetSession returns a session by ID.
+func (m *Manager) GetSession(ctx context.Context, id schema.SessionID) (*schema.Session, error) {
+	var session schema.Session
+	if err := m.PoolConn.Get(ctx, &session, id); err != nil {
+		return nil, dbErr(err)
+	}
+	return types.Ptr(session), nil
+}
+
 // RevokeSession marks a session as revoked and returns the updated session
 // record.
 func (m *Manager) RevokeSession(ctx context.Context, id schema.SessionID) (*schema.Session, error) {

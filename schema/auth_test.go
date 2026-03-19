@@ -1,6 +1,7 @@
 package schema
 
 import (
+	"context"
 	"errors"
 	"testing"
 
@@ -28,5 +29,28 @@ func Test_ExtractIssuer(t *testing.T) {
 		_, err := oidc.ExtractIssuer("eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0.e30.")
 		require.Error(t, err)
 		assert.True(t, errors.Is(err, auth.ErrBadParameter))
+	})
+}
+
+func Test_TokenRequestValidate(t *testing.T) {
+	t.Run("MissingProvider", func(t *testing.T) {
+		assert := assert.New(t)
+		_, err := (&TokenRequest{Token: "abc"}).Validate(context.Background())
+		assert.Error(err)
+		assert.True(errors.Is(err, auth.ErrInvalidProvider))
+	})
+
+	t.Run("MissingToken", func(t *testing.T) {
+		assert := assert.New(t)
+		_, err := (&TokenRequest{Provider: ProviderOAuth}).Validate(context.Background())
+		assert.Error(err)
+		assert.True(errors.Is(err, auth.ErrBadParameter))
+	})
+
+	t.Run("UnsupportedProvider", func(t *testing.T) {
+		assert := assert.New(t)
+		_, err := (&TokenRequest{Provider: "nope", Token: "abc"}).Validate(context.Background())
+		assert.Error(err)
+		assert.True(errors.Is(err, auth.ErrInvalidProvider))
 	})
 }

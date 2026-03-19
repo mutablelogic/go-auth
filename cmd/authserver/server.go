@@ -5,6 +5,7 @@ package main
 import (
 	"crypto/rsa"
 	"fmt"
+	"strings"
 
 	// Packages
 	authcrypto "github.com/djthorpe/go-auth/pkg/crypto"
@@ -74,7 +75,8 @@ func (server *RunServer) WithManager(ctx server.Cmd, fn func(*manager.Manager, s
 		}
 	}
 	// Create an auth manager
-	manager, err := manager.New(ctx.Context(), conn, manager.WithPrivateKey(key))
+	issuer := server.issuer(ctx)
+	manager, err := manager.New(ctx.Context(), conn, manager.WithPrivateKey(key), manager.WithIssuer(issuer))
 	if err != nil {
 		return err
 	}
@@ -82,4 +84,15 @@ func (server *RunServer) WithManager(ctx server.Cmd, fn func(*manager.Manager, s
 
 	// Invoke the function with the manager and version string
 	return fn(manager, "v1")
+}
+
+func (server *RunServer) issuer(ctx server.Cmd) string {
+	scheme := "http"
+	if server.TLS.CertFile != "" && server.TLS.KeyFile != "" {
+		scheme = "https"
+	}
+	if origin := strings.TrimSpace(ctx.GetString("http.origin")); origin != "" && origin != "*" {
+		return strings.TrimRight(origin, "/") + strings.TrimRight(ctx.GetString("http.prefix"), "/")
+	}
+	return scheme + "://" + strings.TrimSpace(ctx.GetString("http.addr")) + strings.TrimRight(ctx.GetString("http.prefix"), "/")
 }

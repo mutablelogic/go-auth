@@ -13,6 +13,7 @@ import (
 type Opt func(*opt) error
 
 type opt struct {
+	issuer     string
 	privateKey *rsa.PrivateKey
 	schema     string
 	sessionttl time.Duration
@@ -43,6 +44,17 @@ func WithPrivateKey(key *rsa.PrivateKey) Opt {
 			return fmt.Errorf("private key is required")
 		}
 		o.privateKey = key
+		return nil
+	}
+}
+
+// WithIssuer sets the canonical issuer used for locally signed tokens.
+func WithIssuer(issuer string) Opt {
+	return func(o *opt) error {
+		if issuer == "" {
+			return fmt.Errorf("issuer cannot be empty")
+		}
+		o.issuer = issuer
 		return nil
 	}
 }

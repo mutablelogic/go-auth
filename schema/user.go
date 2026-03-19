@@ -27,20 +27,20 @@ type UserID uuid.UUID
 type UserMeta struct {
 	Name      string         `json:"name"`
 	Email     string         `json:"email"`
-	Status    *UserStatus    `json:"status,omitempty"`
+	Status    *UserStatus    `json:"status,omitempty" enum:"new,active,inactive,suspended,deleted"`
 	Meta      map[string]any `json:"meta,omitempty"`
-	ExpiresAt *time.Time     `json:"expires_at,omitzero"`
+	ExpiresAt *time.Time     `json:"expires_at,omitzero" format:"date-time"`
 }
 
 // User represents a user account in the system. It contains both
 // immutable and mutable fields.
 type User struct {
-	ID         UserID         `json:"id"`
-	CreatedAt  time.Time      `json:"created_at"`
-	ModifiedAt *time.Time     `json:"modified_at,omitempty"`
-	Claims     map[string]any `json:"claims,omitempty"`
-	Groups     []string       `json:"groups,omitempty"`
-	Scopes     []string       `json:"scopes,omitempty"`
+	ID         UserID         `json:"id" format:"uuid" readonly:""`
+	CreatedAt  time.Time      `json:"created_at" format:"date-time" readonly:""`
+	ModifiedAt *time.Time     `json:"modified_at,omitempty" format:"date-time" readonly:""`
+	Claims     map[string]any `json:"claims,omitempty" readonly:""`
+	Groups     []string       `json:"groups,omitempty" readonly:""`
+	Scopes     []string       `json:"scopes,omitempty" readonly:""`
 	UserMeta
 }
 
@@ -48,13 +48,13 @@ type User struct {
 type UserListRequest struct {
 	pg.OffsetLimit
 	Email  string       `json:"email,omitempty"`
-	Status []UserStatus `json:"status,omitempty"`
+	Status []UserStatus `json:"status,omitempty" enum:"new,active,inactive,suspended,deleted"`
 }
 
 // UserList represents a paginated list of users.
 type UserList struct {
 	pg.OffsetLimit
-	Count uint   `json:"count"`
+	Count uint   `json:"count" readonly:""`
 	Body  []User `json:"body,omitempty"`
 }
 

@@ -61,3 +61,21 @@ func (c *Client) Refresh(ctx context.Context, token string) (*authschema.TokenRe
 	// Return the response
 	return &response, nil
 }
+
+// Revoke posts a previously issued local token to /auth/revoke and returns the
+// revoked session record.
+func (c *Client) Revoke(ctx context.Context, token string) (*authschema.Session, error) {
+	payload, err := client.NewJSONRequest(authschema.RefreshRequest{
+		Token: token,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	var response authschema.Session
+	if err := c.DoWithContext(ctx, payload, &response, client.OptAbsPath("auth", "revoke")); err != nil {
+		return nil, err
+	}
+
+	return &response, nil
+}

@@ -20,21 +20,21 @@ type SessionID uuid.UUID
 // SessionMeta contains the mutable fields for a session.
 type SessionMeta struct {
 	ExpiresIn *time.Duration `json:"expires_in,omitempty"`
-	RevokedAt *time.Time     `json:"revoked_at,omitempty"`
+	RevokedAt *time.Time     `json:"revoked_at,omitempty" format:"date-time" readonly:""`
 }
 
 // SessionInsert contains the fields required to create a new session.
 type SessionInsert struct {
-	User      UserID         `json:"user"`
+	User      UserID         `json:"user" format:"uuid"`
 	ExpiresIn *time.Duration `json:"expires_in"`
 }
 
 // Session represents a stored session row.
 type Session struct {
-	ID        SessionID `json:"id"`
-	User      UserID    `json:"user"`
-	ExpiresAt time.Time `json:"expires_at"`
-	CreatedAt time.Time `json:"created_at"`
+	ID        SessionID `json:"id" format:"uuid" readonly:""`
+	User      UserID    `json:"user" format:"uuid" readonly:""`
+	ExpiresAt time.Time `json:"expires_at" format:"date-time" readonly:""`
+	CreatedAt time.Time `json:"created_at" format:"date-time" readonly:""`
 	SessionMeta
 }
 

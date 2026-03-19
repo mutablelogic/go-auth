@@ -18,6 +18,13 @@ import (
 	openapi "github.com/mutablelogic/go-server/pkg/openapi/schema"
 )
 
+var (
+	validateTokenRequest = func(ctx context.Context, req *schema.TokenRequest) (map[string]any, error) {
+		return req.Validate(ctx)
+	}
+	newIdentityFromClaims = schema.NewIdentityFromClaims
+)
+
 ///////////////////////////////////////////////////////////////////////////////
 // PUBLIC METHODS
 
@@ -51,7 +58,7 @@ func AuthHandler(mgr *manager.Manager) (string, http.HandlerFunc, *openapi.PathI
 						Description: "Signed local session token and authenticated user context.",
 						Content: map[string]openapi.MediaType{
 							"application/json": {
-								Schema: jsonschema.MustFor[schema.TokenResponse](),
+								Schema: tokenResponseSchema(),
 							},
 						},
 					},
@@ -93,12 +100,54 @@ func RefreshHandler(mgr *manager.Manager) (string, http.HandlerFunc, *openapi.Pa
 						Description: "Refreshed local session token and authenticated user context.",
 						Content: map[string]openapi.MediaType{
 							"application/json": {
-								Schema: jsonschema.MustFor[schema.TokenResponse](),
+								Schema: tokenResponseSchema(),
 							},
 						},
 					},
 					"400": {
 						Description: "Invalid token, malformed request, or refresh is not allowed for the referenced session.",
+					},
+				},
+			},
+		}
+}
+
+// Return an http.HandlerFunc for the auth revoke endpoint
+func RevokeHandler(mgr *manager.Manager) (string, http.HandlerFunc, *openapi.PathItem) {
+	return "/auth/revoke", func(w http.ResponseWriter, r *http.Request) {
+			switch r.Method {
+			case http.MethodPost:
+				_ = revokeToken(r.Context(), mgr, w, r)
+			default:
+				_ = httpresponse.Error(w, httpresponse.Err(http.StatusMethodNotAllowed), r.Method)
+			}
+		}, &openapi.PathItem{
+			Summary:     "Session revocation",
+			Description: "Revoke a previously issued local session token so the underlying session can no longer be refreshed or accepted by session-aware checks.",
+			Post: &openapi.Operation{
+				Tags:        []string{"Auth"},
+				Summary:     "Revoke session token",
+				Description: "Verifies the supplied local session token, revokes the referenced session, and returns the revoked session record.",
+				RequestBody: &openapi.RequestBody{
+					Description: "Previously issued local session token.",
+					Required:    true,
+					Content: map[string]openapi.MediaType{
+						"application/json": {
+							Schema: jsonschema.MustFor[schema.RefreshRequest](),
+						},
+					},
+				},
+				Responses: map[string]openapi.Response{
+					"200": {
+						Description: "Revoked session.",
+						Content: map[string]openapi.MediaType{
+							"application/json": {
+								Schema: sessionSchema(),
+							},
+						},
+					},
+					"400": {
+						Description: "Invalid token, malformed request, or revocation failure.",
 					},
 				},
 			},
@@ -142,9 +191,9 @@ func exchangeToken(ctx context.Context, mgr *manager.Manager, w http.ResponseWri
 	var req schema.TokenRequest
 	if err := httprequest.Read(r, &req); err != nil {
 		return httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest).With(err))
-	} else if claims, err := req.Validate(ctx); err != nil {
+	} else if claims, err := validateTokenRequest(ctx, &req); err != nil {
 		return httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest).With(err))
-	} else if identity, err := schema.NewIdentityFromClaims(claims); err != nil {
+	} else if identity, err := newIdentityFromClaims(claims); err != nil {
 		return httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest).With(err))
 	} else if user, session, err := mgr.LoginWithIdentity(ctx, identity); err != nil {
 		return httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest).With(err))
@@ -171,7 +220,7 @@ func refreshToken(ctx context.Context, mgr *manager.Manager, w http.ResponseWrit
 		return httpresponse.Error(w, httpresponse.Err(http.StatusInternalServerError).With(err))
 	} else if claims, err := mgr.OIDCVerify(req.Token, config.Issuer); err != nil {
 		return httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest).With(err))
-	} else if session, err := refreshSessionIDFromClaims(claims); err != nil {
+	} else if session, err := sessionIDFromClaims(claims); err != nil {
 		return httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest).With(err))
 	} else if user, refreshed, err := mgr.RefreshSession(ctx, session); err != nil {
 		return httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest).With(err))
@@ -183,6 +232,25 @@ func refreshToken(ctx context.Context, mgr *manager.Manager, w http.ResponseWrit
 			User:    *user,
 			Session: *refreshed,
 		})
+	}
+}
+
+func revokeToken(ctx context.Context, mgr *manager.Manager, w http.ResponseWriter, r *http.Request) error {
+	var req schema.RefreshRequest
+	if err := httprequest.Read(r, &req); err != nil {
+		return httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest).With(err))
+	} else if token := strings.TrimSpace(req.Token); token == "" {
+		return httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest).With("token is required"))
+	} else if config, err := mgr.OIDCConfig(r); err != nil {
+		return httpresponse.Error(w, httpresponse.Err(http.StatusInternalServerError).With(err))
+	} else if claims, err := mgr.OIDCVerify(req.Token, config.Issuer); err != nil {
+		return httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest).With(err))
+	} else if session, err := sessionIDFromClaims(claims); err != nil {
+		return httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest).With(err))
+	} else if revoked, err := mgr.RevokeSession(ctx, session); err != nil {
+		return httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest).With(err))
+	} else {
+		return httpresponse.JSON(w, http.StatusOK, httprequest.Indent(r), revoked)
 	}
 }
 
@@ -213,7 +281,7 @@ func loginTokenClaims(issuer string, user *schema.User, session *schema.Session)
 	return claims
 }
 
-func refreshSessionIDFromClaims(claims map[string]any) (schema.SessionID, error) {
+func sessionIDFromClaims(claims map[string]any) (schema.SessionID, error) {
 	value, ok := claims["sid"].(string)
 	if !ok || strings.TrimSpace(value) == "" {
 		return schema.SessionID{}, httpresponse.Err(http.StatusBadRequest).With("token missing sid claim")

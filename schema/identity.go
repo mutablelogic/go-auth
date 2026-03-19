@@ -36,21 +36,21 @@ type IdentityInsert struct {
 type Identity struct {
 	IdentityKey
 	IdentityMeta
-	User       UserID    `json:"user"`
-	CreatedAt  time.Time `json:"created_at"`
-	ModifiedAt time.Time `json:"modified_at"`
+	User       UserID    `json:"user" format:"uuid" readonly:""`
+	CreatedAt  time.Time `json:"created_at" format:"date-time" readonly:""`
+	ModifiedAt time.Time `json:"modified_at" format:"date-time" readonly:""`
 }
 
 // IdentityListRequest contains the query parameters for listing identities.
 type IdentityListRequest struct {
 	pg.OffsetLimit
-	User *uuid.UUID `json:"user,omitempty"`
+	User *uuid.UUID `json:"user,omitempty" format:"uuid"`
 }
 
 // IdentityList represents a paginated list of identities.
 type IdentityList struct {
 	pg.OffsetLimit
-	Count uint       `json:"count"`
+	Count uint       `json:"count" readonly:""`
 	Body  []Identity `json:"body,omitempty"`
 }
 

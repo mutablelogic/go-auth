@@ -12,7 +12,7 @@ import (
 // TYPES
 
 type TokenRequest struct {
-	Provider string         `json:"provider"`
+	Provider string         `json:"provider" enum:"oauth"`
 	Token    string         `json:"token"`
 	Meta     map[string]any `json:"meta,omitempty"`
 }
@@ -26,9 +26,9 @@ type RefreshRequest struct {
 // TokenResponse is returned by the auth exchange endpoint after a provider
 // token has been validated and mapped to a local user and session.
 type TokenResponse struct {
-	Token   string  `json:"token"`
-	User    User    `json:"user"`
-	Session Session `json:"session"`
+	Token   string  `json:"token" readonly:""`
+	User    User    `json:"user" readonly:""`
+	Session Session `json:"session" readonly:""`
 }
 
 ///////////////////////////////////////////////////////////////////////////////

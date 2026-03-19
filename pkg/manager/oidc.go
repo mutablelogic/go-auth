@@ -13,6 +13,7 @@ import (
 
 const authPath = "/auth/login"
 const refreshPath = "/auth/refresh"
+const revokePath = "/auth/revoke"
 
 ///////////////////////////////////////////////////////////////////////////////
 // PUBLIC METHODS
@@ -40,10 +41,26 @@ func (m *Manager) OIDCVerify(token, issuer string) (map[string]any, error) {
 	return oidc.VerifySignedToken(&m.privateKey.PublicKey, token, issuer)
 }
 
+// OIDCIssuer returns the canonical issuer for this manager. If no explicit
+// issuer was configured, it can derive one from an auth/discovery request.
+func (m *Manager) OIDCIssuer(r *http.Request) (string, error) {
+	if m.issuer != "" {
+		return m.issuer, nil
+	}
+	if r == nil {
+		return "", auth.ErrBadParameter.With("issuer is not configured")
+	}
+	return issuerFromRequest(r), nil
+}
+
 func (m *Manager) OIDCConfig(r *http.Request) (oidc.Configuration, error) {
+	issuer, err := m.OIDCIssuer(r)
+	if err != nil {
+		return oidc.Configuration{}, err
+	}
 	return oidc.Configuration{
-		Issuer:            issuerFromRequest(r),
-		JwksURI:           issuerFromRequest(r) + "/" + oidc.JWKSPath,
+		Issuer:            issuer,
+		JwksURI:           issuer + "/" + oidc.JWKSPath,
 		SigningAlgorithms: []string{oidc.SigningAlgorithm},
 		SubjectTypes:      []string{"public"},
 		ResponseTypes:     []string{"id_token"},
@@ -60,7 +77,7 @@ func issuerFromRequest(r *http.Request) string {
 		scheme = forwarded
 	}
 	path := r.URL.Path
-	for _, suffix := range []string{"/" + oidc.ConfigPath, "/" + oidc.JWKSPath, authPath, refreshPath} {
+	for _, suffix := range []string{"/" + oidc.ConfigPath, "/" + oidc.JWKSPath, authPath, refreshPath, revokePath} {
 		path = strings.TrimSuffix(path, suffix)
 	}
 	return scheme + "://" + r.Host + path
