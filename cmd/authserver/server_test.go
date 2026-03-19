@@ -4,6 +4,7 @@ package main
 
 import (
 	"testing"
+	"time"
 
 	assert "github.com/stretchr/testify/assert"
 )
@@ -32,5 +33,21 @@ func Test_publicHostPort_001(t *testing.T) {
 
 	t.Run("OpaqueAddressPreserved", func(t *testing.T) {
 		assert.Equal(t, "localhost", publicHostPort("localhost"))
+	})
+}
+
+func Test_cleanupSettings_001(t *testing.T) {
+	t.Run("Defaults", func(t *testing.T) {
+		server := RunServer{}
+		assert.Equal(t, defaultCleanupInterval, server.cleanupInterval())
+		assert.Equal(t, defaultCleanupLimit, server.cleanupLimit())
+	})
+
+	t.Run("Override", func(t *testing.T) {
+		server := RunServer{}
+		server.CleanupFlags.Interval = 5 * time.Minute
+		server.CleanupFlags.Limit = 25
+		assert.Equal(t, 5*time.Minute, server.cleanupInterval())
+		assert.Equal(t, 25, server.cleanupLimit())
 	})
 }

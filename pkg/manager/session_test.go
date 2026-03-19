@@ -154,14 +154,117 @@ func Test_session_001(t *testing.T) {
 		assert.Equal(user.ID, refreshedSession.User)
 		assert.True(refreshedSession.ExpiresAt.After(session.ExpiresAt))
 	})
+
+	t.Run("RunPrunesRevokedSessions", func(t *testing.T) {
+		assert := assert.New(t)
+		require := require.New(t)
+
+		m := newSessionTestManagerWithOpts(t, 30*time.Minute, manager.WithCleanup(10*time.Millisecond, 100))
+		_, session := mustLoginSession(t, m)
+
+		require.NoError(m.With("id", session.ID).Exec(context.Background(), `
+			UPDATE auth.session
+			SET revoked_at = NOW()
+			WHERE id = @id
+		`))
+
+		deletedSessions, err := m.CleanupSessions(context.Background())
+		require.NoError(err)
+		require.Len(deletedSessions, 1)
+		assert.Equal(session.ID, deletedSessions[0].ID)
+		assert.Equal(session.User, deletedSessions[0].User)
+		require.NotNil(deletedSessions[0].RevokedAt)
+
+		deleted, err := m.GetSession(context.Background(), session.ID)
+		require.Error(err)
+		assert.Nil(deleted)
+		assert.True(errors.Is(err, auth.ErrNotFound))
+	})
+
+	t.Run("CleanupSessionsLimitsOldestFirst", func(t *testing.T) {
+		assert := assert.New(t)
+		require := require.New(t)
+
+		m := newSessionTestManagerWithOpts(t, 30*time.Minute, manager.WithCleanup(time.Hour, 2))
+		_, first := mustLoginSessionWithSub(t, m, "cleanup-1")
+		_, second := mustLoginSessionWithSub(t, m, "cleanup-2")
+		_, third := mustLoginSessionWithSub(t, m, "cleanup-3")
+
+		require.NoError(m.With("id", first.ID).Exec(context.Background(), `
+			UPDATE auth.session
+			SET revoked_at = NOW(), created_at = NOW() - INTERVAL '3 hour'
+			WHERE id = @id
+		`))
+		require.NoError(m.With("id", second.ID).Exec(context.Background(), `
+			UPDATE auth.session
+			SET revoked_at = NOW(), created_at = NOW() - INTERVAL '2 hour'
+			WHERE id = @id
+		`))
+		require.NoError(m.With("id", third.ID).Exec(context.Background(), `
+			UPDATE auth.session
+			SET revoked_at = NOW(), created_at = NOW() - INTERVAL '1 hour'
+			WHERE id = @id
+		`))
+
+		deletedSessions, err := m.CleanupSessions(context.Background())
+		require.NoError(err)
+		require.Len(deletedSessions, 2)
+		assert.Equal(first.ID, deletedSessions[0].ID)
+		assert.Equal(second.ID, deletedSessions[1].ID)
+
+		deleted, err := m.GetSession(context.Background(), first.ID)
+		require.Error(err)
+		assert.Nil(deleted)
+		assert.True(errors.Is(err, auth.ErrNotFound))
+
+		deleted, err = m.GetSession(context.Background(), second.ID)
+		require.Error(err)
+		assert.Nil(deleted)
+		assert.True(errors.Is(err, auth.ErrNotFound))
+
+		remaining, err := m.GetSession(context.Background(), third.ID)
+		require.NoError(err)
+		require.NotNil(remaining)
+		assert.Equal(third.ID, remaining.ID)
+	})
+
+	t.Run("RunUsesCleanupSessions", func(t *testing.T) {
+		assert := assert.New(t)
+		require := require.New(t)
+
+		m := newSessionTestManagerWithOpts(t, 30*time.Minute, manager.WithCleanup(10*time.Millisecond, 100))
+		_, session := mustLoginSession(t, m)
+
+		require.NoError(m.With("id", session.ID).Exec(context.Background(), `
+			UPDATE auth.session
+			SET revoked_at = NOW()
+			WHERE id = @id
+		`))
+
+		ctx, cancel := context.WithTimeout(context.Background(), 25*time.Millisecond)
+		defer cancel()
+		err := m.Run(ctx)
+		require.NoError(err)
+
+		deleted, err := m.GetSession(context.Background(), session.ID)
+		require.Error(err)
+		assert.Nil(deleted)
+		assert.True(errors.Is(err, auth.ErrNotFound))
+	})
 }
 
 func newSessionTestManager(t *testing.T, ttl time.Duration) *manager.Manager {
 	t.Helper()
+	return newSessionTestManagerWithOpts(t, ttl)
+}
+
+func newSessionTestManagerWithOpts(t *testing.T, ttl time.Duration, opts ...manager.Opt) *manager.Manager {
+	t.Helper()
 	c := conn.Begin(t)
 	t.Cleanup(func() { c.Close() })
 
-	m, err := manager.New(context.Background(), c, manager.WithSessionTTL(ttl))
+	baseOpts := append([]manager.Opt{manager.WithSessionTTL(ttl)}, opts...)
+	m, err := manager.New(context.Background(), c, baseOpts...)
 	require.NoError(t, err)
 	require.NoError(t, m.Exec(context.Background(), "TRUNCATE auth.user CASCADE"))
 
@@ -170,17 +273,22 @@ func newSessionTestManager(t *testing.T, ttl time.Duration) *manager.Manager {
 
 func mustLoginSession(t *testing.T, m *manager.Manager) (*schema.User, *schema.Session) {
 	t.Helper()
+	return mustLoginSessionWithSub(t, m, "refresh-subject")
+}
+
+func mustLoginSessionWithSub(t *testing.T, m *manager.Manager, sub string) (*schema.User, *schema.Session) {
+	t.Helper()
 
 	user, session, err := m.LoginWithIdentity(context.Background(), schema.IdentityInsert{
 		IdentityKey: schema.IdentityKey{
 			Provider: "https://accounts.google.com",
-			Sub:      "refresh-subject",
+			Sub:      sub,
 		},
 		IdentityMeta: schema.IdentityMeta{
-			Email: "refresh.user@example.com",
+			Email: sub + "@example.com",
 			Claims: map[string]any{
 				"name":  "Refresh User",
-				"email": "refresh.user@example.com",
+				"email": sub + "@example.com",
 			},
 		},
 	})

@@ -8,16 +8,23 @@ import (
 	"fmt"
 	"net"
 	"strings"
+	"time"
 
 	// Packages
 	authcrypto "github.com/djthorpe/go-auth/pkg/crypto"
 	httphandler "github.com/djthorpe/go-auth/pkg/httphandler"
 	manager "github.com/djthorpe/go-auth/pkg/manager"
-	"github.com/djthorpe/go-auth/schema"
+	schema "github.com/djthorpe/go-auth/schema"
 	server "github.com/mutablelogic/go-server"
 	cmd "github.com/mutablelogic/go-server/pkg/cmd"
 	httprouter "github.com/mutablelogic/go-server/pkg/httprouter"
-	"github.com/mutablelogic/go-server/pkg/types"
+	types "github.com/mutablelogic/go-server/pkg/types"
+	errgroup "golang.org/x/sync/errgroup"
+)
+
+const (
+	defaultCleanupInterval = time.Hour
+	defaultCleanupLimit    = 100
 )
 
 type ServerCommands struct {
@@ -26,7 +33,18 @@ type ServerCommands struct {
 
 type RunServer struct {
 	PostgresFlags
+	CleanupFlags `embed:"" prefix:"cleanup."`
 	cmd.RunServer
+}
+
+type CleanupFlags struct {
+	Interval time.Duration `name:"interval" help:"How often to prune stale sessions." default:"1h"`
+	Limit    int           `name:"limit" help:"Maximum stale sessions to prune in one pass." default:"100"`
+}
+
+type contextCmd struct {
+	server.Cmd
+	ctx context.Context
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -34,14 +52,28 @@ type RunServer struct {
 
 func (server *RunServer) Run(ctx server.Cmd) error {
 	return server.WithManager(ctx, func(manager *manager.Manager, v string) error {
+		baseCtx, cancel := context.WithCancel(ctx.Context())
+		defer cancel()
+
+		group, groupCtx := errgroup.WithContext(baseCtx)
+		runCtx := contextCmd{Cmd: ctx, ctx: groupCtx}
 
 		// Register HTTP handlers
 		server.RunServer.Register(func(router *httprouter.Router) error {
 			return httphandler.RegisterHandlers(manager, router)
 		})
 
-		// Run the server
-		return server.RunServer.Run(ctx)
+		group.Go(func() error {
+			defer cancel()
+			return manager.Run(groupCtx)
+		})
+
+		group.Go(func() error {
+			defer cancel()
+			return server.RunServer.Run(runCtx)
+		})
+
+		return group.Wait()
 	})
 }
 
@@ -86,6 +118,7 @@ func (server *RunServer) WithManager(ctx server.Cmd, fn func(*manager.Manager, s
 	if issuer := server.issuer(ctx); issuer != "" {
 		opts = append(opts, manager.WithIssuer(issuer))
 	}
+	opts = append(opts, manager.WithCleanup(server.cleanupInterval(), server.cleanupLimit()))
 
 	// Add a hook for when a new user is created, to set the default metadata
 	opts = append(opts, manager.WithUserHook(func(_ context.Context, identity schema.IdentityInsert, meta schema.UserMeta) (schema.UserMeta, error) {
@@ -142,4 +175,22 @@ func publicHostPort(addr string) string {
 		return net.JoinHostPort(host, port)
 	}
 	return addr
+}
+
+func (server *RunServer) cleanupInterval() time.Duration {
+	if server.CleanupFlags.Interval > 0 {
+		return server.CleanupFlags.Interval
+	}
+	return defaultCleanupInterval
+}
+
+func (server *RunServer) cleanupLimit() int {
+	if server.CleanupFlags.Limit > 0 {
+		return server.CleanupFlags.Limit
+	}
+	return defaultCleanupLimit
+}
+
+func (cmd contextCmd) Context() context.Context {
+	return cmd.ctx
 }

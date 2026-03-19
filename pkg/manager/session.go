@@ -54,11 +54,23 @@ func (m *Manager) RefreshSession(ctx context.Context, id schema.SessionID) (*sch
 	return user, types.Ptr(session), nil
 }
 
+// CleanupSessions deletes revoked or expired sessions and returns the deleted
+// session rows.
+func (m *Manager) CleanupSessions(ctx context.Context) ([]schema.Session, error) {
+	var result cleanupSessionList
+	if err := m.PoolConn.List(ctx, &result, cleanupSessionSelector(m.cleanuplimit)); err != nil {
+		return nil, dbErr(err)
+	}
+	return []schema.Session(result), nil
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 // PRIVATE TYPES
 
 type refreshSessionSelector schema.SessionID
 type revokeSessionSelector schema.SessionID
+type cleanupSessionSelector int
+type cleanupSessionList []schema.Session
 
 ///////////////////////////////////////////////////////////////////////////////
 // PRIVATE METHODS
@@ -81,4 +93,23 @@ func (id revokeSessionSelector) Select(bind *pg.Bind, op pg.Op) (string, error) 
 	default:
 		return "", auth.ErrNotImplemented.Withf("unsupported RevokeSession operation %q", op)
 	}
+}
+
+func (limit cleanupSessionSelector) Select(bind *pg.Bind, op pg.Op) (string, error) {
+	switch op {
+	case pg.List:
+		bind.Set("cleanup_limit", int(limit))
+		return bind.Query("session.cleanup"), nil
+	default:
+		return "", auth.ErrNotImplemented.Withf("unsupported CleanupSessions operation %q", op)
+	}
+}
+
+func (list *cleanupSessionList) Scan(row pg.Row) error {
+	var session schema.Session
+	if err := session.Scan(row); err != nil {
+		return err
+	}
+	*list = append(*list, session)
+	return nil
 }

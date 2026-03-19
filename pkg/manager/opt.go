@@ -17,11 +17,13 @@ import (
 type Opt func(*opt) error
 
 type opt struct {
-	issuer     string
-	privateKey *rsa.PrivateKey
-	schema     string
-	sessionttl time.Duration
-	userhook   func(context.Context, schema.IdentityInsert, schema.UserMeta) (schema.UserMeta, error)
+	issuer       string
+	privateKey   *rsa.PrivateKey
+	schema       string
+	sessionttl   time.Duration
+	cleanupint   time.Duration
+	cleanuplimit int
+	userhook     func(context.Context, schema.IdentityInsert, schema.UserMeta) (schema.UserMeta, error)
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -82,6 +84,22 @@ func WithSessionTTL(ttl time.Duration) Opt {
 			return fmt.Errorf("session TTL must be positive")
 		}
 		o.sessionttl = ttl
+		return nil
+	}
+}
+
+// WithCleanup sets how often Manager.Run prunes stale sessions and the
+// maximum number of stale sessions deleted in a single cleanup pass.
+func WithCleanup(interval time.Duration, limit int) Opt {
+	return func(o *opt) error {
+		if interval <= 0 {
+			return fmt.Errorf("cleanup interval must be positive")
+		}
+		if limit <= 0 {
+			return fmt.Errorf("cleanup limit must be positive")
+		}
+		o.cleanupint = interval
+		o.cleanuplimit = limit
 		return nil
 	}
 }

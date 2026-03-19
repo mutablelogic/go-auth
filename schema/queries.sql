@@ -199,6 +199,24 @@ SET revoked_at = NOW()
 WHERE id = @id
 RETURNING id, "user", expires_at, created_at, revoked_at;
 
+-- session.cleanup
+WITH candidates AS (
+  SELECT session.id
+  FROM ${"schema"}.session AS session
+  WHERE session.revoked_at IS NOT NULL
+     OR session.expires_at < NOW()
+  ORDER BY session.created_at ASC, session.id ASC
+  LIMIT @cleanup_limit
+), deleted AS (
+  DELETE FROM ${"schema"}.session AS session
+  USING candidates
+  WHERE session.id = candidates.id
+  RETURNING session.id, session."user", session.expires_at, session.created_at, session.revoked_at
+)
+SELECT id, "user", expires_at, created_at, revoked_at
+FROM deleted
+ORDER BY created_at ASC, id ASC;
+
 -- session.delete
 DELETE FROM ${"schema"}.session
 WHERE id = @id

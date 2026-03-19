@@ -38,6 +38,17 @@ func Test_opt_001(t *testing.T) {
 		assert.EqualError(WithSessionTTL(0)(options), "session TTL must be positive")
 	})
 
+	t.Run("WithCleanup", func(t *testing.T) {
+		assert := assert.New(t)
+
+		options := new(opt)
+		assert.NoError(WithCleanup(time.Minute, 25)(options))
+		assert.Equal(time.Minute, options.cleanupint)
+		assert.Equal(25, options.cleanuplimit)
+		assert.EqualError(WithCleanup(0, 25)(options), "cleanup interval must be positive")
+		assert.EqualError(WithCleanup(time.Minute, 0)(options), "cleanup limit must be positive")
+	})
+
 	t.Run("WithPrivateKey", func(t *testing.T) {
 		assert := assert.New(t)
 		require := require.New(t)
