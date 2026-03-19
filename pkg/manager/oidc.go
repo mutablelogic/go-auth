@@ -12,6 +12,7 @@ import (
 )
 
 const authPath = "/auth/login"
+const userInfoPath = "/auth/userinfo"
 const refreshPath = "/auth/refresh"
 const revokePath = "/auth/revoke"
 
@@ -77,7 +78,7 @@ func issuerFromRequest(r *http.Request) string {
 		scheme = forwarded
 	}
 	path := r.URL.Path
-	for _, suffix := range []string{"/" + oidc.ConfigPath, "/" + oidc.JWKSPath, authPath, refreshPath, revokePath} {
+	for _, suffix := range []string{"/" + oidc.ConfigPath, "/" + oidc.JWKSPath, authPath, userInfoPath, refreshPath, revokePath} {
 		path = strings.TrimSuffix(path, suffix)
 	}
 	return scheme + "://" + r.Host + path

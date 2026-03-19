@@ -23,12 +23,20 @@ type RefreshRequest struct {
 	Token string `json:"token"`
 }
 
-// TokenResponse is returned by the auth exchange endpoint after a provider
-// token has been validated and mapped to a local user and session.
+// UserInfo is the client-facing authenticated identity view exposed by the
+// auth APIs.
+type UserInfo struct {
+	Sub    UserID   `json:"sub" format:"uuid" readonly:""`
+	Email  string   `json:"email,omitempty" readonly:""`
+	Name   string   `json:"name,omitempty" readonly:""`
+	Groups []string `json:"groups,omitempty" readonly:""`
+	Scopes []string `json:"scopes,omitempty" readonly:""`
+}
+
+// TokenResponse is returned by token-issuing auth endpoints.
 type TokenResponse struct {
-	Token   string  `json:"token" readonly:""`
-	User    User    `json:"user" readonly:""`
-	Session Session `json:"session" readonly:""`
+	Token    string    `json:"token" readonly:""`
+	UserInfo *UserInfo `json:"userinfo,omitempty" readonly:""`
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -53,5 +61,18 @@ func (req *TokenRequest) Validate(ctx context.Context) (map[string]any, error) {
 		return authoidc.VerifyToken(ctx, req.Token)
 	default:
 		return nil, auth.ErrInvalidProvider.Withf("unsupported provider %q", req.Provider)
+	}
+}
+
+func NewUserInfo(user *User) *UserInfo {
+	if user == nil {
+		return nil
+	}
+	return &UserInfo{
+		Sub:    user.ID,
+		Email:  user.Email,
+		Name:   user.Name,
+		Groups: user.Groups,
+		Scopes: user.Scopes,
 	}
 }

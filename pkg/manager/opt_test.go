@@ -1,11 +1,13 @@
 package manager
 
 import (
+	"context"
 	"testing"
 	"time"
 
 	// Packages
 	authcrypto "github.com/djthorpe/go-auth/pkg/crypto"
+	schema "github.com/djthorpe/go-auth/schema"
 	assert "github.com/stretchr/testify/assert"
 	require "github.com/stretchr/testify/require"
 )
@@ -55,6 +57,18 @@ func Test_opt_001(t *testing.T) {
 		assert.NoError(WithSchema("custom_auth")(options))
 		assert.Equal("custom_auth", options.schema)
 		assert.EqualError(WithSchema("")(options), "schema name cannot be empty")
+	})
+
+	t.Run("WithUserHook", func(t *testing.T) {
+		assert := assert.New(t)
+
+		options := new(opt)
+		hook := func(ctx context.Context, identity schema.IdentityInsert, meta schema.UserMeta) (schema.UserMeta, error) {
+			return meta, nil
+		}
+		assert.NoError(WithUserHook(hook)(options))
+		assert.NotNil(options.userhook)
+		assert.EqualError(WithUserHook(nil)(options), "user hook is required")
 	})
 
 	t.Run("ApplyStopsOnError", func(t *testing.T) {

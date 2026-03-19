@@ -46,7 +46,7 @@ func Test_httphandler_001(t *testing.T) {
 
 		err := RegisterHandlers(mgr, router)
 		require.NoError(err)
-		require.Len(router.routes, 7)
+		require.Len(router.routes, 8)
 
 		paths := make([]string, 0, len(router.routes))
 		for _, route := range router.routes {
@@ -59,6 +59,7 @@ func Test_httphandler_001(t *testing.T) {
 		assert.Contains(paths, "user")
 		assert.Contains(paths, "user/{user}")
 		assert.Contains(paths, "/auth/login")
+		assert.Contains(paths, "/auth/userinfo")
 		assert.Contains(paths, "/auth/refresh")
 		assert.Contains(paths, "/auth/revoke")
 		assert.Contains(paths, ".well-known/openid-configuration")

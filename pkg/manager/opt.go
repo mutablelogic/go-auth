@@ -1,9 +1,13 @@
 package manager
 
 import (
+	"context"
 	"crypto/rsa"
 	"fmt"
 	"time"
+
+	// Packages
+	schema "github.com/djthorpe/go-auth/schema"
 )
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -17,6 +21,7 @@ type opt struct {
 	privateKey *rsa.PrivateKey
 	schema     string
 	sessionttl time.Duration
+	userhook   func(context.Context, schema.IdentityInsert, schema.UserMeta) (schema.UserMeta, error)
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -77,6 +82,18 @@ func WithSessionTTL(ttl time.Duration) Opt {
 			return fmt.Errorf("session TTL must be positive")
 		}
 		o.sessionttl = ttl
+		return nil
+	}
+}
+
+// WithUserHook sets a callback which can modify or reject a newly created
+// user's metadata before it is inserted on first login.
+func WithUserHook(fn func(context.Context, schema.IdentityInsert, schema.UserMeta) (schema.UserMeta, error)) Opt {
+	return func(o *opt) error {
+		if fn == nil {
+			return fmt.Errorf("user hook is required")
+		}
+		o.userhook = fn
 		return nil
 	}
 }

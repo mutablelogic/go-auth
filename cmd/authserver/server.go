@@ -3,17 +3,21 @@
 package main
 
 import (
+	"context"
 	"crypto/rsa"
 	"fmt"
+	"net"
 	"strings"
 
 	// Packages
 	authcrypto "github.com/djthorpe/go-auth/pkg/crypto"
 	httphandler "github.com/djthorpe/go-auth/pkg/httphandler"
 	manager "github.com/djthorpe/go-auth/pkg/manager"
+	"github.com/djthorpe/go-auth/schema"
 	server "github.com/mutablelogic/go-server"
 	cmd "github.com/mutablelogic/go-server/pkg/cmd"
 	httprouter "github.com/mutablelogic/go-server/pkg/httprouter"
+	"github.com/mutablelogic/go-server/pkg/types"
 )
 
 type ServerCommands struct {
@@ -74,9 +78,30 @@ func (server *RunServer) WithManager(ctx server.Cmd, fn func(*manager.Manager, s
 			return fmt.Errorf("parse private key: %w", err)
 		}
 	}
-	// Create an auth manager
-	issuer := server.issuer(ctx)
-	manager, err := manager.New(ctx.Context(), conn, manager.WithPrivateKey(key), manager.WithIssuer(issuer))
+
+	// Auth manager options
+	opts := []manager.Opt{
+		manager.WithPrivateKey(key),
+	}
+	if issuer := server.issuer(ctx); issuer != "" {
+		opts = append(opts, manager.WithIssuer(issuer))
+	}
+
+	// Add a hook for when a new user is created, to set the default metadata
+	opts = append(opts, manager.WithUserHook(func(_ context.Context, identity schema.IdentityInsert, meta schema.UserMeta) (schema.UserMeta, error) {
+		ctx.Logger().Info("Creating new user", "identity", identity, "meta", meta)
+
+		// Set status to active
+		if meta.Status == nil {
+			meta.Status = types.Ptr(schema.UserStatusActive)
+		}
+
+		// Return the modified metadata, or an error to reject the user creation
+		return meta, nil
+	}))
+
+	// Create the manager and run the server
+	manager, err := manager.New(ctx.Context(), conn, opts...)
 	if err != nil {
 		return err
 	}
@@ -91,8 +116,30 @@ func (server *RunServer) issuer(ctx server.Cmd) string {
 	if server.TLS.CertFile != "" && server.TLS.KeyFile != "" {
 		scheme = "https"
 	}
+	prefix := strings.TrimRight(ctx.GetString("http.prefix"), "/")
 	if origin := strings.TrimSpace(ctx.GetString("http.origin")); origin != "" && origin != "*" {
-		return strings.TrimRight(origin, "/") + strings.TrimRight(ctx.GetString("http.prefix"), "/")
+		return strings.TrimRight(origin, "/") + prefix
 	}
-	return scheme + "://" + strings.TrimSpace(ctx.GetString("http.addr")) + strings.TrimRight(ctx.GetString("http.prefix"), "/")
+	if hostport := publicHostPort(strings.TrimSpace(ctx.GetString("http.addr"))); hostport != "" {
+		return scheme + "://" + hostport + prefix
+	}
+	return ""
+}
+
+func publicHostPort(addr string) string {
+	if addr == "" {
+		return ""
+	}
+	if strings.HasPrefix(addr, ":") {
+		return "localhost" + addr
+	}
+	host, port, err := net.SplitHostPort(addr)
+	if err == nil {
+		switch host {
+		case "", "0.0.0.0", "::":
+			host = "localhost"
+		}
+		return net.JoinHostPort(host, port)
+	}
+	return addr
 }

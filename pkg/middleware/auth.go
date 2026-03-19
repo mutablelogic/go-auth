@@ -28,7 +28,7 @@ func NewMiddleware(mgr *manager.Manager) func(http.HandlerFunc) http.HandlerFunc
 				return
 			}
 
-			issuer, err := mgr.OIDCIssuer(nil)
+			issuer, err := mgr.OIDCIssuer(r)
 			if err != nil {
 				_ = httpresponse.Error(w, httpresponse.ErrInternalError.With(err))
 				return

@@ -22,6 +22,12 @@ func userSchema() *jsonschema.Schema {
 	return s
 }
 
+func userInfoSchema() *jsonschema.Schema {
+	s := jsonschema.MustFor[schema.UserInfo]()
+	setSchemaProperty(s, "sub", uuidSchema())
+	return s
+}
+
 func userListSchema() *jsonschema.Schema {
 	s := jsonschema.MustFor[schema.UserList]()
 	if body := schemaProperty(s, "body"); body != nil {
@@ -39,8 +45,7 @@ func sessionSchema() *jsonschema.Schema {
 
 func tokenResponseSchema() *jsonschema.Schema {
 	s := jsonschema.MustFor[schema.TokenResponse]()
-	setSchemaProperty(s, "user", userSchema())
-	setSchemaProperty(s, "session", sessionSchema())
+	setSchemaProperty(s, "userinfo", userInfoSchema())
 	return s
 }
 

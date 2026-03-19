@@ -63,6 +63,9 @@ func Test_oidc_internal_001(t *testing.T) {
 		req = httptestRequest("http", "example.test", "/api/auth/revoke")
 		assert.Equal("http://example.test/api", issuerFromRequest(req))
 
+		req = httptestRequest("http", "example.test", "/api/auth/userinfo")
+		assert.Equal("http://example.test/api", issuerFromRequest(req))
+
 		req = httptestRequest("https", "example.test", "/api/user")
 		req.TLS = &tls.ConnectionState{}
 		assert.Equal("https://example.test/api/user", issuerFromRequest(req))

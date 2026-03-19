@@ -29,6 +29,19 @@ func TestMain(m *testing.M) {
 }
 
 func Test_http_001(t *testing.T) {
+	t.Run("AuthHandlerMethodNotAllowed", func(t *testing.T) {
+		require := require.New(t)
+
+		mgr, _ := newHTTPTestManager(t)
+		_, handler, _ := AuthHandler(mgr)
+		res := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "/auth/login", nil)
+
+		handler(res, req)
+
+		require.Equal(http.StatusMethodNotAllowed, res.Code)
+	})
+
 	t.Run("AuthHandlerSuccess", func(t *testing.T) {
 		assert := assert.New(t)
 		require := require.New(t)
@@ -64,8 +77,45 @@ func Test_http_001(t *testing.T) {
 		var response schema.TokenResponse
 		require.NoError(json.Unmarshal(res.Body.Bytes(), &response))
 		assert.NotEmpty(response.Token)
-		assert.Equal("auth.handler.success@example.com", response.User.Email)
+		require.NotNil(response.UserInfo)
+		assert.Equal("auth.handler.success@example.com", response.UserInfo.Email)
 		assert.Equal(issuer, mustExtractIssuer(t, response.Token))
+	})
+
+	t.Run("UserInfoHandlerReturnsAuthenticatedUser", func(t *testing.T) {
+		assert := assert.New(t)
+		require := require.New(t)
+
+		mgr, issuer := newHTTPTestManager(t)
+		user, _, token := mustLoginToken(t, mgr, issuer)
+
+		_, handler, _ := UserInfoHandler(mgr)
+		protected := middleware.NewMiddleware(mgr)(handler)
+
+		req := httptest.NewRequest(http.MethodGet, "/auth/userinfo", nil)
+		req.Header.Set("Authorization", "Bearer "+token)
+		res := httptest.NewRecorder()
+
+		protected(res, req)
+
+		require.Equal(http.StatusOK, res.Code)
+		var response schema.UserInfo
+		require.NoError(json.Unmarshal(res.Body.Bytes(), &response))
+		assert.Equal(user.ID, response.Sub)
+		assert.Equal(user.Email, response.Email)
+	})
+
+	t.Run("UserInfoHandlerMethodNotAllowed", func(t *testing.T) {
+		require := require.New(t)
+
+		mgr, _ := newHTTPTestManager(t)
+		_, handler, _ := UserInfoHandler(mgr)
+		res := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, "/auth/userinfo", nil)
+
+		handler(res, req)
+
+		require.Equal(http.StatusMethodNotAllowed, res.Code)
 	})
 
 	t.Run("AuthHandlerValidateFailure", func(t *testing.T) {
@@ -108,6 +158,34 @@ func Test_http_001(t *testing.T) {
 		assert.Contains(res.Body.String(), "unsupported provider")
 	})
 
+	t.Run("AuthHandlerIdentityFailure", func(t *testing.T) {
+		assert := assert.New(t)
+		require := require.New(t)
+
+		mgr, _ := newHTTPTestManager(t)
+		prevValidate := validateTokenRequest
+		prevIdentity := newIdentityFromClaims
+		defer func() {
+			validateTokenRequest = prevValidate
+			newIdentityFromClaims = prevIdentity
+		}()
+
+		validateTokenRequest = func(ctx context.Context, req *schema.TokenRequest) (map[string]any, error) {
+			return map[string]any{"iss": "https://accounts.google.com"}, nil
+		}
+		newIdentityFromClaims = schema.NewIdentityFromClaims
+
+		_, handler, _ := AuthHandler(mgr)
+		res := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, "/auth/login", mustJSONBody(t, schema.TokenRequest{Provider: schema.ProviderOAuth, Token: "upstream-token"}))
+		req.Header.Set("Content-Type", "application/json")
+
+		handler(res, req)
+
+		require.Equal(http.StatusBadRequest, res.Code)
+		assert.Contains(res.Body.String(), "claims missing sub")
+	})
+
 	t.Run("ConfigHandlerReturnsIssuer", func(t *testing.T) {
 		assert := assert.New(t)
 		require := require.New(t)
@@ -124,6 +202,19 @@ func Test_http_001(t *testing.T) {
 		var response map[string]any
 		require.NoError(json.Unmarshal(res.Body.Bytes(), &response))
 		assert.Equal(issuer, response["issuer"])
+	})
+
+	t.Run("ConfigHandlerMethodNotAllowed", func(t *testing.T) {
+		require := require.New(t)
+
+		mgr, _ := newHTTPTestManager(t)
+		_, handler, _ := ConfigHandler(mgr)
+		res := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, "/.well-known/openid-configuration", nil)
+
+		handler(res, req)
+
+		require.Equal(http.StatusMethodNotAllowed, res.Code)
 	})
 
 	t.Run("JWKSHandlerReturnsKeys", func(t *testing.T) {
@@ -143,6 +234,31 @@ func Test_http_001(t *testing.T) {
 		keys, ok := response["keys"].([]any)
 		require.True(ok)
 		assert.NotEmpty(keys)
+	})
+
+	t.Run("JWKSHandlerInternalError", func(t *testing.T) {
+		require := require.New(t)
+
+		_, handler, _ := JWKSHandler(&manager.Manager{})
+		res := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "/.well-known/jwks.json", nil)
+
+		handler(res, req)
+
+		require.Equal(http.StatusInternalServerError, res.Code)
+	})
+
+	t.Run("JWKSHandlerMethodNotAllowed", func(t *testing.T) {
+		require := require.New(t)
+
+		mgr, _ := newHTTPTestManager(t)
+		_, handler, _ := JWKSHandler(mgr)
+		res := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, "/.well-known/jwks.json", nil)
+
+		handler(res, req)
+
+		require.Equal(http.StatusMethodNotAllowed, res.Code)
 	})
 
 	t.Run("ProtectedUserRejectsMissingBearer", func(t *testing.T) {
@@ -322,12 +438,46 @@ func Test_http_001(t *testing.T) {
 		var response schema.TokenResponse
 		require.NoError(json.Unmarshal(res.Body.Bytes(), &response))
 		assert.NotEmpty(response.Token)
-		assert.Equal(user.ID, response.User.ID)
-		assert.Equal(session.ID, response.Session.ID)
-		assert.True(response.Session.ExpiresAt.After(session.ExpiresAt))
+		assert.Nil(response.UserInfo)
+		claims, err := newHTTPTestManagerForToken(t, response.Token)
+		require.NoError(err)
+		assert.Equal(issuer, claims["iss"])
+		assert.Equal(uuid.UUID(user.ID).String(), claims["sub"])
+		assert.Equal(uuid.UUID(session.ID).String(), claims["sid"])
+		assert.Contains(claims, "user")
+		assert.Contains(claims, "session")
 	})
 
-	t.Run("RevokeHandlerReturnsRevokedSession", func(t *testing.T) {
+	t.Run("RefreshHandlerMissingToken", func(t *testing.T) {
+		assert := assert.New(t)
+		require := require.New(t)
+
+		mgr, _ := newHTTPTestManager(t)
+		_, handler, _ := RefreshHandler(mgr)
+		res := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, "/auth/refresh", mustJSONBody(t, schema.RefreshRequest{}))
+		req.Header.Set("Content-Type", "application/json")
+
+		handler(res, req)
+
+		require.Equal(http.StatusBadRequest, res.Code)
+		assert.Contains(res.Body.String(), "token is required")
+	})
+
+	t.Run("RefreshHandlerMethodNotAllowed", func(t *testing.T) {
+		require := require.New(t)
+
+		mgr, _ := newHTTPTestManager(t)
+		_, handler, _ := RefreshHandler(mgr)
+		res := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "/auth/refresh", nil)
+
+		handler(res, req)
+
+		require.Equal(http.StatusMethodNotAllowed, res.Code)
+	})
+
+	t.Run("RevokeHandlerReturnsNoContent", func(t *testing.T) {
 		assert := assert.New(t)
 		require := require.New(t)
 
@@ -343,12 +493,66 @@ func Test_http_001(t *testing.T) {
 
 		handler(res, req)
 
-		require.Equal(http.StatusOK, res.Code)
-		var response schema.Session
-		require.NoError(json.Unmarshal(res.Body.Bytes(), &response))
-		assert.Equal(session.ID, response.ID)
-		require.NotNil(response.RevokedAt)
-		assert.False(response.RevokedAt.IsZero())
+		require.Equal(http.StatusNoContent, res.Code)
+		assert.Empty(res.Body.String())
+		revoked, err := mgr.GetSession(context.Background(), session.ID)
+		require.NoError(err)
+		require.NotNil(revoked.RevokedAt)
+		assert.False(revoked.RevokedAt.IsZero())
+	})
+
+	t.Run("RevokeHandlerMissingToken", func(t *testing.T) {
+		assert := assert.New(t)
+		require := require.New(t)
+
+		mgr, _ := newHTTPTestManager(t)
+		_, handler, _ := RevokeHandler(mgr)
+		res := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, "/auth/revoke", mustJSONBody(t, schema.RefreshRequest{}))
+		req.Header.Set("Content-Type", "application/json")
+
+		handler(res, req)
+
+		require.Equal(http.StatusBadRequest, res.Code)
+		assert.Contains(res.Body.String(), "token is required")
+	})
+
+	t.Run("RevokeHandlerMethodNotAllowed", func(t *testing.T) {
+		require := require.New(t)
+
+		mgr, _ := newHTTPTestManager(t)
+		_, handler, _ := RevokeHandler(mgr)
+		res := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "/auth/revoke", nil)
+
+		handler(res, req)
+
+		require.Equal(http.StatusMethodNotAllowed, res.Code)
+	})
+
+	t.Run("SessionIDFromClaimsValidation", func(t *testing.T) {
+		assert := assert.New(t)
+
+		_, err := sessionIDFromClaims(map[string]any{})
+		assert.Error(err)
+		assert.Contains(err.Error(), "missing sid claim")
+
+		_, err = sessionIDFromClaims(map[string]any{"sid": "not-a-uuid"})
+		assert.Error(err)
+	})
+
+	t.Run("OpenAPIHelpers", func(t *testing.T) {
+		assert := assert.New(t)
+
+		assert.Equal("uuid", uuidSchema().Format)
+		assert.NotNil(userSchema())
+		assert.NotNil(userListSchema())
+		assert.NotNil(userInfoSchema())
+		assert.NotNil(sessionSchema())
+		assert.NotNil(tokenResponseSchema())
+		assert.Nil(schemaProperty(nil, "missing"))
+		setSchemaProperty(nil, "missing", nil)
+		assert.Nil(unwrapSchema(nil))
 	})
 }
 

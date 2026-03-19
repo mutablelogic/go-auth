@@ -8,6 +8,7 @@ import (
 
 	// Packages
 	manager "github.com/djthorpe/go-auth/pkg/manager"
+	middleware "github.com/djthorpe/go-auth/pkg/middleware"
 	oidc "github.com/djthorpe/go-auth/pkg/oidc"
 	schema "github.com/djthorpe/go-auth/schema"
 	jwt "github.com/golang-jwt/jwt/v5"
@@ -43,7 +44,7 @@ func AuthHandler(mgr *manager.Manager) (string, http.HandlerFunc, *openapi.PathI
 			Post: &openapi.Operation{
 				Tags:        []string{"Auth"},
 				Summary:     "Exchange identity token",
-				Description: "Validates the upstream identity token, resolves the matching identity, and returns the authenticated user.",
+				Description: "Validates the upstream identity token, resolves the matching identity, and returns a signed local token plus userinfo.",
 				RequestBody: &openapi.RequestBody{
 					Description: "Provider token and metadata used for authentication.",
 					Required:    true,
@@ -55,7 +56,7 @@ func AuthHandler(mgr *manager.Manager) (string, http.HandlerFunc, *openapi.PathI
 				},
 				Responses: map[string]openapi.Response{
 					"200": {
-						Description: "Signed local session token and authenticated user context.",
+						Description: "Signed local session token and userinfo.",
 						Content: map[string]openapi.MediaType{
 							"application/json": {
 								Schema: tokenResponseSchema(),
@@ -97,7 +98,7 @@ func RefreshHandler(mgr *manager.Manager) (string, http.HandlerFunc, *openapi.Pa
 				},
 				Responses: map[string]openapi.Response{
 					"200": {
-						Description: "Refreshed local session token and authenticated user context.",
+						Description: "Refreshed local session token.",
 						Content: map[string]openapi.MediaType{
 							"application/json": {
 								Schema: tokenResponseSchema(),
@@ -127,7 +128,7 @@ func RevokeHandler(mgr *manager.Manager) (string, http.HandlerFunc, *openapi.Pat
 			Post: &openapi.Operation{
 				Tags:        []string{"Auth"},
 				Summary:     "Revoke session token",
-				Description: "Verifies the supplied local session token, revokes the referenced session, and returns the revoked session record.",
+				Description: "Verifies the supplied local session token and revokes the referenced session.",
 				RequestBody: &openapi.RequestBody{
 					Description: "Previously issued local session token.",
 					Required:    true,
@@ -138,16 +139,44 @@ func RevokeHandler(mgr *manager.Manager) (string, http.HandlerFunc, *openapi.Pat
 					},
 				},
 				Responses: map[string]openapi.Response{
-					"200": {
-						Description: "Revoked session.",
-						Content: map[string]openapi.MediaType{
-							"application/json": {
-								Schema: sessionSchema(),
-							},
-						},
+					"204": {
+						Description: "Session revoked.",
 					},
 					"400": {
 						Description: "Invalid token, malformed request, or revocation failure.",
+					},
+				},
+			},
+		}
+}
+
+// Return an http.HandlerFunc for the auth userinfo endpoint
+func UserInfoHandler(mgr *manager.Manager) (string, http.HandlerFunc, *openapi.PathItem) {
+	return "/auth/userinfo", func(w http.ResponseWriter, r *http.Request) {
+			switch r.Method {
+			case http.MethodGet:
+				_ = getUserInfo(r.Context(), mgr, w, r)
+			default:
+				_ = httpresponse.Error(w, httpresponse.Err(http.StatusMethodNotAllowed), r.Method)
+			}
+		}, &openapi.PathItem{
+			Summary:     "Authenticated user info",
+			Description: "Returns the client-facing identity claims for the authenticated local token.",
+			Get: &openapi.Operation{
+				Tags:        []string{"Auth"},
+				Summary:     "Get userinfo",
+				Description: "Returns the authenticated userinfo derived from the current local bearer token.",
+				Responses: map[string]openapi.Response{
+					"200": {
+						Description: "Authenticated userinfo.",
+						Content: map[string]openapi.MediaType{
+							"application/json": {
+								Schema: userInfoSchema(),
+							},
+						},
+					},
+					"401": {
+						Description: "Missing or invalid bearer token.",
 					},
 				},
 			},
@@ -195,7 +224,7 @@ func exchangeToken(ctx context.Context, mgr *manager.Manager, w http.ResponseWri
 		return httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest).With(err))
 	} else if identity, err := newIdentityFromClaims(claims); err != nil {
 		return httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest).With(err))
-	} else if user, session, err := mgr.LoginWithIdentity(ctx, identity); err != nil {
+	} else if user, session, err := mgr.LoginWithIdentity(ctx, identity, req.Meta); err != nil {
 		return httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest).With(err))
 	} else if config, err := mgr.OIDCConfig(r); err != nil {
 		return httpresponse.Error(w, httpresponse.Err(http.StatusInternalServerError).With(err))
@@ -203,9 +232,8 @@ func exchangeToken(ctx context.Context, mgr *manager.Manager, w http.ResponseWri
 		return httpresponse.Error(w, httpresponse.Err(http.StatusInternalServerError).With(err))
 	} else {
 		return httpresponse.JSON(w, http.StatusOK, httprequest.Indent(r), schema.TokenResponse{
-			Token:   token,
-			User:    *user,
-			Session: *session,
+			Token:    token,
+			UserInfo: schema.NewUserInfo(user),
 		})
 	}
 }
@@ -228,9 +256,7 @@ func refreshToken(ctx context.Context, mgr *manager.Manager, w http.ResponseWrit
 		return httpresponse.Error(w, httpresponse.Err(http.StatusInternalServerError).With(err))
 	} else {
 		return httpresponse.JSON(w, http.StatusOK, httprequest.Indent(r), schema.TokenResponse{
-			Token:   token,
-			User:    *user,
-			Session: *refreshed,
+			Token: token,
 		})
 	}
 }
@@ -247,10 +273,11 @@ func revokeToken(ctx context.Context, mgr *manager.Manager, w http.ResponseWrite
 		return httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest).With(err))
 	} else if session, err := sessionIDFromClaims(claims); err != nil {
 		return httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest).With(err))
-	} else if revoked, err := mgr.RevokeSession(ctx, session); err != nil {
+	} else if _, err := mgr.RevokeSession(ctx, session); err != nil {
 		return httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest).With(err))
 	} else {
-		return httpresponse.JSON(w, http.StatusOK, httprequest.Indent(r), revoked)
+		w.WriteHeader(http.StatusNoContent)
+		return nil
 	}
 }
 
@@ -303,4 +330,12 @@ func getJWKS(_ context.Context, mgr *manager.Manager, w http.ResponseWriter, r *
 		return httpresponse.Error(w, httpresponse.Err(http.StatusInternalServerError).With(err))
 	}
 	return httpresponse.JSON(w, http.StatusOK, httprequest.Indent(r), jwks)
+}
+
+func getUserInfo(ctx context.Context, _ *manager.Manager, w http.ResponseWriter, r *http.Request) error {
+	user, ok := middleware.UserFromContext(ctx)
+	if !ok || user == nil {
+		return httpresponse.Error(w, httpresponse.Err(http.StatusInternalServerError).With("authenticated user missing from context"))
+	}
+	return httpresponse.JSON(w, http.StatusOK, httprequest.Indent(r), schema.NewUserInfo(user))
 }

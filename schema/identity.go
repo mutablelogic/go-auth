@@ -9,6 +9,7 @@ import (
 	auth "github.com/djthorpe/go-auth"
 	uuid "github.com/google/uuid"
 	pg "github.com/mutablelogic/go-pg"
+	types "github.com/mutablelogic/go-server/pkg/types"
 )
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -66,7 +67,14 @@ func NewIdentityFromClaims(claims map[string]any) (IdentityInsert, error) {
 	if !ok || strings.TrimSpace(subject) == "" {
 		return IdentityInsert{}, auth.ErrBadParameter.With("claims missing sub")
 	}
-	email, _ := claims["email"].(string)
+	rawEmail, _ := claims["email"].(string)
+	email := canonicalizeEmail(rawEmail)
+	if rawEmail = strings.TrimSpace(rawEmail); rawEmail != "" {
+		var normalized string
+		if types.IsEmail(rawEmail, nil, &normalized) {
+			email = canonicalizeEmail(normalized)
+		}
+	}
 
 	return IdentityInsert{
 		IdentityKey: IdentityKey{
@@ -91,7 +99,11 @@ func (i IdentityInsert) Name() string {
 			}
 		}
 	}
-	return strings.TrimSpace(i.Email)
+	var name, email string
+	if types.IsEmail(strings.TrimSpace(i.Email), &name, &email) && strings.TrimSpace(name) != "" {
+		return name
+	}
+	return strings.TrimSpace(email)
 }
 
 ///////////////////////////////////////////////////////////////////////////////

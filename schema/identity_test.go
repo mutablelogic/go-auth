@@ -32,6 +32,14 @@ func Test_identity_schema_001(t *testing.T) {
 		assert.Equal("alice@example.com", identity.Email)
 		assert.Equal(claims, identity.Claims)
 
+		identity, err = NewIdentityFromClaims(map[string]any{
+			"iss":   "https://issuer.example.com",
+			"sub":   "subject-2",
+			"email": "Alice Example <ALICE@example.com>",
+		})
+		require.NoError(err)
+		assert.Equal("alice@example.com", identity.Email)
+
 		_, err = NewIdentityFromClaims(map[string]any{"sub": "subject-1"})
 		assert.Error(err)
 		assert.ErrorIs(err, auth.ErrBadParameter)
@@ -47,6 +55,7 @@ func Test_identity_schema_001(t *testing.T) {
 		assert.Equal("Alice", IdentityInsert{IdentityMeta: IdentityMeta{Email: "alice@example.com", Claims: map[string]any{"name": " Alice "}}}.Name())
 		assert.Equal("alice-user", IdentityInsert{IdentityMeta: IdentityMeta{Email: "alice@example.com", Claims: map[string]any{"preferred_username": "alice-user"}}}.Name())
 		assert.Equal("alice@example.com", IdentityInsert{IdentityMeta: IdentityMeta{Email: " alice@example.com "}}.Name())
+		assert.Equal("Alice Example", IdentityInsert{IdentityMeta: IdentityMeta{Email: "Alice Example <alice@example.com>"}}.Name())
 	})
 
 	t.Run("IdentityKeySelect", func(t *testing.T) {

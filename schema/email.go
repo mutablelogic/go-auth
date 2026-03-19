@@ -1,7 +1,20 @@
 package schema
 
-import "strings"
+import (
+	"strings"
+
+	// Packages
+	types "github.com/mutablelogic/go-server/pkg/types"
+)
 
 func canonicalizeEmail(email string) string {
-	return strings.ToLower(strings.TrimSpace(email))
+	email = strings.TrimSpace(email)
+	if email == "" {
+		return ""
+	}
+	var normalized string
+	if types.IsEmail(email, nil, &normalized) {
+		return strings.ToLower(strings.TrimSpace(normalized))
+	}
+	return strings.ToLower(email)
 }

@@ -8,6 +8,7 @@ import (
 
 	// Packages
 	auth "github.com/djthorpe/go-auth"
+	manager "github.com/djthorpe/go-auth/pkg/manager"
 	schema "github.com/djthorpe/go-auth/schema"
 	uuid "github.com/google/uuid"
 	pg "github.com/mutablelogic/go-pg"
@@ -367,6 +368,110 @@ func Test_identity_001(t *testing.T) {
 		require.NotNil(identity)
 		assert.Equal(loggedIn.ID, identity.User)
 		assert.Equal("new.user@example.com", identity.Email)
+	})
+
+	t.Run("LoginWithIdentityCreatesUserWithHook", func(t *testing.T) {
+		assert := assert.New(t)
+		require := require.New(t)
+
+		m := newTestManagerWithOpts(t, manager.WithUserHook(func(ctx context.Context, identity schema.IdentityInsert, meta schema.UserMeta) (schema.UserMeta, error) {
+			status := schema.UserStatusNew
+			meta.Status = &status
+			meta.Meta = map[string]any{"source": identity.Provider}
+			return meta, nil
+		}))
+
+		loggedIn, session, err := m.LoginWithIdentity(context.Background(), schema.IdentityInsert{
+			IdentityKey: schema.IdentityKey{
+				Provider: "https://accounts.google.com",
+				Sub:      "hooked-subject",
+			},
+			IdentityMeta: schema.IdentityMeta{
+				Email: "hooked.user@example.com",
+				Claims: map[string]any{
+					"name": "Hooked User",
+				},
+			},
+		})
+		require.NoError(err)
+		require.NotNil(loggedIn)
+		require.NotNil(session)
+		require.NotNil(loggedIn.Status)
+		assert.Equal(schema.UserStatusNew, *loggedIn.Status)
+		assert.Equal("https://accounts.google.com", loggedIn.Meta["source"])
+		assert.Equal(loggedIn.ID, session.User)
+	})
+
+	t.Run("LoginWithIdentityUserHookRejectsNewUser", func(t *testing.T) {
+		assert := assert.New(t)
+		require := require.New(t)
+		expected := errors.New("signup blocked")
+
+		m := newTestManagerWithOpts(t, manager.WithUserHook(func(ctx context.Context, identity schema.IdentityInsert, meta schema.UserMeta) (schema.UserMeta, error) {
+			return schema.UserMeta{}, expected
+		}))
+
+		loggedIn, session, err := m.LoginWithIdentity(context.Background(), schema.IdentityInsert{
+			IdentityKey: schema.IdentityKey{
+				Provider: "https://accounts.google.com",
+				Sub:      "blocked-subject",
+			},
+			IdentityMeta: schema.IdentityMeta{
+				Email: "blocked.user@example.com",
+			},
+		})
+		require.Error(err)
+		assert.Nil(loggedIn)
+		assert.Nil(session)
+		assert.ErrorIs(err, expected)
+
+		identity, err := m.GetIdentity(context.Background(), "https://accounts.google.com", "blocked-subject")
+		require.Error(err)
+		assert.Nil(identity)
+		assert.True(errors.Is(err, auth.ErrNotFound))
+	})
+
+	t.Run("LoginWithIdentitySkipsUserHookForExistingIdentity", func(t *testing.T) {
+		assert := assert.New(t)
+		require := require.New(t)
+
+		called := false
+		m := newTestManagerWithOpts(t, manager.WithUserHook(func(ctx context.Context, identity schema.IdentityInsert, meta schema.UserMeta) (schema.UserMeta, error) {
+			called = true
+			return meta, nil
+		}))
+
+		user, err := m.CreateUser(context.Background(), schema.UserMeta{
+			Name:  "Existing Hook User",
+			Email: "existing.hook.user@example.com",
+		}, nil)
+		require.NoError(err)
+		require.NotNil(user)
+
+		_, err = m.CreateIdentity(context.Background(), uuid.UUID(user.ID), schema.IdentityInsert{
+			IdentityKey: schema.IdentityKey{
+				Provider: "https://accounts.google.com",
+				Sub:      "existing-hook-subject",
+			},
+			IdentityMeta: schema.IdentityMeta{
+				Email: "existing.identity@example.com",
+			},
+		})
+		require.NoError(err)
+
+		loggedIn, session, err := m.LoginWithIdentity(context.Background(), schema.IdentityInsert{
+			IdentityKey: schema.IdentityKey{
+				Provider: "https://accounts.google.com",
+				Sub:      "existing-hook-subject",
+			},
+			IdentityMeta: schema.IdentityMeta{
+				Email: "updated.identity@example.com",
+			},
+		})
+		require.NoError(err)
+		require.NotNil(loggedIn)
+		require.NotNil(session)
+		assert.False(called)
 	})
 
 	t.Run("LoginWithIdentityUsesPreferredUsername", func(t *testing.T) {

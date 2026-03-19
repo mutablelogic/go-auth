@@ -83,16 +83,10 @@ func TestClientAuthMethods(t *testing.T) {
 			w.Header().Set("Content-Type", "application/json")
 			require.NoError(json.NewEncoder(w).Encode(authschema.TokenResponse{
 				Token: "local-token",
-				User: authschema.User{
-					ID: authschema.UserID(uuid.New()),
-					UserMeta: authschema.UserMeta{
-						Name:  "Alice",
-						Email: "alice@example.com",
-					},
-				},
-				Session: authschema.Session{
-					ID:   authschema.SessionID(uuid.New()),
-					User: authschema.UserID(uuid.New()),
+				UserInfo: &authschema.UserInfo{
+					Sub:   authschema.UserID(uuid.New()),
+					Name:  "Alice",
+					Email: "alice@example.com",
 				},
 			}))
 		}))
@@ -107,7 +101,8 @@ func TestClientAuthMethods(t *testing.T) {
 		require.NoError(err)
 		require.NotNil(response)
 		assert.Equal("local-token", response.Token)
-		assert.Equal("alice@example.com", response.User.Email)
+		require.NotNil(response.UserInfo)
+		assert.Equal("alice@example.com", response.UserInfo.Email)
 	})
 
 	t.Run("LoginRejectsMissingIssuer", func(t *testing.T) {
@@ -135,21 +130,9 @@ func TestClientAuthMethods(t *testing.T) {
 			require.NoError(json.NewDecoder(r.Body).Decode(&request))
 			assert.Equal("refresh-token", request.Token)
 
-			userID := authschema.UserID(uuid.New())
-			now := time.Now().UTC()
 			w.Header().Set("Content-Type", "application/json")
 			require.NoError(json.NewEncoder(w).Encode(authschema.TokenResponse{
 				Token: "refreshed-token",
-				User: authschema.User{
-					ID:       userID,
-					UserMeta: authschema.UserMeta{Email: "refresh@example.com"},
-				},
-				Session: authschema.Session{
-					ID:        authschema.SessionID(uuid.New()),
-					User:      userID,
-					ExpiresAt: now.Add(time.Hour),
-					CreatedAt: now,
-				},
 			}))
 		}))
 		defer server.Close()
@@ -160,42 +143,53 @@ func TestClientAuthMethods(t *testing.T) {
 		require.NoError(err)
 		require.NotNil(response)
 		assert.Equal("refreshed-token", response.Token)
-		assert.Equal("refresh@example.com", response.User.Email)
+		assert.Nil(response.UserInfo)
 	})
 
-	t.Run("RevokePostsToken", func(t *testing.T) {
+	t.Run("UserInfoUsesBearerToken", func(t *testing.T) {
 		assert := assert.New(t)
 		require := require.New(t)
 
-		sessionID := authschema.SessionID(uuid.New())
-		var request authschema.RefreshRequest
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			require.Equal(http.MethodPost, r.Method)
-			require.Equal("/auth/revoke", r.URL.Path)
-			require.NoError(json.NewDecoder(r.Body).Decode(&request))
-			assert.Equal("revoke-token", request.Token)
+			require.Equal(http.MethodGet, r.Method)
+			require.Equal("/auth/userinfo", r.URL.Path)
+			assert.Equal("Bearer local-token", r.Header.Get("Authorization"))
 
-			revokedAt := time.Now().UTC()
 			w.Header().Set("Content-Type", "application/json")
-			require.NoError(json.NewEncoder(w).Encode(authschema.Session{
-				ID:        sessionID,
-				User:      authschema.UserID(uuid.New()),
-				ExpiresAt: revokedAt.Add(time.Hour),
-				CreatedAt: revokedAt.Add(-time.Hour),
-				SessionMeta: authschema.SessionMeta{
-					RevokedAt: &revokedAt,
-				},
+			require.NoError(json.NewEncoder(w).Encode(authschema.UserInfo{
+				Sub:   authschema.UserID(uuid.New()),
+				Name:  "Alice",
+				Email: "alice@example.com",
 			}))
 		}))
 		defer server.Close()
 
 		client, err := New(server.URL)
 		require.NoError(err)
-		response, err := client.Revoke(context.Background(), "revoke-token")
+		response, err := client.UserInfo(context.Background(), " local-token ")
 		require.NoError(err)
 		require.NotNil(response)
-		assert.Equal(sessionID, response.ID)
-		require.NotNil(response.RevokedAt)
+		assert.Equal("alice@example.com", response.Email)
+		assert.Equal("Alice", response.Name)
+	})
+
+	t.Run("RevokePostsToken", func(t *testing.T) {
+		assert := assert.New(t)
+		require := require.New(t)
+
+		var request authschema.RefreshRequest
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			require.Equal(http.MethodPost, r.Method)
+			require.Equal("/auth/revoke", r.URL.Path)
+			require.NoError(json.NewDecoder(r.Body).Decode(&request))
+			assert.Equal("revoke-token", request.Token)
+			w.WriteHeader(http.StatusNoContent)
+		}))
+		defer server.Close()
+
+		client, err := New(server.URL)
+		require.NoError(err)
+		require.NoError(client.Revoke(context.Background(), "revoke-token"))
 	})
 
 	t.Run("RefreshPropagatesServerError", func(t *testing.T) {

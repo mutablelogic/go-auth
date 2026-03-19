@@ -3,6 +3,7 @@ package httpclient
 import (
 	"context"
 	"crypto/rsa"
+	"strings"
 
 	// Packages
 	oidc "github.com/djthorpe/go-auth/pkg/oidc"
@@ -62,20 +63,31 @@ func (c *Client) Refresh(ctx context.Context, token string) (*authschema.TokenRe
 	return &response, nil
 }
 
-// Revoke posts a previously issued local token to /auth/revoke and returns the
-// revoked session record.
-func (c *Client) Revoke(ctx context.Context, token string) (*authschema.Session, error) {
+// UserInfo retrieves the authenticated userinfo for a previously issued local
+// bearer token.
+func (c *Client) UserInfo(ctx context.Context, token string) (*authschema.UserInfo, error) {
+	var response authschema.UserInfo
+	if err := c.DoWithContext(ctx, client.NewRequest(), &response,
+		client.OptAbsPath("auth", "userinfo"),
+		client.OptToken(client.Token{Scheme: client.Bearer, Value: strings.TrimSpace(token)}),
+	); err != nil {
+		return nil, err
+	}
+	return &response, nil
+}
+
+// Revoke posts a previously issued local token to /auth/revoke and expects a
+// successful revocation with no response body.
+func (c *Client) Revoke(ctx context.Context, token string) error {
 	payload, err := client.NewJSONRequest(authschema.RefreshRequest{
 		Token: token,
 	})
 	if err != nil {
-		return nil, err
+		return err
 	}
 
-	var response authschema.Session
-	if err := c.DoWithContext(ctx, payload, &response, client.OptAbsPath("auth", "revoke")); err != nil {
-		return nil, err
+	if err := c.DoWithContext(ctx, payload, nil, client.OptAbsPath("auth", "revoke")); err != nil {
+		return err
 	}
-
-	return &response, nil
+	return nil
 }

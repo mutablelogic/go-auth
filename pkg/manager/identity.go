@@ -63,12 +63,17 @@ func (m *Manager) ListIdentities(ctx context.Context, req schema.IdentityListReq
 	return types.Ptr(result), nil
 }
 
-func (m *Manager) LoginWithIdentity(ctx context.Context, meta schema.IdentityInsert) (*schema.User, *schema.Session, error) {
+func (m *Manager) LoginWithIdentity(ctx context.Context, meta schema.IdentityInsert, createMeta ...map[string]any) (*schema.User, *schema.Session, error) {
 	if meta.Provider == "" {
 		return nil, nil, auth.ErrBadParameter.With("issuer is required")
 	}
 	if meta.Sub == "" {
 		return nil, nil, auth.ErrBadParameter.With("sub is required")
+	}
+
+	var userCreateMeta map[string]any
+	if len(createMeta) > 0 {
+		userCreateMeta = createMeta[0]
 	}
 
 	var user schema.UserID
@@ -97,12 +102,21 @@ func (m *Manager) LoginWithIdentity(ctx context.Context, meta schema.IdentityIns
 				return auth.ErrConflict.Withf("user already exists for email %q", meta.Email)
 			}
 
-			// No matching user exists, so create a new local user and identity.
-			var created schema.User
-			if err := conn.Insert(ctx, &created, schema.UserMeta{
+			// No matching user exists, so create a new user and identity
+			usermeta := schema.UserMeta{
 				Name:  meta.Name(),
 				Email: meta.Email,
-			}); err != nil {
+				Meta:  userCreateMeta,
+			}
+			if m.userhook != nil {
+				var err error
+				if usermeta, err = m.userhook(ctx, meta, usermeta); err != nil {
+					return err
+				}
+			}
+
+			var created schema.User
+			if err := conn.Insert(ctx, &created, usermeta); err != nil {
 				return err
 			}
 			if err := conn.With("user", created.ID).Insert(ctx, nil, types.Value(&meta)); err != nil {

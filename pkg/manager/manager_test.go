@@ -29,11 +29,16 @@ func TestMain(m *testing.M) {
 
 func newTestManager(t *testing.T) *manager.Manager {
 	t.Helper()
+	return newTestManagerWithOpts(t)
+}
+
+func newTestManagerWithOpts(t *testing.T, opts ...manager.Opt) *manager.Manager {
+	t.Helper()
 	c := conn.Begin(t)
 	t.Cleanup(func() { c.Close() })
 
 	// Create a new Manager with the test connection and default schema.
-	m, err := manager.New(context.Background(), c)
+	m, err := manager.New(context.Background(), c, opts...)
 	if err != nil {
 		t.Fatal(err)
 	}
