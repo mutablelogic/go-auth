@@ -383,6 +383,13 @@ FROM ${"schema"}."group" AS group_row
 ${where}
 ${orderby}
 
+-- scope.list
+SELECT DISTINCT scope
+FROM ${"schema"}."group" AS group_row
+LEFT JOIN LATERAL unnest(group_row.scopes) AS scope ON true
+${where}
+${orderby}
+
 -- user_group.list
 SELECT "group"
 FROM ${"schema"}.user_group

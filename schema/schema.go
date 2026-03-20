@@ -22,5 +22,6 @@ const (
 const (
 	GroupListMax    = 100
 	IdentityListMax = 100
+	ScopeListMax    = 100
 	UserListMax     = 100
 )
