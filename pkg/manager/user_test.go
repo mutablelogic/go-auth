@@ -3,6 +3,7 @@ package manager_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -137,7 +138,9 @@ func Test_user_001(t *testing.T) {
 			Email:  "  Alice@Example.COM  ",
 			Status: types.Ptr(schema.UserStatusActive),
 			Meta: map[string]any{
-				"team": "auth",
+				"team":   "auth",
+				"region": "eu",
+				"tier":   "gold",
 			},
 		}, nil)
 		afterCreate := time.Now()
@@ -148,6 +151,8 @@ func Test_user_001(t *testing.T) {
 		assert.Equal("alice@example.com", created.Email)
 		assert.Equal(types.Ptr(schema.UserStatusActive), created.Status)
 		assert.Equal("auth", created.Meta["team"])
+		assert.Equal("eu", created.Meta["region"])
+		assert.Equal("gold", created.Meta["tier"])
 		assert.WithinDuration(afterCreate, created.CreatedAt, 2*time.Second)
 		assert.Nil(created.ModifiedAt)
 		assert.False(created.CreatedAt.Before(beforeCreate.Add(-2 * time.Second)))
@@ -171,8 +176,9 @@ func Test_user_001(t *testing.T) {
 			Name:  "Alice Updated",
 			Email: "  Alice.Updated@Example.COM  ",
 			Meta: map[string]any{
-				"team":  "platform",
-				"admin": true,
+				"team":   "platform",
+				"admin":  true,
+				"region": nil,
 			},
 		})
 		afterUpdate := time.Now()
@@ -183,6 +189,9 @@ func Test_user_001(t *testing.T) {
 		assert.Equal("alice.updated@example.com", updated.Email)
 		assert.Equal("platform", updated.Meta["team"])
 		assert.Equal(true, updated.Meta["admin"])
+		assert.Equal("gold", updated.Meta["tier"])
+		_, hasRegion := updated.Meta["region"]
+		assert.False(hasRegion)
 		assert.Equal(created.CreatedAt, updated.CreatedAt)
 		require.NotNil(updated.ModifiedAt)
 		assert.WithinDuration(afterUpdate, *updated.ModifiedAt, 2*time.Second)
@@ -199,6 +208,79 @@ func Test_user_001(t *testing.T) {
 		_, err = m.GetUser(context.Background(), created.ID)
 		require.Error(err)
 		assert.True(errors.Is(err, auth.ErrNotFound))
+	})
+
+	t.Run("UserGroupsAndScopes", func(t *testing.T) {
+		assert := assert.New(t)
+		require := require.New(t)
+
+		m := newTestManager(t)
+		created, err := m.CreateUser(context.Background(), schema.UserMeta{
+			Name:  "Grouped User",
+			Email: "grouped.user@example.com",
+		}, nil)
+		require.NoError(err)
+		require.NotNil(created)
+
+		enabled := true
+		disabled := false
+		_, err = m.CreateGroup(context.Background(), schema.GroupInsert{
+			ID: "admins",
+			GroupMeta: schema.GroupMeta{
+				Enabled: &enabled,
+				Scopes:  []string{"user.read", "user.write"},
+			},
+		})
+		require.NoError(err)
+		_, err = m.CreateGroup(context.Background(), schema.GroupInsert{
+			ID: "staff",
+			GroupMeta: schema.GroupMeta{
+				Enabled: &enabled,
+				Scopes:  []string{"profile.read", "user.read"},
+			},
+		})
+		require.NoError(err)
+		_, err = m.CreateGroup(context.Background(), schema.GroupInsert{
+			ID: "disabled_group",
+			GroupMeta: schema.GroupMeta{
+				Enabled: &disabled,
+				Scopes:  []string{"admin.all"},
+			},
+		})
+		require.NoError(err)
+
+		err = m.Exec(context.Background(), fmt.Sprintf(
+			`INSERT INTO auth.user_group ("user", "group") VALUES ('%s', 'admins'), ('%s', 'staff'), ('%s', 'disabled_group')`,
+			created.ID,
+			created.ID,
+			created.ID,
+		))
+		require.NoError(err)
+
+		fetched, err := m.GetUser(context.Background(), created.ID)
+		require.NoError(err)
+		require.NotNil(fetched)
+		assert.Equal([]string{"admins", "staff"}, fetched.Groups)
+		assert.Equal([]string{"profile.read", "user.read", "user.write"}, fetched.Scopes)
+
+		updated, err := m.UpdateUser(context.Background(), created.ID, schema.UserMeta{Name: "Grouped User Updated"})
+		require.NoError(err)
+		require.NotNil(updated)
+		assert.Equal([]string{"admins", "staff"}, updated.Groups)
+		assert.Equal([]string{"profile.read", "user.read", "user.write"}, updated.Scopes)
+
+		listed, err := m.ListUsers(context.Background(), schema.UserListRequest{Email: created.Email})
+		require.NoError(err)
+		require.NotNil(listed)
+		require.Len(listed.Body, 1)
+		assert.Equal([]string{"admins", "staff"}, listed.Body[0].Groups)
+		assert.Equal([]string{"profile.read", "user.read", "user.write"}, listed.Body[0].Scopes)
+
+		deleted, err := m.DeleteUser(context.Background(), created.ID)
+		require.NoError(err)
+		require.NotNil(deleted)
+		assert.Equal([]string{"admins", "staff"}, deleted.Groups)
+		assert.Equal([]string{"profile.read", "user.read", "user.write"}, deleted.Scopes)
 	})
 
 	t.Run("GetMissingUser", func(t *testing.T) {

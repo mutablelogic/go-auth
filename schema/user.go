@@ -27,8 +27,8 @@ type UserID uuid.UUID
 // UserMeta contains the mutable profile fields of a user.
 // Email is the canonical address used to merge logins across providers.
 type UserMeta struct {
-	Name      string         `json:"name"`
-	Email     string         `json:"email"`
+	Name      string         `json:"name,omitempty"`
+	Email     string         `json:"email,omitempty"`
 	Status    *UserStatus    `json:"status,omitempty" enum:"new,active,inactive,suspended,deleted"`
 	Meta      map[string]any `json:"meta,omitempty"`
 	ExpiresAt *time.Time     `json:"expires_at,omitzero" format:"date-time"`
@@ -104,6 +104,10 @@ func (id UserID) String() string {
 	return uuid.UUID(id).String()
 }
 
+func (id UserID) MarshalText() ([]byte, error) {
+	return []byte(id.String()), nil
+}
+
 func (u UserList) String() string {
 	return types.Stringify(u)
 }
@@ -117,6 +121,15 @@ func (u User) String() string {
 
 func (id UserID) MarshalJSON() ([]byte, error) {
 	return json.Marshal(uuid.UUID(id))
+}
+
+func (id *UserID) UnmarshalText(text []byte) error {
+	uid, err := UserIDFromString(string(text))
+	if err != nil {
+		return err
+	}
+	*id = uid
+	return nil
 }
 
 func (id *UserID) UnmarshalJSON(data []byte) error {
@@ -277,14 +290,13 @@ func (u UserMeta) Insert(bind *pg.Bind) (string, error) {
 		bind.Set("name", name)
 	}
 
-	// Convert meta to JSON string
-	meta, err := json.Marshal(u.Meta)
+	meta, err := metaInsertExpr(u.Meta)
 	if err != nil {
 		return "", err
 	}
 
 	// Set all fields for insert
-	bind.Set("meta", string(meta))
+	bind.Set("meta", meta)
 	if u.Status != nil && !IsValidUserStatus(*u.Status) {
 		return "", auth.ErrBadParameter.Withf("invalid user status %q", *u.Status)
 	} else if u.Status != nil {
@@ -319,11 +331,11 @@ func (u UserMeta) Update(bind *pg.Bind) error {
 		bind.Append("patch", "status = "+bind.Set("status", *u.Status))
 	}
 	if u.Meta != nil {
-		meta, err := json.Marshal(u.Meta)
+		expr, err := metaPatchExpr(bind, "meta", "meta", u.Meta)
 		if err != nil {
 			return err
 		}
-		bind.Append("patch", "meta = "+bind.Set("meta", string(meta)))
+		bind.Append("patch", "meta = "+expr)
 	}
 	if u.ExpiresAt != nil {
 		if u.ExpiresAt.IsZero() {

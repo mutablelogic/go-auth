@@ -120,8 +120,10 @@ func Test_identity_001(t *testing.T) {
 			IdentityMeta: schema.IdentityMeta{
 				Email: "alice@users.noreply.github.com",
 				Claims: map[string]any{
-					"login": "alice",
-					"admin": true,
+					"login":  "alice",
+					"admin":  true,
+					"role":   "staff",
+					"region": "eu",
 				},
 			},
 		})
@@ -153,14 +155,17 @@ func Test_identity_001(t *testing.T) {
 		require.NotNil(fetchedUser)
 		assert.Equal("alice", fetchedUser.Claims["login"])
 		assert.Equal(true, fetchedUser.Claims["admin"])
+		assert.Equal("staff", fetchedUser.Claims["role"])
+		assert.Equal("eu", fetchedUser.Claims["region"])
 
 		time.Sleep(10 * time.Millisecond)
 		beforeUpdate := time.Now()
 		updated, err := m.UpdateIdentity(context.Background(), "github", "alice-123", schema.IdentityMeta{
 			Email: "alice.updated@users.noreply.github.com",
 			Claims: map[string]any{
-				"login": "alice-updated",
-				"admin": false,
+				"login":  "alice-updated",
+				"admin":  false,
+				"region": nil,
 			},
 		})
 		afterUpdate := time.Now()
@@ -171,6 +176,9 @@ func Test_identity_001(t *testing.T) {
 		assert.Equal("alice.updated@users.noreply.github.com", updated.Email)
 		assert.Equal("alice-updated", updated.Claims["login"])
 		assert.Equal(false, updated.Claims["admin"])
+		assert.Equal("staff", updated.Claims["role"])
+		_, hasRegion := updated.Claims["region"]
+		assert.False(hasRegion)
 		assert.WithinDuration(afterUpdate, updated.ModifiedAt, 2*time.Second)
 		assert.False(updated.ModifiedAt.Before(beforeUpdate.Add(-2 * time.Second)))
 		assert.True(updated.ModifiedAt.After(created.ModifiedAt))
@@ -180,6 +188,9 @@ func Test_identity_001(t *testing.T) {
 		require.NotNil(updatedUser)
 		assert.Equal("alice-updated", updatedUser.Claims["login"])
 		assert.Equal(false, updatedUser.Claims["admin"])
+		assert.Equal("staff", updatedUser.Claims["role"])
+		_, hasRegion = updatedUser.Claims["region"]
+		assert.False(hasRegion)
 
 		deleted, err := m.DeleteIdentity(context.Background(), "github", "alice-123")
 		require.NoError(err)

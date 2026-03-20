@@ -43,8 +43,8 @@ func newTestManagerWithOpts(t *testing.T, opts ...manager.Opt) *manager.Manager 
 		t.Fatal(err)
 	}
 
-	// Wipe users (cascades to identity) between tests.
-	if err := m.Exec(context.Background(), "TRUNCATE auth.user CASCADE"); err != nil {
+	// Wipe users and groups between tests.
+	if err := m.Exec(context.Background(), "TRUNCATE auth.user, auth.\"group\" CASCADE"); err != nil {
 		t.Fatal(err)
 	}
 	return m

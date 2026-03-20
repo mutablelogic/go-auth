@@ -7,7 +7,7 @@ import (
 	// Packages
 	schema "github.com/djthorpe/go-auth/schema"
 	client "github.com/mutablelogic/go-client"
-	"github.com/mutablelogic/go-server/pkg/types"
+	types "github.com/mutablelogic/go-server/pkg/types"
 )
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -18,7 +18,7 @@ func (c *Client) ListUsers(ctx context.Context, req schema.UserListRequest) (*sc
 	if err := c.DoWithContext(ctx, nil, &response, client.OptPath("user"), client.OptQuery(req.Query())); err != nil {
 		return nil, err
 	}
-	return &response, nil
+	return types.Ptr(response), nil
 }
 
 func (c *Client) GetUser(ctx context.Context, user schema.UserID) (*schema.User, error) {
@@ -26,7 +26,7 @@ func (c *Client) GetUser(ctx context.Context, user schema.UserID) (*schema.User,
 	if err := c.DoWithContext(ctx, nil, &response, client.OptPath("user", user)); err != nil {
 		return nil, err
 	}
-	return &response, nil
+	return types.Ptr(response), nil
 }
 
 func (c *Client) DeleteUser(ctx context.Context, user schema.UserID) error {
@@ -37,14 +37,14 @@ func (c *Client) DeleteUser(ctx context.Context, user schema.UserID) error {
 	return nil
 }
 
-func (c *Client) UpdateUser(ctx context.Context, user schema.UserID, meta schema.UserMeta) error {
+func (c *Client) UpdateUser(ctx context.Context, user schema.UserID, meta schema.UserMeta) (*schema.User, error) {
 	var response schema.User
 	req, err := client.NewJSONRequestEx(http.MethodPatch, meta, types.ContentTypeJSON)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if err := c.DoWithContext(ctx, req, &response, client.OptPath("user", user)); err != nil {
-		return err
+		return nil, err
 	}
-	return nil
+	return types.Ptr(response), nil
 }

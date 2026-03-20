@@ -2,6 +2,7 @@ package schema
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 
@@ -50,6 +51,27 @@ func Test_user_001(t *testing.T) {
 		assert.Error(err)
 
 		err = json.Unmarshal([]byte(`"00000000-0000-0000-0000-000000000000"`), &roundtrip)
+		assert.Error(err)
+		assert.ErrorIs(err, auth.ErrBadParameter)
+	})
+
+	t.Run("UserIDText", func(t *testing.T) {
+		assert := assert.New(t)
+		require := require.New(t)
+
+		uid := uuid.New()
+		var roundtrip UserID
+		require.NoError(roundtrip.UnmarshalText([]byte(uid.String())))
+		assert.Equal(UserID(uid), roundtrip)
+
+		text, err := roundtrip.MarshalText()
+		require.NoError(err)
+		assert.Equal(uid.String(), string(text))
+
+		err = roundtrip.UnmarshalText([]byte("not-a-uuid"))
+		assert.Error(err)
+
+		err = roundtrip.UnmarshalText([]byte(uuid.Nil.String()))
 		assert.Error(err)
 		assert.ErrorIs(err, auth.ErrBadParameter)
 	})
@@ -214,6 +236,21 @@ func Test_user_001(t *testing.T) {
 		patch, ok := bind.Get("patch").(string)
 		require.True(t, ok)
 		assert.Contains(patch, "expires_at = NULL")
+
+		bind = pg.NewBind()
+		err = (UserMeta{Meta: map[string]any{"team": "platform", "admin": true, "region": nil}}).Update(bind)
+		assert.NoError(err)
+		patch, ok = bind.Get("patch").(string)
+		require.True(t, ok)
+		assert.Equal("admin", bind.Get("meta_key_0"))
+		assert.Equal("true", bind.Get("meta_value_0"))
+		assert.Equal("region", bind.Get("meta_key_1"))
+		assert.Equal("team", bind.Get("meta_key_2"))
+		assert.Equal(`"platform"`, bind.Get("meta_value_2"))
+		assert.Contains(patch, "meta = ")
+		assert.Contains(patch, "jsonb_build_object(")
+		assert.Contains(patch, " - @meta_key_1")
+		assert.True(strings.Contains(patch, `COALESCE("meta", '{}'::jsonb)`))
 	})
 
 	t.Run("UserListRequestSelect", func(t *testing.T) {

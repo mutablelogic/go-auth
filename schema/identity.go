@@ -1,7 +1,6 @@
 package schema
 
 import (
-	"encoding/json"
 	"strings"
 	"time"
 
@@ -210,20 +209,19 @@ func (i IdentityMeta) Insert(bind *pg.Bind) (string, error) {
 		return "", auth.ErrBadParameter.With("sub is required")
 	}
 
+	// Email
 	if email := canonicalizeEmail(i.Email); email != "" {
 		bind.Set("email", email)
 	} else {
 		bind.Set("email", "")
 	}
 
-	if i.Claims == nil {
-		i.Claims = map[string]any{}
-	}
-	claims, err := json.Marshal(i.Claims)
+	// Claims
+	claims, err := metaInsertExpr(i.Claims)
 	if err != nil {
 		return "", err
 	}
-	bind.Set("claims", string(claims))
+	bind.Set("claims", claims)
 
 	return bind.Query("identity.insert"), nil
 }
@@ -253,11 +251,11 @@ func (i IdentityMeta) Update(bind *pg.Bind) error {
 	}
 
 	if i.Claims != nil {
-		claims, err := json.Marshal(i.Claims)
+		expr, err := metaPatchExpr(bind, "claims", "claims", i.Claims)
 		if err != nil {
 			return err
 		}
-		bind.Append("patch", "claims = "+bind.Set("claims", string(claims)))
+		bind.Append("patch", "claims = "+expr)
 	}
 
 	if patch := bind.Join("patch", ", "); patch == "" {

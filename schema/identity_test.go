@@ -1,9 +1,9 @@
 package schema
 
 import (
-	"encoding/json"
 	"fmt"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -184,10 +184,8 @@ func Test_identity_schema_001(t *testing.T) {
 		require.NoError(err)
 		assert.NotEmpty(query)
 		assert.Equal("user@example.com", bind.Get("email"))
-		claimsJSON, ok := bind.Get("claims").(string)
+		claims, ok := bind.Get("claims").(map[string]any)
 		require.True(ok)
-		var claims map[string]any
-		require.NoError(json.Unmarshal([]byte(claimsJSON), &claims))
 		assert.Equal("admin", claims["role"])
 
 		patchBind := pg.NewBind()
@@ -196,6 +194,19 @@ func Test_identity_schema_001(t *testing.T) {
 		require.True(ok)
 		assert.Contains(patch, "email = ")
 		assert.Contains(patch, "claims = ")
+		assert.Equal("role", patchBind.Get("claims_key_0"))
+		assert.Equal(`"admin"`, patchBind.Get("claims_value_0"))
+		assert.True(strings.Contains(patch, `COALESCE("claims", '{}'::jsonb)`))
+
+		patchBind = pg.NewBind()
+		require.NoError((IdentityMeta{Claims: map[string]any{"role": nil, "admin": true}}).Update(patchBind))
+		patch, ok = patchBind.Get("patch").(string)
+		require.True(ok)
+		assert.Equal("admin", patchBind.Get("claims_key_0"))
+		assert.Equal("true", patchBind.Get("claims_value_0"))
+		assert.Equal("role", patchBind.Get("claims_key_1"))
+		assert.Contains(patch, "claims = ")
+		assert.Contains(patch, " - @claims_key_1::text")
 	})
 
 	t.Run("IdentityInsertValidation", func(t *testing.T) {

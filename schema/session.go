@@ -56,6 +56,19 @@ func (id SessionID) MarshalJSON() ([]byte, error) {
 	return json.Marshal(uuid.UUID(id))
 }
 
+func (id SessionID) MarshalText() ([]byte, error) {
+	return []byte(uuid.UUID(id).String()), nil
+}
+
+func (id *SessionID) UnmarshalText(text []byte) error {
+	uid, err := SessionIDFromString(string(text))
+	if err != nil {
+		return err
+	}
+	*id = uid
+	return nil
+}
+
 func (id *SessionID) UnmarshalJSON(data []byte) error {
 	var s string
 	if err := json.Unmarshal(data, &s); err != nil {

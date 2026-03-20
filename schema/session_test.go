@@ -48,6 +48,27 @@ func Test_session_schema_001(t *testing.T) {
 		assert.ErrorIs(err, auth.ErrBadParameter)
 	})
 
+	t.Run("SessionIDText", func(t *testing.T) {
+		assert := assert.New(t)
+		require := require.New(t)
+
+		uid := uuid.New()
+		var roundtrip SessionID
+		require.NoError(roundtrip.UnmarshalText([]byte(uid.String())))
+		assert.Equal(SessionID(uid), roundtrip)
+
+		text, err := roundtrip.MarshalText()
+		require.NoError(err)
+		assert.Equal(uid.String(), string(text))
+
+		err = roundtrip.UnmarshalText([]byte("not-a-uuid"))
+		assert.Error(err)
+
+		err = roundtrip.UnmarshalText([]byte(uuid.Nil.String()))
+		assert.Error(err)
+		assert.ErrorIs(err, auth.ErrBadParameter)
+	})
+
 	t.Run("SessionIDSelect", func(t *testing.T) {
 		assert := assert.New(t)
 		require := require.New(t)

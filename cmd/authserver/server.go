@@ -32,9 +32,10 @@ type ServerCommands struct {
 }
 
 type RunServer struct {
+	cmd.RunServer
 	PostgresFlags
 	CleanupFlags `embed:"" prefix:"cleanup."`
-	cmd.RunServer
+	Auth         bool `name:"auth" help:"Whether to enable authentication for protected endpoints." default:"true" negatable:""`
 }
 
 type CleanupFlags struct {
@@ -60,7 +61,7 @@ func (server *RunServer) Run(ctx server.Cmd) error {
 
 		// Register HTTP handlers
 		server.RunServer.Register(func(router *httprouter.Router) error {
-			return httphandler.RegisterHandlers(manager, router)
+			return httphandler.RegisterHandlers(manager, router, server.Auth)
 		})
 
 		group.Go(func() error {

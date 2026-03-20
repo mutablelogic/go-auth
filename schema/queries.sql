@@ -6,14 +6,24 @@ WITH inserted AS (
 ) SELECT
     inserted.*,
     COALESCE(identity_claims.claims, '{}'::jsonb) AS claims,
-    '{}'::text[] AS groups,
-    '{}'::text[] AS scopes
+    COALESCE(group_memberships.groups, '{}'::text[]) AS groups,
+    COALESCE(group_memberships.scopes, '{}'::text[]) AS scopes
 FROM inserted LEFT JOIN LATERAL (
     SELECT jsonb_object_agg(claim.key, claim.value) AS claims
       FROM ${"schema"}.identity
     CROSS JOIN LATERAL jsonb_each(identity.claims) AS claim(key, value)
       WHERE identity."user" = inserted.id
-) AS identity_claims ON true;
+) AS identity_claims ON true
+LEFT JOIN LATERAL (
+    SELECT
+    array_agg(DISTINCT group_row.id ORDER BY group_row.id) AS groups,
+        array_agg(DISTINCT scope ORDER BY scope) FILTER (WHERE scope IS NOT NULL) AS scopes
+    FROM ${"schema"}.user_group AS user_group
+    JOIN ${"schema"}."group" AS group_row ON group_row.id = user_group."group"
+    LEFT JOIN LATERAL unnest(group_row.scopes) AS scope ON true
+    WHERE user_group."user" = inserted.id
+      AND group_row.enabled
+) AS group_memberships ON true;
 
 -- user.select
 SELECT
@@ -26,8 +36,8 @@ SELECT
     user_row.expires_at,
     user_row.modified_at,
     COALESCE(identity_claims.claims, '{}'::jsonb) AS claims,
-    '{}'::text[] AS groups,
-    '{}'::text[] AS scopes
+    COALESCE(group_memberships.groups, '{}'::text[]) AS groups,
+    COALESCE(group_memberships.scopes, '{}'::text[]) AS scopes
 FROM ${"schema"}.user AS user_row
 LEFT JOIN LATERAL (
     SELECT jsonb_object_agg(claim.key, claim.value) AS claims
@@ -35,6 +45,16 @@ LEFT JOIN LATERAL (
     CROSS JOIN LATERAL jsonb_each(identity.claims) AS claim(key, value)
       WHERE identity."user" = user_row.id
 ) AS identity_claims ON true
+LEFT JOIN LATERAL (
+    SELECT
+    array_agg(DISTINCT group_row.id ORDER BY group_row.id) AS groups,
+        array_agg(DISTINCT scope ORDER BY scope) FILTER (WHERE scope IS NOT NULL) AS scopes
+    FROM ${"schema"}.user_group AS user_group
+    JOIN ${"schema"}."group" AS group_row ON group_row.id = user_group."group"
+    LEFT JOIN LATERAL unnest(group_row.scopes) AS scope ON true
+    WHERE user_group."user" = user_row.id
+      AND group_row.enabled
+) AS group_memberships ON true
 WHERE user_row.id = @id;
 
 -- user.update
@@ -54,15 +74,25 @@ SELECT
     updated.expires_at,
     updated.modified_at,
     COALESCE(identity_claims.claims, '{}'::jsonb) AS claims,
-    '{}'::text[] AS groups,
-    '{}'::text[] AS scopes
+    COALESCE(group_memberships.groups, '{}'::text[]) AS groups,
+    COALESCE(group_memberships.scopes, '{}'::text[]) AS scopes
 FROM updated
 LEFT JOIN LATERAL (
     SELECT jsonb_object_agg(claim.key, claim.value) AS claims
       FROM ${"schema"}.identity
     CROSS JOIN LATERAL jsonb_each(identity.claims) AS claim(key, value)
       WHERE identity."user" = updated.id
-) AS identity_claims ON true;
+) AS identity_claims ON true
+LEFT JOIN LATERAL (
+    SELECT
+    array_agg(DISTINCT group_row.id ORDER BY group_row.id) AS groups,
+        array_agg(DISTINCT scope ORDER BY scope) FILTER (WHERE scope IS NOT NULL) AS scopes
+    FROM ${"schema"}.user_group AS user_group
+    JOIN ${"schema"}."group" AS group_row ON group_row.id = user_group."group"
+    LEFT JOIN LATERAL unnest(group_row.scopes) AS scope ON true
+    WHERE user_group."user" = updated.id
+      AND group_row.enabled
+) AS group_memberships ON true;
 
 -- user.delete
 WITH deleted_claims AS (
@@ -73,6 +103,17 @@ WITH deleted_claims AS (
     CROSS JOIN LATERAL jsonb_each(identity.claims) AS claim(key, value)
     WHERE identity."user" = @id
     GROUP BY identity."user"
+  ), deleted_groups AS (
+    SELECT
+          user_group."user" AS id,
+          array_agg(DISTINCT group_row.id ORDER BY group_row.id) AS groups,
+          array_agg(DISTINCT scope ORDER BY scope) FILTER (WHERE scope IS NOT NULL) AS scopes
+    FROM ${"schema"}.user_group AS user_group
+    JOIN ${"schema"}."group" AS group_row ON group_row.id = user_group."group"
+    LEFT JOIN LATERAL unnest(group_row.scopes) AS scope ON true
+    WHERE user_group."user" = @id
+      AND group_row.enabled
+    GROUP BY user_group."user"
 ), deleted AS (
     DELETE FROM ${"schema"}.user
     WHERE id = @id
@@ -88,10 +129,11 @@ SELECT
     deleted.expires_at,
     deleted.modified_at,
     COALESCE(deleted_claims.claims, '{}'::jsonb) AS claims,
-    '{}'::text[] AS groups,
-    '{}'::text[] AS scopes
+    COALESCE(deleted_groups.groups, '{}'::text[]) AS groups,
+    COALESCE(deleted_groups.scopes, '{}'::text[]) AS scopes
 FROM deleted
-LEFT JOIN deleted_claims ON deleted_claims.id = deleted.id;
+LEFT JOIN deleted_claims ON deleted_claims.id = deleted.id
+LEFT JOIN deleted_groups ON deleted_groups.id = deleted.id;
 
 -- user.list
 SELECT
@@ -104,8 +146,8 @@ SELECT
     user_row.expires_at,
     user_row.modified_at,
     COALESCE(identity_claims.claims, '{}'::jsonb) AS claims,
-    '{}'::text[] AS groups,
-    '{}'::text[] AS scopes
+    COALESCE(group_memberships.groups, '{}'::text[]) AS groups,
+    COALESCE(group_memberships.scopes, '{}'::text[]) AS scopes
 FROM ${"schema"}.user AS user_row
 LEFT JOIN LATERAL (
     SELECT jsonb_object_agg(claim.key, claim.value) AS claims
@@ -113,6 +155,16 @@ LEFT JOIN LATERAL (
     CROSS JOIN LATERAL jsonb_each(identity.claims) AS claim(key, value)
       WHERE identity."user" = user_row.id
 ) AS identity_claims ON true
+LEFT JOIN LATERAL (
+    SELECT
+    array_agg(DISTINCT group_row.id ORDER BY group_row.id) AS groups,
+        array_agg(DISTINCT scope ORDER BY scope) FILTER (WHERE scope IS NOT NULL) AS scopes
+    FROM ${"schema"}.user_group AS user_group
+    JOIN ${"schema"}."group" AS group_row ON group_row.id = user_group."group"
+    LEFT JOIN LATERAL unnest(group_row.scopes) AS scope ON true
+    WHERE user_group."user" = user_row.id
+      AND group_row.enabled
+) AS group_memberships ON true
 ${where}
 ${orderby}
 
@@ -221,3 +273,40 @@ ORDER BY created_at ASC, id ASC;
 DELETE FROM ${"schema"}.session
 WHERE id = @id
 RETURNING id, "user", expires_at, created_at, revoked_at;
+
+-- group.insert
+INSERT INTO ${"schema"}."group" (id, description, enabled, scopes, meta)
+  VALUES (@id, @description, @enabled, @scopes, @meta)
+  RETURNING id, description, enabled, scopes, meta;
+
+-- group.select
+SELECT
+    group_row.id,
+    group_row.description,
+    group_row.enabled,
+    group_row.scopes,
+    group_row.meta
+FROM ${"schema"}."group" AS group_row
+WHERE group_row.id = @id;
+
+-- group.update
+UPDATE ${"schema"}."group"
+SET ${patch}
+WHERE id = @id
+RETURNING id, description, enabled, scopes, meta;
+
+-- group.delete
+DELETE FROM ${"schema"}."group"
+WHERE id = @id
+RETURNING id, description, enabled, scopes, meta;
+
+-- group.list
+SELECT
+    group_row.id,
+    group_row.description,
+    group_row.enabled,
+    group_row.scopes,
+    group_row.meta
+FROM ${"schema"}."group" AS group_row
+${where}
+${orderby}

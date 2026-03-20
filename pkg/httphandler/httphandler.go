@@ -22,22 +22,27 @@ type Register interface {
 // PUBLIC METHODS
 
 // RegisterHandlers registers all handlers for this package with the provided router and manager.
-func RegisterHandlers(manager *manager.Manager, router server.HTTPRouter) error {
+func RegisterHandlers(manager *manager.Manager, router server.HTTPRouter, auth bool) error {
 	var result error
 	authenticated := middleware.NewMiddleware(manager)
 
-	// Convenience function to register a handler and accumulate any errors
+	// Convenience functions to register handlers and accumulate any errors
 	register := func(path string, handler http.HandlerFunc, spec *openapi.PathItem) {
 		result = errors.Join(result, router.(Register).RegisterFunc(path, handler, true, spec))
 	}
 	registerProtected := func(path string, handler http.HandlerFunc, spec *openapi.PathItem) {
-		result = errors.Join(result, router.(Register).RegisterFunc(path, authenticated(handler), true, spec))
+		if auth {
+			handler = authenticated(handler)
+		}
+		register(path, handler, spec)
 	}
 
-	// Register handlers
+	// Register protected handlers
 	registerProtected(UserHandler(manager))
 	registerProtected(UserItemHandler(manager))
 	registerProtected(UserInfoHandler(manager))
+
+	// Register unprotected handlers
 	register(AuthHandler(manager))
 	register(RefreshHandler(manager))
 	register(RevokeHandler(manager))
