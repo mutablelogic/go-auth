@@ -71,12 +71,10 @@ func oauthToken(raw string) (*oauth2.Token, error) {
 	if raw == "" {
 		return nil, fmt.Errorf("token is required")
 	}
-
 	claims := new(jwt.RegisteredClaims)
 	if _, _, err := jwt.NewParser().ParseUnverified(raw, claims); err != nil {
 		return nil, fmt.Errorf("parse token: %w", err)
 	}
-
 	token := &oauth2.Token{
 		AccessToken: raw,
 		TokenType:   "Bearer",

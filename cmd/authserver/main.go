@@ -14,7 +14,8 @@ import (
 
 type CLI struct {
 	ServerCommands
-	ClientCommands
+	AuthCommands
+	UserCommands
 }
 
 ///////////////////////////////////////////////////////////////////////////////

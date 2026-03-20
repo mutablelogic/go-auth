@@ -2,7 +2,9 @@ package schema
 
 import (
 	"encoding/json"
+	"net/url"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -96,6 +98,21 @@ func UserIDFromString(s string) (UserID, error) {
 }
 
 ///////////////////////////////////////////////////////////////////////////////
+// STRINGIFY
+
+func (id UserID) String() string {
+	return uuid.UUID(id).String()
+}
+
+func (u UserList) String() string {
+	return types.Stringify(u)
+}
+
+func (u User) String() string {
+	return types.Stringify(u)
+}
+
+///////////////////////////////////////////////////////////////////////////////
 // PUBLIC METHODS - UUID
 
 func (id UserID) MarshalJSON() ([]byte, error) {
@@ -116,6 +133,26 @@ func (id *UserID) UnmarshalJSON(data []byte) error {
 
 	// Return success
 	return nil
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// PUBLIC METHODS - QUERY
+
+func (req UserListRequest) Query() url.Values {
+	values := url.Values{}
+	if req.Offset > 0 {
+		values.Set("offset", strconv.FormatUint(req.Offset, 10))
+	}
+	if req.Limit != nil {
+		values.Set("limit", strconv.FormatUint(types.Value(req.Limit), 10))
+	}
+	if req.Email != "" {
+		values.Set("email", req.Email)
+	}
+	for _, status := range req.Status {
+		values.Add("status", string(status))
+	}
+	return values
 }
 
 ///////////////////////////////////////////////////////////////////////////////

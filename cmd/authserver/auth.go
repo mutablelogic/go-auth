@@ -22,11 +22,11 @@ const tokenStoreKey = "auth.token"
 ///////////////////////////////////////////////////////////////////////////////
 // TYPES
 
-type ClientCommands struct {
-	Login    LoginCommand    `cmd:"" name:"login" help:"Log in to the auth server with an email address." group:"CLIENT"`
-	UserInfo UserInfoCommand `cmd:"" name:"userinfo" help:"Get the authenticated userinfo for a local session token." group:"CLIENT"`
-	Refresh  RefreshCommand  `cmd:"" name:"refresh" help:"Refresh a previously issued local session token." group:"CLIENT"`
-	Revoke   RevokeCommand   `cmd:"" name:"revoke" help:"Revoke a previously issued local session token." group:"CLIENT"`
+type AuthCommands struct {
+	Login    LoginCommand    `cmd:"" name:"login" help:"Log in to the auth server with an email address." group:"AUTH"`
+	UserInfo UserInfoCommand `cmd:"" name:"userinfo" help:"Get the authenticated userinfo for a local session token." group:"AUTH"`
+	Refresh  RefreshCommand  `cmd:"" name:"refresh" help:"Refresh a previously issued local session token." group:"AUTH"`
+	Revoke   RevokeCommand   `cmd:"" name:"revoke" help:"Revoke a previously issued local session token." group:"AUTH"`
 }
 
 type LoginCommand struct {
