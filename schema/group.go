@@ -16,10 +16,10 @@ import (
 // TYPES
 
 type GroupMeta struct {
-	Description *string        `json:"description,omitempty"`
-	Enabled     *bool          `json:"enabled,omitempty" negatable:""`
-	Scopes      []string       `json:"scopes,omitempty"`
-	Meta        map[string]any `json:"meta,omitempty"`
+	Description *string  `json:"description,omitempty"`
+	Enabled     *bool    `json:"enabled,omitempty" negatable:""`
+	Scopes      []string `json:"scopes,omitempty"`
+	Meta        MetaMap  `json:"meta,omitempty"`
 }
 
 type GroupInsert struct {
@@ -184,7 +184,7 @@ func (group GroupInsert) Insert(bind *pg.Bind) (string, error) {
 	}
 
 	// Meta
-	meta, err := metaInsertExpr(group.Meta)
+	meta, err := metaInsertExpr(group.Meta.Map())
 	if err != nil {
 		return "", err
 	}
@@ -223,7 +223,7 @@ func (group GroupMeta) Update(bind *pg.Bind) error {
 
 	// Meta
 	if group.Meta != nil {
-		expr, err := metaPatchExpr(bind, "meta", "meta", group.Meta)
+		expr, err := metaPatchExpr(bind, "meta", "meta", group.Meta.Map())
 		if err != nil {
 			return err
 		}

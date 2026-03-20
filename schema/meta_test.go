@@ -11,6 +11,33 @@ import (
 )
 
 func Test_meta_001(t *testing.T) {
+	t.Run("MetaMapText", func(t *testing.T) {
+		assert := assert.New(t)
+		require := require.New(t)
+
+		var meta MetaMap
+		require.NoError(meta.UnmarshalText([]byte("team=auth;admin=true")))
+		assert.Equal(map[string]any{"team": "auth", "admin": true}, meta.Map())
+
+		require.NoError(meta.UnmarshalText([]byte(`{"team":"platform","priority":1}`)))
+		assert.Equal(map[string]any{"team": "platform", "priority": float64(1)}, meta.Map())
+
+		require.NoError(meta.UnmarshalText([]byte(`flag=false;count=2;remove=null;labels=["a","b"];config={"enabled":true};name=plain-text;empty=`)))
+		assert.Equal(map[string]any{
+			"flag":   false,
+			"count":  float64(2),
+			"remove": nil,
+			"labels": []any{"a", "b"},
+			"config": map[string]any{"enabled": true},
+			"name":   "plain-text",
+			"empty":  "",
+		}, meta.Map())
+
+		err := meta.UnmarshalText([]byte("bad key=value"))
+		assert.Error(err)
+		assert.ErrorIs(err, auth.ErrBadParameter)
+	})
+
 	t.Run("MetaInsertExpr", func(t *testing.T) {
 		assert := assert.New(t)
 		require := require.New(t)

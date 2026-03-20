@@ -312,6 +312,68 @@ func Test_http_001(t *testing.T) {
 		assert.NotEmpty(list.Body)
 	})
 
+	t.Run("UserResponsesIncludeEffectiveMetaAndDisabledGroups", func(t *testing.T) {
+		assert := assert.New(t)
+		require := require.New(t)
+
+		mgr, _ := newHTTPTestManager(t)
+		enabled := true
+		disabled := false
+		_, err := mgr.CreateGroup(context.Background(), schema.GroupInsert{
+			ID: "admins",
+			GroupMeta: schema.GroupMeta{
+				Enabled: &enabled,
+				Scopes:  []string{"user.read"},
+				Meta:    schema.MetaMap{"group_admin": "hello"},
+			},
+		})
+		require.NoError(err)
+		_, err = mgr.CreateGroup(context.Background(), schema.GroupInsert{
+			ID: "disabled-group",
+			GroupMeta: schema.GroupMeta{
+				Enabled: &disabled,
+				Scopes:  []string{"admin.all"},
+			},
+		})
+		require.NoError(err)
+
+		created, err := mgr.CreateUser(context.Background(), schema.UserMeta{
+			Name:   "Meta User",
+			Email:  "meta.user@example.com",
+			Meta:   schema.MetaMap{"source": "local"},
+			Groups: []string{"admins", "disabled-group"},
+		}, nil)
+		require.NoError(err)
+
+		_, itemHandler, _ := UserItemHandler(mgr)
+		getRes := httptest.NewRecorder()
+		getReq := httptest.NewRequest(http.MethodGet, "/user/"+uuid.UUID(created.ID).String(), nil)
+		getReq.SetPathValue("user", uuid.UUID(created.ID).String())
+		itemHandler(getRes, getReq)
+
+		require.Equal(http.StatusOK, getRes.Code)
+		var fetched schema.User
+		require.NoError(json.Unmarshal(getRes.Body.Bytes(), &fetched))
+		assert.Equal(schema.MetaMap{"source": "local"}, fetched.Meta)
+		assert.Equal(schema.MetaMap{"group_admin": "hello", "source": "local"}, fetched.EffectiveMeta)
+		assert.Equal([]string{"admins"}, fetched.Groups)
+		assert.Equal([]string{"disabled-group"}, fetched.DisabledGroups)
+
+		_, collectionHandler, _ := UserHandler(mgr)
+		listRes := httptest.NewRecorder()
+		listReq := httptest.NewRequest(http.MethodGet, "/user?email=meta.user@example.com", nil)
+		collectionHandler(listRes, listReq)
+
+		require.Equal(http.StatusOK, listRes.Code)
+		var list schema.UserList
+		require.NoError(json.Unmarshal(listRes.Body.Bytes(), &list))
+		require.Len(list.Body, 1)
+		assert.Equal(schema.MetaMap{"source": "local"}, list.Body[0].Meta)
+		assert.Equal(schema.MetaMap{"group_admin": "hello", "source": "local"}, list.Body[0].EffectiveMeta)
+		assert.Equal([]string{"admins"}, list.Body[0].Groups)
+		assert.Equal([]string{"disabled-group"}, list.Body[0].DisabledGroups)
+	})
+
 	t.Run("GroupHandlerCreateAndList", func(t *testing.T) {
 		assert := assert.New(t)
 		require := require.New(t)
@@ -646,7 +708,6 @@ func Test_http_001(t *testing.T) {
 		assert.NotNil(groupListSchema())
 		userGroupList := userGroupListSchema()
 		if assert.NotNil(userGroupList) {
-			assert.Equal("array", userGroupList.Type)
 			if assert.NotNil(userGroupList.Items) {
 				assert.Equal("string", userGroupList.Items.Type)
 			}
@@ -654,6 +715,8 @@ func Test_http_001(t *testing.T) {
 		user := userSchema()
 		if assert.NotNil(user) {
 			assert.NotNil(schemaProperty(user, "groups"))
+			assert.NotNil(schemaProperty(user, "disabled_groups"))
+			assert.NotNil(schemaProperty(user, "effective_meta"))
 		}
 		userMeta := userMetaSchema()
 		if assert.NotNil(userMeta) {
@@ -689,8 +752,10 @@ func Test_http_001(t *testing.T) {
 		deleteBody := spec.Delete.RequestBody.Content["application/json"].Schema
 		require.NotNil(postBody)
 		require.NotNil(deleteBody)
-		assert.Equal("array", postBody.Type)
-		assert.Equal("array", deleteBody.Type)
+		require.NotNil(postBody.Items)
+		require.NotNil(deleteBody.Items)
+		assert.Equal("string", postBody.Items.Type)
+		assert.Equal("string", deleteBody.Items.Type)
 
 		postResponse := spec.Post.Responses["200"].Content["application/json"].Schema
 		deleteResponse := spec.Delete.Responses["200"].Content["application/json"].Schema

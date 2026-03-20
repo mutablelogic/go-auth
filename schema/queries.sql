@@ -4,10 +4,19 @@ WITH inserted AS (
       VALUES (@name, @email, @meta, @status, @expires_at)
       RETURNING id, name, email, meta, status, created_at, expires_at, modified_at
 ) SELECT
-    inserted.*,
+  inserted.id,
+  inserted.name,
+  inserted.email,
+  inserted.meta,
+  COALESCE(group_memberships.effective_meta, '{}'::jsonb) || COALESCE(inserted.meta, '{}'::jsonb) AS effective_meta,
+  inserted.status,
+  inserted.created_at,
+  inserted.expires_at,
+  inserted.modified_at,
     COALESCE(identity_claims.claims, '{}'::jsonb) AS claims,
     COALESCE(group_memberships.groups, '{}'::text[]) AS groups,
-    COALESCE(group_memberships.scopes, '{}'::text[]) AS scopes
+  COALESCE(group_memberships.disabled_groups, '{}'::text[]) AS disabled_groups,
+  COALESCE(group_memberships.scopes, '{}'::text[]) AS scopes
 FROM inserted LEFT JOIN LATERAL (
     SELECT jsonb_object_agg(claim.key, claim.value) AS claims
       FROM ${"schema"}.identity
@@ -16,13 +25,24 @@ FROM inserted LEFT JOIN LATERAL (
 ) AS identity_claims ON true
 LEFT JOIN LATERAL (
     SELECT
-    array_agg(DISTINCT group_row.id ORDER BY group_row.id) AS groups,
-        array_agg(DISTINCT scope ORDER BY scope) FILTER (WHERE scope IS NOT NULL) AS scopes
+        array_agg(DISTINCT group_row.id ORDER BY group_row.id) FILTER (WHERE group_row.enabled) AS groups,
+        array_agg(DISTINCT group_row.id ORDER BY group_row.id) FILTER (WHERE NOT group_row.enabled) AS disabled_groups,
+        array_agg(DISTINCT scope ORDER BY scope) FILTER (WHERE group_row.enabled AND scope IS NOT NULL) AS scopes,
+        (
+            SELECT jsonb_object_agg(group_meta.key, group_meta.value ORDER BY group_meta.group_id, group_meta.key)
+            FROM (
+                SELECT group_row_meta.id AS group_id, meta_entry.key, meta_entry.value
+                FROM ${"schema"}.user_group AS user_group_meta
+                JOIN ${"schema"}."group" AS group_row_meta ON group_row_meta.id = user_group_meta."group"
+                CROSS JOIN LATERAL jsonb_each(COALESCE(group_row_meta.meta, '{}'::jsonb)) AS meta_entry(key, value)
+                WHERE user_group_meta."user" = inserted.id
+                  AND group_row_meta.enabled
+            ) AS group_meta
+        ) AS effective_meta
     FROM ${"schema"}.user_group AS user_group
     JOIN ${"schema"}."group" AS group_row ON group_row.id = user_group."group"
-    LEFT JOIN LATERAL unnest(group_row.scopes) AS scope ON true
+    LEFT JOIN LATERAL unnest(CASE WHEN group_row.enabled THEN group_row.scopes ELSE '{}'::text[] END) AS scope ON true
     WHERE user_group."user" = inserted.id
-      AND group_row.enabled
 ) AS group_memberships ON true;
 
 -- user.select
@@ -30,13 +50,15 @@ SELECT
     user_row.id,
     user_row.name,
     user_row.email,
-    user_row.meta,
+  user_row.meta,
+  COALESCE(group_memberships.effective_meta, '{}'::jsonb) || COALESCE(user_row.meta, '{}'::jsonb) AS effective_meta,
     user_row.status,
     user_row.created_at,
     user_row.expires_at,
     user_row.modified_at,
     COALESCE(identity_claims.claims, '{}'::jsonb) AS claims,
     COALESCE(group_memberships.groups, '{}'::text[]) AS groups,
+  COALESCE(group_memberships.disabled_groups, '{}'::text[]) AS disabled_groups,
     COALESCE(group_memberships.scopes, '{}'::text[]) AS scopes
 FROM ${"schema"}.user AS user_row
 LEFT JOIN LATERAL (
@@ -47,13 +69,24 @@ LEFT JOIN LATERAL (
 ) AS identity_claims ON true
 LEFT JOIN LATERAL (
     SELECT
-    array_agg(DISTINCT group_row.id ORDER BY group_row.id) AS groups,
-        array_agg(DISTINCT scope ORDER BY scope) FILTER (WHERE scope IS NOT NULL) AS scopes
+    array_agg(DISTINCT group_row.id ORDER BY group_row.id) FILTER (WHERE group_row.enabled) AS groups,
+    array_agg(DISTINCT group_row.id ORDER BY group_row.id) FILTER (WHERE NOT group_row.enabled) AS disabled_groups,
+    array_agg(DISTINCT scope ORDER BY scope) FILTER (WHERE group_row.enabled AND scope IS NOT NULL) AS scopes,
+    (
+      SELECT jsonb_object_agg(group_meta.key, group_meta.value ORDER BY group_meta.group_id, group_meta.key)
+      FROM (
+        SELECT group_row_meta.id AS group_id, meta_entry.key, meta_entry.value
+        FROM ${"schema"}.user_group AS user_group_meta
+        JOIN ${"schema"}."group" AS group_row_meta ON group_row_meta.id = user_group_meta."group"
+        CROSS JOIN LATERAL jsonb_each(COALESCE(group_row_meta.meta, '{}'::jsonb)) AS meta_entry(key, value)
+        WHERE user_group_meta."user" = user_row.id
+          AND group_row_meta.enabled
+      ) AS group_meta
+    ) AS effective_meta
     FROM ${"schema"}.user_group AS user_group
     JOIN ${"schema"}."group" AS group_row ON group_row.id = user_group."group"
-    LEFT JOIN LATERAL unnest(group_row.scopes) AS scope ON true
-    WHERE user_group."user" = user_row.id
-      AND group_row.enabled
+  LEFT JOIN LATERAL unnest(CASE WHEN group_row.enabled THEN group_row.scopes ELSE '{}'::text[] END) AS scope ON true
+  WHERE user_group."user" = user_row.id
 ) AS group_memberships ON true
 WHERE user_row.id = @id;
 
@@ -68,13 +101,15 @@ SELECT
     updated.id,
     updated.name,
     updated.email,
-    updated.meta,
+  updated.meta,
+  COALESCE(group_memberships.effective_meta, '{}'::jsonb) || COALESCE(updated.meta, '{}'::jsonb) AS effective_meta,
     updated.status,
     updated.created_at,
     updated.expires_at,
     updated.modified_at,
     COALESCE(identity_claims.claims, '{}'::jsonb) AS claims,
     COALESCE(group_memberships.groups, '{}'::text[]) AS groups,
+  COALESCE(group_memberships.disabled_groups, '{}'::text[]) AS disabled_groups,
     COALESCE(group_memberships.scopes, '{}'::text[]) AS scopes
 FROM updated
 LEFT JOIN LATERAL (
@@ -85,13 +120,24 @@ LEFT JOIN LATERAL (
 ) AS identity_claims ON true
 LEFT JOIN LATERAL (
     SELECT
-    array_agg(DISTINCT group_row.id ORDER BY group_row.id) AS groups,
-        array_agg(DISTINCT scope ORDER BY scope) FILTER (WHERE scope IS NOT NULL) AS scopes
+    array_agg(DISTINCT group_row.id ORDER BY group_row.id) FILTER (WHERE group_row.enabled) AS groups,
+    array_agg(DISTINCT group_row.id ORDER BY group_row.id) FILTER (WHERE NOT group_row.enabled) AS disabled_groups,
+    array_agg(DISTINCT scope ORDER BY scope) FILTER (WHERE group_row.enabled AND scope IS NOT NULL) AS scopes,
+    (
+      SELECT jsonb_object_agg(group_meta.key, group_meta.value ORDER BY group_meta.group_id, group_meta.key)
+      FROM (
+        SELECT group_row_meta.id AS group_id, meta_entry.key, meta_entry.value
+        FROM ${"schema"}.user_group AS user_group_meta
+        JOIN ${"schema"}."group" AS group_row_meta ON group_row_meta.id = user_group_meta."group"
+        CROSS JOIN LATERAL jsonb_each(COALESCE(group_row_meta.meta, '{}'::jsonb)) AS meta_entry(key, value)
+        WHERE user_group_meta."user" = updated.id
+          AND group_row_meta.enabled
+      ) AS group_meta
+    ) AS effective_meta
     FROM ${"schema"}.user_group AS user_group
     JOIN ${"schema"}."group" AS group_row ON group_row.id = user_group."group"
-    LEFT JOIN LATERAL unnest(group_row.scopes) AS scope ON true
-    WHERE user_group."user" = updated.id
-      AND group_row.enabled
+  LEFT JOIN LATERAL unnest(CASE WHEN group_row.enabled THEN group_row.scopes ELSE '{}'::text[] END) AS scope ON true
+  WHERE user_group."user" = updated.id
 ) AS group_memberships ON true;
 
 -- user.delete
@@ -106,13 +152,24 @@ WITH deleted_claims AS (
   ), deleted_groups AS (
     SELECT
           user_group."user" AS id,
-          array_agg(DISTINCT group_row.id ORDER BY group_row.id) AS groups,
-          array_agg(DISTINCT scope ORDER BY scope) FILTER (WHERE scope IS NOT NULL) AS scopes
+          array_agg(DISTINCT group_row.id ORDER BY group_row.id) FILTER (WHERE group_row.enabled) AS groups,
+          array_agg(DISTINCT group_row.id ORDER BY group_row.id) FILTER (WHERE NOT group_row.enabled) AS disabled_groups,
+          array_agg(DISTINCT scope ORDER BY scope) FILTER (WHERE group_row.enabled AND scope IS NOT NULL) AS scopes,
+          (
+              SELECT jsonb_object_agg(group_meta.key, group_meta.value ORDER BY group_meta.group_id, group_meta.key)
+              FROM (
+                  SELECT group_row_meta.id AS group_id, meta_entry.key, meta_entry.value
+                  FROM ${"schema"}.user_group AS user_group_meta
+                  JOIN ${"schema"}."group" AS group_row_meta ON group_row_meta.id = user_group_meta."group"
+                  CROSS JOIN LATERAL jsonb_each(COALESCE(group_row_meta.meta, '{}'::jsonb)) AS meta_entry(key, value)
+                  WHERE user_group_meta."user" = @id
+                    AND group_row_meta.enabled
+              ) AS group_meta
+              ) AS effective_meta
     FROM ${"schema"}.user_group AS user_group
     JOIN ${"schema"}."group" AS group_row ON group_row.id = user_group."group"
-    LEFT JOIN LATERAL unnest(group_row.scopes) AS scope ON true
-    WHERE user_group."user" = @id
-      AND group_row.enabled
+            LEFT JOIN LATERAL unnest(CASE WHEN group_row.enabled THEN group_row.scopes ELSE '{}'::text[] END) AS scope ON true
+            WHERE user_group."user" = @id
     GROUP BY user_group."user"
 ), deleted AS (
     DELETE FROM ${"schema"}.user
@@ -123,13 +180,15 @@ SELECT
     deleted.id,
     deleted.name,
     deleted.email,
-    deleted.meta,
+  deleted.meta,
+  COALESCE(deleted_groups.effective_meta, '{}'::jsonb) || COALESCE(deleted.meta, '{}'::jsonb) AS effective_meta,
     deleted.status,
     deleted.created_at,
     deleted.expires_at,
     deleted.modified_at,
     COALESCE(deleted_claims.claims, '{}'::jsonb) AS claims,
     COALESCE(deleted_groups.groups, '{}'::text[]) AS groups,
+  COALESCE(deleted_groups.disabled_groups, '{}'::text[]) AS disabled_groups,
     COALESCE(deleted_groups.scopes, '{}'::text[]) AS scopes
 FROM deleted
 LEFT JOIN deleted_claims ON deleted_claims.id = deleted.id
@@ -140,13 +199,15 @@ SELECT
     user_row.id,
     user_row.name,
     user_row.email,
-    user_row.meta,
+  user_row.meta,
+  COALESCE(group_memberships.effective_meta, '{}'::jsonb) || COALESCE(user_row.meta, '{}'::jsonb) AS effective_meta,
     user_row.status,
     user_row.created_at,
     user_row.expires_at,
     user_row.modified_at,
     COALESCE(identity_claims.claims, '{}'::jsonb) AS claims,
     COALESCE(group_memberships.groups, '{}'::text[]) AS groups,
+  COALESCE(group_memberships.disabled_groups, '{}'::text[]) AS disabled_groups,
     COALESCE(group_memberships.scopes, '{}'::text[]) AS scopes
 FROM ${"schema"}.user AS user_row
 LEFT JOIN LATERAL (
@@ -157,13 +218,24 @@ LEFT JOIN LATERAL (
 ) AS identity_claims ON true
 LEFT JOIN LATERAL (
     SELECT
-    array_agg(DISTINCT group_row.id ORDER BY group_row.id) AS groups,
-        array_agg(DISTINCT scope ORDER BY scope) FILTER (WHERE scope IS NOT NULL) AS scopes
+    array_agg(DISTINCT group_row.id ORDER BY group_row.id) FILTER (WHERE group_row.enabled) AS groups,
+    array_agg(DISTINCT group_row.id ORDER BY group_row.id) FILTER (WHERE NOT group_row.enabled) AS disabled_groups,
+    array_agg(DISTINCT scope ORDER BY scope) FILTER (WHERE group_row.enabled AND scope IS NOT NULL) AS scopes,
+    (
+      SELECT jsonb_object_agg(group_meta.key, group_meta.value ORDER BY group_meta.group_id, group_meta.key)
+      FROM (
+        SELECT group_row_meta.id AS group_id, meta_entry.key, meta_entry.value
+        FROM ${"schema"}.user_group AS user_group_meta
+        JOIN ${"schema"}."group" AS group_row_meta ON group_row_meta.id = user_group_meta."group"
+        CROSS JOIN LATERAL jsonb_each(COALESCE(group_row_meta.meta, '{}'::jsonb)) AS meta_entry(key, value)
+        WHERE user_group_meta."user" = user_row.id
+          AND group_row_meta.enabled
+      ) AS group_meta
+    ) AS effective_meta
     FROM ${"schema"}.user_group AS user_group
     JOIN ${"schema"}."group" AS group_row ON group_row.id = user_group."group"
-    LEFT JOIN LATERAL unnest(group_row.scopes) AS scope ON true
-    WHERE user_group."user" = user_row.id
-      AND group_row.enabled
+  LEFT JOIN LATERAL unnest(CASE WHEN group_row.enabled THEN group_row.scopes ELSE '{}'::text[] END) AS scope ON true
+  WHERE user_group."user" = user_row.id
 ) AS group_memberships ON true
 ${where}
 ${orderby}

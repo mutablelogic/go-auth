@@ -100,4 +100,36 @@ func TestClientDeleteMethods(t *testing.T) {
 		assert.Equal([]string{"staff"}, request)
 		assert.Equal([]string{"admins"}, response.Groups)
 	})
+
+	t.Run("GetUserDecodesEffectiveMetaAndDisabledGroups", func(t *testing.T) {
+		assert := assert.New(t)
+		require := require.New(t)
+		userID := authschema.UserID(uuid.New())
+
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			require.Equal(http.MethodGet, r.Method)
+			require.Equal("/user/"+uuid.UUID(userID).String(), r.URL.Path)
+			w.Header().Set("Content-Type", "application/json")
+			require.NoError(json.NewEncoder(w).Encode(authschema.User{
+				ID:             userID,
+				EffectiveMeta:  authschema.MetaMap{"group_admin": "hello"},
+				DisabledGroups: []string{"disabled-group"},
+				UserMeta: authschema.UserMeta{
+					Meta:   authschema.MetaMap{"source": "local"},
+					Groups: []string{"admins"},
+				},
+			}))
+		}))
+		defer server.Close()
+
+		client, err := New(server.URL)
+		require.NoError(err)
+		response, err := client.GetUser(context.Background(), userID)
+		require.NoError(err)
+		require.NotNil(response)
+		assert.Equal(authschema.MetaMap{"source": "local"}, response.Meta)
+		assert.Equal(authschema.MetaMap{"group_admin": "hello"}, response.EffectiveMeta)
+		assert.Equal([]string{"admins"}, response.Groups)
+		assert.Equal([]string{"disabled-group"}, response.DisabledGroups)
+	})
 }

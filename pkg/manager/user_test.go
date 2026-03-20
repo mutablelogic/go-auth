@@ -263,6 +263,7 @@ func Test_user_001(t *testing.T) {
 			GroupMeta: schema.GroupMeta{
 				Enabled: &enabled,
 				Scopes:  []string{"user.read", "user.write"},
+				Meta:    schema.MetaMap{"group_admin": "hello", "team": "group-admins"},
 			},
 		})
 		require.NoError(err)
@@ -271,6 +272,7 @@ func Test_user_001(t *testing.T) {
 			GroupMeta: schema.GroupMeta{
 				Enabled: &enabled,
 				Scopes:  []string{"profile.read", "user.read"},
+				Meta:    schema.MetaMap{"team": "group-staff", "region": "eu"},
 			},
 		})
 		require.NoError(err)
@@ -286,16 +288,31 @@ func Test_user_001(t *testing.T) {
 		created, err := m.CreateUser(context.Background(), schema.UserMeta{
 			Name:   "Grouped User",
 			Email:  "grouped.user@example.com",
+			Meta:   schema.MetaMap{"team": "user", "source": "local"},
 			Groups: []string{" admins ", "staff", "admins", "", "disabled_group"},
 		}, nil)
 		require.NoError(err)
 		require.NotNil(created)
+		assert.Equal("hello", created.EffectiveMeta["group_admin"])
+		assert.Equal("eu", created.EffectiveMeta["region"])
+		assert.Equal("user", created.EffectiveMeta["team"])
+		assert.Equal("local", created.EffectiveMeta["source"])
+		assert.Equal("user", created.Meta["team"])
+		assert.Equal("local", created.Meta["source"])
+		assert.Equal([]string{"disabled_group"}, created.DisabledGroups)
 
 		fetched, err := m.GetUser(context.Background(), created.ID)
 		require.NoError(err)
 		require.NotNil(fetched)
 		assert.Equal([]string{"admins", "staff"}, fetched.Groups)
 		assert.Equal([]string{"profile.read", "user.read", "user.write"}, fetched.Scopes)
+		assert.Equal("hello", fetched.EffectiveMeta["group_admin"])
+		assert.Equal("eu", fetched.EffectiveMeta["region"])
+		assert.Equal("user", fetched.EffectiveMeta["team"])
+		assert.Equal("local", fetched.EffectiveMeta["source"])
+		assert.Equal("user", fetched.Meta["team"])
+		assert.Equal("local", fetched.Meta["source"])
+		assert.Equal([]string{"disabled_group"}, fetched.DisabledGroups)
 
 		updated, err := m.UpdateUser(context.Background(), created.ID, schema.UserMeta{
 			Name:   "Grouped User Updated",
@@ -305,12 +322,27 @@ func Test_user_001(t *testing.T) {
 		require.NotNil(updated)
 		assert.Equal([]string{"staff"}, updated.Groups)
 		assert.Equal([]string{"profile.read", "user.read"}, updated.Scopes)
+		_, hasGroupAdmin := updated.EffectiveMeta["group_admin"]
+		assert.False(hasGroupAdmin)
+		assert.Equal("eu", updated.EffectiveMeta["region"])
+		assert.Equal("user", updated.EffectiveMeta["team"])
+		assert.Equal("local", updated.EffectiveMeta["source"])
+		assert.Equal("user", updated.Meta["team"])
+		assert.Equal("local", updated.Meta["source"])
+		assert.Empty(updated.DisabledGroups)
 
 		cleared, err := m.UpdateUser(context.Background(), created.ID, schema.UserMeta{Groups: []string{" ", ""}})
 		require.NoError(err)
 		require.NotNil(cleared)
 		assert.Empty(cleared.Groups)
 		assert.Empty(cleared.Scopes)
+		assert.Equal("user", cleared.Meta["team"])
+		assert.Equal("local", cleared.Meta["source"])
+		assert.Empty(cleared.DisabledGroups)
+		assert.Equal("user", cleared.EffectiveMeta["team"])
+		assert.Equal("local", cleared.EffectiveMeta["source"])
+		_, hasRegion := cleared.EffectiveMeta["region"]
+		assert.False(hasRegion)
 
 		listed, err := m.ListUsers(context.Background(), schema.UserListRequest{Email: created.Email})
 		require.NoError(err)
@@ -318,12 +350,22 @@ func Test_user_001(t *testing.T) {
 		require.Len(listed.Body, 1)
 		assert.Empty(listed.Body[0].Groups)
 		assert.Empty(listed.Body[0].Scopes)
+		assert.Empty(listed.Body[0].DisabledGroups)
+		assert.Equal("user", listed.Body[0].Meta["team"])
+		assert.Equal("local", listed.Body[0].Meta["source"])
+		assert.Equal("user", listed.Body[0].EffectiveMeta["team"])
+		assert.Equal("local", listed.Body[0].EffectiveMeta["source"])
 
 		deleted, err := m.DeleteUser(context.Background(), created.ID)
 		require.NoError(err)
 		require.NotNil(deleted)
 		assert.Empty(deleted.Groups)
 		assert.Empty(deleted.Scopes)
+		assert.Empty(deleted.DisabledGroups)
+		assert.Equal("user", deleted.Meta["team"])
+		assert.Equal("local", deleted.Meta["source"])
+		assert.Equal("user", deleted.EffectiveMeta["team"])
+		assert.Equal("local", deleted.EffectiveMeta["source"])
 	})
 
 	t.Run("UpdateWithGroupsRollback", func(t *testing.T) {
@@ -380,12 +422,14 @@ func Test_user_001(t *testing.T) {
 		require.NoError(err)
 		require.NotNil(created)
 		assert.Empty(created.Groups)
+		assert.Equal([]string{"disabled_group"}, created.DisabledGroups)
 		assert.Empty(created.Scopes)
 
 		added, err := m.AddUserGroups(context.Background(), created.ID, []string{" admins ", "staff", "admins", ""})
 		require.NoError(err)
 		require.NotNil(added)
 		assert.Equal([]string{"admins", "staff"}, added.Groups)
+		assert.Equal([]string{"disabled_group"}, added.DisabledGroups)
 		assert.Equal([]string{"profile.read", "user.read", "user.write"}, added.Scopes)
 
 		var raw userGroupListResult
@@ -397,12 +441,14 @@ func Test_user_001(t *testing.T) {
 		fetched, err := m.GetUser(context.Background(), created.ID)
 		require.NoError(err)
 		assert.Equal([]string{"admins", "disabled_group", "staff"}, fetched.Groups)
+		assert.Empty(fetched.DisabledGroups)
 		assert.Equal([]string{"admin.all", "profile.read", "user.read", "user.write"}, fetched.Scopes)
 
 		removed, err := m.RemoveUserGroups(context.Background(), created.ID, []string{" staff ", "disabled_group", "missing"})
 		require.NoError(err)
 		require.NotNil(removed)
 		assert.Equal([]string{"admins"}, removed.Groups)
+		assert.Empty(removed.DisabledGroups)
 		assert.Equal([]string{"user.read", "user.write"}, removed.Scopes)
 
 		raw = userGroupListResult{}

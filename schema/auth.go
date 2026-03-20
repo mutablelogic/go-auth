@@ -12,9 +12,9 @@ import (
 // TYPES
 
 type TokenRequest struct {
-	Provider string         `json:"provider" enum:"oauth"`
-	Token    string         `json:"token"`
-	Meta     map[string]any `json:"meta,omitempty"`
+	Provider string  `json:"provider" enum:"oauth"`
+	Token    string  `json:"token"`
+	Meta     MetaMap `json:"meta,omitempty"`
 }
 
 // RefreshRequest contains a previously issued local session token that should

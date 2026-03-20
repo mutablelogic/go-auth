@@ -107,6 +107,7 @@ func Test_user_001(t *testing.T) {
 		modifiedAt := time.Now().UTC()
 		meta := map[string]any{"team": "auth"}
 		claims := map[string]any{"role": "admin"}
+		effectiveMeta := map[string]any{"group_admin": "hello"}
 
 		var user User
 		err := user.Scan(mockRow{values: []any{
@@ -114,19 +115,22 @@ func Test_user_001(t *testing.T) {
 			"Test User",
 			"user@example.com",
 			meta,
+			effectiveMeta,
 			&status,
 			createdAt,
 			&expiresAt,
 			&modifiedAt,
 			claims,
 			[]string{"staff"},
+			[]string{"disabled"},
 			[]string{"openid"},
 		}})
 		require.NoError(err)
 		assert.Equal(userID, user.ID)
 		assert.Equal("Test User", user.Name)
 		assert.Equal("user@example.com", user.Email)
-		assert.Equal(meta, user.Meta)
+		assert.Equal(MetaMap(meta), user.Meta)
+		assert.Equal(MetaMap(effectiveMeta), user.EffectiveMeta)
 		require.NotNil(user.Status)
 		assert.Equal(status, *user.Status)
 		assert.Equal(createdAt, user.CreatedAt)
@@ -136,6 +140,7 @@ func Test_user_001(t *testing.T) {
 		assert.Equal(modifiedAt, *user.ModifiedAt)
 		assert.Equal(claims, user.Claims)
 		assert.Equal([]string{"staff"}, user.Groups)
+		assert.Equal([]string{"disabled"}, user.DisabledGroups)
 		assert.Equal([]string{"openid"}, user.Scopes)
 	})
 
@@ -153,15 +158,19 @@ func Test_user_001(t *testing.T) {
 			"Test User",
 			"user@example.com",
 			map[string]any{"team": "auth"},
+			map[string]any{"group_admin": "hello"},
 			&status,
 			createdAt,
 			(*time.Time)(nil),
 			(*time.Time)(nil),
 			map[string]any{"role": "admin"},
 			[]string{"staff"},
+			[]string{"disabled"},
 			[]string{"openid"},
 		}}))
 		assert.Len(list.Body, 1)
+		assert.Equal(MetaMap{"group_admin": "hello"}, list.Body[0].EffectiveMeta)
+		assert.Equal([]string{"disabled"}, list.Body[0].DisabledGroups)
 
 		require.NoError(list.ScanCount(mockRow{values: []any{uint(2)}}))
 		assert.Equal(uint(2), list.Count)

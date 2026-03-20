@@ -27,12 +27,12 @@ type UserID uuid.UUID
 // UserMeta contains the mutable profile fields of a user.
 // Email is the canonical address used to merge logins across providers.
 type UserMeta struct {
-	Name      string         `json:"name,omitempty"`
-	Email     string         `json:"email,omitempty"`
-	Groups    []string       `json:"groups,omitempty"`
-	Status    *UserStatus    `json:"status,omitempty" enum:"new,active,inactive,suspended,deleted"`
-	Meta      map[string]any `json:"meta,omitempty"`
-	ExpiresAt *time.Time     `json:"expires_at,omitzero" format:"date-time"`
+	Name      string      `json:"name,omitempty"`
+	Email     string      `json:"email,omitempty"`
+	Groups    []string    `json:"groups,omitempty"`
+	Status    *UserStatus `json:"status,omitempty" enum:"new,active,inactive,suspended,deleted"`
+	Meta      MetaMap     `json:"meta,omitempty"`
+	ExpiresAt *time.Time  `json:"expires_at,omitzero" format:"date-time"`
 }
 
 // User represents a user account in the system. It contains both
@@ -42,6 +42,8 @@ type User struct {
 	CreatedAt  time.Time      `json:"created_at" format:"date-time" readonly:""`
 	ModifiedAt *time.Time     `json:"modified_at,omitempty" format:"date-time" readonly:""`
 	Claims     map[string]any `json:"claims,omitempty" readonly:""`
+	EffectiveMeta MetaMap     `json:"effective_meta,omitempty" readonly:""`
+	DisabledGroups []string   `json:"disabled_groups,omitempty" readonly:""`
 	Scopes     []string       `json:"scopes,omitempty" readonly:""`
 	UserMeta
 }
@@ -233,12 +235,14 @@ func (u *User) Scan(row pg.Row) error {
 		&u.Name,
 		&u.Email,
 		&u.Meta,
+		&u.EffectiveMeta,
 		&u.Status,
 		&u.CreatedAt,
 		&u.ExpiresAt,
 		&u.ModifiedAt,
 		&u.Claims,
 		&u.Groups,
+		&u.DisabledGroups,
 		&u.Scopes,
 	)
 }
@@ -267,7 +271,7 @@ func (list *UserList) ScanCount(row pg.Row) error {
 func (u UserMeta) Insert(bind *pg.Bind) (string, error) {
 	// Fix meta
 	if u.Meta == nil {
-		u.Meta = map[string]any{}
+		u.Meta = MetaMap{}
 	}
 
 	// Validate email and name, which are required for user creation.
@@ -290,7 +294,7 @@ func (u UserMeta) Insert(bind *pg.Bind) (string, error) {
 		bind.Set("name", name)
 	}
 
-	meta, err := metaInsertExpr(u.Meta)
+	meta, err := metaInsertExpr(u.Meta.Map())
 	if err != nil {
 		return "", err
 	}
@@ -331,7 +335,7 @@ func (u UserMeta) Update(bind *pg.Bind) error {
 		bind.Append("patch", "status = "+bind.Set("status", *u.Status))
 	}
 	if u.Meta != nil {
-		expr, err := metaPatchExpr(bind, "meta", "meta", u.Meta)
+		expr, err := metaPatchExpr(bind, "meta", "meta", u.Meta.Map())
 		if err != nil {
 			return err
 		}
