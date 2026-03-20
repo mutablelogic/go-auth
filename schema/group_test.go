@@ -35,6 +35,16 @@ func Test_group_schema_001(t *testing.T) {
 		assert.Equal([]string{"user.read", "user.write"}, bind.Get("scopes"))
 		assert.Equal(map[string]any{"team": "auth"}, bind.Get("meta"))
 
+		normalizedBind := pg.NewBind("schema", DefaultSchema)
+		_, err = (GroupInsert{
+			ID: "operators",
+			GroupMeta: GroupMeta{
+				Scopes: []string{" user.read ", "   ", "write ", "", "  admin"},
+			},
+		}).Insert(normalizedBind)
+		require.NoError(err)
+		assert.Equal([]string{"user.read", "write", "admin"}, normalizedBind.Get("scopes"))
+
 		blankBind := pg.NewBind("schema", DefaultSchema)
 		_, err = (GroupInsert{ID: "operators"}).Insert(blankBind)
 		require.NoError(err)
@@ -153,6 +163,12 @@ func Test_group_schema_001(t *testing.T) {
 		assert.Equal(`"content"`, bind.Get("meta_value_0"))
 		assert.True(strings.Contains(bind.Get("patch").(string), "meta = "))
 		assert.True(strings.Contains(bind.Get("patch").(string), "jsonb_build_object("))
+
+		bind = pg.NewBind()
+		err = (GroupMeta{Scopes: []string{" read ", " ", "write ", "", " admin"}}).Update(bind)
+		require.NoError(err)
+		assert.Equal([]string{"read", "write", "admin"}, bind.Get("scopes"))
+		assert.Equal("scopes = @scopes", bind.Get("patch"))
 
 		bind = pg.NewBind()
 		err = (GroupMeta{Description: ptrString("  ")}).Update(bind)

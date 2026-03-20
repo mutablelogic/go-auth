@@ -3,7 +3,6 @@ package manager_test
 import (
 	"context"
 	"errors"
-	"fmt"
 	"testing"
 	"time"
 
@@ -126,6 +125,26 @@ func Test_user_001(t *testing.T) {
 		assert.Nil(fetched.ModifiedAt)
 	})
 
+	t.Run("CreateWithGroupsRollback", func(t *testing.T) {
+		assert := assert.New(t)
+		require := require.New(t)
+
+		m := newTestManager(t)
+		email := "groups.rollback@example.com"
+
+		created, err := m.CreateUser(context.Background(), schema.UserMeta{
+			Name:   "Groups Rollback",
+			Email:  email,
+			Groups: []string{"missing_group"},
+		}, nil)
+		require.Error(err)
+		assert.Nil(created)
+
+		var count countResult
+		require.NoError(m.Get(context.Background(), &count, emailCountSelector{Email: email}))
+		assert.Zero(count.Value)
+	})
+
 	t.Run("CreateGetUpdateDelete", func(t *testing.T) {
 		assert := assert.New(t)
 		require := require.New(t)
@@ -215,16 +234,9 @@ func Test_user_001(t *testing.T) {
 		require := require.New(t)
 
 		m := newTestManager(t)
-		created, err := m.CreateUser(context.Background(), schema.UserMeta{
-			Name:  "Grouped User",
-			Email: "grouped.user@example.com",
-		}, nil)
-		require.NoError(err)
-		require.NotNil(created)
-
 		enabled := true
 		disabled := false
-		_, err = m.CreateGroup(context.Background(), schema.GroupInsert{
+		_, err := m.CreateGroup(context.Background(), schema.GroupInsert{
 			ID: "admins",
 			GroupMeta: schema.GroupMeta{
 				Enabled: &enabled,
@@ -249,13 +261,13 @@ func Test_user_001(t *testing.T) {
 		})
 		require.NoError(err)
 
-		err = m.Exec(context.Background(), fmt.Sprintf(
-			`INSERT INTO auth.user_group ("user", "group") VALUES ('%s', 'admins'), ('%s', 'staff'), ('%s', 'disabled_group')`,
-			created.ID,
-			created.ID,
-			created.ID,
-		))
+		created, err := m.CreateUser(context.Background(), schema.UserMeta{
+			Name:   "Grouped User",
+			Email:  "grouped.user@example.com",
+			Groups: []string{" admins ", "staff", "admins", "", "disabled_group"},
+		}, nil)
 		require.NoError(err)
+		require.NotNil(created)
 
 		fetched, err := m.GetUser(context.Background(), created.ID)
 		require.NoError(err)
@@ -263,24 +275,65 @@ func Test_user_001(t *testing.T) {
 		assert.Equal([]string{"admins", "staff"}, fetched.Groups)
 		assert.Equal([]string{"profile.read", "user.read", "user.write"}, fetched.Scopes)
 
-		updated, err := m.UpdateUser(context.Background(), created.ID, schema.UserMeta{Name: "Grouped User Updated"})
+		updated, err := m.UpdateUser(context.Background(), created.ID, schema.UserMeta{
+			Name:   "Grouped User Updated",
+			Groups: []string{"staff"},
+		})
 		require.NoError(err)
 		require.NotNil(updated)
-		assert.Equal([]string{"admins", "staff"}, updated.Groups)
-		assert.Equal([]string{"profile.read", "user.read", "user.write"}, updated.Scopes)
+		assert.Equal([]string{"staff"}, updated.Groups)
+		assert.Equal([]string{"profile.read", "user.read"}, updated.Scopes)
+
+		cleared, err := m.UpdateUser(context.Background(), created.ID, schema.UserMeta{Groups: []string{" ", ""}})
+		require.NoError(err)
+		require.NotNil(cleared)
+		assert.Empty(cleared.Groups)
+		assert.Empty(cleared.Scopes)
 
 		listed, err := m.ListUsers(context.Background(), schema.UserListRequest{Email: created.Email})
 		require.NoError(err)
 		require.NotNil(listed)
 		require.Len(listed.Body, 1)
-		assert.Equal([]string{"admins", "staff"}, listed.Body[0].Groups)
-		assert.Equal([]string{"profile.read", "user.read", "user.write"}, listed.Body[0].Scopes)
+		assert.Empty(listed.Body[0].Groups)
+		assert.Empty(listed.Body[0].Scopes)
 
 		deleted, err := m.DeleteUser(context.Background(), created.ID)
 		require.NoError(err)
 		require.NotNil(deleted)
-		assert.Equal([]string{"admins", "staff"}, deleted.Groups)
-		assert.Equal([]string{"profile.read", "user.read", "user.write"}, deleted.Scopes)
+		assert.Empty(deleted.Groups)
+		assert.Empty(deleted.Scopes)
+	})
+
+	t.Run("UpdateWithGroupsRollback", func(t *testing.T) {
+		assert := assert.New(t)
+		require := require.New(t)
+
+		m := newTestManager(t)
+		enabled := true
+		_, err := m.CreateGroup(context.Background(), schema.GroupInsert{ID: "staff", GroupMeta: schema.GroupMeta{Enabled: &enabled, Scopes: []string{"profile.read"}}})
+		require.NoError(err)
+
+		created, err := m.CreateUser(context.Background(), schema.UserMeta{
+			Name:   "Rollback Update User",
+			Email:  "rollback.update@example.com",
+			Groups: []string{"staff"},
+		}, nil)
+		require.NoError(err)
+		require.NotNil(created)
+
+		updated, err := m.UpdateUser(context.Background(), created.ID, schema.UserMeta{
+			Name:   "Should Not Persist",
+			Groups: []string{"missing_group"},
+		})
+		require.Error(err)
+		assert.Nil(updated)
+
+		fetched, err := m.GetUser(context.Background(), created.ID)
+		require.NoError(err)
+		require.NotNil(fetched)
+		assert.Equal("Rollback Update User", fetched.Name)
+		assert.Equal([]string{"staff"}, fetched.Groups)
+		assert.Equal([]string{"profile.read"}, fetched.Scopes)
 	})
 
 	t.Run("GetMissingUser", func(t *testing.T) {

@@ -29,6 +29,7 @@ type UserID uuid.UUID
 type UserMeta struct {
 	Name      string         `json:"name,omitempty"`
 	Email     string         `json:"email,omitempty"`
+	Groups    []string       `json:"groups,omitempty"`
 	Status    *UserStatus    `json:"status,omitempty" enum:"new,active,inactive,suspended,deleted"`
 	Meta      map[string]any `json:"meta,omitempty"`
 	ExpiresAt *time.Time     `json:"expires_at,omitzero" format:"date-time"`
@@ -41,7 +42,6 @@ type User struct {
 	CreatedAt  time.Time      `json:"created_at" format:"date-time" readonly:""`
 	ModifiedAt *time.Time     `json:"modified_at,omitempty" format:"date-time" readonly:""`
 	Claims     map[string]any `json:"claims,omitempty" readonly:""`
-	Groups     []string       `json:"groups,omitempty" readonly:""`
 	Scopes     []string       `json:"scopes,omitempty" readonly:""`
 	UserMeta
 }

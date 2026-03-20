@@ -108,6 +108,9 @@ func (m *Manager) LoginWithIdentity(ctx context.Context, meta schema.IdentityIns
 				Email: meta.Email,
 				Meta:  userCreateMeta,
 			}
+
+			// If there is a userhook, call it to allow modification of the usermeta before creating the user.
+			// to set status, add groups, reject, etc.
 			if m.userhook != nil {
 				var err error
 				if usermeta, err = m.userhook(ctx, meta, usermeta); err != nil {
@@ -115,8 +118,14 @@ func (m *Manager) LoginWithIdentity(ctx context.Context, meta schema.IdentityIns
 				}
 			}
 
+			// Create a new user and set groups
 			var created schema.User
-			if err := conn.Insert(ctx, &created, usermeta); err != nil {
+			rowMeta := usermeta
+			rowMeta.Groups = nil
+			if err := conn.Insert(ctx, &created, rowMeta); err != nil {
+				return err
+			}
+			if err := replaceUserGroups(ctx, conn, created.ID, usermeta.Groups); err != nil {
 				return err
 			}
 			if err := conn.With("user", created.ID).Insert(ctx, nil, types.Value(&meta)); err != nil {

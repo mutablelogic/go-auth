@@ -180,7 +180,7 @@ func (group GroupInsert) Insert(bind *pg.Bind) (string, error) {
 	if group.Scopes == nil {
 		bind.Set("scopes", []string{})
 	} else {
-		bind.Set("scopes", group.Scopes)
+		bind.Set("scopes", normalizeScopes(group.Scopes))
 	}
 
 	// Meta
@@ -218,7 +218,7 @@ func (group GroupMeta) Update(bind *pg.Bind) error {
 
 	// Scopes
 	if group.Scopes != nil {
-		bind.Append("patch", "scopes = "+bind.Set("scopes", group.Scopes))
+		bind.Append("patch", "scopes = "+bind.Set("scopes", normalizeScopes(group.Scopes)))
 	}
 
 	// Meta
@@ -252,4 +252,14 @@ func normalizeGroupID(id string) (string, error) {
 	} else {
 		return id, nil
 	}
+}
+
+func normalizeScopes(scopes []string) []string {
+	result := make([]string, 0, len(scopes))
+	for _, scope := range scopes {
+		if scope = strings.TrimSpace(scope); scope != "" {
+			result = append(result, scope)
+		}
+	}
+	return result
 }
