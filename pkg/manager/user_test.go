@@ -27,6 +27,14 @@ type countResult struct {
 	Value int
 }
 
+type userGroupListSelector struct {
+	User schema.UserID
+}
+
+type userGroupListResult struct {
+	Groups []string
+}
+
 func (selector emailCountSelector) Select(bind *pg.Bind, op pg.Op) (string, error) {
 	bind.Set("email", selector.Email)
 	return `SELECT COUNT(*) FROM auth.user WHERE email = @email`, nil
@@ -34,6 +42,20 @@ func (selector emailCountSelector) Select(bind *pg.Bind, op pg.Op) (string, erro
 
 func (result *countResult) Scan(row pg.Row) error {
 	return row.Scan(&result.Value)
+}
+
+func (selector userGroupListSelector) Select(bind *pg.Bind, op pg.Op) (string, error) {
+	bind.Set("user", selector.User)
+	return `SELECT "group" FROM auth.user_group WHERE "user" = @user ORDER BY "group" ASC`, nil
+}
+
+func (result *userGroupListResult) Scan(row pg.Row) error {
+	var group string
+	if err := row.Scan(&group); err != nil {
+		return err
+	}
+	result.Groups = append(result.Groups, group)
+	return nil
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -332,6 +354,89 @@ func Test_user_001(t *testing.T) {
 		require.NoError(err)
 		require.NotNil(fetched)
 		assert.Equal("Rollback Update User", fetched.Name)
+		assert.Equal([]string{"staff"}, fetched.Groups)
+		assert.Equal([]string{"profile.read"}, fetched.Scopes)
+	})
+
+	t.Run("AddAndRemoveUserGroups", func(t *testing.T) {
+		assert := assert.New(t)
+		require := require.New(t)
+
+		m := newTestManager(t)
+		enabled := true
+		disabled := false
+		_, err := m.CreateGroup(context.Background(), schema.GroupInsert{ID: "admins", GroupMeta: schema.GroupMeta{Enabled: &enabled, Scopes: []string{"user.read", "user.write"}}})
+		require.NoError(err)
+		_, err = m.CreateGroup(context.Background(), schema.GroupInsert{ID: "staff", GroupMeta: schema.GroupMeta{Enabled: &enabled, Scopes: []string{"profile.read"}}})
+		require.NoError(err)
+		_, err = m.CreateGroup(context.Background(), schema.GroupInsert{ID: "disabled_group", GroupMeta: schema.GroupMeta{Enabled: &disabled, Scopes: []string{"admin.all"}}})
+		require.NoError(err)
+
+		created, err := m.CreateUser(context.Background(), schema.UserMeta{
+			Name:   "Group Mutation User",
+			Email:  "group.mutation@example.com",
+			Groups: []string{"disabled_group"},
+		}, nil)
+		require.NoError(err)
+		require.NotNil(created)
+		assert.Empty(created.Groups)
+		assert.Empty(created.Scopes)
+
+		added, err := m.AddUserGroups(context.Background(), created.ID, []string{" admins ", "staff", "admins", ""})
+		require.NoError(err)
+		require.NotNil(added)
+		assert.Equal([]string{"admins", "staff"}, added.Groups)
+		assert.Equal([]string{"profile.read", "user.read", "user.write"}, added.Scopes)
+
+		var raw userGroupListResult
+		require.NoError(m.List(context.Background(), &raw, userGroupListSelector{User: created.ID}))
+		assert.Equal([]string{"admins", "disabled_group", "staff"}, raw.Groups)
+
+		_, err = m.UpdateGroup(context.Background(), "disabled_group", schema.GroupMeta{Enabled: &enabled})
+		require.NoError(err)
+		fetched, err := m.GetUser(context.Background(), created.ID)
+		require.NoError(err)
+		assert.Equal([]string{"admins", "disabled_group", "staff"}, fetched.Groups)
+		assert.Equal([]string{"admin.all", "profile.read", "user.read", "user.write"}, fetched.Scopes)
+
+		removed, err := m.RemoveUserGroups(context.Background(), created.ID, []string{" staff ", "disabled_group", "missing"})
+		require.NoError(err)
+		require.NotNil(removed)
+		assert.Equal([]string{"admins"}, removed.Groups)
+		assert.Equal([]string{"user.read", "user.write"}, removed.Scopes)
+
+		raw = userGroupListResult{}
+		require.NoError(m.List(context.Background(), &raw, userGroupListSelector{User: created.ID}))
+		assert.Equal([]string{"admins"}, raw.Groups)
+	})
+
+	t.Run("AddRemoveUserGroupsRollback", func(t *testing.T) {
+		assert := assert.New(t)
+		require := require.New(t)
+
+		m := newTestManager(t)
+		enabled := true
+		_, err := m.CreateGroup(context.Background(), schema.GroupInsert{ID: "staff", GroupMeta: schema.GroupMeta{Enabled: &enabled, Scopes: []string{"profile.read"}}})
+		require.NoError(err)
+
+		created, err := m.CreateUser(context.Background(), schema.UserMeta{
+			Name:   "Rollback Mutations",
+			Email:  "rollback.mutations@example.com",
+			Groups: []string{"staff"},
+		}, nil)
+		require.NoError(err)
+
+		added, err := m.AddUserGroups(context.Background(), created.ID, []string{"missing_group"})
+		require.Error(err)
+		assert.Nil(added)
+
+		removed, err := m.RemoveUserGroups(context.Background(), created.ID, []string{"missing_group"})
+		require.NoError(err)
+		require.NotNil(removed)
+		assert.Equal([]string{"staff"}, removed.Groups)
+
+		fetched, err := m.GetUser(context.Background(), created.ID)
+		require.NoError(err)
 		assert.Equal([]string{"staff"}, fetched.Groups)
 		assert.Equal([]string{"profile.read"}, fetched.Scopes)
 	})

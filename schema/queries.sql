@@ -310,3 +310,18 @@ SELECT
 FROM ${"schema"}."group" AS group_row
 ${where}
 ${orderby}
+
+-- user_group.list
+SELECT "group"
+FROM ${"schema"}.user_group
+WHERE "user" = @user
+ORDER BY "group" ASC;
+
+-- user_group.delete
+DELETE FROM ${"schema"}.user_group
+WHERE "user" = @user;
+
+-- user_group.insert
+INSERT INTO ${"schema"}.user_group ("user", "group")
+SELECT @user, group_id
+FROM unnest(@groups::text[]) AS group_id;
