@@ -44,6 +44,10 @@ func (insert UserGroupInsert) Insert(bind *pg.Bind) (string, error) {
 	return bind.Query("user_group.insert"), nil
 }
 
+func (insert UserGroupInsert) Update(_ *pg.Bind) error {
+	return auth.ErrNotImplemented.With("user group insert update is not supported")
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 // PUBLIC METHODS - READER
 

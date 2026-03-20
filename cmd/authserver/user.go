@@ -11,7 +11,7 @@ import (
 type UserCommands struct {
 	Users      ListUsersCommand  `cmd:"" name:"users" help:"Get Users." group:"USERS & GROUPS"`
 	User       GetUserCommand    `cmd:"" name:"user" help:"Get User." group:"USERS & GROUPS"`
-	UpdateUser UpdateUserCommand `cmd:"" name:"update-user" help:"Update User." group:"USERS & GROUPS"`
+	UpdateUser UpdateUserCommand `cmd:"" name:"user-update" help:"Update User." group:"USERS & GROUPS"`
 }
 
 type ListUsersCommand struct {

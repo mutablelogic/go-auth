@@ -10,10 +10,10 @@ import (
 
 type GroupCommands struct {
 	Groups      ListGroupsCommand  `cmd:"" name:"groups" help:"Get Groups." group:"USERS & GROUPS"`
-	CreateGroup CreateGroupCommand `cmd:"" name:"create-group" help:"Create Group." group:"USERS & GROUPS"`
 	Group       GetGroupCommand    `cmd:"" name:"group" help:"Get Group." group:"USERS & GROUPS"`
-	UpdateGroup UpdateGroupCommand `cmd:"" name:"update-group" help:"Update Group." group:"USERS & GROUPS"`
-	DeleteGroup DeleteGroupCommand `cmd:"" name:"delete-group" help:"Delete Group." group:"USERS & GROUPS"`
+	CreateGroup CreateGroupCommand `cmd:"" name:"group-create" help:"Create Group." group:"USERS & GROUPS"`
+	UpdateGroup UpdateGroupCommand `cmd:"" name:"group-update" help:"Update Group." group:"USERS & GROUPS"`
+	DeleteGroup DeleteGroupCommand `cmd:"" name:"group-delete" help:"Delete Group." group:"USERS & GROUPS"`
 }
 
 type ListGroupsCommand struct {

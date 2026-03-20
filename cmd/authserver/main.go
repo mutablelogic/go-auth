@@ -16,6 +16,7 @@ type CLI struct {
 	ServerCommands
 	AuthCommands
 	UserCommands
+	UserGroupCommands
 	GroupCommands
 }
 

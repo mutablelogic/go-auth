@@ -59,3 +59,27 @@ func (c *Client) UpdateUser(ctx context.Context, user schema.UserID, meta schema
 	}
 	return types.Ptr(response), nil
 }
+
+func (c *Client) AddUserGroups(ctx context.Context, user schema.UserID, groups []string) (*schema.User, error) {
+	var response schema.User
+	req, err := client.NewJSONRequestEx(http.MethodPost, groups, types.ContentTypeJSON)
+	if err != nil {
+		return nil, err
+	}
+	if err := c.DoWithContext(ctx, req, &response, client.OptPath("user", user, "group")); err != nil {
+		return nil, err
+	}
+	return types.Ptr(response), nil
+}
+
+func (c *Client) RemoveUserGroups(ctx context.Context, user schema.UserID, groups []string) (*schema.User, error) {
+	var response schema.User
+	req, err := client.NewJSONRequestEx(http.MethodDelete, groups, types.ContentTypeJSON)
+	if err != nil {
+		return nil, err
+	}
+	if err := c.DoWithContext(ctx, req, &response, client.OptPath("user", user, "group")); err != nil {
+		return nil, err
+	}
+	return types.Ptr(response), nil
+}

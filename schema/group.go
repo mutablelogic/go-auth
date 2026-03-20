@@ -253,13 +253,3 @@ func normalizeGroupID(id string) (string, error) {
 		return id, nil
 	}
 }
-
-func normalizeScopes(scopes []string) []string {
-	result := make([]string, 0, len(scopes))
-	for _, scope := range scopes {
-		if scope = strings.TrimSpace(scope); scope != "" {
-			result = append(result, scope)
-		}
-	}
-	return result
-}
