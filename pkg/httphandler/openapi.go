@@ -28,6 +28,18 @@ func userInfoSchema() *jsonschema.Schema {
 	return s
 }
 
+func groupSchema() *jsonschema.Schema {
+	return jsonschema.MustFor[schema.Group]()
+}
+
+func groupListSchema() *jsonschema.Schema {
+	s := jsonschema.MustFor[schema.GroupList]()
+	if body := schemaProperty(s, "body"); body != nil {
+		body.Items = unwrapSchema(groupSchema())
+	}
+	return s
+}
+
 func userListSchema() *jsonschema.Schema {
 	s := jsonschema.MustFor[schema.UserList]()
 	if body := schemaProperty(s, "body"); body != nil {

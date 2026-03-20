@@ -44,9 +44,9 @@ func Test_httphandler_001(t *testing.T) {
 		mgr, _ := newHTTPTestManager(t)
 		router := new(fakeRouter)
 
-		err := RegisterHandlers(mgr, router)
+		err := RegisterHandlers(mgr, router, false)
 		require.NoError(err)
-		require.Len(router.routes, 8)
+		require.Len(router.routes, 9)
 
 		paths := make([]string, 0, len(router.routes))
 		for _, route := range router.routes {
@@ -56,6 +56,7 @@ func Test_httphandler_001(t *testing.T) {
 			assert.True(route.middleware)
 		}
 
+		assert.Contains(paths, "group")
 		assert.Contains(paths, "user")
 		assert.Contains(paths, "user/{user}")
 		assert.Contains(paths, "/auth/login")

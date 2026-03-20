@@ -40,7 +40,16 @@ func Test_group_schema_001(t *testing.T) {
 		require.NoError(err)
 		assert.Nil(blankBind.Get("description"))
 
+		hyphenBind := pg.NewBind("schema", DefaultSchema)
+		_, err = (GroupInsert{ID: "power-users"}).Insert(hyphenBind)
+		require.NoError(err)
+		assert.Equal("power-users", hyphenBind.Get("id"))
+
 		_, err = (GroupInsert{ID: "1invalid"}).Insert(pg.NewBind())
+		assert.Error(err)
+		assert.ErrorIs(err, auth.ErrBadParameter)
+
+		_, err = (GroupInsert{ID: "a" + strings.Repeat("x", 64)}).Insert(pg.NewBind())
 		assert.Error(err)
 		assert.ErrorIs(err, auth.ErrBadParameter)
 	})

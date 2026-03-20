@@ -13,6 +13,18 @@ import (
 ///////////////////////////////////////////////////////////////////////////////
 // PUBLIC METHODS
 
+func (c *Client) CreateUser(ctx context.Context, meta schema.UserMeta) (*schema.User, error) {
+	var response schema.User
+	req, err := client.NewJSONRequestEx(http.MethodPost, meta, types.ContentTypeJSON)
+	if err != nil {
+		return nil, err
+	}
+	if err := c.DoWithContext(ctx, req, &response, client.OptPath("user")); err != nil {
+		return nil, err
+	}
+	return types.Ptr(response), nil
+}
+
 func (c *Client) ListUsers(ctx context.Context, req schema.UserListRequest) (*schema.UserList, error) {
 	var response schema.UserList
 	if err := c.DoWithContext(ctx, nil, &response, client.OptPath("user"), client.OptQuery(req.Query())); err != nil {

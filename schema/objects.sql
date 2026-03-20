@@ -44,7 +44,7 @@ CREATE INDEX IF NOT EXISTS session_user_idx ON ${"schema"}.session ("user");
 
 -- auth.group
 CREATE TABLE IF NOT EXISTS ${"schema"}.group (
-    "id"          TEXT    NOT NULL PRIMARY KEY CONSTRAINT groups_name_identifier CHECK (id ~ '^[a-zA-Z][a-zA-Z0-9_]*$'),
+    "id"          TEXT    NOT NULL PRIMARY KEY CONSTRAINT groups_name_identifier CHECK (id ~ '^[a-zA-Z][a-zA-Z0-9_-]{0,63}$'),
     "description" TEXT    NULL,
     "enabled"     BOOLEAN NOT NULL DEFAULT true,
     "scopes"      TEXT[]  NOT NULL DEFAULT '{}',

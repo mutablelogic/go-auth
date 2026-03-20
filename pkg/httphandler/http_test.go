@@ -312,6 +312,44 @@ func Test_http_001(t *testing.T) {
 		assert.NotEmpty(list.Body)
 	})
 
+	t.Run("GroupHandlerCreateAndList", func(t *testing.T) {
+		assert := assert.New(t)
+		require := require.New(t)
+
+		mgr, _ := newHTTPTestManager(t)
+		_, handler, _ := GroupHandler(mgr)
+
+		createRes := httptest.NewRecorder()
+		description := "Created Group"
+		createReq := httptest.NewRequest(http.MethodPost, "/group", mustJSONBody(t, schema.GroupInsert{
+			ID: "created-group",
+			GroupMeta: schema.GroupMeta{
+				Description: &description,
+				Scopes:      []string{"read", "write"},
+			},
+		}))
+		createReq.Header.Set("Content-Type", "application/json")
+		handler(createRes, createReq)
+
+		require.Equal(http.StatusCreated, createRes.Code)
+		var created schema.Group
+		require.NoError(json.Unmarshal(createRes.Body.Bytes(), &created))
+		assert.Equal("created-group", created.ID)
+		if assert.NotNil(created.Description) {
+			assert.Equal(description, *created.Description)
+		}
+
+		listRes := httptest.NewRecorder()
+		listReq := httptest.NewRequest(http.MethodGet, "/group?limit=10", nil)
+		handler(listRes, listReq)
+
+		require.Equal(http.StatusOK, listRes.Code)
+		var list schema.GroupList
+		require.NoError(json.Unmarshal(listRes.Body.Bytes(), &list))
+		assert.NotEmpty(list.Body)
+		assert.Contains(list.Body, created)
+	})
+
 	t.Run("ProtectedUserRejectsWrongIssuer", func(t *testing.T) {
 		assert := assert.New(t)
 		require := require.New(t)
@@ -545,6 +583,8 @@ func Test_http_001(t *testing.T) {
 		assert := assert.New(t)
 
 		assert.Equal("uuid", uuidSchema().Format)
+		assert.NotNil(groupSchema())
+		assert.NotNil(groupListSchema())
 		assert.NotNil(userSchema())
 		assert.NotNil(userListSchema())
 		assert.NotNil(userInfoSchema())

@@ -2,6 +2,8 @@ package schema
 
 import (
 	"database/sql"
+	"net/url"
+	"strconv"
 	"strings"
 
 	// Packages
@@ -40,6 +42,39 @@ type GroupList struct {
 	pg.OffsetLimit
 	Count uint    `json:"count" readonly:""`
 	Body  []Group `json:"body,omitempty"`
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// STRINGIFY
+
+func (g GroupMeta) String() string {
+	return types.Stringify(g)
+}
+
+func (g Group) String() string {
+	return types.Stringify(g)
+}
+
+func (g GroupList) String() string {
+	return types.Stringify(g)
+}
+
+func (g GroupInsert) String() string {
+	return types.Stringify(g)
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// PUBLIC METHODS - QUERY
+
+func (req GroupListRequest) Query() url.Values {
+	values := url.Values{}
+	if req.Offset > 0 {
+		values.Set("offset", strconv.FormatUint(req.Offset, 10))
+	}
+	if req.Limit != nil {
+		values.Set("limit", strconv.FormatUint(types.Value(req.Limit), 10))
+	}
+	return values
 }
 
 ///////////////////////////////////////////////////////////////////////////////

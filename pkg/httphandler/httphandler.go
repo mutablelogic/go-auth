@@ -36,13 +36,17 @@ func RegisterHandlers(manager *manager.Manager, router server.HTTPRouter, auth b
 		}
 		register(path, handler, spec)
 	}
+	registerProtectedAlways := func(path string, handler http.HandlerFunc, spec *openapi.PathItem) {
+		register(path, authenticated(handler), spec)
+	}
 
 	// Register protected handlers
+	registerProtected(GroupHandler(manager))
 	registerProtected(UserHandler(manager))
 	registerProtected(UserItemHandler(manager))
-	registerProtected(UserInfoHandler(manager))
 
-	// Register unprotected handlers
+	// Register auth handlers
+	registerProtectedAlways(UserInfoHandler(manager))
 	register(AuthHandler(manager))
 	register(RefreshHandler(manager))
 	register(RevokeHandler(manager))
