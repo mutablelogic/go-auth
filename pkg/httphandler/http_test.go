@@ -350,6 +350,65 @@ func Test_http_001(t *testing.T) {
 		assert.Contains(list.Body, created)
 	})
 
+	t.Run("GroupItemHandlerGetUpdateAndDelete", func(t *testing.T) {
+		assert := assert.New(t)
+		require := require.New(t)
+
+		mgr, _ := newHTTPTestManager(t)
+		description := "Original Group"
+		created, err := mgr.CreateGroup(context.Background(), schema.GroupInsert{
+			ID: "managed-group",
+			GroupMeta: schema.GroupMeta{
+				Description: &description,
+				Scopes:      []string{"read"},
+			},
+		})
+		require.NoError(err)
+
+		_, handler, _ := GroupItemHandler(mgr)
+
+		getRes := httptest.NewRecorder()
+		getReq := httptest.NewRequest(http.MethodGet, "/group/managed-group", nil)
+		getReq.SetPathValue("group", created.ID)
+		handler(getRes, getReq)
+
+		require.Equal(http.StatusOK, getRes.Code)
+		var fetched schema.Group
+		require.NoError(json.Unmarshal(getRes.Body.Bytes(), &fetched))
+		assert.Equal(created.ID, fetched.ID)
+
+		updatedDescription := "Updated Group"
+		patchRes := httptest.NewRecorder()
+		patchReq := httptest.NewRequest(http.MethodPatch, "/group/managed-group", mustJSONBody(t, schema.GroupMeta{
+			Description: &updatedDescription,
+			Scopes:      []string{"read", "write"},
+		}))
+		patchReq.Header.Set("Content-Type", "application/json")
+		patchReq.SetPathValue("group", created.ID)
+		handler(patchRes, patchReq)
+
+		require.Equal(http.StatusOK, patchRes.Code)
+		var updated schema.Group
+		require.NoError(json.Unmarshal(patchRes.Body.Bytes(), &updated))
+		if assert.NotNil(updated.Description) {
+			assert.Equal(updatedDescription, *updated.Description)
+		}
+		assert.Equal([]string{"read", "write"}, updated.Scopes)
+
+		deleteRes := httptest.NewRecorder()
+		deleteReq := httptest.NewRequest(http.MethodDelete, "/group/managed-group", nil)
+		deleteReq.SetPathValue("group", created.ID)
+		handler(deleteRes, deleteReq)
+
+		require.Equal(http.StatusNoContent, deleteRes.Code)
+
+		missingRes := httptest.NewRecorder()
+		missingReq := httptest.NewRequest(http.MethodGet, "/group/managed-group", nil)
+		missingReq.SetPathValue("group", created.ID)
+		handler(missingRes, missingReq)
+		require.Equal(http.StatusNotFound, missingRes.Code)
+	})
+
 	t.Run("ProtectedUserRejectsWrongIssuer", func(t *testing.T) {
 		assert := assert.New(t)
 		require := require.New(t)

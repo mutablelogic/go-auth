@@ -92,6 +92,127 @@ func GroupHandler(mgr *manager.Manager) (string, http.HandlerFunc, *openapi.Path
 		}
 }
 
+// Return an http.HandlerFunc for a specific group endpoint.
+func GroupItemHandler(mgr *manager.Manager) (string, http.HandlerFunc, *openapi.PathItem) {
+	groupIDSchema := jsonschema.MustFor[string]()
+
+	return "group/{group}", func(w http.ResponseWriter, r *http.Request) {
+			group := r.PathValue("group")
+			if group == "" {
+				_ = httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest), "group is required")
+				return
+			}
+
+			switch r.Method {
+			case http.MethodGet:
+				_ = getGroup(r.Context(), mgr, w, r, group)
+			case http.MethodPatch:
+				_ = updateGroup(r.Context(), mgr, w, r, group)
+			case http.MethodDelete:
+				_ = deleteGroup(r.Context(), mgr, w, r, group)
+			default:
+				_ = httpresponse.Error(w, httpresponse.Err(http.StatusMethodNotAllowed), r.Method)
+			}
+		}, &openapi.PathItem{
+			Summary:     "Group operations",
+			Description: "Operations on a specific group",
+			Get: &openapi.Operation{
+				Tags:        []string{"Group"},
+				Summary:     "Get group",
+				Description: "Returns a single group by identifier.",
+				Parameters: []openapi.Parameter{
+					{
+						Name:        "group",
+						In:          openapi.ParameterInPath,
+						Description: "Group identifier.",
+						Required:    true,
+						Schema:      groupIDSchema,
+					},
+				},
+				Responses: map[string]openapi.Response{
+					"200": {
+						Description: "Requested group.",
+						Content: map[string]openapi.MediaType{
+							"application/json": {
+								Schema: groupSchema(),
+							},
+						},
+					},
+					"400": {
+						Description: "Invalid group identifier.",
+					},
+					"404": {
+						Description: "Group not found.",
+					},
+				},
+			},
+			Patch: &openapi.Operation{
+				Tags:        []string{"Group"},
+				Summary:     "Update group",
+				Description: "Updates mutable fields on a group.",
+				Parameters: []openapi.Parameter{
+					{
+						Name:        "group",
+						In:          openapi.ParameterInPath,
+						Description: "Group identifier.",
+						Required:    true,
+						Schema:      groupIDSchema,
+					},
+				},
+				RequestBody: &openapi.RequestBody{
+					Description: "Group fields to update.",
+					Required:    true,
+					Content: map[string]openapi.MediaType{
+						"application/json": {
+							Schema: jsonschema.MustFor[schema.GroupMeta](),
+						},
+					},
+				},
+				Responses: map[string]openapi.Response{
+					"200": {
+						Description: "Updated group.",
+						Content: map[string]openapi.MediaType{
+							"application/json": {
+								Schema: groupSchema(),
+							},
+						},
+					},
+					"400": {
+						Description: "Invalid group identifier or request body.",
+					},
+					"404": {
+						Description: "Group not found.",
+					},
+				},
+			},
+			Delete: &openapi.Operation{
+				Tags:        []string{"Group"},
+				Summary:     "Delete group",
+				Description: "Deletes a group by identifier.",
+				Parameters: []openapi.Parameter{
+					{
+						Name:        "group",
+						In:          openapi.ParameterInPath,
+						Description: "Group identifier.",
+						Required:    true,
+						Schema:      groupIDSchema,
+					},
+				},
+				Responses: map[string]openapi.Response{
+					"204": {
+						Description: "Group deleted.",
+					},
+					"400": {
+						Description: "Invalid group identifier.",
+					},
+					"404": {
+						Description: "Group not found.",
+					},
+				},
+			},
+		}
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 // PRIVATE METHODS
 
@@ -121,4 +242,36 @@ func listGroup(ctx context.Context, mgr *manager.Manager, w http.ResponseWriter,
 	}
 
 	return httpresponse.JSON(w, http.StatusOK, httprequest.Indent(r), groups)
+}
+
+func getGroup(ctx context.Context, mgr *manager.Manager, w http.ResponseWriter, r *http.Request, group string) error {
+	response, err := mgr.GetGroup(ctx, group)
+	if err != nil {
+		return httpresponse.Error(w, httpErr(err))
+	}
+
+	return httpresponse.JSON(w, http.StatusOK, httprequest.Indent(r), response)
+}
+
+func updateGroup(ctx context.Context, mgr *manager.Manager, w http.ResponseWriter, r *http.Request, group string) error {
+	var req schema.GroupMeta
+	if err := httprequest.Read(r, &req); err != nil {
+		return httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest), err.Error())
+	}
+
+	response, err := mgr.UpdateGroup(ctx, group, req)
+	if err != nil {
+		return httpresponse.Error(w, httpErr(err))
+	}
+
+	return httpresponse.JSON(w, http.StatusOK, httprequest.Indent(r), response)
+}
+
+func deleteGroup(ctx context.Context, mgr *manager.Manager, w http.ResponseWriter, _ *http.Request, group string) error {
+	_, err := mgr.DeleteGroup(ctx, group)
+	if err != nil {
+		return httpresponse.Error(w, httpErr(err))
+	}
+
+	return httpresponse.Empty(w, http.StatusNoContent)
 }

@@ -11,6 +11,9 @@ import (
 type GroupCommands struct {
 	Groups      ListGroupsCommand  `cmd:"" name:"groups" help:"Get Groups." group:"USERS & GROUPS"`
 	CreateGroup CreateGroupCommand `cmd:"" name:"create-group" help:"Create Group." group:"USERS & GROUPS"`
+	Group       GetGroupCommand    `cmd:"" name:"group" help:"Get Group." group:"USERS & GROUPS"`
+	UpdateGroup UpdateGroupCommand `cmd:"" name:"update-group" help:"Update Group." group:"USERS & GROUPS"`
+	DeleteGroup DeleteGroupCommand `cmd:"" name:"delete-group" help:"Delete Group." group:"USERS & GROUPS"`
 }
 
 type ListGroupsCommand struct {
@@ -20,6 +23,19 @@ type ListGroupsCommand struct {
 type CreateGroupCommand struct {
 	ID string `arg:"" name:"group" help:"Group identifier"`
 	schema.GroupMeta
+}
+
+type GetGroupCommand struct {
+	ID string `arg:"" name:"group" help:"Group identifier"`
+}
+
+type UpdateGroupCommand struct {
+	GetGroupCommand
+	schema.GroupMeta
+}
+
+type DeleteGroupCommand struct {
+	GetGroupCommand
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -48,5 +64,43 @@ func (cmd *CreateGroupCommand) Run(ctx server.Cmd) error {
 		return err
 	}
 	fmt.Println(group)
+	return nil
+}
+
+func (cmd *GetGroupCommand) Run(ctx server.Cmd) error {
+	client, _, err := clientFor(ctx)
+	if err != nil {
+		return err
+	}
+	group, err := client.GetGroup(ctx.Context(), cmd.ID)
+	if err != nil {
+		return err
+	}
+	fmt.Println(group)
+	return nil
+}
+
+func (cmd *UpdateGroupCommand) Run(ctx server.Cmd) error {
+	client, _, err := clientFor(ctx)
+	if err != nil {
+		return err
+	}
+	group, err := client.UpdateGroup(ctx.Context(), cmd.ID, cmd.GroupMeta)
+	if err != nil {
+		return err
+	}
+	fmt.Println(group)
+	return nil
+}
+
+func (cmd *DeleteGroupCommand) Run(ctx server.Cmd) error {
+	client, _, err := clientFor(ctx)
+	if err != nil {
+		return err
+	}
+	if err := client.DeleteGroup(ctx.Context(), cmd.ID); err != nil {
+		return err
+	}
+	fmt.Println(cmd.ID)
 	return nil
 }
