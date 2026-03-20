@@ -159,6 +159,11 @@ func (group GroupInsert) Insert(bind *pg.Bind) (string, error) {
 	return bind.Query("group.insert"), nil
 }
 
+func (group GroupMeta) Insert(bind *pg.Bind) (string, error) {
+	_ = bind
+	return "", auth.ErrNotImplemented.With("group meta insert is not supported")
+}
+
 func (group GroupMeta) Update(bind *pg.Bind) error {
 	bind.Del("patch")
 
