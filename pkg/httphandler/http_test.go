@@ -644,6 +644,13 @@ func Test_http_001(t *testing.T) {
 		assert.Equal("uuid", uuidSchema().Format)
 		assert.NotNil(groupSchema())
 		assert.NotNil(groupListSchema())
+		userGroupList := userGroupListSchema()
+		if assert.NotNil(userGroupList) {
+			assert.Equal("array", userGroupList.Type)
+			if assert.NotNil(userGroupList.Items) {
+				assert.Equal("string", userGroupList.Items.Type)
+			}
+		}
 		user := userSchema()
 		if assert.NotNil(user) {
 			assert.NotNil(schemaProperty(user, "groups"))
@@ -659,6 +666,38 @@ func Test_http_001(t *testing.T) {
 		assert.Nil(schemaProperty(nil, "missing"))
 		setSchemaProperty(nil, "missing", nil)
 		assert.Nil(unwrapSchema(nil))
+	})
+
+	t.Run("UserGroupHandlerOpenAPI", func(t *testing.T) {
+		assert := assert.New(t)
+		require := require.New(t)
+
+		mgr, _ := newHTTPTestManager(t)
+		path, _, spec := UserGroupHandler(mgr)
+
+		require.Equal("user/{user}/group", path)
+		require.NotNil(spec)
+		require.NotNil(spec.Post)
+		require.NotNil(spec.Delete)
+
+		assert.Equal("Add user groups", spec.Post.Summary)
+		assert.Equal("Remove user groups", spec.Delete.Summary)
+		require.NotNil(spec.Post.RequestBody)
+		require.NotNil(spec.Delete.RequestBody)
+
+		postBody := spec.Post.RequestBody.Content["application/json"].Schema
+		deleteBody := spec.Delete.RequestBody.Content["application/json"].Schema
+		require.NotNil(postBody)
+		require.NotNil(deleteBody)
+		assert.Equal("array", postBody.Type)
+		assert.Equal("array", deleteBody.Type)
+
+		postResponse := spec.Post.Responses["200"].Content["application/json"].Schema
+		deleteResponse := spec.Delete.Responses["200"].Content["application/json"].Schema
+		require.NotNil(postResponse)
+		require.NotNil(deleteResponse)
+		assert.NotNil(postResponse.Properties["id"])
+		assert.NotNil(deleteResponse.Properties["id"])
 	})
 }
 
