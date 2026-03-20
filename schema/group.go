@@ -17,7 +17,7 @@ import (
 
 type GroupMeta struct {
 	Description *string        `json:"description,omitempty"`
-	Enabled     *bool          `json:"enabled,omitempty"`
+	Enabled     *bool          `json:"enabled,omitempty" negatable:""`
 	Scopes      []string       `json:"scopes,omitempty"`
 	Meta        map[string]any `json:"meta,omitempty"`
 }

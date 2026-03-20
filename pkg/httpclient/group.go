@@ -42,8 +42,7 @@ func (c *Client) GetGroup(ctx context.Context, group string) (*schema.Group, err
 }
 
 func (c *Client) DeleteGroup(ctx context.Context, group string) error {
-	var response schema.Group
-	if err := c.DoWithContext(ctx, client.MethodDelete, &response, client.OptPath("group", group)); err != nil {
+	if err := c.DoWithContext(ctx, client.MethodDelete, nil, client.OptPath("group", group)); err != nil {
 		return err
 	}
 	return nil

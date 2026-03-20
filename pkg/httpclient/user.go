@@ -42,8 +42,7 @@ func (c *Client) GetUser(ctx context.Context, user schema.UserID) (*schema.User,
 }
 
 func (c *Client) DeleteUser(ctx context.Context, user schema.UserID) error {
-	var response schema.User
-	if err := c.DoWithContext(ctx, client.MethodDelete, &response, client.OptPath("user", user)); err != nil {
+	if err := c.DoWithContext(ctx, client.MethodDelete, nil, client.OptPath("user", user)); err != nil {
 		return err
 	}
 	return nil
