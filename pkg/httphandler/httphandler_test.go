@@ -46,7 +46,7 @@ func Test_httphandler_001(t *testing.T) {
 
 		err := RegisterHandlers(mgr, router, false)
 		require.NoError(err)
-		require.Len(router.routes, 11)
+		require.Len(router.routes, 12)
 
 		paths := make([]string, 0, len(router.routes))
 		for _, route := range router.routes {
@@ -58,6 +58,7 @@ func Test_httphandler_001(t *testing.T) {
 
 		assert.Contains(paths, "group")
 		assert.Contains(paths, "group/{group}")
+		assert.Contains(paths, "scope")
 		assert.Contains(paths, "user")
 		assert.Contains(paths, "user/{user}")
 		assert.Contains(paths, "user/{user}/group")

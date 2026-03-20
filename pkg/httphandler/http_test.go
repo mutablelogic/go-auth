@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -471,6 +472,84 @@ func Test_http_001(t *testing.T) {
 		require.Equal(http.StatusNotFound, missingRes.Code)
 	})
 
+	t.Run("ScopeHandlerList", func(t *testing.T) {
+		assert := assert.New(t)
+		require := require.New(t)
+
+		mgr, _ := newHTTPTestManager(t)
+		enabled := true
+		disabled := false
+		suffix := time.Now().UnixNano()
+		filter := fmt.Sprintf("scope-%d", suffix)
+		scopeAdmin := fmt.Sprintf("%s-admin.all", filter)
+		scopeProfile := fmt.Sprintf("%s-profile.read", filter)
+		scopeTeam := fmt.Sprintf("%s-team.manage", filter)
+		scopeUserRead := fmt.Sprintf("%s-user.read", filter)
+		scopeUserWrite := fmt.Sprintf("%s-user.write", filter)
+		_, err := mgr.CreateGroup(context.Background(), schema.GroupInsert{
+			ID: fmt.Sprintf("scope-admins-%d", suffix),
+			GroupMeta: schema.GroupMeta{
+				Enabled: &enabled,
+				Scopes:  []string{scopeUserRead, scopeUserWrite, scopeProfile},
+			},
+		})
+		require.NoError(err)
+		_, err = mgr.CreateGroup(context.Background(), schema.GroupInsert{
+			ID: fmt.Sprintf("scope-staff-%d", suffix),
+			GroupMeta: schema.GroupMeta{
+				Enabled: &enabled,
+				Scopes:  []string{scopeProfile, scopeTeam},
+			},
+		})
+		require.NoError(err)
+		_, err = mgr.CreateGroup(context.Background(), schema.GroupInsert{
+			ID: fmt.Sprintf("scope-suspended-%d", suffix),
+			GroupMeta: schema.GroupMeta{
+				Enabled: &disabled,
+				Scopes:  []string{scopeAdmin},
+			},
+		})
+		require.NoError(err)
+
+		path, handler, spec := ScopeHandler(mgr)
+		assert.Equal("scope", path)
+		require.NotNil(spec)
+		require.NotNil(spec.Get)
+
+		listRes := httptest.NewRecorder()
+		listReq := httptest.NewRequest(http.MethodGet, "/scope?q="+filter+"&limit=3&offset=1", nil)
+		handler(listRes, listReq)
+
+		require.Equal(http.StatusOK, listRes.Code)
+		var list schema.ScopeList
+		require.NoError(json.Unmarshal(listRes.Body.Bytes(), &list))
+		assert.Equal(uint(5), list.Count)
+		assert.Equal(uint64(1), list.Offset)
+		require.NotNil(list.Limit)
+		assert.Equal(uint64(3), *list.Limit)
+		assert.Equal([]string{scopeProfile, scopeTeam, scopeUserRead}, list.Body)
+
+		filteredRes := httptest.NewRecorder()
+		filteredReq := httptest.NewRequest(http.MethodGet, "/scope?q="+scopeUserRead, nil)
+		handler(filteredRes, filteredReq)
+
+		require.Equal(http.StatusOK, filteredRes.Code)
+		var filtered schema.ScopeList
+		require.NoError(json.Unmarshal(filteredRes.Body.Bytes(), &filtered))
+		assert.Equal(uint(1), filtered.Count)
+		assert.Equal([]string{scopeUserRead}, filtered.Body)
+
+		badRes := httptest.NewRecorder()
+		badReq := httptest.NewRequest(http.MethodGet, "/scope?offset=-1", nil)
+		handler(badRes, badReq)
+		require.Equal(http.StatusBadRequest, badRes.Code)
+
+		methodRes := httptest.NewRecorder()
+		methodReq := httptest.NewRequest(http.MethodPost, "/scope", nil)
+		handler(methodRes, methodReq)
+		require.Equal(http.StatusMethodNotAllowed, methodRes.Code)
+	})
+
 	t.Run("ProtectedUserRejectsWrongIssuer", func(t *testing.T) {
 		assert := assert.New(t)
 		require := require.New(t)
@@ -706,6 +785,14 @@ func Test_http_001(t *testing.T) {
 		assert.Equal("uuid", uuidSchema().Format)
 		assert.NotNil(groupSchema())
 		assert.NotNil(groupListSchema())
+		scopeList := scopeListSchema()
+		if assert.NotNil(scopeList) {
+			body := schemaProperty(scopeList, "body")
+			if assert.NotNil(body) {
+				require.NotNil(t, body.Items)
+				assert.Equal("string", body.Items.Type)
+			}
+		}
 		userGroupList := userGroupListSchema()
 		if assert.NotNil(userGroupList) {
 			if assert.NotNil(userGroupList.Items) {

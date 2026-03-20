@@ -48,6 +48,14 @@ func groupListSchema() *jsonschema.Schema {
 	return s
 }
 
+func scopeListSchema() *jsonschema.Schema {
+	s := jsonschema.MustFor[schema.ScopeList]()
+	if body := schemaProperty(s, "body"); body != nil {
+		body.Items = unwrapSchema(jsonschema.MustFor[string]())
+	}
+	return s
+}
+
 func userListSchema() *jsonschema.Schema {
 	s := jsonschema.MustFor[schema.UserList]()
 	if body := schemaProperty(s, "body"); body != nil {

@@ -43,6 +43,7 @@ func RegisterHandlers(manager *manager.Manager, router server.HTTPRouter, auth b
 	// Register protected handlers
 	registerProtected(GroupHandler(manager))
 	registerProtected(GroupItemHandler(manager))
+	registerProtected(ScopeHandler(manager))
 	registerProtected(UserHandler(manager))
 	registerProtected(UserItemHandler(manager))
 	registerProtected(UserGroupHandler(manager))
