@@ -1,10 +1,10 @@
 package manager
 
 import (
-	// Packages
 	"net/http"
 	"strings"
 
+	// Packages
 	auth "github.com/djthorpe/go-auth"
 	oidc "github.com/djthorpe/go-auth/pkg/oidc"
 	jwt "github.com/golang-jwt/jwt/v5"

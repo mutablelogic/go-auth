@@ -2,9 +2,7 @@ package manager
 
 import (
 	"context"
-	"fmt"
 	"strings"
-	stringspkg "strings"
 
 	// Packages
 	auth "github.com/djthorpe/go-auth"
@@ -16,18 +14,7 @@ import (
 ///////////////////////////////////////////////////////////////////////////////
 // PUBLIC METHODS
 
-var managerQueries = mustManagerQueries()
-
 // CreateUser inserts a new user row. If identity is non-nil it is inserted in
-
-func mustManagerQueries() *pg.Queries {
-	queries, err := pg.NewQueries(stringspkg.NewReader(schema.Queries))
-	if err != nil {
-		panic(fmt.Errorf("parse queries.sql: %w", err))
-	}
-	return queries
-}
-
 // the same transaction and the returned User is re-fetched so that Email and
 // Claims reflect the new identity row.
 func (m *Manager) CreateUser(ctx context.Context, meta schema.UserMeta, identity *schema.IdentityInsert) (*schema.User, error) {
@@ -189,31 +176,9 @@ func (m *Manager) ListUsers(ctx context.Context, req schema.UserListRequest) (*s
 ///////////////////////////////////////////////////////////////////////////////
 // PRIVATE METHODS
 
-type userGroupListSelector schema.UserID
-type userGroupList []string
-
-func (selector userGroupListSelector) Select(bind *pg.Bind, op pg.Op) (string, error) {
-	bind.Set("user", selector)
-	switch op {
-	case pg.List:
-		return bind.Query("user_group.list"), nil
-	default:
-		return "", auth.ErrNotImplemented.Withf("unsupported user group list operation %q", op)
-	}
-}
-
-func (list *userGroupList) Scan(row pg.Row) error {
-	var group string
-	if err := row.Scan(&group); err != nil {
-		return err
-	}
-	*list = append(*list, group)
-	return nil
-}
-
 func listUserGroups(ctx context.Context, conn pg.Conn, user schema.UserID) ([]string, error) {
-	var result userGroupList
-	if err := conn.List(ctx, &result, userGroupListSelector(user)); err != nil {
+	var result schema.UserGroupList
+	if err := conn.List(ctx, &result, schema.UserGroupListRequest{User: user}); err != nil {
 		return nil, err
 	}
 	return []string(result), nil
@@ -225,7 +190,7 @@ func replaceUserGroups(ctx context.Context, conn pg.Conn, user schema.UserID, gr
 		return err
 	}
 
-	if err := conn.With("user", user).Exec(ctx, managerQueries.Query("user_group.delete")); err != nil {
+	if err := conn.Delete(ctx, nil, schema.UserGroupListRequest{User: user}); err != nil {
 		return err
 	}
 
@@ -233,7 +198,7 @@ func replaceUserGroups(ctx context.Context, conn pg.Conn, user schema.UserID, gr
 		return nil
 	}
 
-	return conn.With("user", user).With("groups", normalized).Exec(ctx, managerQueries.Query("user_group.insert"))
+	return conn.Insert(ctx, nil, schema.UserGroupInsert{User: user, Groups: normalized})
 }
 
 func normalizeUserGroups(groups []string) ([]string, error) {
