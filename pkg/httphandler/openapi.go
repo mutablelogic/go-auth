@@ -22,6 +22,10 @@ func userSchema() *jsonschema.Schema {
 	return s
 }
 
+func userMetaSchema() *jsonschema.Schema {
+	return jsonschema.MustFor[schema.UserMeta]()
+}
+
 func userInfoSchema() *jsonschema.Schema {
 	s := jsonschema.MustFor[schema.UserInfo]()
 	setSchemaProperty(s, "sub", uuidSchema())

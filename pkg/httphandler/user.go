@@ -83,7 +83,7 @@ func UserHandler(mgr *manager.Manager) (string, http.HandlerFunc, *openapi.PathI
 					Required:    true,
 					Content: map[string]openapi.MediaType{
 						"application/json": {
-							Schema: jsonschema.MustFor[schema.UserMeta](),
+							Schema: userMetaSchema(),
 						},
 					},
 				},
@@ -177,7 +177,7 @@ func UserItemHandler(mgr *manager.Manager) (string, http.HandlerFunc, *openapi.P
 					Required:    true,
 					Content: map[string]openapi.MediaType{
 						"application/json": {
-							Schema: jsonschema.MustFor[schema.UserMeta](),
+							Schema: userMetaSchema(),
 						},
 					},
 				},

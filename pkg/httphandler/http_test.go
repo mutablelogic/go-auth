@@ -644,7 +644,14 @@ func Test_http_001(t *testing.T) {
 		assert.Equal("uuid", uuidSchema().Format)
 		assert.NotNil(groupSchema())
 		assert.NotNil(groupListSchema())
-		assert.NotNil(userSchema())
+		user := userSchema()
+		if assert.NotNil(user) {
+			assert.NotNil(schemaProperty(user, "groups"))
+		}
+		userMeta := userMetaSchema()
+		if assert.NotNil(userMeta) {
+			assert.NotNil(schemaProperty(userMeta, "groups"))
+		}
 		assert.NotNil(userListSchema())
 		assert.NotNil(userInfoSchema())
 		assert.NotNil(sessionSchema())
