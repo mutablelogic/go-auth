@@ -20,11 +20,11 @@ type ListScopesCommand struct {
 // COMMANDS
 
 func (cmd *ListScopesCommand) Run(ctx server.Cmd) error {
-	client, _, err := clientFor(ctx)
+	clients, _, err := clientFor(ctx)
 	if err != nil {
 		return err
 	}
-	scopes, err := client.ListScopes(ctx.Context(), cmd.ScopeListRequest)
+	scopes, err := clients.manager.ListScopes(ctx.Context(), cmd.ScopeListRequest)
 	if err != nil {
 		return err
 	}

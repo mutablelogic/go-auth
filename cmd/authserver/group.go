@@ -42,11 +42,11 @@ type DeleteGroupCommand struct {
 // COMMANDS
 
 func (cmd *ListGroupsCommand) Run(ctx server.Cmd) error {
-	client, _, err := clientFor(ctx)
+	clients, _, err := clientFor(ctx)
 	if err != nil {
 		return err
 	}
-	groups, err := client.ListGroups(ctx.Context(), cmd.GroupListRequest)
+	groups, err := clients.manager.ListGroups(ctx.Context(), cmd.GroupListRequest)
 	if err != nil {
 		return err
 	}
@@ -55,11 +55,11 @@ func (cmd *ListGroupsCommand) Run(ctx server.Cmd) error {
 }
 
 func (cmd *CreateGroupCommand) Run(ctx server.Cmd) error {
-	client, _, err := clientFor(ctx)
+	clients, _, err := clientFor(ctx)
 	if err != nil {
 		return err
 	}
-	group, err := client.CreateGroup(ctx.Context(), schema.GroupInsert{ID: cmd.ID, GroupMeta: cmd.GroupMeta})
+	group, err := clients.manager.CreateGroup(ctx.Context(), schema.GroupInsert{ID: cmd.ID, GroupMeta: cmd.GroupMeta})
 	if err != nil {
 		return err
 	}
@@ -68,11 +68,11 @@ func (cmd *CreateGroupCommand) Run(ctx server.Cmd) error {
 }
 
 func (cmd *GetGroupCommand) Run(ctx server.Cmd) error {
-	client, _, err := clientFor(ctx)
+	clients, _, err := clientFor(ctx)
 	if err != nil {
 		return err
 	}
-	group, err := client.GetGroup(ctx.Context(), cmd.ID)
+	group, err := clients.manager.GetGroup(ctx.Context(), cmd.ID)
 	if err != nil {
 		return err
 	}
@@ -81,11 +81,11 @@ func (cmd *GetGroupCommand) Run(ctx server.Cmd) error {
 }
 
 func (cmd *UpdateGroupCommand) Run(ctx server.Cmd) error {
-	client, _, err := clientFor(ctx)
+	clients, _, err := clientFor(ctx)
 	if err != nil {
 		return err
 	}
-	group, err := client.UpdateGroup(ctx.Context(), cmd.ID, cmd.GroupMeta)
+	group, err := clients.manager.UpdateGroup(ctx.Context(), cmd.ID, cmd.GroupMeta)
 	if err != nil {
 		return err
 	}
@@ -94,11 +94,11 @@ func (cmd *UpdateGroupCommand) Run(ctx server.Cmd) error {
 }
 
 func (cmd *DeleteGroupCommand) Run(ctx server.Cmd) error {
-	client, _, err := clientFor(ctx)
+	clients, _, err := clientFor(ctx)
 	if err != nil {
 		return err
 	}
-	if err := client.DeleteGroup(ctx.Context(), cmd.ID); err != nil {
+	if err := clients.manager.DeleteGroup(ctx.Context(), cmd.ID); err != nil {
 		return err
 	}
 	fmt.Println(cmd.ID)

@@ -27,11 +27,11 @@ type RemoveUserGroupsCommand struct {
 // COMMANDS
 
 func (cmd *AddUserGroupsCommand) Run(ctx server.Cmd) error {
-	client, _, err := clientFor(ctx)
+	clients, _, err := clientFor(ctx)
 	if err != nil {
 		return err
 	}
-	user, err := client.AddUserGroups(ctx.Context(), cmd.UserID, cmd.Groups)
+	user, err := clients.manager.AddUserGroups(ctx.Context(), cmd.UserID, cmd.Groups)
 	if err != nil {
 		return err
 	}
@@ -40,11 +40,11 @@ func (cmd *AddUserGroupsCommand) Run(ctx server.Cmd) error {
 }
 
 func (cmd *RemoveUserGroupsCommand) Run(ctx server.Cmd) error {
-	client, _, err := clientFor(ctx)
+	clients, _, err := clientFor(ctx)
 	if err != nil {
 		return err
 	}
-	user, err := client.RemoveUserGroups(ctx.Context(), cmd.UserID, cmd.Groups)
+	user, err := clients.manager.RemoveUserGroups(ctx.Context(), cmd.UserID, cmd.Groups)
 	if err != nil {
 		return err
 	}

@@ -2,22 +2,35 @@ package main
 
 import (
 	// Packages
-	httpclient "github.com/djthorpe/go-auth/pkg/httpclient"
+	authclient "github.com/djthorpe/go-auth/pkg/httpclient/auth"
+	managerclient "github.com/djthorpe/go-auth/pkg/httpclient/manager"
 	server "github.com/mutablelogic/go-server"
 )
 
 ///////////////////////////////////////////////////////////////////////////////
+// TYPES
+
+type clients struct {
+	auth    *authclient.Client
+	manager *managerclient.Client
+}
+
+///////////////////////////////////////////////////////////////////////////////
 // PUBLIC FUNCTIONS
 
-// clientFor returns an httpclient.Client configured from the global HTTP flags.
-func clientFor(ctx server.Cmd) (*httpclient.Client, string, error) {
+// clientFor returns auth and management clients configured from the global HTTP flags.
+func clientFor(ctx server.Cmd) (*clients, string, error) {
 	endpoint, opts, err := ctx.ClientEndpoint()
 	if err != nil {
 		return nil, "", err
 	}
-	client, err := httpclient.New(endpoint, opts...)
+	auth, err := authclient.New(endpoint, opts...)
 	if err != nil {
 		return nil, "", err
 	}
-	return client, endpoint, nil
+	manager, err := managerclient.New(endpoint, opts...)
+	if err != nil {
+		return nil, "", err
+	}
+	return &clients{auth: auth, manager: manager}, endpoint, nil
 }

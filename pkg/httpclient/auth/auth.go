@@ -1,4 +1,4 @@
-package httpclient
+package auth
 
 import (
 	"context"
@@ -34,7 +34,6 @@ func (c *Client) LoginToken(ctx context.Context, token string) (*authschema.Toke
 	if token == "" {
 		return nil, fmt.Errorf("token is required")
 	}
-	// Create a request payload with the token and provider type
 	payload, err := client.NewJSONRequest(authschema.TokenRequest{
 		Provider: authschema.ProviderOAuth,
 		Token:    token,
@@ -43,13 +42,10 @@ func (c *Client) LoginToken(ctx context.Context, token string) (*authschema.Toke
 		return nil, err
 	}
 
-	// Exchange the token
 	var response authschema.TokenResponse
 	if err := c.DoWithContext(ctx, payload, &response, client.OptAbsPath("auth", "login")); err != nil {
 		return nil, err
 	}
-
-	// Return the response
 	return &response, nil
 }
 
@@ -88,20 +84,15 @@ func (c *Client) LoginCode(ctx context.Context, provider string, flow *oidc.Auth
 // Refresh posts a previously issued local token to /auth/refresh and returns
 // the refreshed local session token response.
 func (c *Client) Refresh(ctx context.Context, token string) (*authschema.TokenResponse, error) {
-	payload, err := client.NewJSONRequest(authschema.RefreshRequest{
-		Token: token,
-	})
+	payload, err := client.NewJSONRequest(authschema.RefreshRequest{Token: token})
 	if err != nil {
 		return nil, err
 	}
 
-	// Refresh the token
 	var response authschema.TokenResponse
 	if err := c.DoWithContext(ctx, payload, &response, client.OptAbsPath("auth", "refresh")); err != nil {
 		return nil, err
 	}
-
-	// Return the response
 	return &response, nil
 }
 
@@ -118,8 +109,7 @@ func (c *Client) UserInfo(ctx context.Context, token string) (*authschema.UserIn
 	return &response, nil
 }
 
-// OIDCConfig retrieves the OpenID Connect discovery document for the supplied
-// issuer URL.
+// OIDCConfig retrieves the OpenID Connect discovery document for the supplied issuer URL.
 func (c *Client) OIDCConfig(ctx context.Context, issuer string) (*oidc.Configuration, error) {
 	issuer = strings.TrimSpace(issuer)
 	if issuer == "" {
@@ -136,8 +126,7 @@ func (c *Client) OIDCConfig(ctx context.Context, issuer string) (*oidc.Configura
 }
 
 // OAuthProviderConfig resolves the configured public auth provider details by
-// provider key, defaulting to the reserved local provider when the key is
-// empty.
+// provider key, defaulting to the reserved local provider when the key is empty.
 func (c *Client) OAuthProviderConfig(ctx context.Context, provider string) (string, oidc.PublicClientConfiguration, error) {
 	config, err := c.AuthConfig(ctx)
 	if err != nil {
@@ -154,8 +143,7 @@ func (c *Client) OAuthProviderConfig(ctx context.Context, provider string) (stri
 	return key, entry, nil
 }
 
-// AuthConfig retrieves the shareable upstream auth provider configuration from
-// /auth/config.
+// AuthConfig retrieves the shareable upstream auth provider configuration from /auth/config.
 func (c *Client) AuthConfig(ctx context.Context) (oidc.PublicClientConfigurations, error) {
 	var response oidc.PublicClientConfigurations
 	if err := c.DoWithContext(ctx, client.NewRequest(), &response, client.OptAbsPath("auth", "config")); err != nil {
@@ -167,15 +155,9 @@ func (c *Client) AuthConfig(ctx context.Context) (oidc.PublicClientConfiguration
 // Revoke posts a previously issued local token to /auth/revoke and expects a
 // successful revocation with no response body.
 func (c *Client) Revoke(ctx context.Context, token string) error {
-	payload, err := client.NewJSONRequest(authschema.RefreshRequest{
-		Token: token,
-	})
+	payload, err := client.NewJSONRequest(authschema.RefreshRequest{Token: token})
 	if err != nil {
 		return err
 	}
-
-	if err := c.DoWithContext(ctx, payload, nil, client.OptAbsPath("auth", "revoke")); err != nil {
-		return err
-	}
-	return nil
+	return c.DoWithContext(ctx, payload, nil, client.OptAbsPath("auth", "revoke"))
 }

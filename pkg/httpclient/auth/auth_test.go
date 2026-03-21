@@ -1,4 +1,4 @@
-package httpclient
+package auth
 
 import (
 	"context"

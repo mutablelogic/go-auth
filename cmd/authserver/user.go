@@ -36,11 +36,11 @@ type DeleteUserCommand struct {
 // COMMANDS
 
 func (cmd *ListUsersCommand) Run(ctx server.Cmd) error {
-	client, _, err := clientFor(ctx)
+	clients, _, err := clientFor(ctx)
 	if err != nil {
 		return err
 	}
-	users, err := client.ListUsers(ctx.Context(), cmd.UserListRequest)
+	users, err := clients.manager.ListUsers(ctx.Context(), cmd.UserListRequest)
 	if err != nil {
 		return err
 	}
@@ -49,11 +49,11 @@ func (cmd *ListUsersCommand) Run(ctx server.Cmd) error {
 }
 
 func (cmd *GetUserCommand) Run(ctx server.Cmd) error {
-	client, _, err := clientFor(ctx)
+	clients, _, err := clientFor(ctx)
 	if err != nil {
 		return err
 	}
-	user, err := client.GetUser(ctx.Context(), cmd.UserID)
+	user, err := clients.manager.GetUser(ctx.Context(), cmd.UserID)
 	if err != nil {
 		return err
 	}
@@ -62,11 +62,11 @@ func (cmd *GetUserCommand) Run(ctx server.Cmd) error {
 }
 
 func (cmd *UpdateUserCommand) Run(ctx server.Cmd) error {
-	client, _, err := clientFor(ctx)
+	clients, _, err := clientFor(ctx)
 	if err != nil {
 		return err
 	}
-	user, err := client.UpdateUser(ctx.Context(), cmd.UserID, cmd.UserMeta)
+	user, err := clients.manager.UpdateUser(ctx.Context(), cmd.UserID, cmd.UserMeta)
 	if err != nil {
 		return err
 	}
@@ -75,11 +75,11 @@ func (cmd *UpdateUserCommand) Run(ctx server.Cmd) error {
 }
 
 func (cmd *DeleteUserCommand) Run(ctx server.Cmd) error {
-	client, _, err := clientFor(ctx)
+	clients, _, err := clientFor(ctx)
 	if err != nil {
 		return err
 	}
-	if err := client.DeleteUser(ctx.Context(), cmd.UserID); err != nil {
+	if err := clients.manager.DeleteUser(ctx.Context(), cmd.UserID); err != nil {
 		return err
 	}
 	fmt.Println(cmd.UserID)

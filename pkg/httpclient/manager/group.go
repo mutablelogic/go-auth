@@ -1,4 +1,4 @@
-package httpclient
+package manager
 
 import (
 	"context"
@@ -42,10 +42,7 @@ func (c *Client) GetGroup(ctx context.Context, group string) (*schema.Group, err
 }
 
 func (c *Client) DeleteGroup(ctx context.Context, group string) error {
-	if err := c.DoWithContext(ctx, client.MethodDelete, nil, client.OptPath("group", group)); err != nil {
-		return err
-	}
-	return nil
+	return c.DoWithContext(ctx, client.MethodDelete, nil, client.OptPath("group", group))
 }
 
 func (c *Client) UpdateGroup(ctx context.Context, group string, meta schema.GroupMeta) (*schema.Group, error) {

@@ -1,4 +1,4 @@
-package httpclient
+package manager
 
 import (
 	"context"
@@ -28,21 +28,14 @@ func TestClientScopeMethods(t *testing.T) {
 			assert.Equal("user.read", r.URL.Query().Get("q"))
 
 			w.Header().Set("Content-Type", "application/json")
-			require.NoError(json.NewEncoder(w).Encode(authschema.ScopeList{
-				OffsetLimit: pg.OffsetLimit{Offset: 1, Limit: &limit},
-				Count:       2,
-				Body:        []string{"user.read", "user.write"},
-			}))
+			require.NoError(json.NewEncoder(w).Encode(authschema.ScopeList{OffsetLimit: pg.OffsetLimit{Offset: 1, Limit: &limit}, Count: 2, Body: []string{"user.read", "user.write"}}))
 		}))
 		defer server.Close()
 
 		client, err := New(server.URL)
 		require.NoError(err)
 
-		response, err := client.ListScopes(context.Background(), authschema.ScopeListRequest{
-			OffsetLimit: pg.OffsetLimit{Offset: 1, Limit: &limit},
-			Q:           "user.read",
-		})
+		response, err := client.ListScopes(context.Background(), authschema.ScopeListRequest{OffsetLimit: pg.OffsetLimit{Offset: 1, Limit: &limit}, Q: "user.read"})
 		require.NoError(err)
 		require.NotNil(response)
 		assert.Equal(uint(2), response.Count)
@@ -60,11 +53,7 @@ func TestClientScopeMethods(t *testing.T) {
 			require.Equal(http.MethodGet, r.Method)
 			require.Equal("/scope", r.URL.Path)
 			w.Header().Set("Content-Type", "application/json")
-			require.NoError(json.NewEncoder(w).Encode(authschema.ScopeList{
-				OffsetLimit: pg.OffsetLimit{},
-				Count:       0,
-				Body:        []string{},
-			}))
+			require.NoError(json.NewEncoder(w).Encode(authschema.ScopeList{OffsetLimit: pg.OffsetLimit{}, Count: 0, Body: []string{}}))
 		}))
 		defer server.Close()
 

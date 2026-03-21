@@ -1,4 +1,4 @@
-package httpclient
+package manager
 
 import (
 	"context"
@@ -58,10 +58,7 @@ func TestClientDeleteMethods(t *testing.T) {
 			require.Equal("/user/"+uuid.UUID(userID).String()+"/group", r.URL.Path)
 			require.NoError(json.NewDecoder(r.Body).Decode(&request))
 			w.Header().Set("Content-Type", "application/json")
-			require.NoError(json.NewEncoder(w).Encode(authschema.User{
-				ID:       userID,
-				UserMeta: authschema.UserMeta{Groups: []string{"admins", "staff"}},
-			}))
+			require.NoError(json.NewEncoder(w).Encode(authschema.User{ID: userID, UserMeta: authschema.UserMeta{Groups: []string{"admins", "staff"}}}))
 		}))
 		defer server.Close()
 
@@ -85,10 +82,7 @@ func TestClientDeleteMethods(t *testing.T) {
 			require.Equal("/user/"+uuid.UUID(userID).String()+"/group", r.URL.Path)
 			require.NoError(json.NewDecoder(r.Body).Decode(&request))
 			w.Header().Set("Content-Type", "application/json")
-			require.NoError(json.NewEncoder(w).Encode(authschema.User{
-				ID:       userID,
-				UserMeta: authschema.UserMeta{Groups: []string{"admins"}},
-			}))
+			require.NoError(json.NewEncoder(w).Encode(authschema.User{ID: userID, UserMeta: authschema.UserMeta{Groups: []string{"admins"}}}))
 		}))
 		defer server.Close()
 
@@ -110,15 +104,7 @@ func TestClientDeleteMethods(t *testing.T) {
 			require.Equal(http.MethodGet, r.Method)
 			require.Equal("/user/"+uuid.UUID(userID).String(), r.URL.Path)
 			w.Header().Set("Content-Type", "application/json")
-			require.NoError(json.NewEncoder(w).Encode(authschema.User{
-				ID:             userID,
-				EffectiveMeta:  authschema.MetaMap{"group_admin": "hello"},
-				DisabledGroups: []string{"disabled-group"},
-				UserMeta: authschema.UserMeta{
-					Meta:   authschema.MetaMap{"source": "local"},
-					Groups: []string{"admins"},
-				},
-			}))
+			require.NoError(json.NewEncoder(w).Encode(authschema.User{ID: userID, EffectiveMeta: authschema.MetaMap{"group_admin": "hello"}, DisabledGroups: []string{"disabled-group"}, UserMeta: authschema.UserMeta{Meta: authschema.MetaMap{"source": "local"}, Groups: []string{"admins"}}}))
 		}))
 		defer server.Close()
 

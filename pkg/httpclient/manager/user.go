@@ -1,4 +1,4 @@
-package httpclient
+package manager
 
 import (
 	"context"
@@ -42,10 +42,7 @@ func (c *Client) GetUser(ctx context.Context, user schema.UserID) (*schema.User,
 }
 
 func (c *Client) DeleteUser(ctx context.Context, user schema.UserID) error {
-	if err := c.DoWithContext(ctx, client.MethodDelete, nil, client.OptPath("user", user)); err != nil {
-		return err
-	}
-	return nil
+	return c.DoWithContext(ctx, client.MethodDelete, nil, client.OptPath("user", user))
 }
 
 func (c *Client) UpdateUser(ctx context.Context, user schema.UserID, meta schema.UserMeta) (*schema.User, error) {

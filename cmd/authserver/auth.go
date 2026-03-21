@@ -59,7 +59,7 @@ type OIDCConfigCommand struct {
 // COMMANDS
 
 func (cmd *LoginCommand) Run(ctx server.Cmd) error {
-	client, _, err := clientFor(ctx)
+	clients, _, err := clientFor(ctx)
 	if err != nil {
 		return err
 	}
@@ -71,7 +71,7 @@ func (cmd *LoginCommand) Run(ctx server.Cmd) error {
 	if err != nil {
 		return err
 	}
-	bootstrap, err := client.OAuthLoginBootstrap(ctx.Context(), provider, callback.URL())
+	bootstrap, err := clients.auth.OAuthLoginBootstrap(ctx.Context(), provider, callback.URL())
 	if err != nil {
 		return err
 	}
@@ -86,7 +86,7 @@ func (cmd *LoginCommand) Run(ctx server.Cmd) error {
 	if err != nil {
 		return err
 	}
-	response, err := client.LoginCode(ctx.Context(), provider, bootstrap, code)
+	response, err := clients.auth.LoginCode(ctx.Context(), provider, bootstrap, code)
 	if err != nil {
 		return err
 	}
@@ -149,7 +149,7 @@ func authorizationCodeFromCallback(flow *oidc.AuthorizationCodeFlow, result *web
 }
 
 func (cmd *RefreshCommand) Run(ctx server.Cmd) error {
-	client, _, err := clientFor(ctx)
+	clients, _, err := clientFor(ctx)
 	if err != nil {
 		return err
 	}
@@ -158,7 +158,7 @@ func (cmd *RefreshCommand) Run(ctx server.Cmd) error {
 		return err
 	}
 
-	response, err := client.Refresh(ctx.Context(), token)
+	response, err := clients.auth.Refresh(ctx.Context(), token)
 	if err != nil {
 		return err
 	}
@@ -175,7 +175,7 @@ func (cmd *RefreshCommand) Run(ctx server.Cmd) error {
 }
 
 func (cmd *UserInfoCommand) Run(ctx server.Cmd) error {
-	client, _, err := clientFor(ctx)
+	clients, _, err := clientFor(ctx)
 	if err != nil {
 		return err
 	}
@@ -184,7 +184,7 @@ func (cmd *UserInfoCommand) Run(ctx server.Cmd) error {
 		return err
 	}
 
-	response, err := client.UserInfo(ctx.Context(), token)
+	response, err := clients.auth.UserInfo(ctx.Context(), token)
 	if err != nil {
 		return err
 	}
@@ -198,7 +198,7 @@ func (cmd *UserInfoCommand) Run(ctx server.Cmd) error {
 }
 
 func (cmd *RevokeCommand) Run(ctx server.Cmd) error {
-	client, _, err := clientFor(ctx)
+	clients, _, err := clientFor(ctx)
 	if err != nil {
 		return err
 	}
@@ -207,7 +207,7 @@ func (cmd *RevokeCommand) Run(ctx server.Cmd) error {
 		return err
 	}
 
-	if err := client.Revoke(ctx.Context(), token); err != nil {
+	if err := clients.auth.Revoke(ctx.Context(), token); err != nil {
 		return err
 	}
 	if err := clearStoredToken(ctx); err != nil {
@@ -218,12 +218,12 @@ func (cmd *RevokeCommand) Run(ctx server.Cmd) error {
 }
 
 func (cmd *ConfigCommand) Run(ctx server.Cmd) error {
-	client, _, err := clientFor(ctx)
+	clients, _, err := clientFor(ctx)
 	if err != nil {
 		return err
 	}
 
-	response, err := client.AuthConfig(ctx.Context())
+	response, err := clients.auth.AuthConfig(ctx.Context())
 	if err != nil {
 		return err
 	}
@@ -237,11 +237,11 @@ func (cmd *ConfigCommand) Run(ctx server.Cmd) error {
 }
 
 func (cmd *OIDCConfigCommand) Run(ctx server.Cmd) error {
-	client, _, err := clientFor(ctx)
+	clients, _, err := clientFor(ctx)
 	if err != nil {
 		return err
 	}
-	config, err := client.AuthConfig(ctx.Context())
+	config, err := clients.auth.AuthConfig(ctx.Context())
 	if err != nil {
 		return err
 	}
@@ -250,7 +250,7 @@ func (cmd *OIDCConfigCommand) Run(ctx server.Cmd) error {
 		return err
 	}
 
-	response, err := client.OIDCConfig(ctx.Context(), issuer)
+	response, err := clients.auth.OIDCConfig(ctx.Context(), issuer)
 	if err != nil {
 		return err
 	}

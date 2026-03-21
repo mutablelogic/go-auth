@@ -1,4 +1,4 @@
-package httpclient
+package auth
 
 import (
 	"context"
@@ -77,8 +77,7 @@ func (c *Client) OAuth2Config(ctx context.Context, provider, redirectURL string,
 	}, nil
 }
 
-// AuthCodeURL builds a provider-specific authorization URL for an auth code
-// flow after resolving client configuration and discovery metadata.
+// AuthCodeURL builds a provider-specific authorization URL for an auth code flow.
 func (c *Client) AuthCodeURL(ctx context.Context, provider, redirectURL, state string, opts ...oauth2.AuthCodeOption) (string, error) {
 	state = strings.TrimSpace(state)
 	if state == "" {
@@ -91,8 +90,7 @@ func (c *Client) AuthCodeURL(ctx context.Context, provider, redirectURL, state s
 	return config.AuthCodeURL(state, opts...), nil
 }
 
-// OAuthLoginBootstrap resolves provider config and discovery metadata into an
-// OIDC authorization flow payload the CLI can use to start interactive login.
+// OAuthLoginBootstrap resolves provider config and discovery metadata into an OIDC authorization flow payload.
 func (c *Client) OAuthLoginBootstrap(ctx context.Context, provider, redirectURL string) (*oidc.AuthorizationCodeFlow, error) {
 	key, public, err := c.OAuthProviderConfig(ctx, provider)
 	if err != nil {
@@ -114,8 +112,7 @@ func (c *Client) OAuthLoginBootstrap(ctx context.Context, provider, redirectURL 
 	return flow, nil
 }
 
-// ExchangeAuthorizationCode exchanges an OAuth authorization code for an
-// upstream OIDC id_token using the supplied flow configuration.
+// ExchangeAuthorizationCode exchanges an OAuth authorization code for an upstream OIDC id_token using the supplied flow configuration.
 func (c *Client) ExchangeAuthorizationCode(ctx context.Context, flow *oidc.AuthorizationCodeFlow, code string) (string, error) {
 	if ctx == nil {
 		ctx = context.Background()
@@ -182,10 +179,7 @@ func oauthToken(raw string) (*oauth2.Token, error) {
 	if _, _, err := jwt.NewParser().ParseUnverified(raw, claims); err != nil {
 		return nil, fmt.Errorf("parse token: %w", err)
 	}
-	token := &oauth2.Token{
-		AccessToken: raw,
-		TokenType:   "Bearer",
-	}
+	token := &oauth2.Token{AccessToken: raw, TokenType: "Bearer"}
 	if claims.ExpiresAt != nil {
 		token.Expiry = claims.ExpiresAt.Time
 	}
