@@ -24,7 +24,16 @@ func (c *Client) Login(ctx context.Context, key *rsa.PrivateKey, claims jwt.MapC
 	if err != nil {
 		return nil, err
 	}
+	return c.LoginToken(ctx, token)
+}
 
+// LoginToken posts a verified upstream identity token to /auth/login and
+// returns the issued local session token response.
+func (c *Client) LoginToken(ctx context.Context, token string) (*authschema.TokenResponse, error) {
+	token = strings.TrimSpace(token)
+	if token == "" {
+		return nil, fmt.Errorf("token is required")
+	}
 	// Create a request payload with the token and provider type
 	payload, err := client.NewJSONRequest(authschema.TokenRequest{
 		Provider: authschema.ProviderOAuth,
@@ -41,6 +50,38 @@ func (c *Client) Login(ctx context.Context, key *rsa.PrivateKey, claims jwt.MapC
 	}
 
 	// Return the response
+	return &response, nil
+}
+
+// LoginCode posts an authorization code exchange request to /auth/code and
+// returns the issued local session token response.
+func (c *Client) LoginCode(ctx context.Context, provider string, flow *oidc.AuthorizationCodeFlow, code string) (*authschema.TokenResponse, error) {
+	provider = strings.TrimSpace(provider)
+	if provider == "" {
+		return nil, fmt.Errorf("provider is required")
+	}
+	if flow == nil {
+		return nil, fmt.Errorf("authorization flow is required")
+	}
+	code = strings.TrimSpace(code)
+	if code == "" {
+		return nil, fmt.Errorf("authorization code is required")
+	}
+	payload, err := client.NewJSONRequest(authschema.AuthorizationCodeRequest{
+		Provider:     provider,
+		Code:         code,
+		RedirectURL:  strings.TrimSpace(flow.RedirectURL),
+		CodeVerifier: strings.TrimSpace(flow.CodeVerifier),
+		Nonce:        strings.TrimSpace(flow.Nonce),
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	var response authschema.TokenResponse
+	if err := c.DoWithContext(ctx, payload, &response, client.OptAbsPath("auth", "code")); err != nil {
+		return nil, err
+	}
 	return &response, nil
 }
 

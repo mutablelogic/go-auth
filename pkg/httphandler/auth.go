@@ -2,11 +2,13 @@ package httphandler
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
 
 	// Packages
+	coreoidc "github.com/coreos/go-oidc/v3/oidc"
 	manager "github.com/djthorpe/go-auth/pkg/manager"
 	middleware "github.com/djthorpe/go-auth/pkg/middleware"
 	oidc "github.com/djthorpe/go-auth/pkg/oidc"
@@ -17,19 +19,13 @@ import (
 	httpresponse "github.com/mutablelogic/go-server/pkg/httpresponse"
 	jsonschema "github.com/mutablelogic/go-server/pkg/jsonschema"
 	openapi "github.com/mutablelogic/go-server/pkg/openapi/schema"
-)
-
-var (
-	validateTokenRequest = func(ctx context.Context, req *schema.TokenRequest) (map[string]any, error) {
-		return req.Validate(ctx)
-	}
-	newIdentityFromClaims = schema.NewIdentityFromClaims
+	oauth2 "golang.org/x/oauth2"
 )
 
 ///////////////////////////////////////////////////////////////////////////////
 // PUBLIC METHODS
 
-// Return an http.HandlerFunc for the auth endpoint
+// Return an http.HandlerFunc for the auth login endpoint
 func AuthHandler(mgr *manager.Manager) (string, http.HandlerFunc, *openapi.PathItem) {
 	return "/auth/login", func(w http.ResponseWriter, r *http.Request) {
 			switch r.Method {
@@ -65,6 +61,51 @@ func AuthHandler(mgr *manager.Manager) (string, http.HandlerFunc, *openapi.PathI
 					},
 					"400": {
 						Description: "Invalid request body, unsupported provider, or token verification failure.",
+					},
+					"409": {
+						Description: "The verified identity conflicts with an existing account.",
+					},
+				},
+			},
+		}
+}
+
+// Return an http.HandlerFunc for the auth code exchange endpoint.
+func AuthCodeHandler(mgr *manager.Manager) (string, http.HandlerFunc, *openapi.PathItem) {
+	return "/auth/code", func(w http.ResponseWriter, r *http.Request) {
+			switch r.Method {
+			case http.MethodPost:
+				_ = exchangeCode(r.Context(), mgr, w, r)
+			default:
+				_ = httpresponse.Error(w, httpresponse.Err(http.StatusMethodNotAllowed), r.Method)
+			}
+		}, &openapi.PathItem{
+			Summary:     "Authorization code exchange",
+			Description: "Exchanges an OAuth authorization code using the server-side client secret, resolves the upstream identity, and returns a signed local token plus userinfo.",
+			Post: &openapi.Operation{
+				Tags:        []string{"Auth"},
+				Summary:     "Exchange authorization code",
+				Description: "Uses the configured upstream OAuth client to exchange an authorization code, verifies the resulting identity token, and returns a signed local session token.",
+				RequestBody: &openapi.RequestBody{
+					Description: "Provider key and authorization code produced by the browser-based login flow.",
+					Required:    true,
+					Content: map[string]openapi.MediaType{
+						"application/json": {
+							Schema: jsonschema.MustFor[schema.AuthorizationCodeRequest](),
+						},
+					},
+				},
+				Responses: map[string]openapi.Response{
+					"200": {
+						Description: "Signed local session token and userinfo.",
+						Content: map[string]openapi.MediaType{
+							"application/json": {
+								Schema: tokenResponseSchema(),
+							},
+						},
+					},
+					"400": {
+						Description: "Invalid request body, unsupported provider, or upstream code exchange failure.",
 					},
 					"409": {
 						Description: "The verified identity conflicts with an existing account.",
@@ -262,21 +303,23 @@ func exchangeToken(ctx context.Context, mgr *manager.Manager, w http.ResponseWri
 	var req schema.TokenRequest
 	if err := httprequest.Read(r, &req); err != nil {
 		return httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest).With(err))
-	} else if claims, err := validateTokenRequest(ctx, &req); err != nil {
+	} else if claims, err := req.Validate(ctx); err != nil {
 		return httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest).With(err))
-	} else if identity, err := newIdentityFromClaims(claims); err != nil {
-		return httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest).With(err))
-	} else if user, session, err := mgr.LoginWithIdentity(ctx, identity, req.Meta); err != nil {
-		return httpresponse.Error(w, httpErr(err))
-	} else if config, err := mgr.OIDCConfig(r); err != nil {
-		return httpresponse.Error(w, httpresponse.Err(http.StatusInternalServerError).With(err))
-	} else if token, err := mgr.OIDCSign(loginTokenClaims(config.Issuer, user, session)); err != nil {
-		return httpresponse.Error(w, httpresponse.Err(http.StatusInternalServerError).With(err))
 	} else {
-		return httpresponse.JSON(w, http.StatusOK, httprequest.Indent(r), schema.TokenResponse{
-			Token:    token,
-			UserInfo: schema.NewUserInfo(user),
-		})
+		return issueLoginResponse(ctx, mgr, w, r, claims, req.Meta)
+	}
+}
+
+func exchangeCode(ctx context.Context, mgr *manager.Manager, w http.ResponseWriter, r *http.Request) error {
+	var req schema.AuthorizationCodeRequest
+	if err := httprequest.Read(r, &req); err != nil {
+		return httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest).With(err))
+	} else if err := req.Validate(); err != nil {
+		return httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest).With(err))
+	} else if claims, err := exchangeAuthorizationCode(ctx, mgr, &req); err != nil {
+		return httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest).With(err))
+	} else {
+		return issueLoginResponse(ctx, mgr, w, r, claims, req.Meta)
 	}
 }
 
@@ -321,6 +364,77 @@ func revokeToken(ctx context.Context, mgr *manager.Manager, w http.ResponseWrite
 		w.WriteHeader(http.StatusNoContent)
 		return nil
 	}
+}
+
+func issueLoginResponse(ctx context.Context, mgr *manager.Manager, w http.ResponseWriter, r *http.Request, claims map[string]any, meta schema.MetaMap) error {
+	if identity, err := schema.NewIdentityFromClaims(claims); err != nil {
+		return httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest).With(err))
+	} else if user, session, err := mgr.LoginWithIdentity(ctx, identity, meta); err != nil {
+		return httpresponse.Error(w, httpErr(err))
+	} else if config, err := mgr.OIDCConfig(r); err != nil {
+		return httpresponse.Error(w, httpresponse.Err(http.StatusInternalServerError).With(err))
+	} else if token, err := mgr.OIDCSign(loginTokenClaims(config.Issuer, user, session)); err != nil {
+		return httpresponse.Error(w, httpresponse.Err(http.StatusInternalServerError).With(err))
+	} else {
+		return httpresponse.JSON(w, http.StatusOK, httprequest.Indent(r), schema.TokenResponse{
+			Token:    token,
+			UserInfo: schema.NewUserInfo(user),
+		})
+	}
+}
+
+func exchangeAuthorizationCode(ctx context.Context, mgr *manager.Manager, req *schema.AuthorizationCodeRequest) (map[string]any, error) {
+	config, err := mgr.OAuthClientConfig(req.Provider)
+	if err != nil {
+		return nil, err
+	}
+	provider, err := coreoidc.NewProvider(ctx, config.Issuer)
+	if err != nil {
+		return nil, err
+	}
+	oauthConfig := &oauth2.Config{
+		ClientID:     config.ClientID,
+		ClientSecret: config.ClientSecret,
+		RedirectURL:  req.RedirectURL,
+		Endpoint:     provider.Endpoint(),
+	}
+	options := make([]oauth2.AuthCodeOption, 0, 1)
+	if verifier := strings.TrimSpace(req.CodeVerifier); verifier != "" {
+		options = append(options, oauth2.SetAuthURLParam("code_verifier", verifier))
+	}
+	token, err := oauthConfig.Exchange(ctx, req.Code, options...)
+	if err != nil {
+		return nil, err
+	}
+	rawIDToken, _ := token.Extra("id_token").(string)
+	rawIDToken = strings.TrimSpace(rawIDToken)
+	if rawIDToken == "" {
+		return nil, fmt.Errorf("upstream token response missing id_token")
+	}
+	verified, err := provider.Verifier(&coreoidc.Config{ClientID: config.ClientID}).Verify(ctx, rawIDToken)
+	if err != nil {
+		return nil, err
+	}
+	claims := make(map[string]any)
+	if err := verified.Claims(&claims); err != nil {
+		return nil, err
+	}
+	if err := validateAuthorizationCodeNonce(req.Nonce, claims); err != nil {
+		return nil, err
+	}
+	return claims, nil
+}
+
+func validateAuthorizationCodeNonce(expected string, claims map[string]any) error {
+	expected = strings.TrimSpace(expected)
+	if expected == "" {
+		return nil
+	}
+	actual, _ := claims["nonce"].(string)
+	if strings.TrimSpace(actual) != expected {
+		return fmt.Errorf("token nonce mismatch")
+	}
+	return nil
 }
 
 func loginTokenClaims(issuer string, user *schema.User, session *schema.Session) jwt.MapClaims {

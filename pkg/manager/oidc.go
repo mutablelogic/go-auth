@@ -74,3 +74,20 @@ func (m *Manager) AuthConfig() (oidc.PublicClientConfigurations, error) {
 	}
 	return m.oauth.Public(), nil
 }
+
+// OAuthClientConfig returns the full configured OAuth client for the supplied
+// provider key, including the server-side client secret.
+func (m *Manager) OAuthClientConfig(key string) (oidc.ClientConfiguration, error) {
+	key = strings.TrimSpace(key)
+	if key == "" {
+		return oidc.ClientConfiguration{}, auth.ErrInvalidProvider.With("provider is required")
+	}
+	if len(m.oauth) == 0 {
+		return oidc.ClientConfiguration{}, auth.ErrNotFound.With("oauth clients are not configured")
+	}
+	config, ok := m.oauth[key]
+	if !ok {
+		return oidc.ClientConfiguration{}, auth.ErrInvalidProvider.Withf("unsupported provider %q", key)
+	}
+	return config, nil
+}

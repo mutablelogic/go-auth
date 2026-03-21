@@ -1,25 +1,24 @@
 package main
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
-	"log/slog"
 	"sort"
 	"strings"
-	"time"
 
 	// Packages
 	oidc "github.com/djthorpe/go-auth/pkg/oidc"
-	client "github.com/mutablelogic/go-client"
+	webcallback "github.com/djthorpe/go-auth/pkg/webcallback"
 	server "github.com/mutablelogic/go-server"
-	trace "go.opentelemetry.io/otel/trace"
+	browser "github.com/pkg/browser"
 )
 
 const (
 	tokenStoreKey          = "auth.token"
 	defaultOIDCRedirectURL = "http://127.0.0.1:8085/callback"
 )
+
+var openBrowserURL = browser.OpenURL
 
 ///////////////////////////////////////////////////////////////////////////////
 // TYPES
@@ -68,15 +67,37 @@ func (cmd *LoginCommand) Run(ctx server.Cmd) error {
 	if provider == "" {
 		return fmt.Errorf("provider is required")
 	}
-	bootstrap, err := client.OAuthLoginBootstrap(ctx.Context(), provider, cmd.RedirectURL)
+	callback, err := webcallback.New(cmd.RedirectURL)
 	if err != nil {
 		return err
 	}
-	output, err := authorizationFlowOutput(bootstrap)
+	bootstrap, err := client.OAuthLoginBootstrap(ctx.Context(), provider, callback.URL())
 	if err != nil {
 		return err
 	}
-	fmt.Println(output)
+	if err := openAuthorizationURL(bootstrap); err != nil {
+		return err
+	}
+	result, err := callback.Run(ctx.Context())
+	if err != nil {
+		return err
+	}
+	code, err := authorizationCodeFromCallback(bootstrap, result)
+	if err != nil {
+		return err
+	}
+	response, err := client.LoginCode(ctx.Context(), provider, bootstrap, code)
+	if err != nil {
+		return err
+	}
+	if err := storeToken(ctx, response.Token); err != nil {
+		return err
+	}
+	data, err := json.MarshalIndent(response, "", "  ")
+	if err != nil {
+		return err
+	}
+	fmt.Println(string(data))
 	return nil
 }
 
@@ -92,6 +113,39 @@ func authorizationFlowOutput(flow *oidc.AuthorizationCodeFlow) (string, error) {
 		return "Authorization URL:\n" + uri + "\n\n" + string(data), nil
 	}
 	return string(data), nil
+}
+
+func openAuthorizationURL(flow *oidc.AuthorizationCodeFlow) error {
+	if flow == nil {
+		return fmt.Errorf("authorization flow is required")
+	}
+	uri := strings.TrimSpace(flow.AuthorizationURL)
+	if uri == "" {
+		return nil
+	}
+	if err := openBrowserURL(uri); err != nil {
+		return fmt.Errorf("open authorization URL: %w", err)
+	}
+	return nil
+}
+
+func authorizationCodeFromCallback(flow *oidc.AuthorizationCodeFlow, result *webcallback.Result) (string, error) {
+	if flow == nil {
+		return "", fmt.Errorf("authorization flow is required")
+	}
+	if result == nil {
+		return "", fmt.Errorf("callback result is required")
+	}
+	if expected := strings.TrimSpace(flow.State); expected != "" {
+		if actual := strings.TrimSpace(result.State()); actual != expected {
+			return "", fmt.Errorf("callback state mismatch")
+		}
+	}
+	code := strings.TrimSpace(result.Code())
+	if code == "" {
+		return "", fmt.Errorf("callback code is required")
+	}
+	return code, nil
 }
 
 func (cmd *RefreshCommand) Run(ctx server.Cmd) error {
@@ -266,25 +320,3 @@ func clearStoredToken(ctx server.Cmd) error {
 	}
 	return nil
 }
-
-var _ server.Cmd = (*fakeCmdCompileOnly)(nil)
-
-type fakeCmdCompileOnly struct{}
-
-func (fakeCmdCompileOnly) Name() string                                        { return "" }
-func (fakeCmdCompileOnly) Description() string                                 { return "" }
-func (fakeCmdCompileOnly) Version() string                                     { return "" }
-func (fakeCmdCompileOnly) Context() context.Context                            { return context.Background() }
-func (fakeCmdCompileOnly) Logger() *slog.Logger                                { return slog.Default() }
-func (fakeCmdCompileOnly) Tracer() trace.Tracer                                { return nil }
-func (fakeCmdCompileOnly) ClientEndpoint() (string, []client.ClientOpt, error) { return "", nil, nil }
-func (fakeCmdCompileOnly) Get(string) any                                      { return nil }
-func (fakeCmdCompileOnly) GetString(string) string                             { return "" }
-func (fakeCmdCompileOnly) Set(string, any) error                               { return nil }
-func (fakeCmdCompileOnly) Keys() []string                                      { return nil }
-func (fakeCmdCompileOnly) IsTerm() bool                                        { return false }
-func (fakeCmdCompileOnly) IsDebug() bool                                       { return false }
-func (fakeCmdCompileOnly) HTTPAddr() string                                    { return "" }
-func (fakeCmdCompileOnly) HTTPPrefix() string                                  { return "" }
-func (fakeCmdCompileOnly) HTTPOrigin() string                                  { return "" }
-func (fakeCmdCompileOnly) HTTPTimeout() time.Duration                          { return 0 }

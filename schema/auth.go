@@ -17,6 +17,18 @@ type TokenRequest struct {
 	Meta     MetaMap `json:"meta,omitempty"`
 }
 
+// AuthorizationCodeRequest contains the upstream provider key and OAuth
+// authorization code that should be exchanged server-side for a verified
+// identity token.
+type AuthorizationCodeRequest struct {
+	Provider     string  `json:"provider"`
+	Code         string  `json:"code"`
+	RedirectURL  string  `json:"redirect_url"`
+	CodeVerifier string  `json:"code_verifier,omitempty"`
+	Nonce        string  `json:"nonce,omitempty"`
+	Meta         MetaMap `json:"meta,omitempty"`
+}
+
 // RefreshRequest contains a previously issued local session token that should
 // be verified and, if still eligible, refreshed.
 type RefreshRequest struct {
@@ -62,6 +74,17 @@ func (req *TokenRequest) Validate(ctx context.Context) (map[string]any, error) {
 	default:
 		return nil, auth.ErrInvalidProvider.Withf("unsupported provider %q", req.Provider)
 	}
+}
+
+func (req *AuthorizationCodeRequest) Validate() error {
+	if req.Provider == "" {
+		return auth.ErrInvalidProvider.With("provider is required")
+	} else if req.Code == "" {
+		return auth.ErrBadParameter.With("code is required")
+	} else if req.RedirectURL == "" {
+		return auth.ErrBadParameter.With("redirect_url is required")
+	}
+	return nil
 }
 
 func NewUserInfo(user *User) *UserInfo {

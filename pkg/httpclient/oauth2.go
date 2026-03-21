@@ -114,6 +114,39 @@ func (c *Client) OAuthLoginBootstrap(ctx context.Context, provider, redirectURL 
 	return flow, nil
 }
 
+// ExchangeAuthorizationCode exchanges an OAuth authorization code for an
+// upstream OIDC id_token using the supplied flow configuration.
+func (c *Client) ExchangeAuthorizationCode(ctx context.Context, flow *oidc.AuthorizationCodeFlow, code string) (string, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if flow == nil {
+		return "", fmt.Errorf("authorization flow is required")
+	}
+	code = strings.TrimSpace(code)
+	if code == "" {
+		return "", fmt.Errorf("authorization code is required")
+	}
+	config, err := oauth2ConfigForFlow(flow)
+	if err != nil {
+		return "", err
+	}
+	options := make([]oauth2.AuthCodeOption, 0, 1)
+	if verifier := strings.TrimSpace(flow.CodeVerifier); verifier != "" {
+		options = append(options, oauth2.SetAuthURLParam("code_verifier", verifier))
+	}
+	token, err := config.Exchange(ctx, code, options...)
+	if err != nil {
+		return "", err
+	}
+	idToken, _ := token.Extra("id_token").(string)
+	idToken = strings.TrimSpace(idToken)
+	if idToken == "" {
+		return "", fmt.Errorf("upstream token response missing id_token")
+	}
+	return idToken, nil
+}
+
 func (s *tokenSource) Token() (*oauth2.Token, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -165,4 +198,28 @@ func cloneOAuthToken(token *oauth2.Token) *oauth2.Token {
 	}
 	clone := *token
 	return &clone
+}
+
+func oauth2ConfigForFlow(flow *oidc.AuthorizationCodeFlow) (*oauth2.Config, error) {
+	if flow == nil {
+		return nil, fmt.Errorf("authorization flow is required")
+	}
+	if strings.TrimSpace(flow.ClientID) == "" {
+		return nil, fmt.Errorf("client ID is required")
+	}
+	if strings.TrimSpace(flow.RedirectURL) == "" {
+		return nil, fmt.Errorf("redirect URL is required")
+	}
+	if strings.TrimSpace(flow.TokenEndpoint) == "" {
+		return nil, fmt.Errorf("token endpoint is required")
+	}
+	return &oauth2.Config{
+		ClientID:    flow.ClientID,
+		RedirectURL: flow.RedirectURL,
+		Scopes:      append([]string(nil), flow.Scopes...),
+		Endpoint: oauth2.Endpoint{
+			AuthURL:  strings.TrimSpace(flow.AuthorizationEndpoint),
+			TokenURL: strings.TrimSpace(flow.TokenEndpoint),
+		},
+	}, nil
 }

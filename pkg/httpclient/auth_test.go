@@ -106,6 +106,63 @@ func TestClientAuthMethods(t *testing.T) {
 		assert.Equal("alice@example.com", response.UserInfo.Email)
 	})
 
+	t.Run("LoginTokenPostsProviderToken", func(t *testing.T) {
+		assert := assert.New(t)
+		require := require.New(t)
+
+		var request authschema.TokenRequest
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			require.Equal(http.MethodPost, r.Method)
+			require.Equal("/auth/login", r.URL.Path)
+			require.NoError(json.NewDecoder(r.Body).Decode(&request))
+			assert.Equal(authschema.ProviderOAuth, request.Provider)
+			assert.Equal("upstream-token", request.Token)
+
+			w.Header().Set("Content-Type", "application/json")
+			require.NoError(json.NewEncoder(w).Encode(authschema.TokenResponse{Token: "local-token"}))
+		}))
+		defer server.Close()
+
+		client, err := New(server.URL)
+		require.NoError(err)
+		response, err := client.LoginToken(context.Background(), " upstream-token ")
+		require.NoError(err)
+		require.NotNil(response)
+		assert.Equal("local-token", response.Token)
+	})
+
+	t.Run("LoginCodePostsAuthorizationCode", func(t *testing.T) {
+		assert := assert.New(t)
+		require := require.New(t)
+
+		var request authschema.AuthorizationCodeRequest
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			require.Equal(http.MethodPost, r.Method)
+			require.Equal("/auth/code", r.URL.Path)
+			require.NoError(json.NewDecoder(r.Body).Decode(&request))
+			assert.Equal("google", request.Provider)
+			assert.Equal("auth-code", request.Code)
+			assert.Equal("http://127.0.0.1:8085/callback", request.RedirectURL)
+			assert.Equal("code-verifier", request.CodeVerifier)
+			assert.Equal("nonce-123", request.Nonce)
+
+			w.Header().Set("Content-Type", "application/json")
+			require.NoError(json.NewEncoder(w).Encode(authschema.TokenResponse{Token: "local-token"}))
+		}))
+		defer server.Close()
+
+		client, err := New(server.URL)
+		require.NoError(err)
+		response, err := client.LoginCode(context.Background(), "google", &oidc.AuthorizationCodeFlow{
+			RedirectURL:  "http://127.0.0.1:8085/callback",
+			CodeVerifier: "code-verifier",
+			Nonce:        "nonce-123",
+		}, " auth-code ")
+		require.NoError(err)
+		require.NotNil(response)
+		assert.Equal("local-token", response.Token)
+	})
+
 	t.Run("LoginRejectsMissingIssuer", func(t *testing.T) {
 		assert := assert.New(t)
 		require := require.New(t)
@@ -467,6 +524,68 @@ func TestClientAuthMethods(t *testing.T) {
 		require.Error(err)
 		assert.Nil(bootstrap)
 		assert.EqualError(err, `auth provider "local" has no client_id`)
+	})
+
+	t.Run("ExchangeAuthorizationCodeReturnsIDToken", func(t *testing.T) {
+		assert := assert.New(t)
+		require := require.New(t)
+
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			require.Equal(http.MethodPost, r.Method)
+			require.Equal("/token", r.URL.Path)
+			require.NoError(r.ParseForm())
+			assert.Equal("authorization_code", r.PostForm.Get("grant_type"))
+			assert.Equal("auth-code-123", r.PostForm.Get("code"))
+			assert.Equal("http://127.0.0.1:8085/callback", r.PostForm.Get("redirect_uri"))
+			assert.Equal("verifier-123", r.PostForm.Get("code_verifier"))
+
+			w.Header().Set("Content-Type", "application/json")
+			require.NoError(json.NewEncoder(w).Encode(map[string]any{
+				"access_token": "access-token",
+				"token_type":   "Bearer",
+				"id_token":     "id-token",
+			}))
+		}))
+		defer server.Close()
+
+		client, err := New("https://unused.example.test")
+		require.NoError(err)
+
+		idToken, err := client.ExchangeAuthorizationCode(context.Background(), &oidc.AuthorizationCodeFlow{
+			AuthorizationEndpoint: server.URL + "/authorize",
+			TokenEndpoint:         server.URL + "/token",
+			ClientID:              "client-id",
+			RedirectURL:           "http://127.0.0.1:8085/callback",
+			CodeVerifier:          "verifier-123",
+		}, " auth-code-123 ")
+		require.NoError(err)
+		assert.Equal("id-token", idToken)
+	})
+
+	t.Run("ExchangeAuthorizationCodeRequiresIDToken", func(t *testing.T) {
+		assert := assert.New(t)
+		require := require.New(t)
+
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			require.NoError(json.NewEncoder(w).Encode(map[string]any{
+				"access_token": "access-token",
+				"token_type":   "Bearer",
+			}))
+		}))
+		defer server.Close()
+
+		client, err := New("https://unused.example.test")
+		require.NoError(err)
+
+		idToken, err := client.ExchangeAuthorizationCode(context.Background(), &oidc.AuthorizationCodeFlow{
+			TokenEndpoint: server.URL,
+			ClientID:      "client-id",
+			RedirectURL:   "http://127.0.0.1:8085/callback",
+		}, "auth-code-123")
+		require.Error(err)
+		assert.Equal("", idToken)
+		assert.EqualError(err, "upstream token response missing id_token")
 	})
 
 	t.Run("RevokePostsToken", func(t *testing.T) {

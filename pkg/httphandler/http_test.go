@@ -3,12 +3,13 @@ package httphandler
 import (
 	"bytes"
 	"context"
+	"crypto/rsa"
 	"encoding/base64"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"testing"
 	"time"
 
@@ -18,6 +19,7 @@ import (
 	middleware "github.com/djthorpe/go-auth/pkg/middleware"
 	oidc "github.com/djthorpe/go-auth/pkg/oidc"
 	schema "github.com/djthorpe/go-auth/schema"
+	jwt "github.com/golang-jwt/jwt/v5"
 	uuid "github.com/google/uuid"
 	test "github.com/mutablelogic/go-pg/pkg/test"
 	assert "github.com/stretchr/testify/assert"
@@ -48,27 +50,23 @@ func Test_http_001(t *testing.T) {
 		assert := assert.New(t)
 		require := require.New(t)
 
-		mgr, issuer := newHTTPTestManager(t)
-		prevValidate := validateTokenRequest
-		prevIdentity := newIdentityFromClaims
-		defer func() {
-			validateTokenRequest = prevValidate
-			newIdentityFromClaims = prevIdentity
-		}()
+		provider := newTestOIDCProvider(t, "google-client-id", "google-client-secret", "nonce-123")
+		defer provider.Close()
+		upstreamToken := provider.IssueToken(t, jwt.MapClaims{
+			"iss":   provider.Issuer(),
+			"sub":   "auth-handler-success",
+			"aud":   "google-client-id",
+			"exp":   time.Now().Add(time.Hour).Unix(),
+			"iat":   time.Now().Unix(),
+			"email": "auth.handler.success@example.com",
+			"name":  "Auth Handler Success",
+		})
 
-		validateTokenRequest = func(ctx context.Context, req *schema.TokenRequest) (map[string]any, error) {
-			return map[string]any{
-				"iss":   "https://accounts.google.com",
-				"sub":   "auth-handler-success",
-				"email": "auth.handler.success@example.com",
-				"name":  "Auth Handler Success",
-			}, nil
-		}
-		newIdentityFromClaims = schema.NewIdentityFromClaims
+		mgr, issuer := newHTTPTestManager(t)
 
 		_, handler, _ := AuthHandler(mgr)
 		res := httptest.NewRecorder()
-		body := mustJSONBody(t, schema.TokenRequest{Provider: schema.ProviderOAuth, Token: "upstream-token"})
+		body := mustJSONBody(t, schema.TokenRequest{Provider: schema.ProviderOAuth, Token: upstreamToken})
 		req := httptest.NewRequest(http.MethodPost, "/auth/login", body)
 		req.Host = "localhost:8084"
 		req.Header.Set("Content-Type", "application/json")
@@ -88,6 +86,18 @@ func Test_http_001(t *testing.T) {
 		assert := assert.New(t)
 		require := require.New(t)
 
+		provider := newTestOIDCProvider(t, "google-client-id", "google-client-secret", "nonce-123")
+		defer provider.Close()
+		upstreamToken := provider.IssueToken(t, jwt.MapClaims{
+			"iss":   provider.Issuer(),
+			"sub":   "unlinked-subject",
+			"aud":   "google-client-id",
+			"exp":   time.Now().Add(time.Hour).Unix(),
+			"iat":   time.Now().Unix(),
+			"email": "existing.user@example.com",
+			"name":  "Existing User",
+		})
+
 		mgr, _ := newHTTPTestManager(t)
 		_, err := mgr.CreateUser(context.Background(), schema.UserMeta{
 			Name:  "Existing User",
@@ -95,31 +105,72 @@ func Test_http_001(t *testing.T) {
 		}, nil)
 		require.NoError(err)
 
-		prevValidate := validateTokenRequest
-		prevIdentity := newIdentityFromClaims
-		defer func() {
-			validateTokenRequest = prevValidate
-			newIdentityFromClaims = prevIdentity
-		}()
-
-		validateTokenRequest = func(ctx context.Context, req *schema.TokenRequest) (map[string]any, error) {
-			return map[string]any{
-				"iss":   "https://accounts.google.com",
-				"sub":   "unlinked-subject",
-				"email": "existing.user@example.com",
-			}, nil
-		}
-		newIdentityFromClaims = schema.NewIdentityFromClaims
-
 		_, handler, _ := AuthHandler(mgr)
 		res := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodPost, "/auth/login", mustJSONBody(t, schema.TokenRequest{Provider: schema.ProviderOAuth, Token: "upstream-token"}))
+		req := httptest.NewRequest(http.MethodPost, "/auth/login", mustJSONBody(t, schema.TokenRequest{Provider: schema.ProviderOAuth, Token: upstreamToken}))
 		req.Header.Set("Content-Type", "application/json")
 
 		handler(res, req)
 
 		require.Equal(http.StatusConflict, res.Code)
 		assert.Contains(res.Body.String(), "existing.user@example.com")
+	})
+
+	t.Run("AuthCodeHandlerSuccess", func(t *testing.T) {
+		assert := assert.New(t)
+		require := require.New(t)
+
+		provider := newTestOIDCProvider(t, "google-client-id", "google-client-secret", "nonce-123")
+		defer provider.Close()
+
+		mgr, issuer := newHTTPTestManagerWithOpts(t, manager.WithOAuthClient("google", provider.Issuer(), "google-client-id", "google-client-secret"))
+		_, handler, _ := AuthCodeHandler(mgr)
+		res := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, "/auth/code", mustJSONBody(t, schema.AuthorizationCodeRequest{
+			Provider:     "google",
+			Code:         "auth-code",
+			RedirectURL:  "http://127.0.0.1:8085/callback",
+			CodeVerifier: "verifier-123",
+			Nonce:        "nonce-123",
+		}))
+		req.Header.Set("Content-Type", "application/json")
+
+		handler(res, req)
+
+		require.Equal(http.StatusOK, res.Code)
+		var response schema.TokenResponse
+		require.NoError(json.Unmarshal(res.Body.Bytes(), &response))
+		assert.NotEmpty(response.Token)
+		require.NotNil(response.UserInfo)
+		assert.Equal("auth.code.success@example.com", response.UserInfo.Email)
+		assert.Equal(issuer, mustExtractIssuer(t, response.Token))
+		assert.Equal("auth-code", provider.FormValue("code"))
+		assert.Equal("http://127.0.0.1:8085/callback", provider.FormValue("redirect_uri"))
+		assert.Equal("verifier-123", provider.FormValue("code_verifier"))
+	})
+
+	t.Run("AuthCodeHandlerRejectsNonceMismatch", func(t *testing.T) {
+		assert := assert.New(t)
+		require := require.New(t)
+
+		provider := newTestOIDCProvider(t, "google-client-id", "google-client-secret", "wrong-nonce")
+		defer provider.Close()
+
+		mgr, _ := newHTTPTestManagerWithOpts(t, manager.WithOAuthClient("google", provider.Issuer(), "google-client-id", "google-client-secret"))
+		_, handler, _ := AuthCodeHandler(mgr)
+		res := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, "/auth/code", mustJSONBody(t, schema.AuthorizationCodeRequest{
+			Provider:    "google",
+			Code:        "auth-code",
+			RedirectURL: "http://127.0.0.1:8085/callback",
+			Nonce:       "nonce-123",
+		}))
+		req.Header.Set("Content-Type", "application/json")
+
+		handler(res, req)
+
+		require.Equal(http.StatusBadRequest, res.Code)
+		assert.Contains(res.Body.String(), "token nonce mismatch")
 	})
 
 	t.Run("UserInfoHandlerReturnsAuthenticatedUser", func(t *testing.T) {
@@ -163,22 +214,17 @@ func Test_http_001(t *testing.T) {
 		require := require.New(t)
 
 		mgr, _ := newHTTPTestManager(t)
-		prevValidate := validateTokenRequest
-		defer func() { validateTokenRequest = prevValidate }()
-		validateTokenRequest = func(ctx context.Context, req *schema.TokenRequest) (map[string]any, error) {
-			return nil, errors.New("boom")
-		}
 
 		_, handler, _ := AuthHandler(mgr)
 		res := httptest.NewRecorder()
-		body := mustJSONBody(t, schema.TokenRequest{Provider: schema.ProviderOAuth, Token: "upstream-token"})
+		body := mustJSONBody(t, schema.TokenRequest{Provider: schema.ProviderOAuth, Token: "not-a-jwt"})
 		req := httptest.NewRequest(http.MethodPost, "/auth/login", body)
 		req.Header.Set("Content-Type", "application/json")
 
 		handler(res, req)
 
 		require.Equal(http.StatusBadRequest, res.Code)
-		assert.Contains(res.Body.String(), "boom")
+		assert.Contains(res.Body.String(), "parse JWT")
 	})
 
 	t.Run("AuthHandlerRejectsUnsupportedProvider", func(t *testing.T) {
@@ -202,22 +248,21 @@ func Test_http_001(t *testing.T) {
 		assert := assert.New(t)
 		require := require.New(t)
 
-		mgr, _ := newHTTPTestManager(t)
-		prevValidate := validateTokenRequest
-		prevIdentity := newIdentityFromClaims
-		defer func() {
-			validateTokenRequest = prevValidate
-			newIdentityFromClaims = prevIdentity
-		}()
+		provider := newTestOIDCProvider(t, "google-client-id", "google-client-secret", "nonce-123")
+		defer provider.Close()
+		upstreamToken := provider.IssueToken(t, jwt.MapClaims{
+			"iss":   provider.Issuer(),
+			"aud":   "google-client-id",
+			"exp":   time.Now().Add(time.Hour).Unix(),
+			"iat":   time.Now().Unix(),
+			"email": "missing.sub@example.com",
+		})
 
-		validateTokenRequest = func(ctx context.Context, req *schema.TokenRequest) (map[string]any, error) {
-			return map[string]any{"iss": "https://accounts.google.com"}, nil
-		}
-		newIdentityFromClaims = schema.NewIdentityFromClaims
+		mgr, _ := newHTTPTestManager(t)
 
 		_, handler, _ := AuthHandler(mgr)
 		res := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodPost, "/auth/login", mustJSONBody(t, schema.TokenRequest{Provider: schema.ProviderOAuth, Token: "upstream-token"}))
+		req := httptest.NewRequest(http.MethodPost, "/auth/login", mustJSONBody(t, schema.TokenRequest{Provider: schema.ProviderOAuth, Token: upstreamToken}))
 		req.Header.Set("Content-Type", "application/json")
 
 		handler(res, req)
@@ -1015,7 +1060,7 @@ func newHTTPTestManagerForToken(t *testing.T, token string) (map[string]any, err
 	t.Helper()
 	parts := bytes.Split([]byte(token), []byte("."))
 	if len(parts) < 2 {
-		return nil, errors.New("invalid token")
+		return nil, fmt.Errorf("invalid token")
 	}
 	data := parts[1]
 	decoded := make([]byte, len(data)*2)
@@ -1095,4 +1140,124 @@ func mustJSONBody(t *testing.T, value any) *bytes.Reader {
 	data, err := json.Marshal(value)
 	require.NoError(t, err)
 	return bytes.NewReader(data)
+}
+
+type testOIDCProvider struct {
+	server       *httptest.Server
+	key          any
+	clientID     string
+	clientSecret string
+	nonce        string
+	lastForm     url.Values
+}
+
+func newTestOIDCProvider(t *testing.T, clientID, clientSecret, nonce string) *testOIDCProvider {
+	t.Helper()
+
+	key, err := authcrypto.GeneratePrivateKey()
+	require.NoError(t, err)
+
+	provider := &testOIDCProvider{
+		key:          key,
+		clientID:     clientID,
+		clientSecret: clientSecret,
+		nonce:        nonce,
+	}
+	mux := http.NewServeMux()
+	mux.HandleFunc("/"+oidc.ConfigPath, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		require.NoError(t, json.NewEncoder(w).Encode(oidc.Configuration{
+			Issuer:              provider.server.URL,
+			TokenEndpoint:       provider.server.URL + "/token",
+			JwksURI:             oidc.JWKSURL(provider.server.URL),
+			SigningAlgorithms:   []string{oidc.SigningAlgorithm},
+			SubjectTypes:        []string{"public"},
+			ResponseTypes:       []string{oidc.ResponseTypeCode},
+			GrantTypesSupported: []string{"authorization_code"},
+			ScopesSupported:     []string{oidc.ScopeOpenID, oidc.ScopeEmail, oidc.ScopeProfile},
+			ClaimsSupported:     []string{"iss", "sub", "aud", "exp", "iat", "email", "name", "nonce"},
+		}))
+	})
+	mux.HandleFunc("/"+oidc.JWKSPath, func(w http.ResponseWriter, r *http.Request) {
+		set, err := oidc.PublicJWKSet(key)
+		require.NoError(t, err)
+		w.Header().Set("Content-Type", "application/json")
+		require.NoError(t, json.NewEncoder(w).Encode(set))
+	})
+	mux.HandleFunc("/token", func(w http.ResponseWriter, r *http.Request) {
+		require.NoError(t, r.ParseForm())
+		provider.lastForm = cloneValues(r.PostForm)
+
+		basicUser, basicPass, ok := r.BasicAuth()
+		if !ok {
+			basicUser = r.PostForm.Get("client_id")
+			basicPass = r.PostForm.Get("client_secret")
+		}
+		assert.Equal(t, provider.clientID, basicUser)
+		assert.Equal(t, provider.clientSecret, basicPass)
+
+		idToken, err := oidc.SignToken(key, jwt.MapClaims{
+			"iss":   provider.server.URL,
+			"sub":   "auth-code-success",
+			"aud":   provider.clientID,
+			"exp":   time.Now().Add(time.Hour).Unix(),
+			"iat":   time.Now().Unix(),
+			"email": "auth.code.success@example.com",
+			"name":  "Auth Code Success",
+			"nonce": provider.nonce,
+		})
+		require.NoError(t, err)
+
+		w.Header().Set("Content-Type", "application/json")
+		require.NoError(t, json.NewEncoder(w).Encode(map[string]any{
+			"access_token": "upstream-access-token",
+			"id_token":     idToken,
+			"token_type":   "Bearer",
+			"expires_in":   3600,
+		}))
+	})
+	provider.server = httptest.NewServer(mux)
+	return provider
+}
+
+func (p *testOIDCProvider) Close() {
+	if p != nil && p.server != nil {
+		p.server.Close()
+	}
+}
+
+func (p *testOIDCProvider) Issuer() string {
+	if p == nil || p.server == nil {
+		return ""
+	}
+	return p.server.URL
+}
+
+func (p *testOIDCProvider) FormValue(key string) string {
+	if p == nil || p.lastForm == nil {
+		return ""
+	}
+	return p.lastForm.Get(key)
+}
+
+func (p *testOIDCProvider) IssueToken(t *testing.T, claims jwt.MapClaims) string {
+	t.Helper()
+	require.NotNil(t, p)
+	require.NotNil(t, p.key)
+	rsaKey, ok := p.key.(*rsa.PrivateKey)
+	require.True(t, ok)
+	token, err := oidc.SignToken(rsaKey, claims)
+	require.NoError(t, err)
+	return token
+}
+
+func cloneValues(values url.Values) url.Values {
+	if values == nil {
+		return nil
+	}
+	clone := make(url.Values, len(values))
+	for key, entries := range values {
+		clone[key] = append([]string(nil), entries...)
+	}
+	return clone
 }
