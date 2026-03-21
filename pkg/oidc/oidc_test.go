@@ -104,3 +104,21 @@ func TestPublicJWKSet(t *testing.T) {
 	assert.NotEmpty(t, n)
 	assert.NotEmpty(t, e)
 }
+
+func TestClientConfigurationPublic(t *testing.T) {
+	assert := assert.New(t)
+
+	config := oidc.ClientConfiguration{
+		PublicClientConfiguration: oidc.PublicClientConfiguration{
+			Issuer:   oidc.GoogleIssuer,
+			ClientID: "google-client-id",
+			Provider: "oauth",
+		},
+		ClientSecret: "google-client-secret",
+	}
+
+	public := config.Public()
+	assert.Equal(oidc.GoogleIssuer, public.Issuer)
+	assert.Equal("google-client-id", public.ClientID)
+	assert.Equal("oauth", public.Provider)
+}

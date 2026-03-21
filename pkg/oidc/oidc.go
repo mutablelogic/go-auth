@@ -31,6 +31,7 @@ type Configuration struct {
 // GLOBALS
 
 const (
+	GoogleIssuer     = "https://accounts.google.com"
 	ConfigPath       = ".well-known/openid-configuration"
 	JWKSPath         = ".well-known/jwks.json"
 	SigningAlgorithm = "RS256"

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	// Packages
+	oidc "github.com/djthorpe/go-auth/pkg/oidc"
 	schema "github.com/djthorpe/go-auth/schema"
 )
 
@@ -17,12 +18,12 @@ import (
 type Opt func(*opt) error
 
 type opt struct {
-	issuer       string
 	privateKey   *rsa.PrivateKey
 	schema       string
 	sessionttl   time.Duration
 	cleanupint   time.Duration
 	cleanuplimit int
+	oauth        oidc.ClientConfigurations
 	userhook     func(context.Context, schema.IdentityInsert, schema.UserMeta) (schema.UserMeta, error)
 }
 
@@ -55,13 +56,30 @@ func WithPrivateKey(key *rsa.PrivateKey) Opt {
 	}
 }
 
-// WithIssuer sets the canonical issuer used for locally signed tokens.
-func WithIssuer(issuer string) Opt {
+// WithOAuthClient stores the upstream OAuth client configuration. The client
+// ID and issuer are exposed via /auth/config, while the client secret remains
+// server-side.
+func WithOAuthClient(key, issuer, clientID, clientSecret string) Opt {
 	return func(o *opt) error {
-		if issuer == "" {
-			return fmt.Errorf("issuer cannot be empty")
+		if key == "" {
+			return fmt.Errorf("oauth key cannot be empty")
 		}
-		o.issuer = issuer
+		if issuer == "" {
+			return fmt.Errorf("oauth issuer cannot be empty")
+		}
+		if o.oauth == nil {
+			o.oauth = make(oidc.ClientConfigurations)
+		} else if _, exists := o.oauth[key]; exists {
+			return fmt.Errorf("oauth key %q already configured", key)
+		}
+		o.oauth[key] = oidc.ClientConfiguration{
+			PublicClientConfiguration: oidc.PublicClientConfiguration{
+				Issuer:   issuer,
+				ClientID: clientID,
+				Provider: schema.ProviderOAuth,
+			},
+			ClientSecret: clientSecret,
+		}
 		return nil
 	}
 }

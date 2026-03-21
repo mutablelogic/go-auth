@@ -10,6 +10,7 @@ import (
 	// Packages
 	authcrypto "github.com/djthorpe/go-auth/pkg/crypto"
 	manager "github.com/djthorpe/go-auth/pkg/manager"
+	oidc "github.com/djthorpe/go-auth/pkg/oidc"
 	schema "github.com/djthorpe/go-auth/schema"
 	jwt "github.com/golang-jwt/jwt/v5"
 	uuid "github.com/google/uuid"
@@ -139,8 +140,8 @@ func Test_auth_001(t *testing.T) {
 
 		handler(res, req)
 
-		require.Equal(http.StatusUnauthorized, res.Code)
-		assert.Contains(res.Body.String(), "private key is required for verification")
+		require.Equal(http.StatusInternalServerError, res.Code)
+		assert.Contains(res.Body.String(), "issuer is not configured")
 	})
 
 	t.Run("NewMiddlewareAllowsValidTokenAndSetsContext", func(t *testing.T) {
@@ -358,7 +359,7 @@ func newMiddlewareTestManager(t *testing.T) (*manager.Manager, string) {
 	require.NoError(t, err)
 
 	issuer := "http://localhost:8084/api"
-	mgr, err := manager.New(context.Background(), c, manager.WithPrivateKey(key), manager.WithIssuer(issuer))
+	mgr, err := manager.New(context.Background(), c, manager.WithPrivateKey(key), manager.WithOAuthClient(oidc.OAuthClientKeyLocal, issuer, "", ""))
 	require.NoError(t, err)
 	return mgr, issuer
 }

@@ -174,6 +174,36 @@ func TestClientAuthMethods(t *testing.T) {
 		assert.Equal("Alice", response.Name)
 	})
 
+	t.Run("AuthConfigGetsPublicProviderConfig", func(t *testing.T) {
+		assert := assert.New(t)
+		require := require.New(t)
+
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			require.Equal(http.MethodGet, r.Method)
+			require.Equal("/auth/config", r.URL.Path)
+
+			w.Header().Set("Content-Type", "application/json")
+			require.NoError(json.NewEncoder(w).Encode(oidc.PublicClientConfigurations{
+				"google": {
+					Issuer:   oidc.GoogleIssuer,
+					ClientID: "google-client-id",
+					Provider: authschema.ProviderOAuth,
+				},
+			}))
+		}))
+		defer server.Close()
+
+		client, err := New(server.URL)
+		require.NoError(err)
+		response, err := client.AuthConfig(context.Background())
+		require.NoError(err)
+		google, ok := response["google"]
+		require.True(ok)
+		assert.Equal(oidc.GoogleIssuer, google.Issuer)
+		assert.Equal("google-client-id", google.ClientID)
+		assert.Equal(authschema.ProviderOAuth, google.Provider)
+	})
+
 	t.Run("RevokePostsToken", func(t *testing.T) {
 		assert := assert.New(t)
 		require := require.New(t)
@@ -303,8 +333,8 @@ func TestClientAuthMethods(t *testing.T) {
 		source, err := client.TokenSource(context.Background(), token)
 		require.NoError(t, err)
 
-		_, ok := source.(oauth2.TokenSource)
-		assert.True(t, ok)
+		var tokenSource oauth2.TokenSource = source
+		assert.NotNil(t, tokenSource)
 	})
 }
 

@@ -20,13 +20,25 @@ func Test_opt_001(t *testing.T) {
 		assert.NoError(options.apply(nil))
 	})
 
-	t.Run("WithIssuer", func(t *testing.T) {
+	t.Run("WithOAuthClient", func(t *testing.T) {
 		assert := assert.New(t)
 
 		options := new(opt)
-		assert.NoError(WithIssuer("https://issuer.example.test/api")(options))
-		assert.Equal("https://issuer.example.test/api", options.issuer)
-		assert.EqualError(WithIssuer("")(options), "issuer cannot be empty")
+		assert.NoError(WithOAuthClient("google", "https://accounts.google.com", "google-client-id", "google-client-secret")(options))
+		config, ok := options.oauth["google"]
+		assert.True(ok)
+		assert.Equal("google-client-id", config.ClientID)
+		assert.Equal("google-client-secret", config.ClientSecret)
+		assert.Equal("https://accounts.google.com", config.Issuer)
+		assert.Equal(schema.ProviderOAuth, config.Provider)
+		assert.EqualError(WithOAuthClient("", "https://accounts.google.com", "google-client-id", "google-client-secret")(options), "oauth key cannot be empty")
+		assert.EqualError(WithOAuthClient("google", "", "google-client-id", "google-client-secret")(options), "oauth issuer cannot be empty")
+		assert.EqualError(WithOAuthClient("google", "https://accounts.google.com", "other-client-id", "other-client-secret")(options), "oauth key \"google\" already configured")
+		assert.NoError(WithOAuthClient("local", "https://issuer.example.test/api", "", "")(options))
+		local, ok := options.oauth["local"]
+		assert.True(ok)
+		assert.Empty(local.ClientID)
+		assert.Empty(local.ClientSecret)
 	})
 
 	t.Run("WithSessionTTL", func(t *testing.T) {
@@ -86,8 +98,8 @@ func Test_opt_001(t *testing.T) {
 		assert := assert.New(t)
 
 		options := new(opt)
-		err := options.apply(WithSchema("custom_auth"), WithIssuer(""), WithSessionTTL(time.Minute))
-		assert.EqualError(err, "issuer cannot be empty")
+		err := options.apply(WithSchema("custom_auth"), WithOAuthClient("", "https://issuer.example.test/api", "", ""), WithSessionTTL(time.Minute))
+		assert.EqualError(err, "oauth key cannot be empty")
 		assert.Equal("custom_auth", options.schema)
 		assert.Zero(options.sessionttl)
 	})

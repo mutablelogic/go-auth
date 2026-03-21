@@ -76,6 +76,16 @@ func (c *Client) UserInfo(ctx context.Context, token string) (*authschema.UserIn
 	return &response, nil
 }
 
+// AuthConfig retrieves the shareable upstream auth provider configuration from
+// /auth/config.
+func (c *Client) AuthConfig(ctx context.Context) (oidc.PublicClientConfigurations, error) {
+	var response oidc.PublicClientConfigurations
+	if err := c.DoWithContext(ctx, client.NewRequest(), &response, client.OptAbsPath("auth", "config")); err != nil {
+		return nil, err
+	}
+	return response, nil
+}
+
 // Revoke posts a previously issued local token to /auth/revoke and expects a
 // successful revocation with no response body.
 func (c *Client) Revoke(ctx context.Context, token string) error {

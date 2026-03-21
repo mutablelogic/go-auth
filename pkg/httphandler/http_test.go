@@ -16,6 +16,7 @@ import (
 	authcrypto "github.com/djthorpe/go-auth/pkg/crypto"
 	manager "github.com/djthorpe/go-auth/pkg/manager"
 	middleware "github.com/djthorpe/go-auth/pkg/middleware"
+	oidc "github.com/djthorpe/go-auth/pkg/oidc"
 	schema "github.com/djthorpe/go-auth/schema"
 	uuid "github.com/google/uuid"
 	test "github.com/mutablelogic/go-pg/pkg/test"
@@ -81,6 +82,44 @@ func Test_http_001(t *testing.T) {
 		require.NotNil(response.UserInfo)
 		assert.Equal("auth.handler.success@example.com", response.UserInfo.Email)
 		assert.Equal(issuer, mustExtractIssuer(t, response.Token))
+	})
+
+	t.Run("AuthHandlerReturnsConflictForExistingEmail", func(t *testing.T) {
+		assert := assert.New(t)
+		require := require.New(t)
+
+		mgr, _ := newHTTPTestManager(t)
+		_, err := mgr.CreateUser(context.Background(), schema.UserMeta{
+			Name:  "Existing User",
+			Email: "existing.user@example.com",
+		}, nil)
+		require.NoError(err)
+
+		prevValidate := validateTokenRequest
+		prevIdentity := newIdentityFromClaims
+		defer func() {
+			validateTokenRequest = prevValidate
+			newIdentityFromClaims = prevIdentity
+		}()
+
+		validateTokenRequest = func(ctx context.Context, req *schema.TokenRequest) (map[string]any, error) {
+			return map[string]any{
+				"iss":   "https://accounts.google.com",
+				"sub":   "unlinked-subject",
+				"email": "existing.user@example.com",
+			}, nil
+		}
+		newIdentityFromClaims = schema.NewIdentityFromClaims
+
+		_, handler, _ := AuthHandler(mgr)
+		res := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, "/auth/login", mustJSONBody(t, schema.TokenRequest{Provider: schema.ProviderOAuth, Token: "upstream-token"}))
+		req.Header.Set("Content-Type", "application/json")
+
+		handler(res, req)
+
+		require.Equal(http.StatusConflict, res.Code)
+		assert.Contains(res.Body.String(), "existing.user@example.com")
 	})
 
 	t.Run("UserInfoHandlerReturnsAuthenticatedUser", func(t *testing.T) {
@@ -203,6 +242,67 @@ func Test_http_001(t *testing.T) {
 		var response map[string]any
 		require.NoError(json.Unmarshal(res.Body.Bytes(), &response))
 		assert.Equal(issuer, response["issuer"])
+	})
+
+	t.Run("AuthConfigHandlerReturnsPublicConfig", func(t *testing.T) {
+		assert := assert.New(t)
+		require := require.New(t)
+
+		mgr, _ := newHTTPTestManagerWithOpts(t, manager.WithOAuthClient("google", oidc.GoogleIssuer, "google-client-id", "google-client-secret"))
+		_, handler, _ := AuthConfigHandler(mgr)
+		res := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "/auth/config", nil)
+
+		handler(res, req)
+
+		require.Equal(http.StatusOK, res.Code)
+		var response oidc.PublicClientConfigurations
+		require.NoError(json.Unmarshal(res.Body.Bytes(), &response))
+		local, ok := response[oidc.OAuthClientKeyLocal]
+		require.True(ok)
+		assert.Equal("http://localhost:8084/api", local.Issuer)
+		assert.Equal("", local.ClientID)
+		assert.Equal(schema.ProviderOAuth, local.Provider)
+		google, ok := response["google"]
+		require.True(ok)
+		assert.Equal(oidc.GoogleIssuer, google.Issuer)
+		assert.Equal("google-client-id", google.ClientID)
+		assert.Equal(schema.ProviderOAuth, google.Provider)
+		assert.NotContains(res.Body.String(), "google-client-secret")
+	})
+
+	t.Run("AuthConfigHandlerReturnsLocalConfig", func(t *testing.T) {
+		assert := assert.New(t)
+		require := require.New(t)
+
+		mgr, _ := newHTTPTestManager(t)
+		_, handler, _ := AuthConfigHandler(mgr)
+		res := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "/auth/config", nil)
+
+		handler(res, req)
+
+		require.Equal(http.StatusOK, res.Code)
+		var response oidc.PublicClientConfigurations
+		require.NoError(json.Unmarshal(res.Body.Bytes(), &response))
+		local, ok := response[oidc.OAuthClientKeyLocal]
+		require.True(ok)
+		assert.Equal("http://localhost:8084/api", local.Issuer)
+		assert.Equal("", local.ClientID)
+		assert.Equal(schema.ProviderOAuth, local.Provider)
+	})
+
+	t.Run("AuthConfigHandlerMethodNotAllowed", func(t *testing.T) {
+		require := require.New(t)
+
+		mgr, _ := newHTTPTestManager(t)
+		_, handler, _ := AuthConfigHandler(mgr)
+		res := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, "/auth/config", nil)
+
+		handler(res, req)
+
+		require.Equal(http.StatusMethodNotAllowed, res.Code)
 	})
 
 	t.Run("ConfigHandlerMethodNotAllowed", func(t *testing.T) {
@@ -702,6 +802,30 @@ func Test_http_001(t *testing.T) {
 		assert.Contains(res.Body.String(), "token is required")
 	})
 
+	t.Run("RefreshHandlerMissingSession", func(t *testing.T) {
+		assert := assert.New(t)
+		require := require.New(t)
+
+		mgr, issuer := newHTTPTestManager(t)
+		user, _ := mustLoginSession(t, mgr)
+		token := mustSignTokenForSession(t, mgr, issuer, user, schema.Session{
+			ID:        schema.SessionID(uuid.New()),
+			User:      user.ID,
+			ExpiresAt: time.Now().Add(15 * time.Minute),
+		})
+
+		_, handler, _ := RefreshHandler(mgr)
+		res := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, "/auth/refresh", mustJSONBody(t, schema.RefreshRequest{Token: token}))
+		req.Host = "localhost:8084"
+		req.Header.Set("Content-Type", "application/json")
+
+		handler(res, req)
+
+		require.Equal(http.StatusNotFound, res.Code)
+		assert.Contains(res.Body.String(), "not found")
+	})
+
 	t.Run("RefreshHandlerMethodNotAllowed", func(t *testing.T) {
 		require := require.New(t)
 
@@ -737,6 +861,30 @@ func Test_http_001(t *testing.T) {
 		require.NoError(err)
 		require.NotNil(revoked.RevokedAt)
 		assert.False(revoked.RevokedAt.IsZero())
+	})
+
+	t.Run("RevokeHandlerMissingSession", func(t *testing.T) {
+		assert := assert.New(t)
+		require := require.New(t)
+
+		mgr, issuer := newHTTPTestManager(t)
+		user, _ := mustLoginSession(t, mgr)
+		token := mustSignTokenForSession(t, mgr, issuer, user, schema.Session{
+			ID:        schema.SessionID(uuid.New()),
+			User:      user.ID,
+			ExpiresAt: time.Now().Add(15 * time.Minute),
+		})
+
+		_, handler, _ := RevokeHandler(mgr)
+		res := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, "/auth/revoke", mustJSONBody(t, schema.RefreshRequest{Token: token}))
+		req.Host = "localhost:8084"
+		req.Header.Set("Content-Type", "application/json")
+
+		handler(res, req)
+
+		require.Equal(http.StatusNotFound, res.Code)
+		assert.Contains(res.Body.String(), "not found")
 	})
 
 	t.Run("RevokeHandlerMissingToken", func(t *testing.T) {
@@ -885,6 +1033,11 @@ func newHTTPTestManagerForToken(t *testing.T, token string) (map[string]any, err
 
 func newHTTPTestManager(t *testing.T) (*manager.Manager, string) {
 	t.Helper()
+	return newHTTPTestManagerWithOpts(t)
+}
+
+func newHTTPTestManagerWithOpts(t *testing.T, opts ...manager.Opt) (*manager.Manager, string) {
+	t.Helper()
 	c := conn.Begin(t)
 	t.Cleanup(func() { c.Close() })
 
@@ -892,13 +1045,12 @@ func newHTTPTestManager(t *testing.T) (*manager.Manager, string) {
 	require.NoError(t, err)
 
 	issuer := "http://localhost:8084/api"
-	mgr, err := manager.New(
-		context.Background(),
-		c,
+	managerOpts := append([]manager.Opt{
 		manager.WithPrivateKey(key),
-		manager.WithIssuer(issuer),
-		manager.WithSessionTTL(15*time.Minute),
-	)
+		manager.WithOAuthClient(oidc.OAuthClientKeyLocal, issuer, "", ""),
+		manager.WithSessionTTL(15 * time.Minute),
+	}, opts...)
+	mgr, err := manager.New(context.Background(), c, managerOpts...)
 	require.NoError(t, err)
 	require.NoError(t, mgr.Exec(context.Background(), "TRUNCATE auth.user CASCADE"))
 
@@ -928,9 +1080,14 @@ func mustLoginSession(t *testing.T, mgr *manager.Manager) (*schema.User, *schema
 func mustLoginToken(t *testing.T, mgr *manager.Manager, issuer string) (*schema.User, *schema.Session, string) {
 	t.Helper()
 	user, session := mustLoginSession(t, mgr)
-	token, err := mgr.OIDCSign(loginTokenClaims(issuer, user, session))
+	return user, session, mustSignTokenForSession(t, mgr, issuer, user, *session)
+}
+
+func mustSignTokenForSession(t *testing.T, mgr *manager.Manager, issuer string, user *schema.User, session schema.Session) string {
+	t.Helper()
+	token, err := mgr.OIDCSign(loginTokenClaims(issuer, user, &session))
 	require.NoError(t, err)
-	return user, session, token
+	return token
 }
 
 func mustJSONBody(t *testing.T, value any) *bytes.Reader {

@@ -14,6 +14,7 @@ import (
 	authcrypto "github.com/djthorpe/go-auth/pkg/crypto"
 	httphandler "github.com/djthorpe/go-auth/pkg/httphandler"
 	manager "github.com/djthorpe/go-auth/pkg/manager"
+	oidc "github.com/djthorpe/go-auth/pkg/oidc"
 	schema "github.com/djthorpe/go-auth/schema"
 	server "github.com/mutablelogic/go-server"
 	cmd "github.com/mutablelogic/go-server/pkg/cmd"
@@ -35,12 +36,18 @@ type RunServer struct {
 	cmd.RunServer
 	PostgresFlags
 	CleanupFlags `embed:"" prefix:"cleanup."`
+	GoogleFlags  `embed:"" prefix:"google."`
 	Auth         bool `name:"auth" help:"Whether to enable authentication for protected endpoints." default:"true" negatable:""`
 }
 
 type CleanupFlags struct {
 	Interval time.Duration `name:"interval" help:"How often to prune stale sessions." default:"1h"`
 	Limit    int           `name:"limit" help:"Maximum stale sessions to prune in one pass." default:"100"`
+}
+
+type GoogleFlags struct {
+	ClientID     string `name:"client-id" env:"GOOGLE_CLIENT_ID" help:"Google OAuth client ID exposed via /auth/config."`
+	ClientSecret string `name:"client-secret" env:"GOOGLE_CLIENT_SECRET" help:"Google OAuth client secret kept server-side."`
 }
 
 type contextCmd struct {
@@ -116,8 +123,13 @@ func (server *RunServer) WithManager(ctx server.Cmd, fn func(*manager.Manager, s
 	opts := []manager.Opt{
 		manager.WithPrivateKey(key),
 	}
-	if issuer := server.issuer(ctx); issuer != "" {
-		opts = append(opts, manager.WithIssuer(issuer))
+	issuer := server.issuer(ctx)
+	if issuer == "" {
+		return fmt.Errorf("issuer could not be determined from server configuration")
+	}
+	opts = append(opts, manager.WithOAuthClient(oidc.OAuthClientKeyLocal, issuer, "", ""))
+	if clientID, clientSecret := strings.TrimSpace(server.GoogleFlags.ClientID), strings.TrimSpace(server.GoogleFlags.ClientSecret); clientID != "" || clientSecret != "" {
+		opts = append(opts, manager.WithOAuthClient("google", oidc.GoogleIssuer, clientID, clientSecret))
 	}
 	opts = append(opts, manager.WithCleanup(server.cleanupInterval(), server.cleanupLimit()))
 
@@ -150,11 +162,11 @@ func (server *RunServer) issuer(ctx server.Cmd) string {
 	if server.TLS.CertFile != "" && server.TLS.KeyFile != "" {
 		scheme = "https"
 	}
-	prefix := strings.TrimRight(ctx.GetString("http.prefix"), "/")
-	if origin := strings.TrimSpace(ctx.GetString("http.origin")); origin != "" && origin != "*" {
+	prefix := strings.TrimRight(ctx.HTTPPrefix(), "/")
+	if origin := strings.TrimSpace(ctx.HTTPOrigin()); origin != "" && origin != "*" {
 		return strings.TrimRight(origin, "/") + prefix
 	}
-	if hostport := publicHostPort(strings.TrimSpace(ctx.GetString("http.addr"))); hostport != "" {
+	if hostport := publicHostPort(strings.TrimSpace(ctx.HTTPAddr())); hostport != "" {
 		return scheme + "://" + hostport + prefix
 	}
 	return ""

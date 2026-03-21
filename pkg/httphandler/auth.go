@@ -66,6 +66,42 @@ func AuthHandler(mgr *manager.Manager) (string, http.HandlerFunc, *openapi.PathI
 					"400": {
 						Description: "Invalid request body, unsupported provider, or token verification failure.",
 					},
+					"409": {
+						Description: "The verified identity conflicts with an existing account.",
+					},
+				},
+			},
+		}
+}
+
+// Return an http.HandlerFunc for the public auth provider configuration endpoint.
+func AuthConfigHandler(mgr *manager.Manager) (string, http.HandlerFunc, *openapi.PathItem) {
+	return "/auth/config", func(w http.ResponseWriter, r *http.Request) {
+			switch r.Method {
+			case http.MethodGet:
+				_ = getAuthConfig(r.Context(), mgr, w, r)
+			default:
+				_ = httpresponse.Error(w, httpresponse.Err(http.StatusMethodNotAllowed), r.Method)
+			}
+		}, &openapi.PathItem{
+			Summary:     "Public auth configuration",
+			Description: "Returns the upstream authentication provider details that are safe to expose to clients.",
+			Get: &openapi.Operation{
+				Tags:        []string{"Auth"},
+				Summary:     "Get public auth config",
+				Description: "Returns the upstream issuer, client ID, and provider type used by clients to start authentication.",
+				Responses: map[string]openapi.Response{
+					"200": {
+						Description: "Shareable upstream auth provider configurations.",
+						Content: map[string]openapi.MediaType{
+							"application/json": {
+								Schema: jsonschema.MustFor[oidc.PublicClientConfigurations](),
+							},
+						},
+					},
+					"404": {
+						Description: "No public auth provider configuration is available.",
+					},
 				},
 			},
 		}
@@ -108,6 +144,9 @@ func RefreshHandler(mgr *manager.Manager) (string, http.HandlerFunc, *openapi.Pa
 					"400": {
 						Description: "Invalid token, malformed request, or refresh is not allowed for the referenced session.",
 					},
+					"404": {
+						Description: "The referenced session does not exist or is no longer refreshable.",
+					},
 				},
 			},
 		}
@@ -144,6 +183,9 @@ func RevokeHandler(mgr *manager.Manager) (string, http.HandlerFunc, *openapi.Pat
 					},
 					"400": {
 						Description: "Invalid token, malformed request, or revocation failure.",
+					},
+					"404": {
+						Description: "The referenced session does not exist or cannot be revoked.",
 					},
 				},
 			},
@@ -225,7 +267,7 @@ func exchangeToken(ctx context.Context, mgr *manager.Manager, w http.ResponseWri
 	} else if identity, err := newIdentityFromClaims(claims); err != nil {
 		return httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest).With(err))
 	} else if user, session, err := mgr.LoginWithIdentity(ctx, identity, req.Meta); err != nil {
-		return httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest).With(err))
+		return httpresponse.Error(w, httpErr(err))
 	} else if config, err := mgr.OIDCConfig(r); err != nil {
 		return httpresponse.Error(w, httpresponse.Err(http.StatusInternalServerError).With(err))
 	} else if token, err := mgr.OIDCSign(loginTokenClaims(config.Issuer, user, session)); err != nil {
@@ -251,7 +293,7 @@ func refreshToken(ctx context.Context, mgr *manager.Manager, w http.ResponseWrit
 	} else if session, err := sessionIDFromClaims(claims); err != nil {
 		return httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest).With(err))
 	} else if user, refreshed, err := mgr.RefreshSession(ctx, session); err != nil {
-		return httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest).With(err))
+		return httpresponse.Error(w, httpErr(err))
 	} else if token, err := mgr.OIDCSign(loginTokenClaims(config.Issuer, user, refreshed)); err != nil {
 		return httpresponse.Error(w, httpresponse.Err(http.StatusInternalServerError).With(err))
 	} else {
@@ -274,7 +316,7 @@ func revokeToken(ctx context.Context, mgr *manager.Manager, w http.ResponseWrite
 	} else if session, err := sessionIDFromClaims(claims); err != nil {
 		return httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest).With(err))
 	} else if _, err := mgr.RevokeSession(ctx, session); err != nil {
-		return httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest).With(err))
+		return httpresponse.Error(w, httpErr(err))
 	} else {
 		w.WriteHeader(http.StatusNoContent)
 		return nil
@@ -320,6 +362,14 @@ func getOIDCConfig(_ context.Context, mgr *manager.Manager, w http.ResponseWrite
 	config, err := mgr.OIDCConfig(r)
 	if err != nil {
 		return httpresponse.Error(w, httpresponse.Err(http.StatusInternalServerError).With(err))
+	}
+	return httpresponse.JSON(w, http.StatusOK, httprequest.Indent(r), config)
+}
+
+func getAuthConfig(_ context.Context, mgr *manager.Manager, w http.ResponseWriter, r *http.Request) error {
+	config, err := mgr.AuthConfig()
+	if err != nil {
+		return httpresponse.Error(w, httpErr(err))
 	}
 	return httpresponse.JSON(w, http.StatusOK, httprequest.Indent(r), config)
 }

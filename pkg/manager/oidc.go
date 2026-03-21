@@ -11,11 +11,6 @@ import (
 	jwk "github.com/lestrrat-go/jwx/v2/jwk"
 )
 
-const authPath = "/auth/login"
-const userInfoPath = "/auth/userinfo"
-const refreshPath = "/auth/refresh"
-const revokePath = "/auth/revoke"
-
 ///////////////////////////////////////////////////////////////////////////////
 // PUBLIC METHODS
 
@@ -42,16 +37,15 @@ func (m *Manager) OIDCVerify(token, issuer string) (map[string]any, error) {
 	return oidc.VerifySignedToken(&m.privateKey.PublicKey, token, issuer)
 }
 
-// OIDCIssuer returns the canonical issuer for this manager. If no explicit
-// issuer was configured, it can derive one from an auth/discovery request.
+// OIDCIssuer returns the canonical issuer for locally signed tokens.
 func (m *Manager) OIDCIssuer(r *http.Request) (string, error) {
-	if m.issuer != "" {
-		return m.issuer, nil
+	if config, ok := m.oauth[oidc.OAuthClientKeyLocal]; ok {
+		if issuer := strings.TrimSpace(config.Issuer); issuer != "" {
+			return issuer, nil
+		}
 	}
-	if r == nil {
-		return "", auth.ErrBadParameter.With("issuer is not configured")
-	}
-	return issuerFromRequest(r), nil
+	_ = r
+	return "", auth.ErrBadParameter.With("issuer is not configured")
 }
 
 func (m *Manager) OIDCConfig(r *http.Request) (oidc.Configuration, error) {
@@ -69,17 +63,12 @@ func (m *Manager) OIDCConfig(r *http.Request) (oidc.Configuration, error) {
 	}, nil
 }
 
-func issuerFromRequest(r *http.Request) string {
-	scheme := "http"
-	if r.TLS != nil {
-		scheme = "https"
+// AuthConfig returns the shareable upstream provider configuration exposed by
+// /auth/config. The client secret remains server-side.
+
+func (m *Manager) AuthConfig() (oidc.PublicClientConfigurations, error) {
+	if len(m.oauth) == 0 {
+		return nil, auth.ErrNotFound.With("oauth clients are not configured")
 	}
-	if forwarded := r.Header.Get("X-Forwarded-Proto"); forwarded != "" {
-		scheme = forwarded
-	}
-	path := r.URL.Path
-	for _, suffix := range []string{"/" + oidc.ConfigPath, "/" + oidc.JWKSPath, authPath, userInfoPath, refreshPath, revokePath} {
-		path = strings.TrimSuffix(path, suffix)
-	}
-	return scheme + "://" + r.Host + path
+	return m.oauth.Public(), nil
 }
