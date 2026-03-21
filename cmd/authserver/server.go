@@ -23,11 +23,6 @@ import (
 	errgroup "golang.org/x/sync/errgroup"
 )
 
-const (
-	defaultCleanupInterval = time.Hour
-	defaultCleanupLimit    = 100
-)
-
 type ServerCommands struct {
 	RunServer RunServer `cmd:"" name:"run" help:"Run server." group:"SERVER"`
 }
@@ -41,8 +36,8 @@ type RunServer struct {
 }
 
 type CleanupFlags struct {
-	Interval time.Duration `name:"interval" help:"How often to prune stale sessions." default:"1h"`
-	Limit    int           `name:"limit" help:"Maximum stale sessions to prune in one pass." default:"100"`
+	Interval time.Duration `name:"interval" help:"How often to prune stale sessions. Defaults to the manager default when unset."`
+	Limit    int           `name:"limit" help:"Maximum stale sessions to prune in one pass. Defaults to the manager default when unset."`
 }
 
 type GoogleFlags struct {
@@ -53,6 +48,32 @@ type GoogleFlags struct {
 type contextCmd struct {
 	server.Cmd
 	ctx context.Context
+}
+
+type newUserHooks struct {
+	logger func(string, ...any)
+}
+
+func (h newUserHooks) OnUserCreate(_ context.Context, identity schema.IdentityInsert, meta schema.UserMeta) (schema.UserMeta, error) {
+	h.logger("Creating new user", "identity", identity, "meta", meta)
+
+	if meta.Status == nil {
+		meta.Status = types.Ptr(schema.UserStatusActive)
+	}
+
+	return meta, nil
+}
+
+func (h newUserHooks) OnIdentityLink(_ context.Context, identity schema.IdentityInsert, existing *schema.User) error {
+	h.logger("Linking identity to existing user", "identity", identity, "user", existing)
+
+	// Check email addresses match exactly
+	if identity.Email != existing.Email {
+		return fmt.Errorf("identity email does not match existing user email")
+	}
+
+	// Allow the link to proceed without error, but do not modify the existing user
+	return nil
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -131,20 +152,10 @@ func (server *RunServer) WithManager(ctx server.Cmd, fn func(*manager.Manager, s
 	if clientID, clientSecret := strings.TrimSpace(server.GoogleFlags.ClientID), strings.TrimSpace(server.GoogleFlags.ClientSecret); clientID != "" || clientSecret != "" {
 		opts = append(opts, manager.WithOAuthClient("google", oidc.GoogleIssuer, clientID, clientSecret))
 	}
-	opts = append(opts, manager.WithCleanup(server.cleanupInterval(), server.cleanupLimit()))
+	opts = append(opts, manager.WithCleanup(server.CleanupFlags.Interval, server.CleanupFlags.Limit))
 
-	// Add a hook for when a new user is created, to set the default metadata
-	opts = append(opts, manager.WithUserHook(func(_ context.Context, identity schema.IdentityInsert, meta schema.UserMeta) (schema.UserMeta, error) {
-		ctx.Logger().Info("Creating new user", "identity", identity, "meta", meta)
-
-		// Set status to active
-		if meta.Status == nil {
-			meta.Status = types.Ptr(schema.UserStatusActive)
-		}
-
-		// Return the modified metadata, or an error to reject the user creation
-		return meta, nil
-	}))
+	// Add hooks for login-time user provisioning behavior.
+	opts = append(opts, manager.WithHooks(newUserHooks{logger: ctx.Logger().Info}))
 
 	// Create the manager and run the server
 	manager, err := manager.New(ctx.Context(), conn, opts...)
@@ -188,20 +199,6 @@ func publicHostPort(addr string) string {
 		return net.JoinHostPort(host, port)
 	}
 	return addr
-}
-
-func (server *RunServer) cleanupInterval() time.Duration {
-	if server.CleanupFlags.Interval > 0 {
-		return server.CleanupFlags.Interval
-	}
-	return defaultCleanupInterval
-}
-
-func (server *RunServer) cleanupLimit() int {
-	if server.CleanupFlags.Limit > 0 {
-		return server.CleanupFlags.Limit
-	}
-	return defaultCleanupLimit
 }
 
 func (cmd contextCmd) Context() context.Context {

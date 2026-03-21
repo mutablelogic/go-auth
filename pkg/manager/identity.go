@@ -82,6 +82,7 @@ func (m *Manager) LoginWithIdentity(ctx context.Context, meta schema.IdentityIns
 		// Find an existing identity row with the same (provider, sub) key.
 		var identity schema.Identity
 		createdUser := false
+		updateIdentity := false
 		if err := conn.Get(ctx, &identity, schema.IdentityKey{Provider: meta.Provider, Sub: meta.Sub}); err != nil {
 			if !errors.Is(dbErr(err), auth.ErrNotFound) {
 				return err
@@ -99,46 +100,56 @@ func (m *Manager) LoginWithIdentity(ctx context.Context, meta schema.IdentityIns
 				return err
 			}
 			if users.Count > 0 {
-				return auth.ErrConflict.Withf("user already exists for email %q", meta.Email)
-			}
+				existing := users.Body[0]
+				if hook, ok := m.hooks.(IdentityLinkHook); ok {
+					if err := hook.OnIdentityLink(ctx, meta, &existing); err != nil {
+						return err
+					}
+					if err := conn.With("user", existing.ID).Insert(ctx, nil, types.Value(&meta)); err != nil {
+						return err
+					}
+					user = existing.ID
+				} else {
+					return auth.ErrConflict.Withf("user already exists for email %q", meta.Email)
+				}
+			} else {
+				// No matching user exists, so create a new user and identity
+				usermeta := schema.UserMeta{
+					Name:  meta.Name(),
+					Email: meta.Email,
+					Meta:  userCreateMeta,
+				}
 
-			// No matching user exists, so create a new user and identity
-			usermeta := schema.UserMeta{
-				Name:  meta.Name(),
-				Email: meta.Email,
-				Meta:  userCreateMeta,
-			}
+				if hook, ok := m.hooks.(UserCreationHook); ok {
+					var err error
+					if usermeta, err = hook.OnUserCreate(ctx, meta, usermeta); err != nil {
+						return err
+					}
+				}
 
-			// If there is a userhook, call it to allow modification of the usermeta before creating the user.
-			// to set status, add groups, reject, etc.
-			if m.userhook != nil {
-				var err error
-				if usermeta, err = m.userhook(ctx, meta, usermeta); err != nil {
+				// Create a new user and set groups
+				var created schema.User
+				rowMeta := usermeta
+				rowMeta.Groups = nil
+				if err := conn.Insert(ctx, &created, rowMeta); err != nil {
 					return err
 				}
+				if err := replaceUserGroups(ctx, conn, created.ID, usermeta.Groups); err != nil {
+					return err
+				}
+				if err := conn.With("user", created.ID).Insert(ctx, nil, types.Value(&meta)); err != nil {
+					return err
+				}
+				user = created.ID
+				createdUser = true
 			}
-
-			// Create a new user and set groups
-			var created schema.User
-			rowMeta := usermeta
-			rowMeta.Groups = nil
-			if err := conn.Insert(ctx, &created, rowMeta); err != nil {
-				return err
-			}
-			if err := replaceUserGroups(ctx, conn, created.ID, usermeta.Groups); err != nil {
-				return err
-			}
-			if err := conn.With("user", created.ID).Insert(ctx, nil, types.Value(&meta)); err != nil {
-				return err
-			}
-			user = created.ID
-			createdUser = true
 		} else {
 			user = identity.User
+			updateIdentity = true
 		}
 
 		// Successful login, update identity with new email/claims and modified_at timestamp.
-		if !createdUser {
+		if updateIdentity && !createdUser {
 			if err := conn.Update(ctx, &identity, identity.IdentityKey, meta.IdentityMeta); err != nil {
 				return err
 			}

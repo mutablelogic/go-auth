@@ -16,6 +16,35 @@ import (
 	require "github.com/stretchr/testify/require"
 )
 
+type testCreateHook struct{}
+
+func (testCreateHook) OnUserCreate(ctx context.Context, identity schema.IdentityInsert, meta schema.UserMeta) (schema.UserMeta, error) {
+	status := schema.UserStatusNew
+	meta.Status = &status
+	meta.Meta = map[string]any{"source": identity.Provider}
+	return meta, nil
+}
+
+type testRejectCreateHook struct{ err error }
+
+func (h testRejectCreateHook) OnUserCreate(ctx context.Context, identity schema.IdentityInsert, meta schema.UserMeta) (schema.UserMeta, error) {
+	return schema.UserMeta{}, h.err
+}
+
+type testCalledCreateHook struct{ called *bool }
+
+func (h testCalledCreateHook) OnUserCreate(ctx context.Context, identity schema.IdentityInsert, meta schema.UserMeta) (schema.UserMeta, error) {
+	*h.called = true
+	return meta, nil
+}
+
+type testLinkHook struct{ called *bool }
+
+func (h testLinkHook) OnIdentityLink(ctx context.Context, identity schema.IdentityInsert, existing *schema.User) error {
+	*h.called = true
+	return nil
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 // TESTS
 
@@ -385,12 +414,7 @@ func Test_identity_001(t *testing.T) {
 		assert := assert.New(t)
 		require := require.New(t)
 
-		m := newTestManagerWithOpts(t, manager.WithUserHook(func(ctx context.Context, identity schema.IdentityInsert, meta schema.UserMeta) (schema.UserMeta, error) {
-			status := schema.UserStatusNew
-			meta.Status = &status
-			meta.Meta = map[string]any{"source": identity.Provider}
-			return meta, nil
-		}))
+		m := newTestManagerWithOpts(t, manager.WithHooks(testCreateHook{}))
 
 		loggedIn, session, err := m.LoginWithIdentity(context.Background(), schema.IdentityInsert{
 			IdentityKey: schema.IdentityKey{
@@ -418,9 +442,7 @@ func Test_identity_001(t *testing.T) {
 		require := require.New(t)
 		expected := errors.New("signup blocked")
 
-		m := newTestManagerWithOpts(t, manager.WithUserHook(func(ctx context.Context, identity schema.IdentityInsert, meta schema.UserMeta) (schema.UserMeta, error) {
-			return schema.UserMeta{}, expected
-		}))
+		m := newTestManagerWithOpts(t, manager.WithHooks(testRejectCreateHook{err: expected}))
 
 		loggedIn, session, err := m.LoginWithIdentity(context.Background(), schema.IdentityInsert{
 			IdentityKey: schema.IdentityKey{
@@ -447,10 +469,7 @@ func Test_identity_001(t *testing.T) {
 		require := require.New(t)
 
 		called := false
-		m := newTestManagerWithOpts(t, manager.WithUserHook(func(ctx context.Context, identity schema.IdentityInsert, meta schema.UserMeta) (schema.UserMeta, error) {
-			called = true
-			return meta, nil
-		}))
+		m := newTestManagerWithOpts(t, manager.WithHooks(testCalledCreateHook{called: &called}))
 
 		user, err := m.CreateUser(context.Background(), schema.UserMeta{
 			Name:  "Existing Hook User",
@@ -483,6 +502,40 @@ func Test_identity_001(t *testing.T) {
 		require.NotNil(loggedIn)
 		require.NotNil(session)
 		assert.False(called)
+	})
+
+	t.Run("LoginWithIdentityLinksExistingUserWithHook", func(t *testing.T) {
+		assert := assert.New(t)
+		require := require.New(t)
+
+		called := false
+		m := newTestManagerWithOpts(t, manager.WithHooks(testLinkHook{called: &called}))
+
+		user, err := m.CreateUser(context.Background(), schema.UserMeta{
+			Name:  "Linked User",
+			Email: "linked.user@example.com",
+		}, nil)
+		require.NoError(err)
+
+		loggedIn, session, err := m.LoginWithIdentity(context.Background(), schema.IdentityInsert{
+			IdentityKey: schema.IdentityKey{
+				Provider: "https://login.microsoftonline.com/example",
+				Sub:      "linked-subject",
+			},
+			IdentityMeta: schema.IdentityMeta{
+				Email:  "linked.user@example.com",
+				Claims: map[string]any{"name": "Linked User"},
+			},
+		})
+		require.NoError(err)
+		require.NotNil(loggedIn)
+		require.NotNil(session)
+		assert.True(called)
+		assert.Equal(user.ID, loggedIn.ID)
+
+		identity, err := m.GetIdentity(context.Background(), "https://login.microsoftonline.com/example", "linked-subject")
+		require.NoError(err)
+		assert.Equal(user.ID, identity.User)
 	})
 
 	t.Run("LoginWithIdentityUsesPreferredUsername", func(t *testing.T) {

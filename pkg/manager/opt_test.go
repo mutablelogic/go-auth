@@ -1,7 +1,6 @@
 package manager
 
 import (
-	"context"
 	"testing"
 	"time"
 
@@ -57,8 +56,25 @@ func Test_opt_001(t *testing.T) {
 		assert.NoError(WithCleanup(time.Minute, 25)(options))
 		assert.Equal(time.Minute, options.cleanupint)
 		assert.Equal(25, options.cleanuplimit)
-		assert.EqualError(WithCleanup(0, 25)(options), "cleanup interval must be positive")
-		assert.EqualError(WithCleanup(time.Minute, 0)(options), "cleanup limit must be positive")
+		assert.NoError(WithCleanup(0, 25)(options))
+		assert.Equal(DefaultCleanupInterval, options.cleanupint)
+		assert.Equal(25, options.cleanuplimit)
+		assert.NoError(WithCleanup(time.Minute, 0)(options))
+		assert.Equal(time.Minute, options.cleanupint)
+		assert.Equal(DefaultCleanupLimit, options.cleanuplimit)
+		assert.EqualError(WithCleanup(-time.Second, 25)(options), "cleanup interval must not be negative")
+		assert.EqualError(WithCleanup(time.Minute, -1)(options), "cleanup limit must not be negative")
+	})
+
+	t.Run("Defaults", func(t *testing.T) {
+		assert := assert.New(t)
+
+		options := new(opt)
+		options.defaults()
+		assert.Equal(schema.DefaultSchema, options.schema)
+		assert.Equal(schema.DefaultSessionTTL, options.sessionttl)
+		assert.Equal(DefaultCleanupInterval, options.cleanupint)
+		assert.Equal(DefaultCleanupLimit, options.cleanuplimit)
 	})
 
 	t.Run("WithPrivateKey", func(t *testing.T) {
@@ -82,16 +98,15 @@ func Test_opt_001(t *testing.T) {
 		assert.EqualError(WithSchema("")(options), "schema name cannot be empty")
 	})
 
-	t.Run("WithUserHook", func(t *testing.T) {
+	t.Run("WithHooks", func(t *testing.T) {
 		assert := assert.New(t)
 
+		type testHooks struct{}
 		options := new(opt)
-		hook := func(ctx context.Context, identity schema.IdentityInsert, meta schema.UserMeta) (schema.UserMeta, error) {
-			return meta, nil
-		}
-		assert.NoError(WithUserHook(hook)(options))
-		assert.NotNil(options.userhook)
-		assert.EqualError(WithUserHook(nil)(options), "user hook is required")
+		hooks := testHooks{}
+		assert.NoError(WithHooks(hooks)(options))
+		assert.Equal(hooks, options.hooks)
+		assert.EqualError(WithHooks(nil)(options), "hooks are required")
 	})
 
 	t.Run("ApplyStopsOnError", func(t *testing.T) {

@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"strings"
-	"time"
 
 	// Packages
 	schema "github.com/djthorpe/go-auth/schema"
@@ -29,10 +28,7 @@ type Manager struct {
 func New(ctx context.Context, pool pg.PoolConn, opts ...Opt) (*Manager, error) {
 	// Set default values
 	self := new(Manager)
-	self.schema = schema.DefaultSchema
-	self.sessionttl = schema.DefaultSessionTTL
-	self.cleanupint = time.Hour
-	self.cleanuplimit = 100
+	self.defaults()
 
 	// Check arguments
 	if pool == nil {
