@@ -3,6 +3,7 @@ package httpclient
 import (
 	"context"
 	"crypto/rsa"
+	"fmt"
 	"strings"
 
 	// Packages
@@ -74,6 +75,42 @@ func (c *Client) UserInfo(ctx context.Context, token string) (*authschema.UserIn
 		return nil, err
 	}
 	return &response, nil
+}
+
+// OIDCConfig retrieves the OpenID Connect discovery document for the supplied
+// issuer URL.
+func (c *Client) OIDCConfig(ctx context.Context, issuer string) (*oidc.Configuration, error) {
+	issuer = strings.TrimSpace(issuer)
+	if issuer == "" {
+		return nil, fmt.Errorf("issuer is required")
+	}
+	var response oidc.Configuration
+	if err := c.DoWithContext(ctx, client.NewRequest(), &response,
+		client.OptReqEndpoint(issuer),
+		client.OptPath(oidc.ConfigPath),
+	); err != nil {
+		return nil, err
+	}
+	return &response, nil
+}
+
+// OAuthProviderConfig resolves the configured public auth provider details by
+// provider key, defaulting to the reserved local provider when the key is
+// empty.
+func (c *Client) OAuthProviderConfig(ctx context.Context, provider string) (string, oidc.PublicClientConfiguration, error) {
+	config, err := c.AuthConfig(ctx)
+	if err != nil {
+		return "", oidc.PublicClientConfiguration{}, err
+	}
+	key := strings.TrimSpace(provider)
+	if key == "" {
+		key = oidc.OAuthClientKeyLocal
+	}
+	entry, ok := config[key]
+	if !ok {
+		return "", oidc.PublicClientConfiguration{}, fmt.Errorf("unknown auth provider %q", key)
+	}
+	return key, entry, nil
 }
 
 // AuthConfig retrieves the shareable upstream auth provider configuration from

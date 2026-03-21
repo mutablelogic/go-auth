@@ -104,13 +104,13 @@ func newOIDCTestServer(t *testing.T, key *rsa.PrivateKey) (*httptest.Server, str
 	var issuer string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
-		case "/.well-known/openid-configuration":
+		case "/" + oidc.ConfigPath:
 			w.Header().Set("Content-Type", "application/json")
 			require.NoError(t, json.NewEncoder(w).Encode(map[string]any{
 				"issuer":   issuer,
-				"jwks_uri": issuer + "/.well-known/jwks.json",
+				"jwks_uri": oidc.JWKSURL(issuer),
 			}))
-		case "/.well-known/jwks.json":
+		case "/" + oidc.JWKSPath:
 			jwks, err := oidc.PublicJWKSet(key)
 			require.NoError(t, err)
 			w.Header().Set("Content-Type", "application/json")

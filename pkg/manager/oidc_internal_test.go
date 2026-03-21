@@ -61,7 +61,9 @@ func Test_oidc_internal_001(t *testing.T) {
 		cfg, err := mgr.OIDCConfig(nil)
 		require.NoError(err)
 		assert.Equal("https://issuer.example.test/api", cfg.Issuer)
-		assert.Equal("https://issuer.example.test/api/.well-known/jwks.json", cfg.JwksURI)
+		assert.Equal(oidc.UserInfoURL("https://issuer.example.test/api"), cfg.UserInfoEndpoint)
+		assert.Equal(oidc.JWKSURL("https://issuer.example.test/api"), cfg.JwksURI)
+		assert.Equal([]string{oidc.ScopeOpenID, oidc.ScopeEmail, oidc.ScopeProfile}, cfg.ScopesSupported)
 		assert.Contains(cfg.ClaimsSupported, "session")
 	})
 

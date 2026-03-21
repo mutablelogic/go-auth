@@ -174,6 +174,56 @@ func TestClientAuthMethods(t *testing.T) {
 		assert.Equal("Alice", response.Name)
 	})
 
+	t.Run("OIDCConfigGetsDiscoveryDocument", func(t *testing.T) {
+		assert := assert.New(t)
+		require := require.New(t)
+
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			require.Equal(http.MethodGet, r.Method)
+			require.Equal("/"+oidc.ConfigPath, r.URL.Path)
+
+			w.Header().Set("Content-Type", "application/json")
+			require.NoError(json.NewEncoder(w).Encode(oidc.Configuration{
+				Issuer:                "https://issuer.example.test/api",
+				AuthorizationEndpoint: "https://issuer.example.test/api/oauth/authorize",
+				TokenEndpoint:         "https://issuer.example.test/api/oauth/token",
+				UserInfoEndpoint:      "https://issuer.example.test/api/auth/userinfo",
+				JwksURI:               oidc.JWKSURL("https://issuer.example.test/api"),
+				SigningAlgorithms:     []string{oidc.SigningAlgorithm},
+				SubjectTypes:          []string{"public"},
+				ResponseTypes:         []string{"code", "id_token"},
+				GrantTypesSupported:   []string{"authorization_code"},
+				ScopesSupported:       []string{oidc.ScopeOpenID, oidc.ScopeEmail, oidc.ScopeProfile},
+				CodeChallengeMethods:  []string{"S256"},
+				ClaimsSupported:       []string{"iss", "sub"},
+			}))
+		}))
+		defer server.Close()
+
+		client, err := New("https://unused.example.test")
+		require.NoError(err)
+		response, err := client.OIDCConfig(context.Background(), server.URL)
+		require.NoError(err)
+		require.NotNil(response)
+		assert.Equal("https://issuer.example.test/api", response.Issuer)
+		assert.Equal("https://issuer.example.test/api/oauth/authorize", response.AuthorizationEndpoint)
+		assert.Equal("https://issuer.example.test/api/oauth/token", response.TokenEndpoint)
+		assert.Equal(oidc.JWKSURL("https://issuer.example.test/api"), response.JwksURI)
+		assert.Equal([]string{oidc.SigningAlgorithm}, response.SigningAlgorithms)
+	})
+
+	t.Run("OIDCConfigRequiresIssuer", func(t *testing.T) {
+		assert := assert.New(t)
+		require := require.New(t)
+
+		client, err := New("https://unused.example.test")
+		require.NoError(err)
+
+		response, err := client.OIDCConfig(context.Background(), "")
+		require.Error(err)
+		assert.Nil(response)
+	})
+
 	t.Run("AuthConfigGetsPublicProviderConfig", func(t *testing.T) {
 		assert := assert.New(t)
 		require := require.New(t)
@@ -202,6 +252,221 @@ func TestClientAuthMethods(t *testing.T) {
 		assert.Equal(oidc.GoogleIssuer, google.Issuer)
 		assert.Equal("google-client-id", google.ClientID)
 		assert.Equal(authschema.ProviderOAuth, google.Provider)
+	})
+
+	t.Run("OAuth2ConfigResolvesGoogleProvider", func(t *testing.T) {
+		assert := assert.New(t)
+		require := require.New(t)
+
+		var discovery *httptest.Server
+		discovery = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			require.Equal(http.MethodGet, r.Method)
+			require.Equal("/"+oidc.ConfigPath, r.URL.Path)
+
+			w.Header().Set("Content-Type", "application/json")
+			require.NoError(json.NewEncoder(w).Encode(oidc.Configuration{
+				Issuer:                discovery.URL,
+				AuthorizationEndpoint: discovery.URL + "/o/oauth2/v2/auth",
+				TokenEndpoint:         discovery.URL + "/token",
+				JwksURI:               oidc.JWKSURL(discovery.URL),
+				SigningAlgorithms:     []string{oidc.SigningAlgorithm},
+				SubjectTypes:          []string{"public"},
+				ResponseTypes:         []string{"code"},
+				GrantTypesSupported:   []string{"authorization_code"},
+				ScopesSupported:       []string{oidc.ScopeOpenID, oidc.ScopeEmail, oidc.ScopeProfile},
+				CodeChallengeMethods:  []string{"S256"},
+				ClaimsSupported:       []string{"iss", "sub", "email"},
+			}))
+		}))
+		defer discovery.Close()
+
+		authServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			require.Equal(http.MethodGet, r.Method)
+			require.Equal("/auth/config", r.URL.Path)
+
+			w.Header().Set("Content-Type", "application/json")
+			require.NoError(json.NewEncoder(w).Encode(oidc.PublicClientConfigurations{
+				"google": {
+					Issuer:   discovery.URL,
+					ClientID: "google-client-id",
+					Provider: authschema.ProviderOAuth,
+				},
+			}))
+		}))
+		defer authServer.Close()
+
+		client, err := New(authServer.URL)
+		require.NoError(err)
+
+		config, err := client.OAuth2Config(context.Background(), "google", "http://127.0.0.1:8085/callback")
+		require.NoError(err)
+		require.NotNil(config)
+		assert.Equal("google-client-id", config.ClientID)
+		assert.Equal("http://127.0.0.1:8085/callback", config.RedirectURL)
+		assert.Equal(discovery.URL+"/o/oauth2/v2/auth", config.Endpoint.AuthURL)
+		assert.Equal(discovery.URL+"/token", config.Endpoint.TokenURL)
+		assert.Equal([]string{oidc.ScopeOpenID, oidc.ScopeEmail, oidc.ScopeProfile}, config.Scopes)
+	})
+
+	t.Run("OAuth2ConfigRejectsProviderWithoutClientID", func(t *testing.T) {
+		assert := assert.New(t)
+		require := require.New(t)
+
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			require.Equal(http.MethodGet, r.Method)
+			require.Equal("/auth/config", r.URL.Path)
+
+			w.Header().Set("Content-Type", "application/json")
+			require.NoError(json.NewEncoder(w).Encode(oidc.PublicClientConfigurations{
+				oidc.OAuthClientKeyLocal: {
+					Issuer:   "https://issuer.example.test/api",
+					Provider: authschema.ProviderOAuth,
+				},
+			}))
+		}))
+		defer server.Close()
+
+		client, err := New(server.URL)
+		require.NoError(err)
+
+		config, err := client.OAuth2Config(context.Background(), "", "http://127.0.0.1:8085/callback")
+		require.Error(err)
+		assert.Nil(config)
+		assert.EqualError(err, `auth provider "local" has no client_id`)
+	})
+
+	t.Run("AuthCodeURLBuildsAuthorizationURL", func(t *testing.T) {
+		assert := assert.New(t)
+		require := require.New(t)
+
+		var discovery *httptest.Server
+		discovery = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			require.NoError(json.NewEncoder(w).Encode(oidc.Configuration{
+				Issuer:                discovery.URL,
+				AuthorizationEndpoint: discovery.URL + "/authorize",
+				TokenEndpoint:         discovery.URL + "/token",
+				JwksURI:               oidc.JWKSURL(discovery.URL),
+				SigningAlgorithms:     []string{oidc.SigningAlgorithm},
+				SubjectTypes:          []string{"public"},
+				ResponseTypes:         []string{"code"},
+				ClaimsSupported:       []string{"iss", "sub"},
+			}))
+		}))
+		defer discovery.Close()
+
+		authServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			require.NoError(json.NewEncoder(w).Encode(oidc.PublicClientConfigurations{
+				"google": {
+					Issuer:   discovery.URL,
+					ClientID: "google-client-id",
+					Provider: authschema.ProviderOAuth,
+				},
+			}))
+		}))
+		defer authServer.Close()
+
+		client, err := New(authServer.URL)
+		require.NoError(err)
+
+		uri, err := client.AuthCodeURL(context.Background(), "google", "http://127.0.0.1:8085/callback", "state-123")
+		require.NoError(err)
+		assert.Contains(uri, "client_id=google-client-id")
+		assert.Contains(uri, "redirect_uri=http%3A%2F%2F127.0.0.1%3A8085%2Fcallback")
+		assert.Contains(uri, "response_type=code")
+		assert.Contains(uri, "scope=openid+email+profile")
+		assert.Contains(uri, "state=state-123")
+	})
+
+	t.Run("OAuthLoginBootstrapResolvesGoogleProvider", func(t *testing.T) {
+		assert := assert.New(t)
+		require := require.New(t)
+
+		var discovery *httptest.Server
+		discovery = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			require.Equal(http.MethodGet, r.Method)
+			require.Equal("/"+oidc.ConfigPath, r.URL.Path)
+
+			w.Header().Set("Content-Type", "application/json")
+			require.NoError(json.NewEncoder(w).Encode(oidc.Configuration{
+				Issuer:                discovery.URL,
+				AuthorizationEndpoint: discovery.URL + "/o/oauth2/v2/auth",
+				TokenEndpoint:         discovery.URL + "/token",
+				UserInfoEndpoint:      discovery.URL + "/userinfo",
+				JwksURI:               oidc.JWKSURL(discovery.URL),
+				SigningAlgorithms:     []string{oidc.SigningAlgorithm},
+				SubjectTypes:          []string{"public"},
+				ResponseTypes:         []string{"code"},
+				GrantTypesSupported:   []string{"authorization_code"},
+				ScopesSupported:       []string{oidc.ScopeOpenID, oidc.ScopeEmail, oidc.ScopeProfile},
+				CodeChallengeMethods:  []string{"plain", "S256"},
+				ClaimsSupported:       []string{"iss", "sub", "email"},
+			}))
+		}))
+		defer discovery.Close()
+
+		authServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			require.Equal(http.MethodGet, r.Method)
+			require.Equal("/auth/config", r.URL.Path)
+
+			w.Header().Set("Content-Type", "application/json")
+			require.NoError(json.NewEncoder(w).Encode(oidc.PublicClientConfigurations{
+				"google": {
+					Issuer:   discovery.URL,
+					ClientID: "google-client-id",
+					Provider: authschema.ProviderOAuth,
+				},
+			}))
+		}))
+		defer authServer.Close()
+
+		client, err := New(authServer.URL)
+		require.NoError(err)
+
+		bootstrap, err := client.OAuthLoginBootstrap(context.Background(), "google", "http://127.0.0.1:8085/callback")
+		require.NoError(err)
+		require.NotNil(bootstrap)
+		assert.Equal(discovery.URL, bootstrap.Issuer)
+		assert.Equal("google-client-id", bootstrap.ClientID)
+		assert.Equal("http://127.0.0.1:8085/callback", bootstrap.RedirectURL)
+		assert.Equal(discovery.URL+"/o/oauth2/v2/auth", bootstrap.AuthorizationEndpoint)
+		assert.Contains(bootstrap.AuthorizationURL, discovery.URL+"/o/oauth2/v2/auth")
+		assert.Contains(bootstrap.AuthorizationURL, "client_id=google-client-id")
+		assert.Equal(discovery.URL+"/token", bootstrap.TokenEndpoint)
+		assert.Equal([]string{oidc.ScopeOpenID, oidc.ScopeEmail, oidc.ScopeProfile}, bootstrap.Scopes)
+		assert.NotEmpty(bootstrap.State)
+		assert.NotEmpty(bootstrap.Nonce)
+		assert.NotEmpty(bootstrap.CodeVerifier)
+		assert.NotEmpty(bootstrap.CodeChallenge)
+		assert.Equal(oidc.CodeChallengeMethodS256, bootstrap.CodeChallengeMethod)
+	})
+
+	t.Run("OAuthLoginBootstrapRejectsLocalProviderWithoutClientID", func(t *testing.T) {
+		assert := assert.New(t)
+		require := require.New(t)
+
+		authServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			require.Equal(http.MethodGet, r.Method)
+			require.Equal("/auth/config", r.URL.Path)
+
+			w.Header().Set("Content-Type", "application/json")
+			require.NoError(json.NewEncoder(w).Encode(oidc.PublicClientConfigurations{
+				oidc.OAuthClientKeyLocal: {
+					Issuer:   "https://issuer.example.test/api",
+					Provider: authschema.ProviderOAuth,
+				},
+			}))
+		}))
+		defer authServer.Close()
+
+		client, err := New(authServer.URL)
+		require.NoError(err)
+
+		bootstrap, err := client.OAuthLoginBootstrap(context.Background(), oidc.OAuthClientKeyLocal, "http://127.0.0.1:8085/callback")
+		require.Error(err)
+		assert.Nil(bootstrap)
+		assert.EqualError(err, `auth provider "local" has no client_id`)
 	})
 
 	t.Run("RevokePostsToken", func(t *testing.T) {

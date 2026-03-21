@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rsa"
 	"fmt"
+	"net/url"
 	"time"
 
 	// Packages
@@ -19,13 +20,25 @@ import (
 
 // Configuration represents the OpenID Connect discovery document.
 type Configuration struct {
-	Issuer            string   `json:"issuer"`
-	JwksURI           string   `json:"jwks_uri"`
-	SigningAlgorithms []string `json:"id_token_signing_alg_values_supported"`
-	SubjectTypes      []string `json:"subject_types_supported"`
-	ResponseTypes     []string `json:"response_types_supported"`
-	ClaimsSupported   []string `json:"claims_supported"`
+	Issuer                string   `json:"issuer"`
+	AuthorizationEndpoint string   `json:"authorization_endpoint,omitempty"`
+	TokenEndpoint         string   `json:"token_endpoint,omitempty"`
+	UserInfoEndpoint      string   `json:"userinfo_endpoint,omitempty"`
+	JwksURI               string   `json:"jwks_uri"`
+	SigningAlgorithms     []string `json:"id_token_signing_alg_values_supported"`
+	SubjectTypes          []string `json:"subject_types_supported"`
+	ResponseTypes         []string `json:"response_types_supported"`
+	GrantTypesSupported   []string `json:"grant_types_supported,omitempty"`
+	ScopesSupported       []string `json:"scopes_supported,omitempty"`
+	CodeChallengeMethods  []string `json:"code_challenge_methods_supported,omitempty"`
+	ClaimsSupported       []string `json:"claims_supported"`
 }
+
+const (
+	ScopeOpenID  = "openid"
+	ScopeEmail   = "email"
+	ScopeProfile = "profile"
+)
 
 ///////////////////////////////////////////////////////////////////////////////
 // GLOBALS
@@ -34,6 +47,7 @@ const (
 	GoogleIssuer     = "https://accounts.google.com"
 	ConfigPath       = ".well-known/openid-configuration"
 	JWKSPath         = ".well-known/jwks.json"
+	UserInfoPath     = "auth/userinfo"
 	SigningAlgorithm = "RS256"
 	KeyID            = "dev-main-2026-03"
 )
@@ -65,6 +79,33 @@ func IssueToken(key *rsa.PrivateKey, claims jwt.MapClaims) (string, error) {
 	}
 
 	return SignToken(key, claims)
+}
+
+// ConfigURL returns the discovery document URL for an issuer.
+func ConfigURL(issuer string) string {
+	uri, err := url.JoinPath(issuer, ConfigPath)
+	if err != nil {
+		return issuer
+	}
+	return uri
+}
+
+// JWKSURL returns the JWKS document URL for an issuer.
+func JWKSURL(issuer string) string {
+	uri, err := url.JoinPath(issuer, JWKSPath)
+	if err != nil {
+		return issuer
+	}
+	return uri
+}
+
+// UserInfoURL returns the userinfo URL for an issuer.
+func UserInfoURL(issuer string) string {
+	uri, err := url.JoinPath(issuer, UserInfoPath)
+	if err != nil {
+		return issuer
+	}
+	return uri
 }
 
 // SignToken serializes claims into a JWT signed with the supplied RSA private

@@ -55,10 +55,12 @@ func (m *Manager) OIDCConfig(r *http.Request) (oidc.Configuration, error) {
 	}
 	return oidc.Configuration{
 		Issuer:            issuer,
-		JwksURI:           issuer + "/" + oidc.JWKSPath,
+		UserInfoEndpoint:  oidc.UserInfoURL(issuer),
+		JwksURI:           oidc.JWKSURL(issuer),
 		SigningAlgorithms: []string{oidc.SigningAlgorithm},
 		SubjectTypes:      []string{"public"},
 		ResponseTypes:     []string{"id_token"},
+		ScopesSupported:   []string{oidc.ScopeOpenID, oidc.ScopeEmail, oidc.ScopeProfile},
 		ClaimsSupported:   []string{"iss", "sub", "sid", "aud", "exp", "iat", "nbf", "email", "email_verified", "name", "groups", "scopes", "user", "session"},
 	}, nil
 }

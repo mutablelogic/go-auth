@@ -7,6 +7,7 @@ import (
 	"sync"
 
 	// Packages
+	oidc "github.com/djthorpe/go-auth/pkg/oidc"
 	jwt "github.com/golang-jwt/jwt/v5"
 	oauth2 "golang.org/x/oauth2"
 )
@@ -38,6 +39,79 @@ func (c *Client) TokenSource(ctx context.Context, token string) (oauth2.TokenSou
 		ctx = context.Background()
 	}
 	return &tokenSource{ctx: ctx, client: c, token: parsed}, nil
+}
+
+// OAuth2Config resolves a configured auth provider and returns an oauth2
+// client configuration that can be used for browser-based auth code flows.
+func (c *Client) OAuth2Config(ctx context.Context, provider, redirectURL string, scopes ...string) (*oauth2.Config, error) {
+	redirectURL = strings.TrimSpace(redirectURL)
+	if redirectURL == "" {
+		return nil, fmt.Errorf("redirect URL is required")
+	}
+	key, public, err := c.OAuthProviderConfig(ctx, provider)
+	if err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(public.ClientID) == "" {
+		return nil, fmt.Errorf("auth provider %q has no client_id", key)
+	}
+	discovery, err := c.OIDCConfig(ctx, public.Issuer)
+	if err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(discovery.AuthorizationEndpoint) == "" {
+		return nil, fmt.Errorf("issuer %q has no authorization_endpoint", public.Issuer)
+	}
+	if strings.TrimSpace(discovery.TokenEndpoint) == "" {
+		return nil, fmt.Errorf("issuer %q has no token_endpoint", public.Issuer)
+	}
+	scopes = oidc.AuthorizationScopes(*discovery, scopes...)
+	return &oauth2.Config{
+		ClientID:    public.ClientID,
+		RedirectURL: redirectURL,
+		Scopes:      scopes,
+		Endpoint: oauth2.Endpoint{
+			AuthURL:  discovery.AuthorizationEndpoint,
+			TokenURL: discovery.TokenEndpoint,
+		},
+	}, nil
+}
+
+// AuthCodeURL builds a provider-specific authorization URL for an auth code
+// flow after resolving client configuration and discovery metadata.
+func (c *Client) AuthCodeURL(ctx context.Context, provider, redirectURL, state string, opts ...oauth2.AuthCodeOption) (string, error) {
+	state = strings.TrimSpace(state)
+	if state == "" {
+		return "", fmt.Errorf("state is required")
+	}
+	config, err := c.OAuth2Config(ctx, provider, redirectURL)
+	if err != nil {
+		return "", err
+	}
+	return config.AuthCodeURL(state, opts...), nil
+}
+
+// OAuthLoginBootstrap resolves provider config and discovery metadata into an
+// OIDC authorization flow payload the CLI can use to start interactive login.
+func (c *Client) OAuthLoginBootstrap(ctx context.Context, provider, redirectURL string) (*oidc.AuthorizationCodeFlow, error) {
+	key, public, err := c.OAuthProviderConfig(ctx, provider)
+	if err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(public.ClientID) == "" {
+		return nil, fmt.Errorf("auth provider %q has no client_id", key)
+	}
+	discovery, err := c.OIDCConfig(ctx, public.Issuer)
+	if err != nil {
+		return nil, err
+	}
+	flow, err := oidc.NewAuthorizationCodeFlow(*discovery, public.ClientID, redirectURL)
+	if err != nil {
+		return nil, err
+	}
+	flow.Issuer = public.Issuer
+	_ = key
+	return flow, nil
 }
 
 func (s *tokenSource) Token() (*oauth2.Token, error) {
