@@ -1,8 +1,28 @@
 assets:
     - ../assets
     - ../embed.go
-
+    - app.css
+    - auth.js
+    - google-auth.js
+    - index.html
+    - login.js
+    - login-providers.js
+    - token.js
+    
 vars:
     Title: "Auth App"
     Header: |
         <link rel="stylesheet" href="/assets/fonts.css">
+        <link rel="stylesheet" href="app.css">
+        <script src="auth.js"></script>
+        <script src="token.js"></script>
+        <script>
+            const redirectTarget = "/";
+            document.addEventListener("DOMContentLoaded", async function () {
+                document.body.classList.add("app-page");
+
+                if (!window.AuthToken || !await window.AuthToken.validateStoredToken()) {
+                    window.location.replace(redirectTarget);
+                }
+            });
+        </script>

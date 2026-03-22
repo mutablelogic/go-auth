@@ -1,8 +1,7 @@
 # Go parameters
 GO=$(shell command -v go)
 BUILDDIR=build
-WASM=$(wildcard wasm/*)
-WASM_FRONTEND=wasm/frontend
+WASM=$(patsubst %/wasmbuild.yaml,%,$(wildcard wasm/*/wasmbuild.yaml))
 GOWASM=$(shell command -v go)
 GOBIN=$(abspath $(BUILDDIR))
 
@@ -14,11 +13,10 @@ all: wasmbuild $(WASM)
 
 ## BUILDING ###################################################################
 
-.PHONY: wasm
-wasm: $(WASM_FRONTEND)
+.PHONY: wasm 
+wasm: $(WASM)
 
 # Rules for building
-.PHONY: $(WASM)
 $(WASM): wasmbuild gowasm-dep
 	@$(BUILDDIR)/wasmbuild build --go=${GOWASM} --go-flags='-ldflags "$(LD_FLAGS)"' -o ${BUILDDIR}/$(notdir $@).wasm ./$@
 

@@ -5,6 +5,7 @@ go 1.25.0
 require (
 	github.com/alecthomas/kong v1.14.0
 	github.com/coreos/go-oidc/v3 v3.17.0
+	github.com/djthorpe/go-wasmbuild v0.0.0
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/google/jsonschema-go v0.4.2
 	github.com/google/uuid v1.6.0
@@ -96,3 +97,5 @@ require (
 	google.golang.org/protobuf v1.36.11 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
+
+replace github.com/djthorpe/go-wasmbuild => ../go-wasmbuild
