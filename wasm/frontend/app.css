@@ -38,6 +38,41 @@ body.app-page {
     padding: 0;
 }
 
+body.app-page .cds--content {
+    min-height: 100vh;
+    padding: 0;
+    background: rgba(244, 244, 244, 0.92);
+    backdrop-filter: blur(12px);
+}
+
+.app-shell {
+    display: grid;
+    gap: 1.5rem;
+    max-width: 72rem;
+    margin: 0 auto;
+    padding: 5rem 2rem 2rem;
+}
+
+.app-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem;
+}
+
+.app-payload {
+    margin: 0;
+    min-height: 18rem;
+    padding: 1rem 1.25rem;
+    overflow: auto;
+    border-left: 4px solid #0f62fe;
+    background: rgba(255, 255, 255, 0.78);
+    box-shadow: var(--shadow);
+    color: #161616;
+    font: 0.875rem/1.6 "IBM Plex Mono", "SFMono-Regular", monospace;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
 body.login-page {
     min-height: 100vh;
     display: flex;
@@ -67,6 +102,11 @@ body.login-page {
     font-weight: 200;
     line-height: 0.92;
     letter-spacing: -0.05em;
+    color: var(--muted);
+    transition: color 220ms ease;
+}
+
+.login-page.wasm-warmed h1 {
     color: var(--ink);
 }
 
@@ -226,6 +266,10 @@ body.login-page {
     body.login-page {
         justify-content: center;
         padding: 20px;
+    }
+
+    .app-shell {
+        padding: 5rem 1rem 1.5rem;
     }
 
     .login-page #providers {

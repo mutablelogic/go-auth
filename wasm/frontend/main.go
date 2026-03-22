@@ -3,6 +3,7 @@ package main
 import (
 	auth "github.com/djthorpe/go-auth/wasm/frontend/pkg/auth"
 	dom "github.com/djthorpe/go-wasmbuild"
+	carbon "github.com/djthorpe/go-wasmbuild/pkg/carbon"
 	js "github.com/djthorpe/go-wasmbuild/pkg/js"
 	mvc "github.com/djthorpe/go-wasmbuild/pkg/mvc"
 )
@@ -10,30 +11,35 @@ import (
 var frontendAuth *auth.Auth
 
 func main() {
-	mvc.New(newApp()).Run()
+	mvc.New(app()...).Run()
+}
+
+func app() []any {
+	headerNavItem := carbon.HeaderNavItem("#auth", "Auth")
+	return []any{
+		carbon.Header(
+			carbon.With(carbon.ThemeG90),
+			headerNavItem,
+		).
+			SetLabel("/wasm_exec.html", "Go Auth", "Console").
+			SetActive(headerNavItem),
+	}
 }
 
 func newApp() any {
 	frontendAuth = auth.New()
+	js.Global().Get("document").Get("body").Get("classList").Call("add", "app-page")
 
-	root := mvc.HTML("DIV")
-	title := mvc.HTML("H1", "User Information")
+	title := carbon.Head(2, "User Information")
+	summary := carbon.Lead("Authenticated session details for the current user.")
 	message := mvc.HTML("PRE", "Loading user information...")
-	actions := mvc.HTML("DIV")
-	refreshButton := mvc.HTML("BUTTON", "Refresh")
-	logoutButton := mvc.HTML("BUTTON", "Logout")
+	message.SetClassName("app-payload")
 
-	refreshButton.SetAttribute("type", "button")
-	logoutButton.SetAttribute("type", "button")
-	refreshButton.SetAttribute("style", "margin-right: 0.5rem;")
-	actions.AppendChild(refreshButton)
-	actions.AppendChild(logoutButton)
+	refreshButton := carbon.Button(carbon.With(carbon.KindPrimary), "Refresh")
+	logoutButton := carbon.Button(carbon.With(carbon.KindSecondary), "Logout")
+	actions := mvc.HTML("DIV", mvc.WithClass("app-actions"), refreshButton, logoutButton)
 
-	root.AppendChild(title)
-	root.AppendChild(message)
-	root.AppendChild(actions)
-
-	refreshButton.AddEventListener("click", func(dom.Event) {
+	refreshButton.AddEventListener(carbon.EventClick, func(dom.Event) {
 		message.SetInnerHTML("Refreshing user information...")
 		frontendAuth.Refresh(func(userinfo string) {
 			renderUserInfo(message, userinfo)
@@ -42,7 +48,7 @@ func newApp() any {
 		})
 	})
 
-	logoutButton.AddEventListener("click", func(dom.Event) {
+	logoutButton.AddEventListener(carbon.EventClick, func(dom.Event) {
 		message.SetInnerHTML("Signing out...")
 		frontendAuth.Logout(func() {
 			js.Global().Get("location").Set("href", "/")
@@ -57,7 +63,16 @@ func newApp() any {
 		renderError(message, err)
 	})
 
-	return root
+	return carbon.Section(
+		mvc.WithStyle("min-height:100vh"),
+		carbon.Page(
+			mvc.WithClass("app-shell"),
+			title,
+			summary,
+			message,
+			actions,
+		),
+	)
 }
 
 func renderUserInfo(target dom.Element, userinfo string) {

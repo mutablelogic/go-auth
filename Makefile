@@ -2,6 +2,9 @@
 GO=$(shell command -v go)
 BUILDDIR=build
 WASM=$(patsubst %/wasmbuild.yaml,%,$(wildcard wasm/*/wasmbuild.yaml))
+CMD_DIRS=$(patsubst %/,%,$(wildcard cmd/*/))
+NPM_DIRS=$(patsubst %/package.json,%,$(wildcard npm/*/package.json))
+NPM=$(patsubst %, %/dist/bundle.js,$(NPM_DIRS))
 GOWASM=$(shell command -v go)
 GOBIN=$(abspath $(BUILDDIR))
 
@@ -9,12 +12,20 @@ GOBIN=$(abspath $(BUILDDIR))
 LD_FLAGS=-s -w
 
 # All targets
-all: wasmbuild $(WASM)
+all: wasmbuild $(WASM) $(NPM)
 
 ## BUILDING ###################################################################
 
 .PHONY: wasm 
 wasm: $(WASM)
+
+.PHONY: cmd
+cmd: go-dep wasm
+	@for dir in $(CMD_DIRS); do \
+		name=$$(basename $$dir); \
+		echo "Building $$dir"; \
+		$(GO) build -ldflags "$(LD_FLAGS)" -o $(BUILDDIR)/$$name ./$$dir || exit $$?; \
+	done
 
 # Rules for building
 $(WASM): wasmbuild gowasm-dep
@@ -24,7 +35,22 @@ $(WASM): wasmbuild gowasm-dep
 wasmbuild: go-dep
 	@GOBIN=${GOBIN} ${GO} install github.com/djthorpe/go-wasmbuild/cmd/wasmbuild@latest
 
+.PHONY: npm
+npm: $(NPM)
+
+define npm-rule
+$(1)/dist/bundle.js: $(1)/package.json $(filter-out $(1)/dist/bundle.js,$(wildcard $(1)/*.js) $(wildcard $(1)/*.mjs)) $(wildcard $(1)/package-lock.json) | npm-dep
+	@echo "Building $(1)"
+	@cd $(1) && npm run build
+endef
+
+$(foreach dir,$(NPM_DIRS),$(eval $(call npm-rule,$(dir))))
+
 ## DEPENNDENCIES #############################################################
+
+.PHONY: npm-dep
+npm-dep:
+	@command -v npm >/dev/null 2>&1 || { echo 'Missing npm'; exit 1; }
 
 .PHONY: go-dep
 go-dep: mkdir
@@ -48,6 +74,6 @@ tidy:
 .PHONY: clean
 clean: tidy
 	@rm -fr $(BUILDDIR)
-	@rm -f npm/carbon/bundle.js
+	@rm -f $(NPM)
 	@rm -f wasm/carbon-app/content/icon_names.go
 	$(GO) clean
