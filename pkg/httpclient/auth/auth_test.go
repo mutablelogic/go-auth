@@ -392,6 +392,61 @@ func TestClientAuthMethods(t *testing.T) {
 		assert.EqualError(err, `auth provider "local" has no client_id`)
 	})
 
+	t.Run("FetchConfigBuildsOAuth2ConfigFromIssuer", func(t *testing.T) {
+		assert := assert.New(t)
+		require := require.New(t)
+
+		var server *httptest.Server
+		server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			require.Equal(http.MethodGet, r.Method)
+			require.Equal("/"+oidc.ConfigPath, r.URL.Path)
+
+			w.Header().Set("Content-Type", "application/json")
+			require.NoError(json.NewEncoder(w).Encode(oidc.Configuration{
+				Issuer:                server.URL,
+				AuthorizationEndpoint: server.URL + "/authorize",
+				TokenEndpoint:         server.URL + "/token",
+				JwksURI:               oidc.JWKSURL(server.URL),
+				SigningAlgorithms:     []string{oidc.SigningAlgorithm},
+				SubjectTypes:          []string{"public"},
+				ResponseTypes:         []string{"code"},
+				GrantTypesSupported:   []string{"authorization_code"},
+				ScopesSupported:       []string{oidc.ScopeOpenID, oidc.ScopeEmail, oidc.ScopeProfile},
+				ClaimsSupported:       []string{"iss", "sub", "email"},
+			}))
+		}))
+		defer server.Close()
+
+		config, err := FetchConfig(context.Background(), server.URL, "github-client-id", "http://127.0.0.1:8085/callback")
+		require.NoError(err)
+		require.NotNil(config)
+		assert.Equal("github-client-id", config.ClientID)
+		assert.Equal("http://127.0.0.1:8085/callback", config.RedirectURL)
+		assert.Equal(server.URL+"/authorize", config.Endpoint.AuthURL)
+		assert.Equal(server.URL+"/token", config.Endpoint.TokenURL)
+		assert.Equal([]string{oidc.ScopeOpenID, oidc.ScopeEmail, oidc.ScopeProfile}, config.Scopes)
+	})
+
+	t.Run("FetchConfigIncludesWWWAuthenticateHeader", func(t *testing.T) {
+		assert := assert.New(t)
+		require := require.New(t)
+
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			require.Equal(http.MethodGet, r.Method)
+			require.Equal("/"+oidc.ConfigPath, r.URL.Path)
+			w.Header().Set("WWW-Authenticate", `Bearer realm="github", error="not_authorized"`)
+			http.Error(w, "not authorized", http.StatusUnauthorized)
+		}))
+		defer server.Close()
+
+		config, err := FetchConfig(context.Background(), server.URL, "github-client-id", "http://127.0.0.1:8085/callback")
+		require.Error(err)
+		assert.Nil(config)
+		assert.ErrorContains(err, "401 Unauthorized")
+		assert.ErrorContains(err, "WWW-Authenticate")
+		assert.ErrorContains(err, `Bearer realm="github", error="not_authorized"`)
+	})
+
 	t.Run("AuthCodeURLBuildsAuthorizationURL", func(t *testing.T) {
 		assert := assert.New(t)
 		require := require.New(t)

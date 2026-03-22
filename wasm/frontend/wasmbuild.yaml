@@ -1,0 +1,8 @@
+assets:
+    - ../assets
+    - ../embed.go
+
+vars:
+    Title: "Auth App"
+    Header: |
+        <link rel="stylesheet" href="/assets/fonts.css">

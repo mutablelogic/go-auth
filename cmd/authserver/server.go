@@ -5,6 +5,7 @@ package main
 import (
 	"context"
 	"crypto/rsa"
+	"errors"
 	"fmt"
 	"net"
 	"strings"
@@ -33,6 +34,7 @@ type RunServer struct {
 	CleanupFlags `embed:"" prefix:"cleanup."`
 	GoogleFlags  `embed:"" prefix:"google."`
 	Auth         bool `name:"auth" help:"Whether to enable authentication for protected endpoints." default:"true" negatable:""`
+	UI           bool `name:"ui" help:"Whether to serve the embedded web user interface" default:"true" negatable:""`
 }
 
 type CleanupFlags struct {
@@ -89,7 +91,12 @@ func (server *RunServer) Run(ctx server.Cmd) error {
 
 		// Register HTTP handlers
 		server.RunServer.Register(func(router *httprouter.Router) error {
-			return httphandler.RegisterHandlers(manager, router, server.Auth)
+			var result error
+			result = errors.Join(result, httphandler.RegisterHandlers(manager, router, server.Auth))
+			if server.UI {
+				result = errors.Join(result, registerUIHandlers(router))
+			}
+			return result
 		})
 
 		group.Go(func() error {

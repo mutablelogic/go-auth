@@ -2,7 +2,9 @@ package auth
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"net/http"
 	"strings"
 	"sync"
 
@@ -41,6 +43,19 @@ func (c *Client) TokenSource(ctx context.Context, token string) (oauth2.TokenSou
 	return &tokenSource{ctx: ctx, client: c, token: parsed}, nil
 }
 
+// FetchConfig discovers OAuth/OIDC metadata from an issuer's well-known
+// configuration and returns an oauth2.Config for the supplied client.
+func FetchConfig(ctx context.Context, issuer, clientID, redirectURL string, scopes ...string) (*oauth2.Config, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	discovery, err := fetchOIDCConfig(ctx, issuer)
+	if err != nil {
+		return nil, err
+	}
+	return oauth2ConfigFromDiscovery(discovery, issuer, clientID, redirectURL, scopes...)
+}
+
 // OAuth2Config resolves a configured auth provider and returns an oauth2
 // client configuration that can be used for browser-based auth code flows.
 func (c *Client) OAuth2Config(ctx context.Context, provider, redirectURL string, scopes ...string) (*oauth2.Config, error) {
@@ -65,16 +80,7 @@ func (c *Client) OAuth2Config(ctx context.Context, provider, redirectURL string,
 	if strings.TrimSpace(discovery.TokenEndpoint) == "" {
 		return nil, fmt.Errorf("issuer %q has no token_endpoint", public.Issuer)
 	}
-	scopes = oidc.AuthorizationScopes(*discovery, scopes...)
-	return &oauth2.Config{
-		ClientID:    public.ClientID,
-		RedirectURL: redirectURL,
-		Scopes:      scopes,
-		Endpoint: oauth2.Endpoint{
-			AuthURL:  discovery.AuthorizationEndpoint,
-			TokenURL: discovery.TokenEndpoint,
-		},
-	}, nil
+	return oauth2ConfigFromDiscovery(discovery, public.Issuer, public.ClientID, redirectURL, scopes...)
 }
 
 // AuthCodeURL builds a provider-specific authorization URL for an auth code flow.
@@ -214,6 +220,64 @@ func oauth2ConfigForFlow(flow *oidc.AuthorizationCodeFlow) (*oauth2.Config, erro
 		Endpoint: oauth2.Endpoint{
 			AuthURL:  strings.TrimSpace(flow.AuthorizationEndpoint),
 			TokenURL: strings.TrimSpace(flow.TokenEndpoint),
+		},
+	}, nil
+}
+
+func fetchOIDCConfig(ctx context.Context, issuer string) (*oidc.Configuration, error) {
+	issuer = strings.TrimSpace(issuer)
+	if issuer == "" {
+		return nil, fmt.Errorf("issuer is required")
+	}
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, oidc.ConfigURL(issuer), nil)
+	if err != nil {
+		return nil, err
+	}
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		return nil, err
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		if challenge := strings.TrimSpace(response.Header.Get("WWW-Authenticate")); challenge != "" {
+			return nil, fmt.Errorf("fetch OIDC configuration from %q: %s (WWW-Authenticate: %s)", issuer, response.Status, challenge)
+		}
+		return nil, fmt.Errorf("fetch OIDC configuration from %q: %s", issuer, response.Status)
+	}
+	config := new(oidc.Configuration)
+	if err := json.NewDecoder(response.Body).Decode(config); err != nil {
+		return nil, fmt.Errorf("decode OIDC configuration from %q: %w", issuer, err)
+	}
+	return config, nil
+}
+
+func oauth2ConfigFromDiscovery(discovery *oidc.Configuration, issuer, clientID, redirectURL string, scopes ...string) (*oauth2.Config, error) {
+	if discovery == nil {
+		return nil, fmt.Errorf("OIDC configuration is required")
+	}
+	issuer = strings.TrimSpace(issuer)
+	clientID = strings.TrimSpace(clientID)
+	redirectURL = strings.TrimSpace(redirectURL)
+	if clientID == "" {
+		return nil, fmt.Errorf("client ID is required")
+	}
+	if redirectURL == "" {
+		return nil, fmt.Errorf("redirect URL is required")
+	}
+	if strings.TrimSpace(discovery.AuthorizationEndpoint) == "" {
+		return nil, fmt.Errorf("issuer %q has no authorization_endpoint", issuer)
+	}
+	if strings.TrimSpace(discovery.TokenEndpoint) == "" {
+		return nil, fmt.Errorf("issuer %q has no token_endpoint", issuer)
+	}
+	scopes = oidc.AuthorizationScopes(*discovery, scopes...)
+	return &oauth2.Config{
+		ClientID:    clientID,
+		RedirectURL: redirectURL,
+		Scopes:      scopes,
+		Endpoint: oauth2.Endpoint{
+			AuthURL:  discovery.AuthorizationEndpoint,
+			TokenURL: discovery.TokenEndpoint,
 		},
 	}, nil
 }
