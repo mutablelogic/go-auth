@@ -28,7 +28,7 @@ cmd: go-dep wasm
 	done
 
 # Rules for building
-$(WASM): wasmbuild gowasm-dep
+$(WASM): $(NPM) wasmbuild gowasm-dep
 	@$(BUILDDIR)/wasmbuild build --go=${GOWASM} --go-flags='-ldflags "$(LD_FLAGS)"' -o ${BUILDDIR}/$(notdir $@).wasm ./$@
 
 .PHONY: wasmbuild

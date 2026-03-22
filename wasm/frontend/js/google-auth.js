@@ -14,12 +14,8 @@
                 return;
             }
 
-            node.textContent = message || "";
-            if (tone) {
-                node.dataset.tone = tone;
-            } else {
-                delete node.dataset.tone;
-            }
+            node.textContent = message || "Choose a provider to login";
+            node.dataset.tone = tone || "info";
         }
 
         formatMoment(message, reason) {
