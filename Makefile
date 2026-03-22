@@ -39,7 +39,7 @@ wasmbuild: go-dep
 npm: $(NPM)
 
 define npm-rule
-$(1)/dist/bundle.js: $(1)/package.json $(filter-out $(1)/dist/bundle.js,$(wildcard $(1)/*.js) $(wildcard $(1)/*.mjs)) $(wildcard $(1)/package-lock.json) | npm-dep
+$(1)/dist/bundle.js: $(1)/package.json $(filter-out $(1)/dist/bundle.js,$(wildcard $(1)/*.js) $(wildcard $(1)/*.mjs) $(wildcard $(1)/*.css) $(wildcard $(1)/assets/*.css) $(wildcard $(1)/assets/*/*.ttf)) $(wildcard $(1)/package-lock.json) | npm-dep
 	@echo "Building $(1)"
 	@cd $(1) && npm run build
 endef
@@ -74,6 +74,6 @@ tidy:
 .PHONY: clean
 clean: tidy
 	@rm -fr $(BUILDDIR)
-	@rm -f $(NPM)
+	@rm -fr $(addsuffix /dist,$(NPM_DIRS))
 	@rm -f wasm/carbon-app/content/icon_names.go
 	$(GO) clean

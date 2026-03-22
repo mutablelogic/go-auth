@@ -15,21 +15,39 @@ func main() {
 }
 
 func app() []any {
+	frontendAuth = auth.New()
+
 	headerNavItem := carbon.HeaderNavItem("#auth", "Auth")
+	users := carbon.SideNavLink("#users", "Users")
+	groups := carbon.SideNavLink("#groups", "Groups")
+	scopes := carbon.SideNavLink("#scopes", "Scopes")
+	sideNav := carbon.SideNav(
+		users,
+		groups,
+		scopes,
+	)
+
+	router := mvc.Router().
+		Active(sideNav).
+		Page("#users", newUsersPage(), users).
+		Page("#groups", newPlaceholderPage("Groups", "Manage membership and policy assignments for your tenants."), groups).
+		Page("#scopes", newPlaceholderPage("Scopes", "Review and curate OAuth scopes available to client applications."), scopes)
+
 	return []any{
-		carbon.Header(
-			carbon.With(carbon.ThemeG90),
-			headerNavItem,
-		).
-			SetLabel("/wasm_exec.html", "Go Auth", "Console").
-			SetActive(headerNavItem),
+		carbon.With(carbon.ThemeG90),
+		carbon.Section(
+			carbon.Header(
+				headerNavItem,
+			).SetLabel("/wasm_exec.html", "Go Auth", "Console").SetActive(headerNavItem),
+			sideNav,
+			carbon.Section(
+				router,
+			),
+		),
 	}
 }
 
-func newApp() any {
-	frontendAuth = auth.New()
-	js.Global().Get("document").Get("body").Get("classList").Call("add", "app-page")
-
+func newUsersPage() mvc.View {
 	title := carbon.Head(2, "User Information")
 	summary := carbon.Lead("Authenticated session details for the current user.")
 	message := mvc.HTML("PRE", "Loading user information...")
@@ -63,14 +81,24 @@ func newApp() any {
 		renderError(message, err)
 	})
 
-	return carbon.Section(
-		mvc.WithStyle("min-height:100vh"),
-		carbon.Page(
-			mvc.WithClass("app-shell"),
+	return carbon.Page(
+		mvc.HTML("DIV",
+			mvc.WithClass("app-main"),
 			title,
 			summary,
 			message,
 			actions,
+		),
+	)
+}
+
+func newPlaceholderPage(titleText, summaryText string) mvc.View {
+	return carbon.Page(
+		mvc.HTML("DIV",
+			mvc.WithClass("app-main"),
+			carbon.Head(2, titleText),
+			carbon.Lead(summaryText),
+			carbon.Para("This section is ready for the next Carbon-backed view."),
 		),
 	)
 }

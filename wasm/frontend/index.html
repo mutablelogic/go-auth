@@ -5,11 +5,11 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Login</title>
-    <link rel="stylesheet" href="/assets/fonts.css">
-    <link rel="stylesheet" href="app.css">
+    <link rel="stylesheet" href="dist/bundle.css">
+    <link rel="stylesheet" href="css/app.css">
     <link rel="prefetch" href="frontend.wasm" as="fetch" type="application/wasm" crossorigin="anonymous">
-    <script src="auth.js"></script>
-    <script src="token.js"></script>
+    <script src="js/auth.js"></script>
+    <script src="js/token.js"></script>
     <script>
         (function () {
             const warmWasm = function () {
@@ -35,9 +35,9 @@
         })();
     </script>
     <script src="https://accounts.google.com/gsi/client" async defer></script>
-    <script src="google-auth.js" defer></script>
-    <script src="login-providers.js" defer></script>
-    <script src="login.js" defer></script>
+    <script src="js/google-auth.js" defer></script>
+    <script src="js/login-providers.js" defer></script>
+    <script src="js/login.js" defer></script>
 </head>
 
 <body class="login-page">

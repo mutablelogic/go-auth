@@ -22,35 +22,38 @@ body {
 body {
     margin: 0;
     font-family: "IBM Plex Sans", "Helvetica Neue", sans-serif;
-    color: var(--ink);
-    background:
-        linear-gradient(90deg, rgba(0, 0, 0, 0.22) 0%, rgba(0, 0, 0, 0.38) 48%, rgba(0, 0, 0, 0.62) 100%),
-        url("/assets/vintage-radio-with-illuminated-dials-against-warm-bokeh-backdrop_235573-9384.jpg") center center / cover no-repeat;
-    background-color: var(--bg);
 }
 
 * {
     box-sizing: border-box;
 }
 
-body.app-page {
-    margin: 0;
-    padding: 0;
-}
-
-body.app-page .cds--content {
+.cds--content {
     min-height: 100vh;
     padding: 0;
     background: rgba(244, 244, 244, 0.92);
     backdrop-filter: blur(12px);
 }
 
+.app-side-nav {
+    display: block;
+    inline-size: 16rem;
+    max-inline-size: 16rem;
+    min-height: calc(100vh - 3rem);
+    border-inline-end: 1px solid var(--cds-border-subtle, #c6c6c6);
+    background: rgba(244, 244, 244, 0.94);
+}
+
 .app-shell {
+    min-height: calc(100vh - 3rem);
+    margin-inline-start: 16rem;
+    padding: 2rem;
+}
+
+.app-main {
     display: grid;
     gap: 1.5rem;
     max-width: 72rem;
-    margin: 0 auto;
-    padding: 5rem 2rem 2rem;
 }
 
 .app-actions {
@@ -79,6 +82,11 @@ body.login-page {
     justify-content: flex-end;
     align-items: stretch;
     padding: 32px;
+    color: var(--ink);
+    background:
+        linear-gradient(90deg, rgba(0, 0, 0, 0.22) 0%, rgba(0, 0, 0, 0.38) 48%, rgba(0, 0, 0, 0.62) 100%),
+        url("../assets/vintage-radio-with-illuminated-dials-against-warm-bokeh-backdrop_235573-9384.jpg") center center / cover no-repeat;
+    background-color: var(--bg);
 }
 
 .login-page main {
@@ -268,8 +276,22 @@ body.login-page {
         padding: 20px;
     }
 
+    .app-side-nav {
+        inline-size: 100%;
+        max-inline-size: none;
+        min-height: auto;
+        border-inline-end: 0;
+        border-block-end: 1px solid var(--cds-border-subtle, #c6c6c6);
+    }
+
     .app-shell {
-        padding: 5rem 1rem 1.5rem;
+        min-height: auto;
+        margin-inline-start: 0;
+        padding: 1rem;
+    }
+
+    .app-main {
+        max-width: none;
     }
 
     .login-page #providers {
