@@ -22,10 +22,82 @@ func New() *Auth {
 
 func (a *Auth) register() {
 	object := js.NewObject()
-	a.setMethod(object, "getUserInfo", a.getUserInfo)
-	a.setMethod(object, "refreshToken", a.refreshToken)
-	a.setMethod(object, "revokeToken", a.revokeToken)
+	a.setMethod(object, "getUserInfo", a.handleGetUserInfo)
+	a.setMethod(object, "refreshToken", a.handleRefreshToken)
+	a.setMethod(object, "revokeToken", a.handleRevokeToken)
 	js.Global().Set("GoAuthBridge", object)
+}
+
+func (a *Auth) UserInfo(onSuccess func(string), onError func(error)) {
+	a.fetchUserInfo(onSuccess, onError)
+}
+
+func (a *Auth) Refresh(onSuccess func(string), onError func(error)) {
+	token, err := storedToken()
+	if err != nil {
+		callError(onError, err)
+		return
+	}
+
+	api, err := requireGlobal("AuthAPI")
+	if err != nil {
+		callError(onError, err)
+		return
+	}
+
+	store, err := requireGlobal("AuthToken")
+	if err != nil {
+		callError(onError, err)
+		return
+	}
+
+	js.FromJSPromise(api.Call("refreshToken", token)).Done(func(value js.Value, err error) {
+		if err != nil {
+			callError(onError, err)
+			return
+		}
+
+		refreshed := strings.TrimSpace(value.Get("token").String())
+		if refreshed == "" {
+			callError(onError, fmt.Errorf("refresh response missing token"))
+			return
+		}
+
+		store.Call("storeToken", refreshed)
+		a.fetchUserInfo(onSuccess, onError)
+	})
+}
+
+func (a *Auth) Logout(onSuccess func(), onError func(error)) {
+	token, err := storedToken()
+	if err != nil {
+		callError(onError, err)
+		return
+	}
+
+	api, err := requireGlobal("AuthAPI")
+	if err != nil {
+		callError(onError, err)
+		return
+	}
+
+	store, err := requireGlobal("AuthToken")
+	if err != nil {
+		callError(onError, err)
+		return
+	}
+
+	js.FromJSPromise(api.Call("revokeToken", token)).Done(func(value js.Value, err error) {
+		if err != nil {
+			callError(onError, err)
+			return
+		}
+
+		store.Call("clearStoredToken")
+		if onSuccess != nil {
+			onSuccess()
+		}
+	})
 }
 
 func (a *Auth) setMethod(object js.Value, name string, fn func(js.Value, []js.Value) any) {
@@ -34,23 +106,11 @@ func (a *Auth) setMethod(object js.Value, name string, fn func(js.Value, []js.Va
 	object.Set(name, wrapped)
 }
 
-func (a *Auth) getUserInfo(this js.Value, args []js.Value) any {
+func (a *Auth) handleGetUserInfo(this js.Value, args []js.Value) any {
 	return newPromise(func(resolve, reject js.Value) {
 		defer recoverToReject(reject)
 
-		token, err := storedToken()
-		if err != nil {
-			rejectWithError(reject, err)
-			return
-		}
-
-		api, err := requireGlobal("AuthAPI")
-		if err != nil {
-			rejectWithError(reject, err)
-			return
-		}
-
-		js.FromJSPromise(api.Call("fetchUserInfo", token)).Done(func(value js.Value, err error) {
+		a.fetchUserInfoValue(func(value js.Value, err error) {
 			if err != nil {
 				rejectWithError(reject, err)
 				return
@@ -61,78 +121,149 @@ func (a *Auth) getUserInfo(this js.Value, args []js.Value) any {
 	})
 }
 
-func (a *Auth) refreshToken(this js.Value, args []js.Value) any {
+func (a *Auth) handleRefreshToken(this js.Value, args []js.Value) any {
 	return newPromise(func(resolve, reject js.Value) {
 		defer recoverToReject(reject)
 
-		token, err := storedToken()
-		if err != nil {
-			rejectWithError(reject, err)
-			return
-		}
-
-		api, err := requireGlobal("AuthAPI")
-		if err != nil {
-			rejectWithError(reject, err)
-			return
-		}
-
-		store, err := requireGlobal("AuthToken")
-		if err != nil {
-			rejectWithError(reject, err)
-			return
-		}
-
-		js.FromJSPromise(api.Call("refreshToken", token)).Done(func(value js.Value, err error) {
+		a.refreshTokenValue(func(value js.Value, err error) {
 			if err != nil {
 				rejectWithError(reject, err)
 				return
 			}
 
-			refreshed := strings.TrimSpace(value.Get("token").String())
-			if refreshed == "" {
-				rejectWithError(reject, fmt.Errorf("refresh response missing token"))
-				return
-			}
-
-			store.Call("storeToken", refreshed)
 			resolve.Invoke(value)
 		})
 	})
 }
 
-func (a *Auth) revokeToken(this js.Value, args []js.Value) any {
+func (a *Auth) handleRevokeToken(this js.Value, args []js.Value) any {
 	return newPromise(func(resolve, reject js.Value) {
 		defer recoverToReject(reject)
 
-		token, err := storedToken()
-		if err != nil {
-			rejectWithError(reject, err)
-			return
-		}
-
-		api, err := requireGlobal("AuthAPI")
-		if err != nil {
-			rejectWithError(reject, err)
-			return
-		}
-
-		store, err := requireGlobal("AuthToken")
-		if err != nil {
-			rejectWithError(reject, err)
-			return
-		}
-
-		js.FromJSPromise(api.Call("revokeToken", token)).Done(func(value js.Value, err error) {
+		a.revokeTokenValue(func(value js.Value, err error) {
 			if err != nil {
 				rejectWithError(reject, err)
 				return
 			}
 
-			store.Call("clearStoredToken")
 			resolve.Invoke(value)
 		})
 	})
+}
+
+func (a *Auth) fetchUserInfo(onSuccess func(string), onError func(error)) {
+	a.fetchUserInfoValue(func(value js.Value, err error) {
+		if err != nil {
+			callError(onError, err)
+			return
+		}
+
+		userinfo, err := jsonStringFromValue(value)
+		if err != nil {
+			callError(onError, err)
+			return
+		}
+
+		if onSuccess != nil {
+			onSuccess(userinfo)
+		}
+	})
+}
+
+func (a *Auth) fetchUserInfoValue(done func(js.Value, error)) {
+	token, err := storedToken()
+	if err != nil {
+		done(js.Undefined(), err)
+		return
+	}
+
+	api, err := requireGlobal("AuthAPI")
+	if err != nil {
+		done(js.Undefined(), err)
+		return
+	}
+
+	js.FromJSPromise(api.Call("fetchUserInfo", token)).Done(done)
+}
+
+func (a *Auth) refreshTokenValue(done func(js.Value, error)) {
+	token, err := storedToken()
+	if err != nil {
+		done(js.Undefined(), err)
+		return
+	}
+
+	api, err := requireGlobal("AuthAPI")
+	if err != nil {
+		done(js.Undefined(), err)
+		return
+	}
+
+	store, err := requireGlobal("AuthToken")
+	if err != nil {
+		done(js.Undefined(), err)
+		return
+	}
+
+	js.FromJSPromise(api.Call("refreshToken", token)).Done(func(value js.Value, err error) {
+		if err != nil {
+			done(js.Undefined(), err)
+			return
+		}
+
+		refreshed := strings.TrimSpace(value.Get("token").String())
+		if refreshed == "" {
+			done(js.Undefined(), fmt.Errorf("refresh response missing token"))
+			return
+		}
+
+		store.Call("storeToken", refreshed)
+		a.fetchUserInfoValue(done)
+	})
+}
+
+func (a *Auth) revokeTokenValue(done func(js.Value, error)) {
+	token, err := storedToken()
+	if err != nil {
+		done(js.Undefined(), err)
+		return
+	}
+
+	api, err := requireGlobal("AuthAPI")
+	if err != nil {
+		done(js.Undefined(), err)
+		return
+	}
+
+	store, err := requireGlobal("AuthToken")
+	if err != nil {
+		done(js.Undefined(), err)
+		return
+	}
+
+	js.FromJSPromise(api.Call("revokeToken", token)).Done(func(value js.Value, err error) {
+		if err != nil {
+			done(js.Undefined(), err)
+			return
+		}
+
+		store.Call("clearStoredToken")
+		done(value, nil)
+	})
+}
+
+func jsonStringFromValue(value js.Value) (string, error) {
+	encoded := js.Global().Get("JSON").Call("stringify", value).String()
+	if encoded == "" {
+		return "", fmt.Errorf("userinfo payload is empty")
+	}
+	return encoded, nil
+}
+
+func callError(fn func(error), err error) {
+	if fn != nil {
+		fn(err)
+	}
 }
 
 func storedToken() (string, error) {
