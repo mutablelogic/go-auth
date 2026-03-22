@@ -1,8 +1,9 @@
 (function () {
     class LoginProviders {
-        constructor(rootNode) {
+        constructor(rootNode, onSuccess) {
             this.rootNode = rootNode;
             this.messageNode = null;
+            this.onSuccess = onSuccess;
         }
 
         setFeedback(node, message, tone) {
@@ -96,9 +97,7 @@
             button.textContent = "Continue";
             form.appendChild(button);
 
-            form.addEventListener("submit", (event) => {
-                event.preventDefault();
-
+            const submitLocalLogin = () => {
                 const email = (input.value || "").trim();
                 input.invalid = false;
                 input.invalidText = "";
@@ -110,7 +109,30 @@
                     return;
                 }
 
-                this.setFeedback(this.feedbackNode(), `Local sign-in is not wired yet: ${email}`, "error");
+                button.disabled = true;
+                this.setFeedback(this.feedbackNode(), `Signing in as ${email}...`, "info");
+
+                window.AuthAPI.loginWithCredentials(email).then((result) => {
+                    window.AuthToken.storeToken(result && result.token);
+                    this.setFeedback(this.feedbackNode(), "Signed in", "success");
+                    if (typeof this.onSuccess === "function") {
+                        this.onSuccess(result);
+                    }
+                }).catch((error) => {
+                    this.setFeedback(this.feedbackNode(), `Local login failed: ${error.message || error}`, "error");
+                }).finally(() => {
+                    button.disabled = false;
+                });
+            };
+
+            form.addEventListener("submit", (event) => {
+                event.preventDefault();
+                submitLocalLogin();
+            });
+
+            button.addEventListener("click", (event) => {
+                event.preventDefault();
+                submitLocalLogin();
             });
 
             section.appendChild(form);

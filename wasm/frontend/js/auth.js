@@ -50,6 +50,21 @@
             });
         }
 
+        async loginWithCredentials(email, meta) {
+            const body = { email };
+            if (meta && Object.keys(meta).length > 0) {
+                body.meta = meta;
+            }
+
+            return this.request("/credentials", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify(body)
+            });
+        }
+
         async fetchUserInfo(token) {
             return this.request("/userinfo", {
                 method: "GET",

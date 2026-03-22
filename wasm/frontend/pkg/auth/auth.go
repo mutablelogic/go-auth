@@ -23,6 +23,7 @@ func New() *Auth {
 func (a *Auth) register() {
 	object := js.NewObject()
 	a.setMethod(object, "getUserInfo", a.handleGetUserInfo)
+	a.setMethod(object, "validateStoredToken", a.handleValidateStoredToken)
 	a.setMethod(object, "refreshToken", a.handleRefreshToken)
 	a.setMethod(object, "revokeToken", a.handleRevokeToken)
 	js.Global().Set("GoAuthBridge", object)
@@ -121,6 +122,28 @@ func (a *Auth) handleGetUserInfo(this js.Value, args []js.Value) any {
 	})
 }
 
+func (a *Auth) handleValidateStoredToken(this js.Value, args []js.Value) any {
+	return newPromise(func(resolve, reject js.Value) {
+		defer recoverToReject(reject)
+
+		store, err := requireGlobal("AuthToken")
+		if err != nil {
+			rejectWithError(reject, err)
+			return
+		}
+
+		a.fetchUserInfoValue(func(value js.Value, err error) {
+			if err != nil {
+				store.Call("clearStoredToken")
+				resolve.Invoke(false)
+				return
+			}
+
+			resolve.Invoke(!isMissing(value))
+		})
+	})
+}
+
 func (a *Auth) handleRefreshToken(this js.Value, args []js.Value) any {
 	return newPromise(func(resolve, reject js.Value) {
 		defer recoverToReject(reject)
@@ -177,13 +200,31 @@ func (a *Auth) fetchUserInfoValue(done func(js.Value, error)) {
 		return
 	}
 
+	store, err := requireGlobal("AuthToken")
+	if err != nil {
+		done(js.Undefined(), err)
+		return
+	}
+	if cached := store.Call("getCachedUserInfo", token); !isMissing(cached) {
+		done(cached, nil)
+		return
+	}
+
 	api, err := requireGlobal("AuthAPI")
 	if err != nil {
 		done(js.Undefined(), err)
 		return
 	}
 
-	js.FromJSPromise(api.Call("fetchUserInfo", token)).Done(done)
+	js.FromJSPromise(api.Call("fetchUserInfo", token)).Done(func(value js.Value, err error) {
+		if err != nil {
+			done(js.Undefined(), err)
+			return
+		}
+
+		store.Call("storeCachedUserInfo", token, value)
+		done(value, nil)
+	})
 }
 
 func (a *Auth) refreshTokenValue(done func(js.Value, error)) {
@@ -217,6 +258,7 @@ func (a *Auth) refreshTokenValue(done func(js.Value, error)) {
 			return
 		}
 
+		store.Call("clearCachedUserInfo")
 		store.Call("storeToken", refreshed)
 		a.fetchUserInfoValue(done)
 	})
@@ -248,6 +290,7 @@ func (a *Auth) revokeTokenValue(done func(js.Value, error)) {
 		}
 
 		store.Call("clearStoredToken")
+		store.Call("clearCachedUserInfo")
 		done(value, nil)
 	})
 }

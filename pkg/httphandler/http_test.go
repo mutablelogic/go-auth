@@ -82,6 +82,63 @@ func Test_http_001(t *testing.T) {
 		assert.Equal(issuer, mustExtractIssuer(t, response.Token))
 	})
 
+	t.Run("AuthCredentialsHandlerMethodNotAllowed", func(t *testing.T) {
+		require := require.New(t)
+
+		mgr, _ := newHTTPTestManager(t)
+		_, handler, _ := AuthCredentialsHandler(mgr)
+		res := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "/auth/credentials", nil)
+
+		handler(res, req)
+
+		require.Equal(http.StatusMethodNotAllowed, res.Code)
+	})
+
+	t.Run("AuthCredentialsHandlerSuccess", func(t *testing.T) {
+		assert := assert.New(t)
+		require := require.New(t)
+
+		mgr, issuer := newHTTPTestManager(t)
+		_, handler, _ := AuthCredentialsHandler(mgr)
+		res := httptest.NewRecorder()
+		body := mustJSONBody(t, schema.CredentialsRequest{Email: "credentials.success@example.com", Meta: schema.MetaMap{"invite": "test"}})
+		req := httptest.NewRequest(http.MethodPost, "/auth/credentials", body)
+		req.Host = "localhost:8084"
+		req.Header.Set("Content-Type", "application/json")
+
+		handler(res, req)
+
+		require.Equal(http.StatusOK, res.Code)
+		var response schema.TokenResponse
+		require.NoError(json.Unmarshal(res.Body.Bytes(), &response))
+		assert.NotEmpty(response.Token)
+		require.NotNil(response.UserInfo)
+		assert.Equal("credentials.success@example.com", response.UserInfo.Email)
+		assert.Equal(issuer, mustExtractIssuer(t, response.Token))
+
+		listed, err := mgr.ListUsers(context.Background(), schema.UserListRequest{Email: "credentials.success@example.com"})
+		require.NoError(err)
+		require.Len(listed.Body, 1)
+		assert.Equal(schema.MetaMap{"invite": "test"}, listed.Body[0].Meta)
+	})
+
+	t.Run("AuthCredentialsHandlerRejectsInvalidEmail", func(t *testing.T) {
+		assert := assert.New(t)
+		require := require.New(t)
+
+		mgr, _ := newHTTPTestManager(t)
+		_, handler, _ := AuthCredentialsHandler(mgr)
+		res := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, "/auth/credentials", mustJSONBody(t, schema.CredentialsRequest{Email: "not-an-email"}))
+		req.Header.Set("Content-Type", "application/json")
+
+		handler(res, req)
+
+		require.Equal(http.StatusBadRequest, res.Code)
+		assert.Contains(res.Body.String(), "email is invalid")
+	})
+
 	t.Run("AuthHandlerReturnsConflictForExistingEmail", func(t *testing.T) {
 		assert := assert.New(t)
 		require := require.New(t)

@@ -70,6 +70,51 @@ func AuthHandler(mgr *manager.Manager) (string, http.HandlerFunc, *openapi.PathI
 		}
 }
 
+// Return an http.HandlerFunc for the local credentials login endpoint.
+func AuthCredentialsHandler(mgr *manager.Manager) (string, http.HandlerFunc, *openapi.PathItem) {
+	return "/auth/credentials", func(w http.ResponseWriter, r *http.Request) {
+			switch r.Method {
+			case http.MethodPost:
+				_ = loginWithCredentials(r.Context(), mgr, w, r)
+			default:
+				_ = httpresponse.Error(w, httpresponse.Err(http.StatusMethodNotAllowed), r.Method)
+			}
+		}, &openapi.PathItem{
+			Summary:     "Local credentials login",
+			Description: "Creates or resolves a local testing identity using only an email address and returns a signed local token plus userinfo.",
+			Post: &openapi.Operation{
+				Tags:        []string{"Auth"},
+				Summary:     "Login with local email",
+				Description: "Uses the supplied email address to resolve or create a local testing identity and returns a signed local session token.",
+				RequestBody: &openapi.RequestBody{
+					Description: "Local testing login payload.",
+					Required:    true,
+					Content: map[string]openapi.MediaType{
+						"application/json": {
+							Schema: jsonschema.MustFor[schema.CredentialsRequest](),
+						},
+					},
+				},
+				Responses: map[string]openapi.Response{
+					"200": {
+						Description: "Signed local session token and userinfo.",
+						Content: map[string]openapi.MediaType{
+							"application/json": {
+								Schema: tokenResponseSchema(),
+							},
+						},
+					},
+					"400": {
+						Description: "Invalid request body or malformed email address.",
+					},
+					"409": {
+						Description: "The supplied email conflicts with an existing account that cannot be linked automatically.",
+					},
+				},
+			},
+		}
+}
+
 // Return an http.HandlerFunc for the auth code exchange endpoint.
 func AuthCodeHandler(mgr *manager.Manager) (string, http.HandlerFunc, *openapi.PathItem) {
 	return "/auth/code", func(w http.ResponseWriter, r *http.Request) {
@@ -323,6 +368,28 @@ func exchangeCode(ctx context.Context, mgr *manager.Manager, w http.ResponseWrit
 	}
 }
 
+func loginWithCredentials(ctx context.Context, mgr *manager.Manager, w http.ResponseWriter, r *http.Request) error {
+	var req schema.CredentialsRequest
+	if err := httprequest.Read(r, &req); err != nil {
+		return httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest).With(err))
+	} else if err := req.Validate(); err != nil {
+		return httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest).With(err))
+	}
+
+	identity := schema.IdentityInsert{
+		IdentityKey: schema.IdentityKey{
+			Provider: oidc.OAuthClientKeyLocal,
+			Sub:      req.Email,
+		},
+		IdentityMeta: schema.IdentityMeta{
+			Email:  req.Email,
+			Claims: map[string]any{"email": req.Email},
+		},
+	}
+
+	return issueIdentityLoginResponse(ctx, mgr, w, r, identity, req.Meta)
+}
+
 func refreshToken(ctx context.Context, mgr *manager.Manager, w http.ResponseWriter, r *http.Request) error {
 	var req schema.RefreshRequest
 	if err := httprequest.Read(r, &req); err != nil {
@@ -369,7 +436,13 @@ func revokeToken(ctx context.Context, mgr *manager.Manager, w http.ResponseWrite
 func issueLoginResponse(ctx context.Context, mgr *manager.Manager, w http.ResponseWriter, r *http.Request, claims map[string]any, meta schema.MetaMap) error {
 	if identity, err := schema.NewIdentityFromClaims(claims); err != nil {
 		return httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest).With(err))
-	} else if user, session, err := mgr.LoginWithIdentity(ctx, identity, meta); err != nil {
+	} else {
+		return issueIdentityLoginResponse(ctx, mgr, w, r, identity, meta)
+	}
+}
+
+func issueIdentityLoginResponse(ctx context.Context, mgr *manager.Manager, w http.ResponseWriter, r *http.Request, identity schema.IdentityInsert, meta schema.MetaMap) error {
+	if user, session, err := mgr.LoginWithIdentity(ctx, identity, meta); err != nil {
 		return httpresponse.Error(w, httpErr(err))
 	} else if config, err := mgr.OIDCConfig(r); err != nil {
 		return httpresponse.Error(w, httpresponse.Err(http.StatusInternalServerError).With(err))

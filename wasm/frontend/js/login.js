@@ -1,12 +1,13 @@
 (function () {
     const providersNode = document.getElementById("providers");
     const redirectTarget = "wasm_exec.html";
-    const providers = new window.LoginProviders(providersNode);
-    const googleAuth = new window.LoginGoogleAuth(redirectToApp);
 
     function redirectToApp() {
         window.location.assign(redirectTarget);
     }
+
+    const providers = new window.LoginProviders(providersNode, redirectToApp);
+    const googleAuth = new window.LoginGoogleAuth(redirectToApp);
 
     async function loadProviders() {
         providers.clear();
