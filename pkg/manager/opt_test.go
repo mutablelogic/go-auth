@@ -72,6 +72,7 @@ func Test_opt_001(t *testing.T) {
 		options := new(opt)
 		options.defaults()
 		assert.Equal(schema.DefaultSchema, options.schema)
+		assert.Empty(options.channel)
 		assert.Equal(schema.DefaultSessionTTL, options.sessionttl)
 		assert.Equal(DefaultCleanupInterval, options.cleanupint)
 		assert.Equal(DefaultCleanupLimit, options.cleanuplimit)
@@ -96,6 +97,17 @@ func Test_opt_001(t *testing.T) {
 		assert.NoError(WithSchema("custom_auth")(options))
 		assert.Equal("custom_auth", options.schema)
 		assert.EqualError(WithSchema("")(options), "schema name cannot be empty")
+	})
+
+	t.Run("WithNotificationChannel", func(t *testing.T) {
+		assert := assert.New(t)
+
+		options := new(opt)
+		assert.NoError(WithNotificationChannel("backend.table_change")(options))
+		assert.Equal("backend.table_change", options.channel)
+		assert.EqualError(WithNotificationChannel("")(options), "notification channel cannot be empty")
+		assert.NoError(WithNotifyChannel("compat.table_change")(options))
+		assert.Equal("compat.table_change", options.channel)
 	})
 
 	t.Run("WithHooks", func(t *testing.T) {

@@ -7,16 +7,8 @@ import (
 
 // Run periodically prunes stale sessions until the context is cancelled.
 func (m *Manager) Run(ctx context.Context) error {
-	if ctx == nil {
-		ctx = context.Background()
-	}
-	if _, err := m.CleanupSessions(ctx); err != nil {
-		return err
-	}
-
-	ticker := time.NewTicker(m.cleanupint)
+	ticker := time.NewTimer(time.Second)
 	defer ticker.Stop()
-
 	for {
 		select {
 		case <-ctx.Done():
@@ -28,6 +20,8 @@ func (m *Manager) Run(ctx context.Context) error {
 				}
 				return err
 			}
+			// Reset ticker
+			ticker.Reset(m.cleanupint)
 		}
 	}
 }

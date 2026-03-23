@@ -46,10 +46,13 @@ func New(ctx context.Context, pool pg.PoolConn, opts ...Opt) (*Manager, error) {
 		return nil, fmt.Errorf("parse queries.sql: %w", err)
 	} else {
 		pool = pool.WithQueries(queries).With("schema", self.schema).(pg.PoolConn)
+		if self.channel != "" {
+			pool = pool.With("channel", self.channel).(pg.PoolConn)
+		}
 	}
 
 	// Create objects in the database schema. This is not done in a transaction
-	if err := bootstrap(ctx, pool, self.schema); err != nil {
+	if err := bootstrap(ctx, pool, self.schema, self.channel != ""); err != nil {
 		return nil, err
 	} else {
 		self.PoolConn = pool
@@ -62,7 +65,7 @@ func New(ctx context.Context, pool pg.PoolConn, opts ...Opt) (*Manager, error) {
 ///////////////////////////////////////////////////////////////////////////////
 // PRIVATE METHODS
 
-func bootstrap(ctx context.Context, conn pg.Conn, schemaName string) error {
+func bootstrap(ctx context.Context, conn pg.Conn, schemaName string, includeNotifications bool) error {
 	// Get all objects
 	objects, err := pg.NewQueries(strings.NewReader(schema.Objects))
 	if err != nil {
@@ -76,6 +79,9 @@ func bootstrap(ctx context.Context, conn pg.Conn, schemaName string) error {
 
 	// Create all objects - not in a transaction
 	for _, key := range objects.Keys() {
+		if !includeNotifications && strings.HasPrefix(key, "auth.notify.") {
+			continue
+		}
 		if err := conn.Exec(ctx, objects.Query(key)); err != nil {
 			return fmt.Errorf("create object %q: %w", key, err)
 		}

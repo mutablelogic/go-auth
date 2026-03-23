@@ -57,3 +57,69 @@ CREATE TABLE IF NOT EXISTS ${"schema"}.user_group (
     "group" TEXT   NOT NULL REFERENCES ${"schema"}.group (id) ON DELETE CASCADE,
     CONSTRAINT user_group_pkey PRIMARY KEY ("user", "group")
 );
+
+-- auth.notify.function
+CREATE OR REPLACE FUNCTION ${"schema"}.notify_table()
+RETURNS trigger AS $$
+DECLARE
+    lock_id BIGINT;
+BEGIN
+    lock_id := hashtextextended(TG_TABLE_SCHEMA || '.' || TG_TABLE_NAME, 0);
+    IF pg_try_advisory_xact_lock(lock_id) THEN
+        PERFORM pg_notify(
+            ${'channel'},
+            json_build_object(
+                'schema', TG_TABLE_SCHEMA,
+                'table', TG_TABLE_NAME,
+                'action', TG_OP
+            )::text
+        );
+    END IF;
+    RETURN NULL;
+END;
+$$ LANGUAGE plpgsql;
+
+-- auth.notify.user.trigger
+DO $$ BEGIN
+    DROP TRIGGER IF EXISTS user_table_changes_notify ON ${"schema"}.user;
+    CREATE TRIGGER user_table_changes_notify
+    AFTER INSERT OR UPDATE OR DELETE ON ${"schema"}.user
+    FOR EACH STATEMENT
+    EXECUTE FUNCTION ${"schema"}.notify_table();
+END $$;
+
+-- auth.notify.identity.trigger
+DO $$ BEGIN
+    DROP TRIGGER IF EXISTS identity_table_changes_notify ON ${"schema"}.identity;
+    CREATE TRIGGER identity_table_changes_notify
+    AFTER INSERT OR UPDATE OR DELETE ON ${"schema"}.identity
+    FOR EACH STATEMENT
+    EXECUTE FUNCTION ${"schema"}.notify_table();
+END $$;
+
+-- auth.notify.session.trigger
+DO $$ BEGIN
+    DROP TRIGGER IF EXISTS session_table_changes_notify ON ${"schema"}.session;
+    CREATE TRIGGER session_table_changes_notify
+    AFTER INSERT OR UPDATE OR DELETE ON ${"schema"}.session
+    FOR EACH STATEMENT
+    EXECUTE FUNCTION ${"schema"}.notify_table();
+END $$;
+
+-- auth.notify.group.trigger
+DO $$ BEGIN
+    DROP TRIGGER IF EXISTS group_table_changes_notify ON ${"schema"}."group";
+    CREATE TRIGGER group_table_changes_notify
+    AFTER INSERT OR UPDATE OR DELETE ON ${"schema"}."group"
+    FOR EACH STATEMENT
+    EXECUTE FUNCTION ${"schema"}.notify_table();
+END $$;
+
+-- auth.notify.user_group.trigger
+DO $$ BEGIN
+    DROP TRIGGER IF EXISTS user_group_table_changes_notify ON ${"schema"}.user_group;
+    CREATE TRIGGER user_group_table_changes_notify
+    AFTER INSERT OR UPDATE OR DELETE ON ${"schema"}.user_group
+    FOR EACH STATEMENT
+    EXECUTE FUNCTION ${"schema"}.notify_table();
+END $$;

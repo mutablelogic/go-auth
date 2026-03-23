@@ -38,6 +38,7 @@ const (
 type opt struct {
 	privateKey   *rsa.PrivateKey
 	schema       string
+	channel      string
 	sessionttl   time.Duration
 	cleanupint   time.Duration
 	cleanuplimit int
@@ -62,6 +63,7 @@ func (o *opt) apply(opts ...Opt) error {
 
 func (o *opt) defaults() {
 	o.schema = schema.DefaultSchema
+	o.channel = ""
 	o.sessionttl = schema.DefaultSessionTTL
 	o.cleanupint = DefaultCleanupInterval
 	o.cleanuplimit = DefaultCleanupLimit
@@ -118,6 +120,23 @@ func WithSchema(name string) Opt {
 		o.schema = name
 		return nil
 	}
+}
+
+// WithNotificationChannel sets the PostgreSQL LISTEN/NOTIFY channel used by the
+// table change triggers created during bootstrap.
+func WithNotificationChannel(name string) Opt {
+	return func(o *opt) error {
+		if name == "" {
+			return fmt.Errorf("notification channel cannot be empty")
+		}
+		o.channel = name
+		return nil
+	}
+}
+
+// WithNotifyChannel is kept as a compatibility alias.
+func WithNotifyChannel(name string) Opt {
+	return WithNotificationChannel(name)
 }
 
 // WithSessionTTL sets the session time-to-live duration.
