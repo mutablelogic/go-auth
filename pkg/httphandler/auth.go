@@ -392,13 +392,14 @@ func loginWithCredentials(ctx context.Context, mgr *manager.Manager, w http.Resp
 
 func refreshToken(ctx context.Context, mgr *manager.Manager, w http.ResponseWriter, r *http.Request) error {
 	var req schema.RefreshRequest
+	token := ""
 	if err := httprequest.Read(r, &req); err != nil {
 		return httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest).With(err))
-	} else if token := strings.TrimSpace(req.Token); token == "" {
+	} else if token = strings.TrimSpace(req.Token); token == "" {
 		return httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest).With("token is required"))
 	} else if config, err := mgr.OIDCConfig(r); err != nil {
 		return httpresponse.Error(w, httpresponse.Err(http.StatusInternalServerError).With(err))
-	} else if claims, err := mgr.OIDCVerify(req.Token, config.Issuer); err != nil {
+	} else if claims, err := mgr.OIDCVerify(token, config.Issuer); err != nil {
 		return httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest).With(err))
 	} else if session, err := sessionIDFromClaims(claims); err != nil {
 		return httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest).With(err))
@@ -415,13 +416,14 @@ func refreshToken(ctx context.Context, mgr *manager.Manager, w http.ResponseWrit
 
 func revokeToken(ctx context.Context, mgr *manager.Manager, w http.ResponseWriter, r *http.Request) error {
 	var req schema.RefreshRequest
+	token := ""
 	if err := httprequest.Read(r, &req); err != nil {
 		return httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest).With(err))
-	} else if token := strings.TrimSpace(req.Token); token == "" {
+	} else if token = strings.TrimSpace(req.Token); token == "" {
 		return httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest).With("token is required"))
 	} else if config, err := mgr.OIDCConfig(r); err != nil {
 		return httpresponse.Error(w, httpresponse.Err(http.StatusInternalServerError).With(err))
-	} else if claims, err := mgr.OIDCVerify(req.Token, config.Issuer); err != nil {
+	} else if claims, err := mgr.OIDCVerify(token, config.Issuer); err != nil {
 		return httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest).With(err))
 	} else if session, err := sessionIDFromClaims(claims); err != nil {
 		return httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest).With(err))

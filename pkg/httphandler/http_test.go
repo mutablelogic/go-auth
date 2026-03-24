@@ -1014,6 +1014,33 @@ func Test_http_001(t *testing.T) {
 		assert.Contains(claims, "session")
 	})
 
+	t.Run("RefreshHandlerTrimsToken", func(t *testing.T) {
+		assert := assert.New(t)
+		require := require.New(t)
+
+		mgr, issuer := newHTTPTestManager(t)
+		user, session, token := mustLoginToken(t, mgr, issuer)
+
+		_, handler, _ := RefreshHandler(mgr)
+		res := httptest.NewRecorder()
+		body := mustJSONBody(t, schema.RefreshRequest{Token: "  \n" + token + "\t  "})
+		req := httptest.NewRequest(http.MethodPost, "/auth/refresh", body)
+		req.Host = "localhost:8084"
+		req.Header.Set("Content-Type", "application/json")
+
+		handler(res, req)
+
+		require.Equal(http.StatusOK, res.Code)
+		var response schema.TokenResponse
+		require.NoError(json.Unmarshal(res.Body.Bytes(), &response))
+		assert.NotEmpty(response.Token)
+		claims, err := newHTTPTestManagerForToken(t, response.Token)
+		require.NoError(err)
+		assert.Equal(issuer, claims["iss"])
+		assert.Equal(uuid.UUID(user.ID).String(), claims["sub"])
+		assert.Equal(uuid.UUID(session.ID).String(), claims["sid"])
+	})
+
 	t.Run("RefreshHandlerMissingToken", func(t *testing.T) {
 		assert := assert.New(t)
 		require := require.New(t)
