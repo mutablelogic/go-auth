@@ -11,7 +11,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/lestrrat-go/jwx/v2 v2.1.6
 	github.com/mutablelogic/go-client v1.4.4
-	github.com/mutablelogic/go-pg v1.1.7
+	github.com/mutablelogic/go-pg v1.1.8
 	github.com/mutablelogic/go-server v1.6.18
 	github.com/pkg/browser v0.0.0-20240102092130-5ac0b6a4141c
 	github.com/stretchr/testify v1.11.1
