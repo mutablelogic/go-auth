@@ -8,6 +8,7 @@ import (
 	// Packages
 	schema "github.com/djthorpe/go-auth/schema"
 	pg "github.com/mutablelogic/go-pg"
+	broadcaster "github.com/mutablelogic/go-pg/pkg/broadcaster"
 )
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -17,6 +18,7 @@ import (
 type Manager struct {
 	opt
 	pg.PoolConn
+	notifications broadcaster.Broadcaster
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -56,6 +58,15 @@ func New(ctx context.Context, pool pg.PoolConn, opts ...Opt) (*Manager, error) {
 		return nil, err
 	} else {
 		self.PoolConn = pool
+	}
+
+	// Set up notifications of table change if requested
+	if self.channel != "" {
+		if notifications, err := broadcaster.NewBroadcaster(pool, self.channel); err != nil {
+			return nil, err
+		} else {
+			self.notifications = notifications
+		}
 	}
 
 	// Return the manager

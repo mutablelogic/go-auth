@@ -10,6 +10,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -25,6 +27,52 @@ import (
 	assert "github.com/stretchr/testify/assert"
 	require "github.com/stretchr/testify/require"
 )
+
+type streamRecorder struct {
+	mu     sync.Mutex
+	header http.Header
+	body   bytes.Buffer
+	code   int
+}
+
+func newStreamRecorder() *streamRecorder {
+	return &streamRecorder{header: make(http.Header)}
+}
+
+func (r *streamRecorder) Header() http.Header {
+	return r.header
+}
+
+func (r *streamRecorder) WriteHeader(code int) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.code == 0 {
+		r.code = code
+	}
+}
+
+func (r *streamRecorder) Write(data []byte) (int, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.code == 0 {
+		r.code = http.StatusOK
+	}
+	return r.body.Write(data)
+}
+
+func (r *streamRecorder) Flush() {}
+
+func (r *streamRecorder) BodyString() string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.body.String()
+}
+
+func (r *streamRecorder) Code() int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.code
+}
 
 var conn test.Conn
 
@@ -44,6 +92,84 @@ func Test_http_001(t *testing.T) {
 		handler(res, req)
 
 		require.Equal(http.StatusMethodNotAllowed, res.Code)
+	})
+
+	t.Run("ChangesHandlerMethodNotAllowed", func(t *testing.T) {
+		require := require.New(t)
+
+		mgr, _ := newHTTPTestManager(t)
+		_, handler, _ := ChangesHandler(mgr)
+		res := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, "/changes", nil)
+
+		handler(res, req)
+
+		require.Equal(http.StatusMethodNotAllowed, res.Code)
+	})
+
+	t.Run("ChangesHandlerRequiresTextStreamAccept", func(t *testing.T) {
+		assert := assert.New(t)
+		require := require.New(t)
+
+		mgr, _ := newHTTPTestManagerWithOpts(t, manager.WithNotificationChannel("backend.table_change"))
+		_, handler, _ := ChangesHandler(mgr)
+		res := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "/changes", nil)
+		req.Header.Set("Accept", "application/json")
+
+		handler(res, req)
+
+		require.Equal(http.StatusNotAcceptable, res.Code)
+		assert.Contains(res.Body.String(), "text/event-stream")
+	})
+
+	t.Run("ChangesHandlerStreamsNotifications", func(t *testing.T) {
+		assert := assert.New(t)
+		require := require.New(t)
+
+		mgr, _ := newHTTPTestManagerWithOpts(t, manager.WithNotificationChannel("backend.table_change"))
+		_, handler, _ := ChangesHandler(mgr)
+
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		req := httptest.NewRequest(http.MethodGet, "/changes", nil).WithContext(ctx)
+		req.Header.Set("Accept", "text/event-stream")
+		res := newStreamRecorder()
+
+		done := make(chan struct{})
+		go func() {
+			defer close(done)
+			handler(res, req)
+		}()
+
+		require.NoError(mgr.Exec(context.Background(), `
+			INSERT INTO auth."group" (id, description)
+			VALUES ('changes-handler-group', 'Changes Handler Group')
+		`))
+
+		deadline := time.Now().Add(5 * time.Second)
+		for time.Now().Before(deadline) {
+			body := res.BodyString()
+			if strings.Contains(body, "event: change\n") && strings.Contains(body, `"table":"group"`) {
+				break
+			}
+			time.Sleep(25 * time.Millisecond)
+		}
+
+		cancel()
+
+		select {
+		case <-done:
+		case <-time.After(2 * time.Second):
+			t.Fatal("timeout waiting for changes handler to exit")
+		}
+
+		require.Equal(http.StatusOK, res.Code())
+		assert.Equal("text/event-stream", res.Header().Get("Content-Type"))
+		assert.Contains(res.BodyString(), "event: change\n")
+		assert.Contains(res.BodyString(), `"schema":"auth"`)
+		assert.Contains(res.BodyString(), `"table":"group"`)
+		assert.Contains(res.BodyString(), `"action":"INSERT"`)
 	})
 
 	t.Run("AuthHandlerSuccess", func(t *testing.T) {

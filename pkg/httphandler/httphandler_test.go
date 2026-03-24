@@ -46,7 +46,7 @@ func Test_httphandler_001(t *testing.T) {
 
 		err := RegisterHandlers(mgr, router, false)
 		require.NoError(err)
-		require.Len(router.routes, 15)
+		require.Len(router.routes, 16)
 
 		paths := make([]string, 0, len(router.routes))
 		for _, route := range router.routes {
@@ -56,6 +56,7 @@ func Test_httphandler_001(t *testing.T) {
 			assert.True(route.middleware)
 		}
 
+		assert.Contains(paths, "changes")
 		assert.Contains(paths, "group")
 		assert.Contains(paths, "group/{group}")
 		assert.Contains(paths, "scope")
