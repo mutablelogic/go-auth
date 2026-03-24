@@ -1,0 +1,27 @@
+package manager
+
+import (
+	"context"
+	"time"
+)
+
+// Run periodically prunes stale sessions until the context is cancelled.
+func (m *Manager) Run(ctx context.Context) error {
+	ticker := time.NewTimer(time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-ticker.C:
+			if _, err := m.CleanupSessions(ctx); err != nil {
+				if ctx.Err() != nil {
+					return nil
+				}
+				return err
+			}
+			// Reset ticker
+			ticker.Reset(m.cleanupint)
+		}
+	}
+}

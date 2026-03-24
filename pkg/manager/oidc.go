@@ -1,86 +1,93 @@
 package manager
 
 import (
-	"crypto/rsa"
-	"encoding/json"
+	"net/http"
+	"strings"
 
+	// Packages
+	auth "github.com/djthorpe/go-auth"
+	oidc "github.com/djthorpe/go-auth/pkg/oidc"
 	jwt "github.com/golang-jwt/jwt/v5"
-	"github.com/lestrrat-go/jwx/v2/jwa"
-	"github.com/lestrrat-go/jwx/v2/jwk"
+	jwk "github.com/lestrrat-go/jwx/v2/jwk"
 )
 
-const (
-	OIDCSigningAlgorithm = "RS256"
-	OIDCKeyID            = "dev-main-2026-03"
-)
+///////////////////////////////////////////////////////////////////////////////
+// PUBLIC METHODS
 
-func (m *Manager) OIDCJWKSet() (map[string]any, error) {
-	return OIDCJWKSetPEM(m.privateKey)
+// OIDCJWKSet returns the public JSON Web Key Set for the manager's signing key.
+func (m *Manager) OIDCJWKSet() (jwk.Set, error) {
+	return oidc.PublicJWKSet(m.privateKey)
 }
 
+// OIDCSign signs the supplied claims with the manager's configured private key.
+// It returns an error if no signing key has been configured.
 func (m *Manager) OIDCSign(claims jwt.Claims) (string, error) {
-	return OIDCSignPEM(m.privateKey, claims)
+	if m.privateKey == nil {
+		return "", auth.ErrBadParameter.With("private key is required for signing")
+	}
+	return oidc.SignToken(m.privateKey, claims)
 }
 
-func OIDCSignPEM(value string, claims jwt.Claims) (string, error) {
-	key, err := parseOIDCPrivateKeyPEM(value)
-	if err != nil {
-		return "", err
+// OIDCVerify verifies a locally signed JWT using the manager's configured
+// signing key and expected issuer.
+func (m *Manager) OIDCVerify(token, issuer string) (map[string]any, error) {
+	if m.privateKey == nil {
+		return nil, auth.ErrBadParameter.With("private key is required for verification")
 	}
-	token := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)
-	token.Header["kid"] = OIDCKeyID
-	return token.SignedString(key)
+	return oidc.VerifySignedToken(&m.privateKey.PublicKey, token, issuer)
 }
 
-func OIDCJWKSetPEM(value string) (map[string]any, error) {
-	key, err := parseOIDCJWKPEM(value)
-	if err != nil {
-		return nil, err
+// OIDCIssuer returns the canonical issuer for locally signed tokens.
+func (m *Manager) OIDCIssuer(r *http.Request) (string, error) {
+	if config, ok := m.oauth[oidc.OAuthClientKeyLocal]; ok {
+		if issuer := strings.TrimSpace(config.Issuer); issuer != "" {
+			return issuer, nil
+		}
 	}
-	publicKey, err := jwk.PublicKeyOf(key)
-	if err != nil {
-		return nil, err
-	}
-	if err := publicKey.Set(jwk.KeyUsageKey, jwk.ForSignature); err != nil {
-		return nil, err
-	}
-	if err := publicKey.Set(jwk.AlgorithmKey, jwa.SignatureAlgorithm(OIDCSigningAlgorithm)); err != nil {
-		return nil, err
-	}
-	if err := publicKey.Set(jwk.KeyIDKey, OIDCKeyID); err != nil {
-		return nil, err
-	}
-	set := jwk.NewSet()
-	if err := set.AddKey(publicKey); err != nil {
-		return nil, err
-	}
-	data, err := json.Marshal(set)
-	if err != nil {
-		return nil, err
-	}
-	var jwks map[string]any
-	if err := json.Unmarshal(data, &jwks); err != nil {
-		return nil, err
-	}
-	return jwks, nil
+	_ = r
+	return "", auth.ErrBadParameter.With("issuer is not configured")
 }
 
-func parseOIDCJWKPEM(value string) (jwk.Key, error) {
-	key, err := jwk.ParseKey([]byte(value), jwk.WithPEM(true))
+func (m *Manager) OIDCConfig(r *http.Request) (oidc.Configuration, error) {
+	issuer, err := m.OIDCIssuer(r)
 	if err != nil {
-		return nil, err
+		return oidc.Configuration{}, err
 	}
-	return key, nil
+	return oidc.Configuration{
+		Issuer:            issuer,
+		UserInfoEndpoint:  oidc.UserInfoURL(issuer),
+		JwksURI:           oidc.JWKSURL(issuer),
+		SigningAlgorithms: []string{oidc.SigningAlgorithm},
+		SubjectTypes:      []string{"public"},
+		ResponseTypes:     []string{"id_token"},
+		ScopesSupported:   []string{oidc.ScopeOpenID, oidc.ScopeEmail, oidc.ScopeProfile},
+		ClaimsSupported:   []string{"iss", "sub", "sid", "aud", "exp", "iat", "nbf", "email", "email_verified", "name", "groups", "scopes", "user", "session"},
+	}, nil
 }
 
-func parseOIDCPrivateKeyPEM(value string) (*rsa.PrivateKey, error) {
-	key, err := parseOIDCJWKPEM(value)
-	if err != nil {
-		return nil, err
+// AuthConfig returns the shareable upstream provider configuration exposed by
+// /auth/config. The client secret remains server-side.
+
+func (m *Manager) AuthConfig() (oidc.PublicClientConfigurations, error) {
+	if len(m.oauth) == 0 {
+		return nil, auth.ErrNotFound.With("oauth clients are not configured")
 	}
-	var raw rsa.PrivateKey
-	if err := key.Raw(&raw); err != nil {
-		return nil, err
+	return m.oauth.Public(), nil
+}
+
+// OAuthClientConfig returns the full configured OAuth client for the supplied
+// provider key, including the server-side client secret.
+func (m *Manager) OAuthClientConfig(key string) (oidc.ClientConfiguration, error) {
+	key = strings.TrimSpace(key)
+	if key == "" {
+		return oidc.ClientConfiguration{}, auth.ErrInvalidProvider.With("provider is required")
 	}
-	return &raw, nil
+	if len(m.oauth) == 0 {
+		return oidc.ClientConfiguration{}, auth.ErrNotFound.With("oauth clients are not configured")
+	}
+	config, ok := m.oauth[key]
+	if !ok {
+		return oidc.ClientConfiguration{}, auth.ErrInvalidProvider.Withf("unsupported provider %q", key)
+	}
+	return config, nil
 }

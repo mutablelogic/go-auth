@@ -5,7 +5,7 @@ import (
 	"errors"
 
 	// Packages
-	"github.com/djthorpe/go-auth"
+	auth "github.com/djthorpe/go-auth"
 	schema "github.com/djthorpe/go-auth/schema"
 	uuid "github.com/google/uuid"
 	pg "github.com/mutablelogic/go-pg"
@@ -63,18 +63,26 @@ func (m *Manager) ListIdentities(ctx context.Context, req schema.IdentityListReq
 	return types.Ptr(result), nil
 }
 
-func (m *Manager) LoginWithIdentity(ctx context.Context, meta schema.IdentityInsert) (*schema.User, error) {
+func (m *Manager) LoginWithIdentity(ctx context.Context, meta schema.IdentityInsert, createMeta ...map[string]any) (*schema.User, *schema.Session, error) {
 	if meta.Provider == "" {
-		return nil, auth.ErrBadParameter.With("issuer is required")
+		return nil, nil, auth.ErrBadParameter.With("issuer is required")
 	}
 	if meta.Sub == "" {
-		return nil, auth.ErrBadParameter.With("sub is required")
+		return nil, nil, auth.ErrBadParameter.With("sub is required")
+	}
+
+	var userCreateMeta map[string]any
+	if len(createMeta) > 0 {
+		userCreateMeta = createMeta[0]
 	}
 
 	var user schema.UserID
+	var session schema.Session
 	if err := m.PoolConn.Tx(ctx, func(conn pg.Conn) error {
 		// Find an existing identity row with the same (provider, sub) key.
 		var identity schema.Identity
+		createdUser := false
+		updateIdentity := false
 		if err := conn.Get(ctx, &identity, schema.IdentityKey{Provider: meta.Provider, Sub: meta.Sub}); err != nil {
 			if !errors.Is(dbErr(err), auth.ErrNotFound) {
 				return err
@@ -92,36 +100,81 @@ func (m *Manager) LoginWithIdentity(ctx context.Context, meta schema.IdentityIns
 				return err
 			}
 			if users.Count > 0 {
-				return auth.ErrConflict.Withf("user already exists for email %q", meta.Email)
-			}
+				existing := users.Body[0]
+				if hook, ok := m.hooks.(IdentityLinkHook); ok {
+					if err := hook.OnIdentityLink(ctx, meta, &existing); err != nil {
+						return err
+					}
+					if err := conn.With("user", existing.ID).Insert(ctx, nil, types.Value(&meta)); err != nil {
+						return err
+					}
+					user = existing.ID
+				} else {
+					return auth.ErrConflict.Withf("user already exists for email %q", meta.Email)
+				}
+			} else {
+				// No matching user exists, so create a new user and identity
+				usermeta := schema.UserMeta{
+					Name:  meta.Name(),
+					Email: meta.Email,
+					Meta:  userCreateMeta,
+				}
 
-			// No matching user exists, so create a new local user and identity.
-			var created schema.User
-			if err := conn.Insert(ctx, &created, schema.UserMeta{
-				Name:  meta.Name(),
-				Email: meta.Email,
-			}); err != nil {
-				return err
+				if hook, ok := m.hooks.(UserCreationHook); ok {
+					var err error
+					if usermeta, err = hook.OnUserCreate(ctx, meta, usermeta); err != nil {
+						return err
+					}
+				}
+
+				// Create a new user and set groups
+				var created schema.User
+				rowMeta := usermeta
+				rowMeta.Groups = nil
+				if err := conn.Insert(ctx, &created, rowMeta); err != nil {
+					return err
+				}
+				if err := replaceUserGroups(ctx, conn, created.ID, usermeta.Groups); err != nil {
+					return err
+				}
+				if err := conn.With("user", created.ID).Insert(ctx, nil, types.Value(&meta)); err != nil {
+					return err
+				}
+				user = created.ID
+				createdUser = true
 			}
-			if err := conn.With("user", created.ID).Insert(ctx, nil, types.Value(&meta)); err != nil {
-				return err
-			}
-			user = created.ID
-			return nil
 		} else {
 			user = identity.User
+			updateIdentity = true
 		}
 
 		// Successful login, update identity with new email/claims and modified_at timestamp.
-		if err := conn.Update(ctx, &identity, identity.IdentityKey, meta.IdentityMeta); err != nil {
-			return err
+		if updateIdentity && !createdUser {
+			if err := conn.Update(ctx, &identity, identity.IdentityKey, meta.IdentityMeta); err != nil {
+				return err
+			}
 		}
 
+		// Create a new session for the user.
+		if err := conn.Insert(ctx, &session, schema.SessionInsert{
+			User:      user,
+			ExpiresIn: types.Ptr(m.sessionttl),
+		}); err != nil {
+			return err
+		} else {
+			session.User = user
+		}
+
+		// Return success
 		return nil
 	}); err != nil {
-		return nil, dbErr(err)
+		return nil, nil, dbErr(err)
 	}
 
 	// Return the user associated with the identity, which may have been updated by the transaction.
-	return m.GetUser(ctx, user)
+	user_, err := m.GetUser(ctx, user)
+	if err != nil {
+		return nil, nil, err
+	}
+	return user_, types.Ptr(session), nil
 }

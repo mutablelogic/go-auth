@@ -5,8 +5,6 @@ import (
 
 	// Packages
 	auth "github.com/djthorpe/go-auth"
-	pgx "github.com/jackc/pgx/v5"
-	pgconn "github.com/jackc/pgx/v5/pgconn"
 	pg "github.com/mutablelogic/go-pg"
 )
 
@@ -14,25 +12,21 @@ func dbErr(err error) error {
 	if err == nil {
 		return nil
 	}
+	err = pg.NormalizeError(err)
+
 	var authErr auth.Err
-	if errors.As(err, &authErr) {
+	switch {
+	case errors.As(err, &authErr):
+		return err
+	case errors.Is(err, pg.ErrNotFound):
+		return auth.ErrNotFound.With(err)
+	case errors.Is(err, pg.ErrConflict):
+		return auth.ErrConflict.With(err)
+	case errors.Is(err, pg.ErrBadParameter):
+		return auth.ErrBadParameter.With(err)
+	case pg.IsDatabaseError(err):
+		return auth.ErrInternalServerError.With(err)
+	default:
 		return err
 	}
-	if errors.Is(err, pgx.ErrNoRows) || errors.Is(err, pg.ErrNotFound) {
-		return auth.ErrNotFound.With(err)
-	}
-
-	var pgErr *pgconn.PgError
-	if errors.As(err, &pgErr) {
-		switch pgErr.Code {
-		case "23505":
-			return auth.ErrConflict.With(pgErr.Message)
-		case "23503", "23502", "22P02", "22007", "22008":
-			return auth.ErrBadParameter.With(pgErr.Message)
-		default:
-			return auth.ErrInternalServerError.With(pgErr.Message)
-		}
-	}
-
-	return err
 }

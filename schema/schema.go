@@ -1,6 +1,9 @@
 package schema
 
-import _ "embed"
+import (
+	_ "embed"
+	"time"
+)
 
 ///////////////////////////////////////////////////////////////////////////////
 // GLOBALS
@@ -12,10 +15,13 @@ var Objects string
 var Queries string
 
 const (
-	DefaultSchema = "auth"
+	DefaultSchema     = "auth"
+	DefaultSessionTTL = time.Minute * 15
 )
 
 const (
+	GroupListMax    = 100
 	IdentityListMax = 100
+	ScopeListMax    = 100
 	UserListMax     = 100
 )

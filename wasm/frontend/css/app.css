@@ -1,0 +1,216 @@
+:root {
+    color-scheme: light;
+    --bg: #120c08;
+    --card: rgba(22, 22, 22, 0.82);
+    --ink: #f4f4f4;
+    --muted: rgba(244, 244, 244, 0.7);
+    --line: rgba(244, 244, 244, 0.14);
+    --accent: #f4f4f4;
+    --accent-2: #393939;
+    --error: #ffb3b8;
+    --shadow: 0 20px 60px rgba(0, 0, 0, 0.28);
+    --field: rgba(57, 57, 57, 0.96);
+    --field-border: rgba(244, 244, 244, 0.2);
+    --button-hover: #e8e8e8;
+}
+
+html,
+body {
+    min-height: 100%;
+}
+
+body {
+    margin: 0;
+}
+
+* {
+    box-sizing: border-box;
+}
+
+.cds--content {
+    min-height: 100vh;
+    padding: 0;
+    background: rgba(244, 244, 244, 0.92);
+    backdrop-filter: blur(12px);
+}
+
+.app-main {
+    display: grid;
+    gap: 1.5rem;
+    max-width: 72rem;
+}
+
+.app-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem;
+}
+
+.app-payload {
+    margin: 0;
+    min-height: 18rem;
+    padding: 1rem 1.25rem;
+    overflow: auto;
+    border-left: 4px solid #0f62fe;
+    background: rgba(255, 255, 255, 0.78);
+    box-shadow: var(--shadow);
+    font: 0.875rem/1.6 "IBM Plex Mono", "SFMono-Regular", monospace;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+body.login-page {
+    min-height: 100vh;
+    display: flex;
+    justify-content: flex-end;
+    align-items: stretch;
+    padding: 32px;
+    color: var(--ink);
+    background:
+        linear-gradient(90deg, rgba(0, 0, 0, 0.22) 0%, rgba(0, 0, 0, 0.38) 48%, rgba(0, 0, 0, 0.62) 100%),
+        url("../assets/vintage-radio-with-illuminated-dials-against-warm-bokeh-backdrop_235573-9384.jpg") center center / cover no-repeat;
+    background-color: var(--bg);
+}
+
+.login-page main {
+    width: min(520px, 100%);
+    background: var(--card);
+    border: 1px solid rgba(246, 234, 217, 0.12);
+    border-radius: 2px;
+    box-shadow: var(--shadow);
+    backdrop-filter: blur(10px);
+    overflow: hidden;
+}
+
+.login-page header {
+    padding: 28px 36px 20px;
+    border-bottom: 1px solid var(--line);
+}
+
+.login-page h1 {
+    margin: 0;
+    font-size: clamp(4rem, 10vw, 6rem);
+    font-weight: 200;
+    line-height: 0.92;
+    letter-spacing: -0.05em;
+    color: var(--muted);
+    transition: color 220ms ease;
+}
+
+.login-page.wasm-warmed h1 {
+    color: var(--ink);
+}
+
+.login-page #providers {
+    display: grid;
+    gap: 20px;
+    padding: 28px 36px 36px;
+}
+
+.login-page #providers[hidden] {
+    display: none;
+}
+
+.login-page .provider {
+    border: 1px solid var(--line);
+    border-radius: 2px;
+    padding: 20px;
+    background: rgba(255, 255, 255, 0.03);
+}
+
+.login-page .provider.google-provider {
+    border: 0;
+    border-radius: 0;
+    padding: 0;
+    background: transparent;
+}
+
+.login-page .provider.local-provider {
+    padding: 0;
+    background: rgba(255, 255, 255, 0.02);
+}
+
+.login-page .local-provider h2 {
+    margin: 0;
+    padding: 18px 20px;
+    border-bottom: 1px solid var(--line);
+}
+
+.login-page cds-text-input,
+.login-page cds-button {
+    display: block;
+}
+
+.login-page cds-text-input,
+.login-page cds-button.login-button,
+.login-page cds-button.google {
+    inline-size: 100%;
+}
+
+.login-page cds-button.login-button::part(button),
+.login-page cds-button.google::part(button) {
+    inline-size: 100%;
+    justify-content: center;
+}
+
+.login-page cds-button.google::part(button) {
+    background: #ffffff;
+    color: #1f1b16;
+    border-color: rgba(0, 0, 0, 0.22);
+    box-shadow: none;
+}
+
+.login-page cds-button.google[disabled]::part(button) {
+    background: #ffffff;
+    color: #6b6258;
+}
+
+.login-page .provider-icon {
+    width: 20px;
+    height: 20px;
+    display: inline-block;
+    flex: 0 0 auto;
+}
+
+.login-page .feedback {
+    margin: 0;
+    min-height: 1.25rem;
+    color: var(--muted);
+    font-size: 0.875rem;
+    line-height: 1.4;
+}
+
+.login-page .feedback[data-tone="error"] {
+    color: var(--error);
+}
+
+.login-page .feedback[data-tone="success"] {
+    color: #ffd29d;
+}
+
+.login-page .stack {
+    display: grid;
+    gap: 12px;
+}
+
+.login-page .local-form {
+    display: grid;
+    gap: 14px;
+    padding: 20px;
+}
+
+@media (max-width: 900px) {
+    body.login-page {
+        justify-content: center;
+        padding: 20px;
+    }
+
+    .app-main {
+        max-width: none;
+    }
+
+    .login-page #providers {
+        padding-left: 24px;
+        padding-right: 24px;
+    }
+}

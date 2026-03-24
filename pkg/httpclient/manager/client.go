@@ -1,4 +1,4 @@
-package httpclient
+package manager
 
 import (
 	// Packages
@@ -8,7 +8,7 @@ import (
 ///////////////////////////////////////////////////////////////////////////////
 // TYPES
 
-// Client is an auth HTTP client that wraps the base HTTP client.
+// Client is a management HTTP client that wraps the base HTTP client.
 type Client struct {
 	*client.Client
 }
@@ -16,7 +16,7 @@ type Client struct {
 ///////////////////////////////////////////////////////////////////////////////
 // LIFECYCLE
 
-// New creates a new auth HTTP client with the given base URL and options.
+// New creates a new management HTTP client with the given base URL and options.
 func New(url string, opts ...client.ClientOpt) (*Client, error) {
 	c := new(Client)
 	if client, err := client.New(append(opts, client.OptEndpoint(url))...); err != nil {

@@ -20,29 +20,53 @@ type SessionID uuid.UUID
 // SessionMeta contains the mutable fields for a session.
 type SessionMeta struct {
 	ExpiresIn *time.Duration `json:"expires_in,omitempty"`
-	RevokedAt *time.Time     `json:"revoked_at,omitempty"`
+	RevokedAt *time.Time     `json:"revoked_at,omitempty" format:"date-time" readonly:""`
 }
 
 // SessionInsert contains the fields required to create a new session.
 type SessionInsert struct {
-	User      UserID         `json:"user"`
+	User      UserID         `json:"user" format:"uuid"`
 	ExpiresIn *time.Duration `json:"expires_in"`
 }
 
 // Session represents a stored session row.
 type Session struct {
-	ID        SessionID `json:"id"`
-	User      UserID    `json:"user"`
-	ExpiresAt time.Time `json:"expires_at"`
-	CreatedAt time.Time `json:"created_at"`
+	ID        SessionID `json:"id" format:"uuid" readonly:""`
+	User      UserID    `json:"user" format:"uuid" readonly:""`
+	ExpiresAt time.Time `json:"expires_at" format:"date-time" readonly:""`
+	CreatedAt time.Time `json:"created_at" format:"date-time" readonly:""`
 	SessionMeta
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 // PUBLIC METHODS - UUID
 
+// SessionIDFromString parses a string into a SessionID, which is a UUID.
+func SessionIDFromString(s string) (SessionID, error) {
+	if uid, err := uuid.Parse(strings.Trim(s, `"`)); err != nil {
+		return SessionID(uuid.Nil), err
+	} else if uid == uuid.Nil {
+		return SessionID(uuid.Nil), auth.ErrBadParameter.With("id cannot be nil")
+	} else {
+		return SessionID(uid), nil
+	}
+}
+
 func (id SessionID) MarshalJSON() ([]byte, error) {
 	return json.Marshal(uuid.UUID(id))
+}
+
+func (id SessionID) MarshalText() ([]byte, error) {
+	return []byte(uuid.UUID(id).String()), nil
+}
+
+func (id *SessionID) UnmarshalText(text []byte) error {
+	uid, err := SessionIDFromString(string(text))
+	if err != nil {
+		return err
+	}
+	*id = uid
+	return nil
 }
 
 func (id *SessionID) UnmarshalJSON(data []byte) error {
@@ -111,6 +135,19 @@ func (s SessionInsert) Insert(bind *pg.Bind) (string, error) {
 	bind.Set("user", s.User)
 	bind.Set("expires_in", s.ExpiresIn)
 	return bind.Query("session.insert"), nil
+}
+
+// Update delegates mutable session fields to SessionMeta so SessionInsert can
+// satisfy the writer interface used by the query helpers.
+func (s SessionInsert) Update(bind *pg.Bind) error {
+	return SessionMeta{ExpiresIn: s.ExpiresIn}.Update(bind)
+}
+
+// Insert is not supported for SessionMeta because it does not contain the
+// immutable fields required to create a session row.
+func (s SessionMeta) Insert(bind *pg.Bind) (string, error) {
+	_ = bind
+	return "", auth.ErrNotImplemented.With("session meta insert is not supported")
 }
 
 // Update builds a PATCH-style SET clause from whichever fields are non-zero.

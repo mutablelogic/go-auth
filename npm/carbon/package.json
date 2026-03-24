@@ -1,0 +1,13 @@
+{
+  "name": "carbon-bundle",
+  "private": true,
+  "dependencies": {
+    "@carbon/web-components": "^2.0.0"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.0"
+  },
+  "scripts": {
+    "build": "esbuild index.js --bundle --format=esm --outfile=dist/bundle.js --minify && esbuild styles.css --bundle --outfile=dist/bundle.css --minify --loader:.ttf=file --asset-names=[dir]/[name]"
+  }
+}

@@ -2,29 +2,62 @@ package schema
 
 import (
 	"context"
+	"strings"
 
 	// Packages
-	oidc "github.com/coreos/go-oidc/v3/oidc"
 	auth "github.com/djthorpe/go-auth"
-	jwt "github.com/golang-jwt/jwt/v5"
+	authoidc "github.com/djthorpe/go-auth/pkg/oidc"
+	types "github.com/mutablelogic/go-server/pkg/types"
 )
 
 ///////////////////////////////////////////////////////////////////////////////
 // TYPES
 
 type TokenRequest struct {
-	Provider string         `json:"provider"`
-	Token    string         `json:"token"`
-	Meta     map[string]any `json:"meta,omitempty"`
+	Provider string  `json:"provider" enum:"oauth"`
+	Token    string  `json:"token"`
+	Meta     MetaMap `json:"meta,omitempty"`
 }
 
-type OpenIDConfiguration struct {
-	Issuer            string   `json:"issuer"`
-	JwksURI           string   `json:"jwks_uri"`
-	SigningAlgorithms []string `json:"id_token_signing_alg_values_supported"`
-	SubjectTypes      []string `json:"subject_types_supported"`
-	ResponseTypes     []string `json:"response_types_supported"`
-	ClaimsSupported   []string `json:"claims_supported"`
+// AuthorizationCodeRequest contains the upstream provider key and OAuth
+// authorization code that should be exchanged server-side for a verified
+// identity token.
+type AuthorizationCodeRequest struct {
+	Provider     string  `json:"provider"`
+	Code         string  `json:"code"`
+	RedirectURL  string  `json:"redirect_url"`
+	CodeVerifier string  `json:"code_verifier,omitempty"`
+	Nonce        string  `json:"nonce,omitempty"`
+	Meta         MetaMap `json:"meta,omitempty"`
+}
+
+// CredentialsRequest contains the local testing-only login information used
+// to synthesize a local identity without storing a password.
+type CredentialsRequest struct {
+	Email string  `json:"email"`
+	Meta  MetaMap `json:"meta,omitempty"`
+}
+
+// RefreshRequest contains a previously issued local session token that should
+// be verified and, if still eligible, refreshed.
+type RefreshRequest struct {
+	Token string `json:"token"`
+}
+
+// UserInfo is the client-facing authenticated identity view exposed by the
+// auth APIs.
+type UserInfo struct {
+	Sub    UserID   `json:"sub" format:"uuid" readonly:""`
+	Email  string   `json:"email,omitempty" readonly:""`
+	Name   string   `json:"name,omitempty" readonly:""`
+	Groups []string `json:"groups,omitempty" readonly:""`
+	Scopes []string `json:"scopes,omitempty" readonly:""`
+}
+
+// TokenResponse is returned by token-issuing auth endpoints.
+type TokenResponse struct {
+	Token    string    `json:"token" readonly:""`
+	UserInfo *UserInfo `json:"userinfo,omitempty" readonly:""`
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -46,51 +79,47 @@ func (req *TokenRequest) Validate(ctx context.Context) (map[string]any, error) {
 
 	switch req.Provider {
 	case ProviderOAuth:
-		issuer, err := jwtIssuer(req.Token)
-		if err != nil {
-			return nil, err
-		}
-		return jwtVerify(ctx, issuer, req.Token)
+		return authoidc.VerifyToken(ctx, req.Token)
 	default:
 		return nil, auth.ErrInvalidProvider.Withf("unsupported provider %q", req.Provider)
 	}
 }
 
-///////////////////////////////////////////////////////////////////////////////
-// PUBLIC FUNCTIONS
-
-// jwtIssuer extracts the iss claim from the JWT payload without verifying the
-// signature. The issuer is then used to perform OIDC discovery for verification.
-func jwtIssuer(token string) (string, error) {
-	claims := new(jwt.RegisteredClaims)
-	if _, _, err := jwt.NewParser().ParseUnverified(token, claims); err != nil {
-		return "", auth.ErrBadParameter.Withf("parse JWT: %v", err)
+func (req *AuthorizationCodeRequest) Validate() error {
+	if req.Provider == "" {
+		return auth.ErrInvalidProvider.With("provider is required")
+	} else if req.Code == "" {
+		return auth.ErrBadParameter.With("code is required")
+	} else if req.RedirectURL == "" {
+		return auth.ErrBadParameter.With("redirect_url is required")
 	}
-	if claims.Issuer == "" {
-		return "", auth.ErrBadParameter.With("JWT missing iss claim")
-	}
-	return claims.Issuer, nil
+	return nil
 }
 
-func jwtVerify(ctx context.Context, issuer, encrypted string) (map[string]any, error) {
-	// Create a provider
-	provider, err := oidc.NewProvider(ctx, issuer)
-	if err != nil {
-		return nil, err
-	}
-	verifier := provider.Verifier(&oidc.Config{
-		SkipClientIDCheck: true,
-	})
-
-	// Verify the token and extract claims
-	token, err := verifier.Verify(ctx, encrypted)
-	if err != nil {
-		return nil, err
+func (req *CredentialsRequest) Validate() error {
+	email := strings.TrimSpace(req.Email)
+	if email == "" {
+		return auth.ErrBadParameter.With("email is required")
 	}
 
-	var claims = map[string]any{}
-	if err := token.Claims(&claims); err != nil {
-		return nil, err
+	var normalized string
+	if !types.IsEmail(email, nil, &normalized) {
+		return auth.ErrBadParameter.With("email is invalid")
 	}
-	return claims, nil
+
+	req.Email = canonicalizeEmail(normalized)
+	return nil
+}
+
+func NewUserInfo(user *User) *UserInfo {
+	if user == nil {
+		return nil
+	}
+	return &UserInfo{
+		Sub:    user.ID,
+		Email:  user.Email,
+		Name:   user.Name,
+		Groups: user.Groups,
+		Scopes: user.Scopes,
+	}
 }

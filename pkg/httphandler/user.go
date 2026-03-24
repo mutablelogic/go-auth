@@ -9,6 +9,7 @@ import (
 	schema "github.com/djthorpe/go-auth/schema"
 	httprequest "github.com/mutablelogic/go-server/pkg/httprequest"
 	httpresponse "github.com/mutablelogic/go-server/pkg/httpresponse"
+	jsonschema "github.com/mutablelogic/go-server/pkg/jsonschema"
 	openapi "github.com/mutablelogic/go-server/pkg/openapi/schema"
 )
 
@@ -29,11 +30,84 @@ func UserHandler(mgr *manager.Manager) (string, http.HandlerFunc, *openapi.PathI
 		}, &openapi.PathItem{
 			Summary:     "User operations",
 			Description: "Operations on users",
+			Get: &openapi.Operation{
+				Tags:        []string{"User"},
+				Summary:     "List users",
+				Description: "Returns a filtered list of users.",
+				Parameters: []openapi.Parameter{
+					{
+						Name:        "email",
+						In:          openapi.ParameterInQuery,
+						Description: "Filter users by canonical email address.",
+						Schema:      jsonschema.MustFor[string](),
+					},
+					{
+						Name:        "status",
+						In:          openapi.ParameterInQuery,
+						Description: "Filter users by one or more lifecycle states.",
+						Schema:      jsonschema.MustFor[[]schema.UserStatus](),
+					},
+					{
+						Name:        "offset",
+						In:          openapi.ParameterInQuery,
+						Description: "Pagination offset.",
+						Schema:      jsonschema.MustFor[uint64](),
+					},
+					{
+						Name:        "limit",
+						In:          openapi.ParameterInQuery,
+						Description: "Maximum number of users to return.",
+						Schema:      jsonschema.MustFor[uint64](),
+					},
+				},
+				Responses: map[string]openapi.Response{
+					"200": {
+						Description: "User list.",
+						Content: map[string]openapi.MediaType{
+							"application/json": {
+								Schema: userListSchema(),
+							},
+						},
+					},
+					"400": {
+						Description: "Invalid filter or pagination parameters.",
+					},
+				},
+			},
+			Post: &openapi.Operation{
+				Tags:        []string{"User"},
+				Summary:     "Create user",
+				Description: "Creates a new local user.",
+				RequestBody: &openapi.RequestBody{
+					Description: "User fields for the new account.",
+					Required:    true,
+					Content: map[string]openapi.MediaType{
+						"application/json": {
+							Schema: userMetaSchema(),
+						},
+					},
+				},
+				Responses: map[string]openapi.Response{
+					"201": {
+						Description: "Created user.",
+						Content: map[string]openapi.MediaType{
+							"application/json": {
+								Schema: userSchema(),
+							},
+						},
+					},
+					"400": {
+						Description: "Invalid request body or user creation failure.",
+					},
+				},
+			},
 		}
 }
 
 // Return an http.HandlerFunc for the user endpoint
 func UserItemHandler(mgr *manager.Manager) (string, http.HandlerFunc, *openapi.PathItem) {
+	userIDSchema := uuidSchema()
+
 	return "user/{user}", func(w http.ResponseWriter, r *http.Request) {
 			// Convert user to uuid
 			user, err := schema.UserIDFromString(r.PathValue("user"))
@@ -55,6 +129,100 @@ func UserItemHandler(mgr *manager.Manager) (string, http.HandlerFunc, *openapi.P
 		}, &openapi.PathItem{
 			Summary:     "User operations",
 			Description: "Operations on a specific user",
+			Get: &openapi.Operation{
+				Tags:        []string{"User"},
+				Summary:     "Get user",
+				Description: "Returns a single user by ID.",
+				Parameters: []openapi.Parameter{
+					{
+						Name:        "user",
+						In:          openapi.ParameterInPath,
+						Description: "User ID.",
+						Required:    true,
+						Schema:      userIDSchema,
+					},
+				},
+				Responses: map[string]openapi.Response{
+					"200": {
+						Description: "Requested user.",
+						Content: map[string]openapi.MediaType{
+							"application/json": {
+								Schema: userSchema(),
+							},
+						},
+					},
+					"400": {
+						Description: "Invalid user ID.",
+					},
+					"404": {
+						Description: "User not found.",
+					},
+				},
+			},
+			Patch: &openapi.Operation{
+				Tags:        []string{"User"},
+				Summary:     "Update user",
+				Description: "Updates mutable fields on a user.",
+				Parameters: []openapi.Parameter{
+					{
+						Name:        "user",
+						In:          openapi.ParameterInPath,
+						Description: "User ID.",
+						Required:    true,
+						Schema:      userIDSchema,
+					},
+				},
+				RequestBody: &openapi.RequestBody{
+					Description: "User fields to update.",
+					Required:    true,
+					Content: map[string]openapi.MediaType{
+						"application/json": {
+							Schema: userMetaSchema(),
+						},
+					},
+				},
+				Responses: map[string]openapi.Response{
+					"200": {
+						Description: "Updated user.",
+						Content: map[string]openapi.MediaType{
+							"application/json": {
+								Schema: userSchema(),
+							},
+						},
+					},
+					"400": {
+						Description: "Invalid user ID or request body.",
+					},
+					"404": {
+						Description: "User not found.",
+					},
+				},
+			},
+			Delete: &openapi.Operation{
+				Tags:        []string{"User"},
+				Summary:     "Delete user",
+				Description: "Deletes a user by ID.",
+				Parameters: []openapi.Parameter{
+					{
+						Name:        "user",
+						In:          openapi.ParameterInPath,
+						Description: "User ID.",
+						Required:    true,
+						Schema:      userIDSchema,
+					},
+				},
+				Responses: map[string]openapi.Response{
+					"204": {
+						Description: "User deleted.",
+					},
+					"400": {
+						Description: "Invalid user ID.",
+					},
+					"404": {
+						Description: "User not found.",
+					},
+				},
+			},
 		}
 }
 

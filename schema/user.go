@@ -2,7 +2,9 @@ package schema
 
 import (
 	"encoding/json"
+	"net/url"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -25,22 +27,24 @@ type UserID uuid.UUID
 // UserMeta contains the mutable profile fields of a user.
 // Email is the canonical address used to merge logins across providers.
 type UserMeta struct {
-	Name      string         `json:"name"`
-	Email     string         `json:"email"`
-	Status    *UserStatus    `json:"status,omitempty"`
-	Meta      map[string]any `json:"meta,omitempty"`
-	ExpiresAt *time.Time     `json:"expires_at,omitzero"`
+	Name      string      `json:"name,omitempty"`
+	Email     string      `json:"email,omitempty"`
+	Groups    []string    `json:"groups,omitempty"`
+	Status    *UserStatus `json:"status,omitempty" enum:"new,active,inactive,suspended,deleted"`
+	Meta      MetaMap     `json:"meta,omitempty"`
+	ExpiresAt *time.Time  `json:"expires_at,omitzero" format:"date-time"`
 }
 
 // User represents a user account in the system. It contains both
 // immutable and mutable fields.
 type User struct {
-	ID         UserID         `json:"id"`
-	CreatedAt  time.Time      `json:"created_at"`
-	ModifiedAt *time.Time     `json:"modified_at,omitempty"`
-	Claims     map[string]any `json:"claims,omitempty"`
-	Groups     []string       `json:"groups,omitempty"`
-	Scopes     []string       `json:"scopes,omitempty"`
+	ID         UserID         `json:"id" format:"uuid" readonly:""`
+	CreatedAt  time.Time      `json:"created_at" format:"date-time" readonly:""`
+	ModifiedAt *time.Time     `json:"modified_at,omitempty" format:"date-time" readonly:""`
+	Claims     map[string]any `json:"claims,omitempty" readonly:""`
+	EffectiveMeta MetaMap     `json:"effective_meta,omitempty" readonly:""`
+	DisabledGroups []string   `json:"disabled_groups,omitempty" readonly:""`
+	Scopes     []string       `json:"scopes,omitempty" readonly:""`
 	UserMeta
 }
 
@@ -48,13 +52,13 @@ type User struct {
 type UserListRequest struct {
 	pg.OffsetLimit
 	Email  string       `json:"email,omitempty"`
-	Status []UserStatus `json:"status,omitempty"`
+	Status []UserStatus `json:"status,omitempty" enum:"new,active,inactive,suspended,deleted"`
 }
 
 // UserList represents a paginated list of users.
 type UserList struct {
 	pg.OffsetLimit
-	Count uint   `json:"count"`
+	Count uint   `json:"count" readonly:""`
 	Body  []User `json:"body,omitempty"`
 }
 
@@ -96,10 +100,38 @@ func UserIDFromString(s string) (UserID, error) {
 }
 
 ///////////////////////////////////////////////////////////////////////////////
+// STRINGIFY
+
+func (id UserID) String() string {
+	return uuid.UUID(id).String()
+}
+
+func (id UserID) MarshalText() ([]byte, error) {
+	return []byte(id.String()), nil
+}
+
+func (u UserList) String() string {
+	return types.Stringify(u)
+}
+
+func (u User) String() string {
+	return types.Stringify(u)
+}
+
+///////////////////////////////////////////////////////////////////////////////
 // PUBLIC METHODS - UUID
 
 func (id UserID) MarshalJSON() ([]byte, error) {
 	return json.Marshal(uuid.UUID(id))
+}
+
+func (id *UserID) UnmarshalText(text []byte) error {
+	uid, err := UserIDFromString(string(text))
+	if err != nil {
+		return err
+	}
+	*id = uid
+	return nil
 }
 
 func (id *UserID) UnmarshalJSON(data []byte) error {
@@ -116,6 +148,26 @@ func (id *UserID) UnmarshalJSON(data []byte) error {
 
 	// Return success
 	return nil
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// PUBLIC METHODS - QUERY
+
+func (req UserListRequest) Query() url.Values {
+	values := url.Values{}
+	if req.Offset > 0 {
+		values.Set("offset", strconv.FormatUint(req.Offset, 10))
+	}
+	if req.Limit != nil {
+		values.Set("limit", strconv.FormatUint(types.Value(req.Limit), 10))
+	}
+	if req.Email != "" {
+		values.Set("email", req.Email)
+	}
+	for _, status := range req.Status {
+		values.Add("status", string(status))
+	}
+	return values
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -183,12 +235,14 @@ func (u *User) Scan(row pg.Row) error {
 		&u.Name,
 		&u.Email,
 		&u.Meta,
+		&u.EffectiveMeta,
 		&u.Status,
 		&u.CreatedAt,
 		&u.ExpiresAt,
 		&u.ModifiedAt,
 		&u.Claims,
 		&u.Groups,
+		&u.DisabledGroups,
 		&u.Scopes,
 	)
 }
@@ -217,7 +271,7 @@ func (list *UserList) ScanCount(row pg.Row) error {
 func (u UserMeta) Insert(bind *pg.Bind) (string, error) {
 	// Fix meta
 	if u.Meta == nil {
-		u.Meta = map[string]any{}
+		u.Meta = MetaMap{}
 	}
 
 	// Validate email and name, which are required for user creation.
@@ -240,14 +294,13 @@ func (u UserMeta) Insert(bind *pg.Bind) (string, error) {
 		bind.Set("name", name)
 	}
 
-	// Convert meta to JSON string
-	meta, err := json.Marshal(u.Meta)
+	meta, err := metaInsertExpr(u.Meta.Map())
 	if err != nil {
 		return "", err
 	}
 
 	// Set all fields for insert
-	bind.Set("meta", string(meta))
+	bind.Set("meta", meta)
 	if u.Status != nil && !IsValidUserStatus(*u.Status) {
 		return "", auth.ErrBadParameter.Withf("invalid user status %q", *u.Status)
 	} else if u.Status != nil {
@@ -282,11 +335,11 @@ func (u UserMeta) Update(bind *pg.Bind) error {
 		bind.Append("patch", "status = "+bind.Set("status", *u.Status))
 	}
 	if u.Meta != nil {
-		meta, err := json.Marshal(u.Meta)
+		expr, err := metaPatchExpr(bind, "meta", "meta", u.Meta.Map())
 		if err != nil {
 			return err
 		}
-		bind.Append("patch", "meta = "+bind.Set("meta", string(meta)))
+		bind.Append("patch", "meta = "+expr)
 	}
 	if u.ExpiresAt != nil {
 		if u.ExpiresAt.IsZero() {

@@ -1,7 +1,6 @@
 package schema
 
 import (
-	"encoding/json"
 	"strings"
 	"time"
 
@@ -9,6 +8,7 @@ import (
 	auth "github.com/djthorpe/go-auth"
 	uuid "github.com/google/uuid"
 	pg "github.com/mutablelogic/go-pg"
+	types "github.com/mutablelogic/go-server/pkg/types"
 )
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -36,21 +36,21 @@ type IdentityInsert struct {
 type Identity struct {
 	IdentityKey
 	IdentityMeta
-	User       UserID    `json:"user"`
-	CreatedAt  time.Time `json:"created_at"`
-	ModifiedAt time.Time `json:"modified_at"`
+	User       UserID    `json:"user" format:"uuid" readonly:""`
+	CreatedAt  time.Time `json:"created_at" format:"date-time" readonly:""`
+	ModifiedAt time.Time `json:"modified_at" format:"date-time" readonly:""`
 }
 
 // IdentityListRequest contains the query parameters for listing identities.
 type IdentityListRequest struct {
 	pg.OffsetLimit
-	User *uuid.UUID `json:"user,omitempty"`
+	User *uuid.UUID `json:"user,omitempty" format:"uuid"`
 }
 
 // IdentityList represents a paginated list of identities.
 type IdentityList struct {
 	pg.OffsetLimit
-	Count uint       `json:"count"`
+	Count uint       `json:"count" readonly:""`
 	Body  []Identity `json:"body,omitempty"`
 }
 
@@ -66,7 +66,14 @@ func NewIdentityFromClaims(claims map[string]any) (IdentityInsert, error) {
 	if !ok || strings.TrimSpace(subject) == "" {
 		return IdentityInsert{}, auth.ErrBadParameter.With("claims missing sub")
 	}
-	email, _ := claims["email"].(string)
+	rawEmail, _ := claims["email"].(string)
+	email := canonicalizeEmail(rawEmail)
+	if rawEmail = strings.TrimSpace(rawEmail); rawEmail != "" {
+		var normalized string
+		if types.IsEmail(rawEmail, nil, &normalized) {
+			email = canonicalizeEmail(normalized)
+		}
+	}
 
 	return IdentityInsert{
 		IdentityKey: IdentityKey{
@@ -91,7 +98,11 @@ func (i IdentityInsert) Name() string {
 			}
 		}
 	}
-	return strings.TrimSpace(i.Email)
+	var name, email string
+	if types.IsEmail(strings.TrimSpace(i.Email), &name, &email) && strings.TrimSpace(name) != "" {
+		return name
+	}
+	return strings.TrimSpace(email)
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -198,20 +209,19 @@ func (i IdentityMeta) Insert(bind *pg.Bind) (string, error) {
 		return "", auth.ErrBadParameter.With("sub is required")
 	}
 
+	// Email
 	if email := canonicalizeEmail(i.Email); email != "" {
 		bind.Set("email", email)
 	} else {
 		bind.Set("email", "")
 	}
 
-	if i.Claims == nil {
-		i.Claims = map[string]any{}
-	}
-	claims, err := json.Marshal(i.Claims)
+	// Claims
+	claims, err := metaInsertExpr(i.Claims)
 	if err != nil {
 		return "", err
 	}
-	bind.Set("claims", string(claims))
+	bind.Set("claims", claims)
 
 	return bind.Query("identity.insert"), nil
 }
@@ -241,11 +251,11 @@ func (i IdentityMeta) Update(bind *pg.Bind) error {
 	}
 
 	if i.Claims != nil {
-		claims, err := json.Marshal(i.Claims)
+		expr, err := metaPatchExpr(bind, "claims", "claims", i.Claims)
 		if err != nil {
 			return err
 		}
-		bind.Append("patch", "claims = "+bind.Set("claims", string(claims)))
+		bind.Append("patch", "claims = "+expr)
 	}
 
 	if patch := bind.Join("patch", ", "); patch == "" {
