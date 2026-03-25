@@ -58,6 +58,7 @@ func RegisterHandlers(manager *manager.Manager, router server.HTTPRouter, auth b
 	register(RefreshHandler(manager))
 	register(RevokeHandler(manager))
 	register(ConfigHandler(manager))
+	register(ProtectedResourceHandler(manager))
 	register(JWKSHandler(manager))
 
 	// Return any errors

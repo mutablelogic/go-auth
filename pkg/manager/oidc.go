@@ -55,6 +55,7 @@ func (m *Manager) OIDCConfig(r *http.Request) (oidc.Configuration, error) {
 	}
 	return oidc.Configuration{
 		Issuer:            issuer,
+		TokenEndpoint:     oidc.AuthCodeURL(issuer),
 		UserInfoEndpoint:  oidc.UserInfoURL(issuer),
 		JwksURI:           oidc.JWKSURL(issuer),
 		SigningAlgorithms: []string{oidc.SigningAlgorithm},
@@ -62,6 +63,20 @@ func (m *Manager) OIDCConfig(r *http.Request) (oidc.Configuration, error) {
 		ResponseTypes:     []string{"id_token"},
 		ScopesSupported:   []string{oidc.ScopeOpenID, oidc.ScopeEmail, oidc.ScopeProfile},
 		ClaimsSupported:   []string{"iss", "sub", "sid", "aud", "exp", "iat", "nbf", "email", "email_verified", "name", "groups", "scopes", "user", "session"},
+	}, nil
+}
+
+// ProtectedResourceMetadata returns OAuth protected-resource metadata for this server.
+func (m *Manager) ProtectedResourceMetadata(r *http.Request) (oidc.ProtectedResourceMetadata, error) {
+	issuer, err := m.OIDCIssuer(r)
+	if err != nil {
+		return oidc.ProtectedResourceMetadata{}, err
+	}
+	return oidc.ProtectedResourceMetadata{
+		Resource:               issuer,
+		AuthorizationServers:   []string{issuer},
+		BearerMethodsSupported: []string{"header"},
+		ResourceName:           "go-auth",
 	}, nil
 }
 

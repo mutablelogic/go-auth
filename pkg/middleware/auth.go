@@ -2,12 +2,14 @@ package middleware
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
 
 	// Packages
 	manager "github.com/djthorpe/go-auth/pkg/manager"
+	oidc "github.com/djthorpe/go-auth/pkg/oidc"
 	schema "github.com/djthorpe/go-auth/schema"
 	uuid "github.com/google/uuid"
 	httpresponse "github.com/mutablelogic/go-server/pkg/httpresponse"
@@ -16,65 +18,63 @@ import (
 ///////////////////////////////////////////////////////////////////////////////
 // PUBLIC METHODS
 
-// NewMiddleware returns an HTTP middleware that verifies a locally issued JWT,
-// extracts the embedded session and user claims, and rejects revoked, expired,
-// or inactive identities.
-func NewMiddleware(mgr *manager.Manager) func(http.HandlerFunc) http.HandlerFunc {
+// NewAuth returns an HTTP middleware that verifies a locally issued JWT,
+// extracts the embedded session and user claims, and rejects revoked or expired
+// sessions or users.
+func NewAuthN(mgr *manager.Manager) func(http.HandlerFunc) http.HandlerFunc {
 	return func(next http.HandlerFunc) http.HandlerFunc {
 		return func(w http.ResponseWriter, r *http.Request) {
 			token, ok := bearerToken(r)
 			if !ok {
-				_ = httpresponse.Error(w, httpresponse.ErrNotAuthorized.With("missing bearer token"))
+				writeUnauthorized(w, r, mgr, "invalid_request", "missing bearer token")
 				return
 			}
-
 			issuer, err := mgr.OIDCIssuer(r)
 			if err != nil {
 				_ = httpresponse.Error(w, httpresponse.ErrInternalError.With(err))
 				return
 			}
-
 			claims, err := mgr.OIDCVerify(token, issuer)
 			if err != nil {
-				_ = httpresponse.Error(w, httpresponse.ErrNotAuthorized.With(err))
+				writeUnauthorized(w, r, mgr, "invalid_token", err)
 				return
 			}
-
 			session, err := sessionFromClaims(claims)
 			if err != nil {
-				_ = httpresponse.Error(w, httpresponse.ErrNotAuthorized.With(err))
+				writeUnauthorized(w, r, mgr, "invalid_token", err)
 				return
 			}
 			user, err := userFromClaims(claims)
 			if err != nil {
-				_ = httpresponse.Error(w, httpresponse.ErrNotAuthorized.With(err))
+				writeUnauthorized(w, r, mgr, "invalid_token", err)
 				return
 			}
 			if err := validateClaimBindings(claims, user, session); err != nil {
-				_ = httpresponse.Error(w, httpresponse.ErrNotAuthorized.With(err))
+				writeUnauthorized(w, r, mgr, "invalid_token", err)
 				return
 			}
 			if session.RevokedAt != nil {
-				_ = httpresponse.Error(w, httpresponse.ErrNotAuthorized.With("session is revoked"))
+				writeUnauthorized(w, r, mgr, "invalid_token", "session is revoked")
 				return
 			}
 			now := time.Now().UTC()
 			if !session.ExpiresAt.After(now) {
-				_ = httpresponse.Error(w, httpresponse.ErrNotAuthorized.With("session is expired"))
+				writeUnauthorized(w, r, mgr, "invalid_token", "session is expired")
 				return
 			}
 			if user.ExpiresAt != nil && !user.ExpiresAt.After(now) {
-				_ = httpresponse.Error(w, httpresponse.ErrNotAuthorized.With("user is expired"))
+				writeUnauthorized(w, r, mgr, "invalid_token", "user is expired")
 				return
 			}
-			if user.Status != nil && *user.Status != schema.UserStatusActive {
-				_ = httpresponse.Error(w, httpresponse.ErrNotAuthorized.With("user is not active"))
-				return
-			}
-
 			next(w, r.WithContext(withAuthContext(r.Context(), claims, user, session)))
 		}
 	}
+}
+
+// NewMiddleware preserves the older constructor name used by tests and
+// callers while delegating to NewAuthN.
+func NewMiddleware(mgr *manager.Manager) func(http.HandlerFunc) http.HandlerFunc {
+	return NewAuthN(mgr)
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -143,4 +143,20 @@ func bearerToken(r *http.Request) (string, bool) {
 	}
 	token := strings.TrimSpace(parts[1])
 	return token, token != ""
+}
+
+func writeUnauthorized(w http.ResponseWriter, r *http.Request, mgr *manager.Manager, code string, detail any) {
+	description := strings.TrimSpace(fmt.Sprint(detail))
+	challenge := []string{fmt.Sprintf(`error=%q`, strings.TrimSpace(code))}
+	if description != "" {
+		challenge = append(challenge, fmt.Sprintf(`error_description=%q`, description))
+	}
+	if mgr != nil {
+		if issuer, err := mgr.OIDCIssuer(r); err == nil {
+			resourceMetadata := strings.TrimRight(issuer, "/") + "/" + oidc.ProtectedResourcePath
+			challenge = append(challenge, fmt.Sprintf(`resource_metadata=%q`, resourceMetadata))
+		}
+	}
+	w.Header().Set("WWW-Authenticate", "Bearer "+strings.Join(challenge, ", "))
+	_ = httpresponse.Error(w, httpresponse.ErrNotAuthorized.With(detail))
 }

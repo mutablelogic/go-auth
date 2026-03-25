@@ -138,6 +138,13 @@ func TestJWKSURL(t *testing.T) {
 	)
 }
 
+func TestAuthCodeURL(t *testing.T) {
+	assert.Equal(t,
+		"https://issuer.example.com/api/auth/code",
+		oidc.AuthCodeURL("https://issuer.example.com/api/"),
+	)
+}
+
 func TestUserInfoURL(t *testing.T) {
 	assert.Equal(t,
 		"https://issuer.example.com/api/auth/userinfo",

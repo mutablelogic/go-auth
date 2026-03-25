@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -15,6 +16,7 @@ import (
 	authschema "github.com/djthorpe/go-auth/schema"
 	jwt "github.com/golang-jwt/jwt/v5"
 	uuid "github.com/google/uuid"
+	client "github.com/mutablelogic/go-client"
 	assert "github.com/stretchr/testify/assert"
 	require "github.com/stretchr/testify/require"
 	oauth2 "golang.org/x/oauth2"
@@ -641,6 +643,61 @@ func TestClientAuthMethods(t *testing.T) {
 		require.Error(err)
 		assert.Equal("", idToken)
 		assert.EqualError(err, "upstream token response missing id_token")
+	})
+
+	t.Run("AuthConfigUnauthorizedIncludesRecordedHeaders", func(t *testing.T) {
+		assert := assert.New(t)
+		require := require.New(t)
+
+		const authConfigHeader = `</auth/config>; rel="oauth-config"`
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			require.Equal(http.MethodGet, r.Method)
+			require.Equal("/auth/config", r.URL.Path)
+			assert.Equal(authConfigHeader, r.Header.Get("Link"))
+			w.Header().Set("WWW-Authenticate", `Bearer realm="auth", error="invalid_token"`)
+			http.Error(w, "not authorized", http.StatusUnauthorized)
+		}))
+		defer server.Close()
+
+		client, err := New(server.URL, client.OptHeader("Link", authConfigHeader))
+		require.NoError(err)
+
+		response, err := client.AuthConfig(context.Background())
+		require.Error(err)
+		assert.Nil(response)
+		assert.ErrorContains(err, "401 Unauthorized")
+		assert.ErrorContains(err, "WWW-Authenticate: Bearer realm=\"auth\", error=\"invalid_token\"")
+		assert.ErrorContains(err, "Link: </auth/config>; rel=\"oauth-config\"")
+	})
+
+	t.Run("ExchangeAuthorizationCodeUnauthorizedIncludesRecordedHeaders", func(t *testing.T) {
+		assert := assert.New(t)
+		require := require.New(t)
+
+		const authConfigHeader = `</auth/config>; rel="oauth-config"`
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			require.Equal(http.MethodPost, r.Method)
+			require.True(strings.HasSuffix(r.URL.Path, "/token"))
+			assert.Equal(authConfigHeader, r.Header.Get("Link"))
+			w.Header().Set("WWW-Authenticate", `Bearer realm="issuer", error="invalid_client"`)
+			http.Error(w, "invalid client", http.StatusUnauthorized)
+		}))
+		defer server.Close()
+
+		client, err := New("https://unused.example.test", client.OptHeader("Link", authConfigHeader))
+		require.NoError(err)
+
+		idToken, err := client.ExchangeAuthorizationCode(context.Background(), &oidc.AuthorizationCodeFlow{
+			AuthorizationEndpoint: server.URL + "/authorize",
+			TokenEndpoint:         server.URL + "/token",
+			ClientID:              "client-id",
+			RedirectURL:           "http://127.0.0.1:8085/callback",
+		}, "auth-code-123")
+		require.Error(err)
+		assert.Equal("", idToken)
+		assert.ErrorContains(err, "invalid_client")
+		assert.ErrorContains(err, "WWW-Authenticate: Bearer realm=\"issuer\", error=\"invalid_client\"")
+		assert.ErrorContains(err, "Link: </auth/config>; rel=\"oauth-config\"")
 	})
 
 	t.Run("RevokePostsToken", func(t *testing.T) {

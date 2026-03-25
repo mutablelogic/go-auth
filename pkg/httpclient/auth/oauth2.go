@@ -123,6 +123,9 @@ func (c *Client) ExchangeAuthorizationCode(ctx context.Context, flow *oidc.Autho
 	if ctx == nil {
 		ctx = context.Background()
 	}
+	if c != nil && c.Client != nil && c.Client.Client != nil {
+		ctx = context.WithValue(ctx, oauth2.HTTPClient, c.Client.Client)
+	}
 	if flow == nil {
 		return "", fmt.Errorf("authorization flow is required")
 	}
@@ -140,7 +143,7 @@ func (c *Client) ExchangeAuthorizationCode(ctx context.Context, flow *oidc.Autho
 	}
 	token, err := config.Exchange(ctx, code, options...)
 	if err != nil {
-		return "", err
+		return "", c.authError(err)
 	}
 	idToken, _ := token.Extra("id_token").(string)
 	idToken = strings.TrimSpace(idToken)

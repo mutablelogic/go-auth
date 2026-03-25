@@ -20,6 +20,17 @@ type PublicClientConfiguration struct {
 // provider or role name.
 type PublicClientConfigurations map[string]PublicClientConfiguration
 
+// ProtectedResourceMetadata describes this server as an OAuth protected
+// resource.
+type ProtectedResourceMetadata struct {
+	Resource               string   `json:"resource"`
+	AuthorizationServers   []string `json:"authorization_servers,omitempty"`
+	ScopesSupported        []string `json:"scopes_supported,omitempty"`
+	BearerMethodsSupported []string `json:"bearer_methods_supported,omitempty"`
+	ResourceDocumentation  string   `json:"resource_documentation,omitempty"`
+	ResourceName           string   `json:"resource_name,omitempty"`
+}
+
 // ClientConfiguration contains the full upstream provider configuration,
 // including the client secret that must remain server-side.
 type ClientConfiguration struct {

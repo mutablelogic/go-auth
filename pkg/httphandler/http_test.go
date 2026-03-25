@@ -467,9 +467,31 @@ func Test_http_001(t *testing.T) {
 		handler(res, req)
 
 		require.Equal(http.StatusOK, res.Code)
-		var response map[string]any
+		var response oidc.Configuration
 		require.NoError(json.Unmarshal(res.Body.Bytes(), &response))
-		assert.Equal(issuer, response["issuer"])
+		assert.Equal(issuer, response.Issuer)
+		assert.Equal(oidc.AuthCodeURL(issuer), response.TokenEndpoint)
+	})
+
+	t.Run("ProtectedResourceHandlerReturnsMetadata", func(t *testing.T) {
+		assert := assert.New(t)
+		require := require.New(t)
+
+		mgr, issuer := newHTTPTestManager(t)
+		_, handler, _ := ProtectedResourceHandler(mgr)
+		res := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "/.well-known/oauth-protected-resource", nil)
+		req.Host = "localhost:8084"
+
+		handler(res, req)
+
+		require.Equal(http.StatusOK, res.Code)
+		var response oidc.ProtectedResourceMetadata
+		require.NoError(json.Unmarshal(res.Body.Bytes(), &response))
+		assert.Equal(issuer, response.Resource)
+		assert.Equal([]string{issuer}, response.AuthorizationServers)
+		assert.Equal([]string{"header"}, response.BearerMethodsSupported)
+		assert.Equal("go-auth", response.ResourceName)
 	})
 
 	t.Run("AuthConfigHandlerReturnsPublicConfig", func(t *testing.T) {
@@ -540,6 +562,19 @@ func Test_http_001(t *testing.T) {
 		_, handler, _ := ConfigHandler(mgr)
 		res := httptest.NewRecorder()
 		req := httptest.NewRequest(http.MethodPost, "/.well-known/openid-configuration", nil)
+
+		handler(res, req)
+
+		require.Equal(http.StatusMethodNotAllowed, res.Code)
+	})
+
+	t.Run("ProtectedResourceHandlerMethodNotAllowed", func(t *testing.T) {
+		require := require.New(t)
+
+		mgr, _ := newHTTPTestManager(t)
+		_, handler, _ := ProtectedResourceHandler(mgr)
+		res := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, "/.well-known/oauth-protected-resource", nil)
 
 		handler(res, req)
 

@@ -44,7 +44,7 @@ func (c *Client) LoginToken(ctx context.Context, token string) (*authschema.Toke
 
 	var response authschema.TokenResponse
 	if err := c.DoWithContext(ctx, payload, &response, client.OptAbsPath("auth", "login")); err != nil {
-		return nil, err
+		return nil, c.authError(err)
 	}
 	return &response, nil
 }
@@ -76,7 +76,7 @@ func (c *Client) LoginCode(ctx context.Context, provider string, flow *oidc.Auth
 
 	var response authschema.TokenResponse
 	if err := c.DoWithContext(ctx, payload, &response, client.OptAbsPath("auth", "code")); err != nil {
-		return nil, err
+		return nil, c.authError(err)
 	}
 	return &response, nil
 }
@@ -91,7 +91,7 @@ func (c *Client) Refresh(ctx context.Context, token string) (*authschema.TokenRe
 
 	var response authschema.TokenResponse
 	if err := c.DoWithContext(ctx, payload, &response, client.OptAbsPath("auth", "refresh")); err != nil {
-		return nil, err
+		return nil, c.authError(err)
 	}
 	return &response, nil
 }
@@ -104,7 +104,7 @@ func (c *Client) UserInfo(ctx context.Context, token string) (*authschema.UserIn
 		client.OptAbsPath("auth", "userinfo"),
 		client.OptToken(client.Token{Scheme: client.Bearer, Value: strings.TrimSpace(token)}),
 	); err != nil {
-		return nil, err
+		return nil, c.authError(err)
 	}
 	return &response, nil
 }
@@ -120,7 +120,7 @@ func (c *Client) OIDCConfig(ctx context.Context, issuer string) (*oidc.Configura
 		client.OptReqEndpoint(issuer),
 		client.OptPath(oidc.ConfigPath),
 	); err != nil {
-		return nil, err
+		return nil, c.authError(err)
 	}
 	return &response, nil
 }
@@ -147,7 +147,7 @@ func (c *Client) OAuthProviderConfig(ctx context.Context, provider string) (stri
 func (c *Client) AuthConfig(ctx context.Context) (oidc.PublicClientConfigurations, error) {
 	var response oidc.PublicClientConfigurations
 	if err := c.DoWithContext(ctx, client.NewRequest(), &response, client.OptAbsPath("auth", "config")); err != nil {
-		return nil, err
+		return nil, c.authError(err)
 	}
 	return response, nil
 }
@@ -159,5 +159,5 @@ func (c *Client) Revoke(ctx context.Context, token string) error {
 	if err != nil {
 		return err
 	}
-	return c.DoWithContext(ctx, payload, nil, client.OptAbsPath("auth", "revoke"))
+	return c.authError(c.DoWithContext(ctx, payload, nil, client.OptAbsPath("auth", "revoke")))
 }
