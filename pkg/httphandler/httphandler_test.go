@@ -2,6 +2,7 @@ package httphandler
 
 import (
 	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	// Packages
@@ -34,6 +35,15 @@ func (f *fakeRouter) RegisterFunc(path string, handler http.HandlerFunc, middlew
 		spec:       spec,
 	})
 	return f.err
+}
+
+func (f *fakeRouter) route(path string) (registeredRoute, bool) {
+	for _, route := range f.routes {
+		if route.path == path {
+			return route, true
+		}
+	}
+	return registeredRoute{}, false
 }
 
 func Test_httphandler_001(t *testing.T) {
@@ -72,5 +82,51 @@ func Test_httphandler_001(t *testing.T) {
 		assert.Contains(paths, "/auth/revoke")
 		assert.Contains(paths, ".well-known/openid-configuration")
 		assert.Contains(paths, ".well-known/jwks.json")
+	})
+
+	t.Run("RegisterHandlersProtectsChangesWhenAuthEnabled", func(t *testing.T) {
+		assert := assert.New(t)
+		require := require.New(t)
+
+		mgr, _ := newHTTPTestManager(t)
+		router := new(fakeRouter)
+
+		err := RegisterHandlers(mgr, router, true)
+		require.NoError(err)
+
+		route, ok := router.route("changes")
+		require.True(ok)
+
+		res := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "/changes", nil)
+		req.Header.Set("Accept", "application/json")
+
+		route.handler(res, req)
+
+		require.Equal(http.StatusUnauthorized, res.Code)
+		assert.Contains(res.Body.String(), "missing bearer token")
+	})
+
+	t.Run("RegisterHandlersLeavesChangesOpenWhenAuthDisabled", func(t *testing.T) {
+		assert := assert.New(t)
+		require := require.New(t)
+
+		mgr, _ := newHTTPTestManager(t)
+		router := new(fakeRouter)
+
+		err := RegisterHandlers(mgr, router, false)
+		require.NoError(err)
+
+		route, ok := router.route("changes")
+		require.True(ok)
+
+		res := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "/changes", nil)
+		req.Header.Set("Accept", "application/json")
+
+		route.handler(res, req)
+
+		require.Equal(http.StatusNotAcceptable, res.Code)
+		assert.Contains(res.Body.String(), "text/event-stream")
 	})
 }

@@ -31,10 +31,11 @@ type ServerCommands struct {
 type RunServer struct {
 	cmd.RunServer
 	PostgresFlags
-	CleanupFlags `embed:"" prefix:"cleanup."`
-	GoogleFlags  `embed:"" prefix:"google."`
-	Auth         bool `name:"auth" help:"Whether to enable authentication for protected endpoints." default:"true" negatable:""`
-	UI           bool `name:"ui" help:"Whether to serve the embedded web user interface" default:"true" negatable:""`
+	CleanupFlags  `embed:"" prefix:"cleanup."`
+	GoogleFlags   `embed:"" prefix:"google."`
+	NotifyChannel string `name:"notify-channel" help:"PostgreSQL LISTEN/NOTIFY channel for table change streaming. Empty disables change notifications." default:"backend.table_change"`
+	Auth          bool   `name:"auth" help:"Whether to enable authentication for protected endpoints." default:"true" negatable:""`
+	UI            bool   `name:"ui" help:"Whether to serve the embedded web user interface" default:"true" negatable:""`
 }
 
 type CleanupFlags struct {
@@ -158,6 +159,9 @@ func (server *RunServer) WithManager(ctx server.Cmd, fn func(*manager.Manager, s
 	opts = append(opts, manager.WithOAuthClient(oidc.OAuthClientKeyLocal, issuer, "", ""))
 	if clientID, clientSecret := strings.TrimSpace(server.GoogleFlags.ClientID), strings.TrimSpace(server.GoogleFlags.ClientSecret); clientID != "" || clientSecret != "" {
 		opts = append(opts, manager.WithOAuthClient("google", oidc.GoogleIssuer, clientID, clientSecret))
+	}
+	if channel := strings.TrimSpace(server.NotifyChannel); channel != "" {
+		opts = append(opts, manager.WithNotificationChannel(channel))
 	}
 	opts = append(opts, manager.WithCleanup(server.CleanupFlags.Interval, server.CleanupFlags.Limit))
 
