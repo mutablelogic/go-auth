@@ -54,15 +54,18 @@ func (m *Manager) OIDCConfig(r *http.Request) (oidc.Configuration, error) {
 		return oidc.Configuration{}, err
 	}
 	return oidc.Configuration{
-		Issuer:            issuer,
-		TokenEndpoint:     oidc.AuthCodeURL(issuer),
-		UserInfoEndpoint:  oidc.UserInfoURL(issuer),
-		JwksURI:           oidc.JWKSURL(issuer),
-		SigningAlgorithms: []string{oidc.SigningAlgorithm},
-		SubjectTypes:      []string{"public"},
-		ResponseTypes:     []string{"id_token"},
-		ScopesSupported:   []string{oidc.ScopeOpenID, oidc.ScopeEmail, oidc.ScopeProfile},
-		ClaimsSupported:   []string{"iss", "sub", "sid", "aud", "exp", "iat", "nbf", "email", "email_verified", "name", "groups", "scopes", "user", "session"},
+		Issuer:                issuer,
+		AuthorizationEndpoint: oidc.AuthorizationURL(issuer),
+		TokenEndpoint:         oidc.AuthCodeURL(issuer),
+		UserInfoEndpoint:      oidc.UserInfoURL(issuer),
+		JwksURI:               oidc.JWKSURL(issuer),
+		SigningAlgorithms:     []string{oidc.SigningAlgorithm},
+		SubjectTypes:          []string{"public"},
+		ResponseTypes:         []string{oidc.ResponseTypeCode},
+		GrantTypesSupported:   []string{"authorization_code", "refresh_token"},
+		ScopesSupported:       []string{oidc.ScopeOpenID, oidc.ScopeEmail, oidc.ScopeProfile},
+		CodeChallengeMethods:  []string{oidc.CodeChallengeMethodS256},
+		ClaimsSupported:       []string{"iss", "sub", "sid", "aud", "exp", "iat", "nbf", "email", "email_verified", "name", "groups", "scopes", "user", "session"},
 	}, nil
 }
 

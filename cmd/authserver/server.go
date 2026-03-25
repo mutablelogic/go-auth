@@ -13,7 +13,8 @@ import (
 
 	// Packages
 	authcrypto "github.com/djthorpe/go-auth/pkg/crypto"
-	httphandler "github.com/djthorpe/go-auth/pkg/httphandler"
+	authhandler "github.com/djthorpe/go-auth/pkg/httphandler/auth"
+	managerhandler "github.com/djthorpe/go-auth/pkg/httphandler/manager"
 	manager "github.com/djthorpe/go-auth/pkg/manager"
 	oidc "github.com/djthorpe/go-auth/pkg/oidc"
 	schema "github.com/djthorpe/go-auth/schema"
@@ -93,7 +94,8 @@ func (server *RunServer) Run(ctx server.Cmd) error {
 		// Register HTTP handlers
 		server.RunServer.Register(func(router *httprouter.Router) error {
 			var result error
-			result = errors.Join(result, httphandler.RegisterHandlers(manager, router, server.Auth))
+			result = errors.Join(result, managerhandler.RegisterManagerHandlers(manager, router, server.Auth))
+			result = errors.Join(result, authhandler.RegisterAuthHandlers(manager, router))
 			if server.UI {
 				result = errors.Join(result, registerUIHandlers(router))
 			}

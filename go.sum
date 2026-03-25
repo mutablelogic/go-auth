@@ -111,6 +111,8 @@ github.com/moby/go-archive v0.2.0 h1:zg5QDUM2mi0JIM9fdQZWC7U8+2ZfixfTYoHL7rWUcP8
 github.com/moby/go-archive v0.2.0/go.mod h1:mNeivT14o8xU+5q1YnNrkQVpK+dnNe/K6fHqnTg4qPU=
 github.com/moby/patternmatcher v0.6.0 h1:GmP9lR19aU5GqSSFko+5pRqHi+Ohk1O69aFiKkVGiPk=
 github.com/moby/patternmatcher v0.6.0/go.mod h1:hDPoyOpDY7OrrMDLaYoY3hf52gNCR/YOUYxkhApJIxc=
+github.com/moby/patternmatcher v0.6.1 h1:qlhtafmr6kgMIJjKJMDmMWq7WLkKIo23hsrpR3x084U=
+github.com/moby/patternmatcher v0.6.1/go.mod h1:hDPoyOpDY7OrrMDLaYoY3hf52gNCR/YOUYxkhApJIxc=
 github.com/moby/sys/atomicwriter v0.1.0 h1:kw5D/EqkBwsBFi0ss9v1VG3wIkVhzGvLklJ+w3A14Sw=
 github.com/moby/sys/atomicwriter v0.1.0/go.mod h1:Ul8oqv2ZMNHOceF643P6FKPXeCmYtlQMvpizfsSoaWs=
 github.com/moby/sys/sequential v0.6.0 h1:qrx7XFUd/5DxtqcoH1h438hF5TmOvzC/lspjy7zgvCU=
@@ -133,6 +135,8 @@ github.com/mutablelogic/go-server v1.6.18 h1:t+rLcl1wuImxYgzKCB7/laNLa9adY2oUktP
 github.com/mutablelogic/go-server v1.6.18/go.mod h1:4kpT+CFI+ioq2O59Sk5snHgFgMFbzpwka2SZ0Q+1ZcA=
 github.com/mutablelogic/go-tokenizer v0.0.1 h1:3gSF+zoMq4tLpH+XYawkVUb7qmWuYNCez1CTs/iX3mU=
 github.com/mutablelogic/go-tokenizer v0.0.1/go.mod h1:zdAyIhfqUKxFXb8MwChbXNwMOZt/5NlUylmx6Qjr4v8=
+github.com/mutablelogic/go-tokenizer v0.0.2 h1:muEUw9mBlC09QLzyMZOktYHOLCW6w4vrztj1fXmJjaE=
+github.com/mutablelogic/go-tokenizer v0.0.2/go.mod h1:zdAyIhfqUKxFXb8MwChbXNwMOZt/5NlUylmx6Qjr4v8=
 github.com/opencontainers/go-digest v1.0.0 h1:apOUWs51W5PlhuyGyz9FCeeBIOUDA/6nW8Oi/yOhh5U=
 github.com/opencontainers/go-digest v1.0.0/go.mod h1:0JzlMkj0TRzQZfJkVvzbP0HBR3IKzErnv2BNG4W4MAM=
 github.com/opencontainers/image-spec v1.1.1 h1:y0fUlFfIZhPF1W537XOLg0/fcx6zcHCJwooC2xJA040=

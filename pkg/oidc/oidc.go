@@ -48,6 +48,7 @@ const (
 	ConfigPath            = ".well-known/openid-configuration"
 	ProtectedResourcePath = ".well-known/oauth-protected-resource"
 	JWKSPath              = ".well-known/jwks.json"
+	AuthorizationPath     = "auth/authorize"
 	AuthCodePath          = "auth/code"
 	UserInfoPath          = "auth/userinfo"
 	SigningAlgorithm      = "RS256"
@@ -95,6 +96,15 @@ func ConfigURL(issuer string) string {
 // JWKSURL returns the JWKS document URL for an issuer.
 func JWKSURL(issuer string) string {
 	uri, err := url.JoinPath(issuer, JWKSPath)
+	if err != nil {
+		return issuer
+	}
+	return uri
+}
+
+// AuthorizationURL returns the authorization endpoint URL for an issuer.
+func AuthorizationURL(issuer string) string {
+	uri, err := url.JoinPath(issuer, AuthorizationPath)
 	if err != nil {
 		return issuer
 	}
