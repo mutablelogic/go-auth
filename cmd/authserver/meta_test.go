@@ -81,6 +81,35 @@ func TestLoginCommandParseLocalProvider(t *testing.T) {
 	require.Equal(t, defaultOIDCRedirectURL, cli.AuthCommands.Login.RedirectURL)
 }
 
+func TestChangesCommandParse(t *testing.T) {
+	var cli CLI
+	parser, err := kong.New(&cli, kong.Name("authserver"))
+	require.NoError(t, err)
+
+	_, err = parser.Parse([]string{"changes"})
+	require.NoError(t, err)
+}
+
+func TestRunCommandParseDefaultNotifyChannel(t *testing.T) {
+	var cli CLI
+	parser, err := kong.New(&cli, kong.Name("authserver"))
+	require.NoError(t, err)
+
+	_, err = parser.Parse([]string{"run", "--url", "postgres://example.test/db"})
+	require.NoError(t, err)
+	require.Equal(t, "backend.table_change", cli.ServerCommands.RunServer.NotifyChannel)
+}
+
+func TestRunCommandParseEmptyNotifyChannel(t *testing.T) {
+	var cli CLI
+	parser, err := kong.New(&cli, kong.Name("authserver"))
+	require.NoError(t, err)
+
+	_, err = parser.Parse([]string{"run", "--url", "postgres://example.test/db", "--notify-channel", ""})
+	require.NoError(t, err)
+	require.Equal(t, "", cli.ServerCommands.RunServer.NotifyChannel)
+}
+
 func TestOIDCIssuerForProviderDefaultsToLocal(t *testing.T) {
 	issuer, err := oidcIssuerForProvider(oidc.PublicClientConfigurations{
 		oidc.OAuthClientKeyLocal: {Issuer: "https://issuer.example.test/api", Provider: "oauth"},

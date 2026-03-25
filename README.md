@@ -14,6 +14,7 @@ Client and server authentication with local JWT sessions backed by PostgreSQL.
 - `POST /auth/login`: exchange an upstream identity token for a local token.
 - `POST /auth/refresh`: refresh a still-eligible local token and session.
 - `POST /auth/revoke`: revoke a local session token.
+- `GET /changes`: stream protected change notifications as server-sent events.
 - `GET /user`: list users.
 - `POST /user`: create a user.
 - `GET /user/{user}`: fetch a user.

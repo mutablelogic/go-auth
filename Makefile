@@ -3,10 +3,12 @@ GO=$(shell command -v go)
 BUILDDIR=build
 WASM=$(patsubst %/wasmbuild.yaml,%,$(wildcard wasm/*/wasmbuild.yaml))
 CMD_DIRS=$(patsubst %/,%,$(wildcard cmd/*/))
+CMD_BINS=$(patsubst cmd/%,$(BUILDDIR)/%,$(CMD_DIRS))
 NPM_DIRS=$(patsubst %/package.json,%,$(wildcard npm/*/package.json))
 NPM=$(patsubst %, %/dist/bundle.js,$(NPM_DIRS))
 GOWASM=$(shell command -v go)
 GOBIN=$(abspath $(BUILDDIR))
+GOFILES=$(shell find . -name '*.go' -not -path './build/*' -not -path './.git/*') go.mod go.sum
 
 # LDFLAGS
 LD_FLAGS=-s -w
@@ -20,12 +22,18 @@ all: wasmbuild $(WASM) $(NPM)
 wasm: $(WASM)
 
 .PHONY: cmd
-cmd: go-dep wasm
-	@for dir in $(CMD_DIRS); do \
-		name=$$(basename $$dir); \
-		echo "Building $$dir"; \
-		$(GO) build -ldflags "$(LD_FLAGS)" -o $(BUILDDIR)/$$name ./$$dir || exit $$?; \
-	done
+cmd: $(CMD_BINS)
+
+$(CMD_BINS): $(GOFILES) | go-dep
+	@echo "Building $(patsubst $(BUILDDIR)/%,cmd/%,$@)"
+	@$(GO) build -ldflags "$(LD_FLAGS)" -o $@ ./$(patsubst $(BUILDDIR)/%,cmd/%,$@)
+
+define cmd-alias-rule
+$(1): $(BUILDDIR)/$(notdir $(1))
+	@true
+endef
+
+$(foreach dir,$(CMD_DIRS),$(eval $(call cmd-alias-rule,$(dir))))
 
 # Rules for building
 $(WASM): $(NPM) wasmbuild gowasm-dep
