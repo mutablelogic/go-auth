@@ -1,16 +1,14 @@
 package main
 
 import (
-	"bytes"
 	"encoding/base64"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"os"
 	"strings"
 
 	// Packages
-	auth "github.com/djthorpe/go-auth/pkg/httpclient/auth2"
+	auth "github.com/djthorpe/go-auth/pkg/httpclient/auth"
 	oidc "github.com/djthorpe/go-auth/pkg/oidc"
 	client "github.com/mutablelogic/go-client"
 	server "github.com/mutablelogic/go-server"
@@ -33,9 +31,9 @@ type LoginCommand struct {
 }
 
 type LoginResponse struct {
-	ClientID  string                           `json:"client_id,omitempty"`
-	Discovery *auth.ProtectedResourceDiscovery `json:"discovery,omitempty"`
-	Flow      *oidc.AuthorizationCodeFlow      `json:"flow,omitempty"`
+	ClientID  string                      `json:"client_id,omitempty"`
+	Discovery *auth.Config                `json:"discovery,omitempty"`
+	Flow      *oidc.AuthorizationCodeFlow `json:"flow,omitempty"`
 }
 
 func main() {
@@ -51,7 +49,7 @@ func (cmd *LoginCommand) Run(ctx server.Cmd) error {
 		return err
 	}
 	clientID := strings.TrimSpace(cmd.ClientID)
-	authClient, err := auth.NewClient(endpoint, opts...)
+	authClient, err := auth.New(endpoint, opts...)
 	if err != nil {
 		return err
 	}
@@ -61,32 +59,17 @@ func (cmd *LoginCommand) Run(ctx server.Cmd) error {
 	if redirectURL == "" {
 		redirectURL = defaultRedirectURL
 	}
-	var body bytes.Buffer
-	if err := authClient.DoAuthWithContext(ctx.Context(), nil, &body); err != nil {
-		var authErr *auth.AuthError
-		if errors.As(err, &authErr) && authErr.Scheme != "" {
-			discovery, err := authClient.DiscoverWithContext(ctx.Context(), err)
-			if err != nil {
-				return fmt.Errorf("failed to discover auth bootstrap: %w", err)
-			}
-			response.Discovery = discovery
-			clientID, err = ensureClientID(ctx, authClient, discovery, endpoint, clientID, redirectURL)
-			if err != nil {
-				return err
-			}
-			response.ClientID = clientID
-			response.Flow, err = discovery.AuthorizationCodeFlow(clientID, redirectURL)
-			if err != nil {
-				return err
-			}
-			return printLoginResponse(response)
+	var discovery *auth.Config
+	if err := authClient.DoAuthWithContext(ctx.Context(), nil, nil, client.OptReqEndpoint(endpoint)); err != nil {
+		discovery, err = authClient.DiscoverWithError(ctx.Context(), err)
+		if err != nil {
+			return fmt.Errorf("failed to discover auth bootstrap: %w", err)
 		}
-		return fmt.Errorf("request failed: %w", err)
-	}
-
-	discovery, err := authClient.DiscoverIssuerWithContext(ctx.Context(), endpoint)
-	if err != nil {
-		return fmt.Errorf("failed to discover auth server metadata: %w", err)
+	} else {
+		discovery, err = authClient.Discover(ctx.Context(), endpoint)
+		if err != nil {
+			return fmt.Errorf("failed to discover auth server metadata: %w", err)
+		}
 	}
 	response.Discovery = discovery
 	clientID, err = ensureClientID(ctx, authClient, discovery, endpoint, clientID, redirectURL)
@@ -94,7 +77,15 @@ func (cmd *LoginCommand) Run(ctx server.Cmd) error {
 		return err
 	}
 	response.ClientID = clientID
-	response.Flow, err = discovery.AuthorizationCodeFlow(clientID, redirectURL)
+	serverMeta, err := authorizationServerForFlow(discovery)
+	if err != nil {
+		return err
+	}
+	config, err := authorizationCodeConfig(serverMeta)
+	if err != nil {
+		return err
+	}
+	response.Flow, err = oidc.NewAuthorizationCodeFlow(config, clientID, redirectURL)
 	if err != nil {
 		return err
 	}
@@ -110,7 +101,7 @@ func printLoginResponse(response *LoginResponse) error {
 	return nil
 }
 
-func ensureClientID(ctx server.Cmd, authClient *auth.AuthClient, discovery *auth.ProtectedResourceDiscovery, endpoint, clientID, redirectURL string) (string, error) {
+func ensureClientID(ctx server.Cmd, authClient *auth.Client, discovery *auth.Config, endpoint, clientID, redirectURL string) (string, error) {
 	if clientID = strings.TrimSpace(clientID); clientID != "" {
 		if err := storeClientID(ctx, discovery, endpoint, clientID); err != nil {
 			return "", err
@@ -123,7 +114,11 @@ func ensureClientID(ctx server.Cmd, authClient *auth.AuthClient, discovery *auth
 	if clientID := storedClientID(ctx, discovery, endpoint); clientID != "" {
 		return clientID, nil
 	}
-	registration, err := discovery.RegisterClientWithContext(ctx.Context(), authClient, redirectURL)
+	serverMeta, err := authorizationServerForRegistration(discovery)
+	if err != nil {
+		return "", fmt.Errorf("client ID is required or dynamic registration must succeed: %w", err)
+	}
+	registration, err := authClient.RegisterClient(ctx.Context(), serverMeta, redirectURL)
 	if err != nil {
 		return "", fmt.Errorf("client ID is required or dynamic registration must succeed: %w", err)
 	}
@@ -160,14 +155,14 @@ func endpointFor(ctx server.Cmd, value string) (string, []client.ClientOpt, erro
 	return "", nil, fmt.Errorf("endpoint is required")
 }
 
-func storedClientID(ctx server.Cmd, discovery *auth.ProtectedResourceDiscovery, endpoint string) string {
+func storedClientID(ctx server.Cmd, discovery *auth.Config, endpoint string) string {
 	if ctx == nil {
 		return ""
 	}
 	return strings.TrimSpace(ctx.GetString(clientIDStoreKey(discovery, endpoint)))
 }
 
-func storeClientID(ctx server.Cmd, discovery *auth.ProtectedResourceDiscovery, endpoint, clientID string) error {
+func storeClientID(ctx server.Cmd, discovery *auth.Config, endpoint, clientID string) error {
 	if ctx == nil {
 		return nil
 	}
@@ -181,15 +176,17 @@ func storeClientID(ctx server.Cmd, discovery *auth.ProtectedResourceDiscovery, e
 	return nil
 }
 
-func clientIDStoreKey(discovery *auth.ProtectedResourceDiscovery, endpoint string) string {
+func clientIDStoreKey(discovery *auth.Config, endpoint string) string {
 	key := strings.TrimSpace(endpoint)
 	if discovery != nil {
-		if len(discovery.AuthorizationServers) > 0 {
-			if issuer := strings.TrimSpace(discovery.AuthorizationServers[0].Issuer); issuer != "" {
+		for _, serverMeta := range discovery.AuthorizationServers {
+			if issuer := strings.TrimSpace(serverMeta.Issuer); issuer != "" {
 				key = issuer
+				break
 			}
-		} else if discovery.ResourceMetadata != nil {
-			if resource := strings.TrimSpace(discovery.ResourceMetadata.Resource); resource != "" {
+		}
+		if key == "" {
+			if resource := strings.TrimSpace(discovery.ProtectedResourceMetadata.Resource); resource != "" {
 				key = resource
 			}
 		}
@@ -198,4 +195,56 @@ func clientIDStoreKey(discovery *auth.ProtectedResourceDiscovery, endpoint strin
 		key = "default"
 	}
 	return clientIDStoreKeyPrefix + base64.RawURLEncoding.EncodeToString([]byte(key))
+}
+
+func authorizationServerForFlow(meta *auth.Config) (*auth.ServerMetadata, error) {
+	if meta == nil || len(meta.AuthorizationServers) == 0 {
+		return nil, fmt.Errorf("authorization server metadata is required")
+	}
+	for index := range meta.AuthorizationServers {
+		serverMeta := &meta.AuthorizationServers[index]
+		if strings.TrimSpace(serverMeta.Oidc.AuthorizationEndpoint) != "" || strings.TrimSpace(serverMeta.OAuth.AuthorizationEndpoint) != "" {
+			return serverMeta, nil
+		}
+	}
+	return nil, fmt.Errorf("no authorization endpoint is advertised")
+}
+
+func authorizationServerForRegistration(meta *auth.Config) (*auth.ServerMetadata, error) {
+	if meta == nil || len(meta.AuthorizationServers) == 0 {
+		return nil, fmt.Errorf("authorization server metadata is required")
+	}
+	for index := range meta.AuthorizationServers {
+		serverMeta := &meta.AuthorizationServers[index]
+		if strings.TrimSpace(serverMeta.OAuth.RegistrationEndpoint) != "" &&
+			(strings.TrimSpace(serverMeta.Oidc.AuthorizationEndpoint) != "" || strings.TrimSpace(serverMeta.OAuth.AuthorizationEndpoint) != "") {
+			return serverMeta, nil
+		}
+	}
+	for index := range meta.AuthorizationServers {
+		serverMeta := &meta.AuthorizationServers[index]
+		if strings.TrimSpace(serverMeta.OAuth.RegistrationEndpoint) != "" {
+			return serverMeta, nil
+		}
+	}
+	return nil, fmt.Errorf("no registration endpoint is advertised")
+}
+
+func authorizationCodeConfig(serverMeta *auth.ServerMetadata) (oidc.BaseConfiguration, error) {
+	if strings.TrimSpace(serverMeta.Oidc.AuthorizationEndpoint) != "" {
+		config := serverMeta.Oidc.BaseConfiguration
+		if strings.TrimSpace(config.Issuer) == "" {
+			config.Issuer = strings.TrimSpace(serverMeta.Issuer)
+		}
+		config.NonceSupported = true
+		return config, nil
+	} else if strings.TrimSpace(serverMeta.OAuth.AuthorizationEndpoint) != "" {
+		config := serverMeta.OAuth.BaseConfiguration
+		if strings.TrimSpace(config.Issuer) == "" {
+			config.Issuer = strings.TrimSpace(serverMeta.Issuer)
+		}
+		config.NonceSupported = false
+		return config, nil
+	}
+	return oidc.BaseConfiguration{}, fmt.Errorf("no authorization endpoint is advertised")
 }

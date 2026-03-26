@@ -48,24 +48,26 @@ func (m *Manager) OIDCIssuer(r *http.Request) (string, error) {
 	return "", auth.ErrBadParameter.With("issuer is not configured")
 }
 
-func (m *Manager) OIDCConfig(r *http.Request) (oidc.Configuration, error) {
+func (m *Manager) OIDCConfig(r *http.Request) (oidc.OIDCConfiguration, error) {
 	issuer, err := m.OIDCIssuer(r)
 	if err != nil {
-		return oidc.Configuration{}, err
+		return oidc.OIDCConfiguration{}, err
 	}
-	return oidc.Configuration{
-		Issuer:                issuer,
-		AuthorizationEndpoint: oidc.AuthorizationURL(issuer),
-		TokenEndpoint:         oidc.AuthCodeURL(issuer),
-		UserInfoEndpoint:      oidc.UserInfoURL(issuer),
-		JwksURI:               oidc.JWKSURL(issuer),
-		SigningAlgorithms:     []string{oidc.SigningAlgorithm},
-		SubjectTypes:          []string{"public"},
-		ResponseTypes:         []string{oidc.ResponseTypeCode},
-		GrantTypesSupported:   []string{"authorization_code", "refresh_token"},
-		ScopesSupported:       []string{oidc.ScopeOpenID, oidc.ScopeEmail, oidc.ScopeProfile},
-		CodeChallengeMethods:  []string{oidc.CodeChallengeMethodS256},
-		ClaimsSupported:       []string{"iss", "sub", "sid", "aud", "exp", "iat", "nbf", "email", "email_verified", "name", "groups", "scopes", "user", "session"},
+	return oidc.OIDCConfiguration{
+		BaseConfiguration: oidc.BaseConfiguration{
+			Issuer:                issuer,
+			AuthorizationEndpoint: oidc.AuthorizationURL(issuer),
+			TokenEndpoint:         oidc.AuthCodeURL(issuer),
+			ResponseTypes:         []string{oidc.ResponseTypeCode},
+			GrantTypesSupported:   []string{"authorization_code", "refresh_token"},
+			ScopesSupported:       []string{oidc.ScopeOpenID, oidc.ScopeEmail, oidc.ScopeProfile},
+			CodeChallengeMethods:  []string{oidc.CodeChallengeMethodS256},
+		},
+		UserInfoEndpoint:  oidc.UserInfoURL(issuer),
+		JwksURI:           oidc.JWKSURL(issuer),
+		SigningAlgorithms: []string{oidc.SigningAlgorithm},
+		SubjectTypes:      []string{"public"},
+		ClaimsSupported:   []string{"iss", "sub", "sid", "aud", "exp", "iat", "nbf", "email", "email_verified", "name", "groups", "scopes", "user", "session"},
 	}, nil
 }
 

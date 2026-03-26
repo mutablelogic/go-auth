@@ -1,28 +1,67 @@
 package auth
 
 import (
+	"context"
+	"errors"
+	"net/http"
+	"strings"
+
 	// Packages
 	client "github.com/mutablelogic/go-client"
+	transport "github.com/mutablelogic/go-client/pkg/transport"
+	httpresponse "github.com/mutablelogic/go-server/pkg/httpresponse"
 )
 
 ///////////////////////////////////////////////////////////////////////////////
 // TYPES
 
-// Client is an auth HTTP client that wraps the base HTTP client.
 type Client struct {
 	*client.Client
+	Endpoint string
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 // LIFECYCLE
 
-// New creates a new auth HTTP client with the given base URL and options.
-func New(url string, opts ...client.ClientOpt) (*Client, error) {
-	c := new(Client)
-	if client, err := client.New(append([]client.ClientOpt{client.OptEndpoint(url)}, opts...)...); err != nil {
+func New(endpoint string, opts ...client.ClientOpt) (*Client, error) {
+	self := new(Client)
+	if client, err := client.New(append([]client.ClientOpt{client.OptEndpoint(endpoint)}, opts...)...); err != nil {
 		return nil, err
 	} else {
-		c.Client = client
+		self.Client = client
+		self.Endpoint = strings.TrimSpace(endpoint)
 	}
-	return c, nil
+
+	// Return success
+	return self, nil
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// PUBLIC METHODS - AUTH ERRORS
+
+// DoAuthWithContext performs the supplied request, and if the response is 401 Unauthorized, it parses the WWW-Authenticate header
+// and returns an AuthError with the header values.
+func (c *Client) DoAuthWithContext(ctx context.Context, req client.Payload, v any, opt ...client.RequestOpt) error {
+	var auth *transport.Recorder
+
+	// Add the recorder transport to the request options
+	opts := append(opt, client.OptReqTransport(func(parent http.RoundTripper) http.RoundTripper {
+		auth = transport.NewRecorder(parent)
+		return auth
+	}))
+
+	// Perform the request, and parse the WWW-Authenticate header if the response is 401 Unauthorized
+	if err := c.Client.DoWithContext(ctx, req, v, opts...); err != nil {
+		var code httpresponse.Err
+		if ok := errors.As(err, &code); !ok {
+			return err
+		}
+		if code == httpresponse.ErrNotAuthorized && auth != nil {
+			return errors.Join(err, newAuthError(auth.Header()))
+		}
+		return err
+	}
+
+	// Otherwise, return success
+	return nil
 }

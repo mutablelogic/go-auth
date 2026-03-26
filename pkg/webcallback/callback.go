@@ -10,6 +10,9 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	// Packages
+	"github.com/mutablelogic/go-server/pkg/types"
 )
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -17,8 +20,8 @@ import (
 
 // Result contains the callback outcome passed back from the HTTP handler.
 type Result struct {
-	Query url.Values
-	Err   error
+	Query url.Values `json:"result,omitempty"`
+	Err   error      `json:"err,omitempty"`
 }
 
 // webCallback serves a loopback HTTP callback URL and captures the first
@@ -57,6 +60,13 @@ func New(url string) (*webCallback, error) {
 		url:      resolvedCallbackURL(callbackURL, listener.Addr()),
 		listener: listener,
 	}, nil
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// STRINGIFY
+
+func (r *Result) String() string {
+	return types.Stringify(r)
 }
 
 ///////////////////////////////////////////////////////////////////////////////

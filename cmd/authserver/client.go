@@ -2,7 +2,6 @@ package main
 
 import (
 	// Packages
-	authclient "github.com/djthorpe/go-auth/pkg/httpclient/auth"
 	managerclient "github.com/djthorpe/go-auth/pkg/httpclient/manager"
 	server "github.com/mutablelogic/go-server"
 )
@@ -11,7 +10,6 @@ import (
 // TYPES
 
 type clients struct {
-	auth    *authclient.Client
 	manager *managerclient.Client
 }
 
@@ -24,13 +22,9 @@ func clientFor(ctx server.Cmd) (*clients, string, error) {
 	if err != nil {
 		return nil, "", err
 	}
-	auth, err := authclient.New(endpoint, opts...)
-	if err != nil {
-		return nil, "", err
-	}
 	manager, err := managerclient.New(endpoint, opts...)
 	if err != nil {
 		return nil, "", err
 	}
-	return &clients{auth: auth, manager: manager}, endpoint, nil
+	return &clients{manager: manager}, endpoint, nil
 }

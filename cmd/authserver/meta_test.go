@@ -5,7 +5,6 @@ import (
 
 	// Packages
 	kong "github.com/alecthomas/kong"
-	oidc "github.com/djthorpe/go-auth/pkg/oidc"
 	require "github.com/stretchr/testify/require"
 )
 
@@ -39,46 +38,44 @@ func TestGroupUpdateMetaParse(t *testing.T) {
 	require.Equal(t, map[string]any{"team": "platform", "priority": float64(1)}, cli.GroupCommands.UpdateGroup.Meta.Map())
 }
 
-func TestOIDCCommandParseDefaultProvider(t *testing.T) {
+func TestAuthorizeCommandParseEndpoint(t *testing.T) {
 	var cli CLI
 	parser, err := kong.New(&cli, kong.Name("authserver"))
 	require.NoError(t, err)
 
-	_, err = parser.Parse([]string{"oidc"})
+	_, err = parser.Parse([]string{"authorize", "https://api.example.test"})
 	require.NoError(t, err)
-	require.Equal(t, "", cli.AuthCommands.OIDCConfig.Provider)
+	require.Equal(t, "https://api.example.test", cli.AuthCommands.Authorize.Endpoint)
 }
 
-func TestOIDCCommandParseProvider(t *testing.T) {
+func TestAuthorizeCommandParseRedirect(t *testing.T) {
 	var cli CLI
 	parser, err := kong.New(&cli, kong.Name("authserver"))
 	require.NoError(t, err)
 
-	_, err = parser.Parse([]string{"oidc", "google"})
+	_, err = parser.Parse([]string{"authorize", "--redirect-url", "http://127.0.0.1:9999/callback"})
 	require.NoError(t, err)
-	require.Equal(t, "google", cli.AuthCommands.OIDCConfig.Provider)
+	require.Equal(t, "http://127.0.0.1:9999/callback", cli.AuthCommands.Authorize.Redirect)
 }
 
-func TestLoginCommandParseProvider(t *testing.T) {
+func TestRefreshCommandParseEndpoint(t *testing.T) {
 	var cli CLI
 	parser, err := kong.New(&cli, kong.Name("authserver"))
 	require.NoError(t, err)
 
-	_, err = parser.Parse([]string{"login", "google"})
+	_, err = parser.Parse([]string{"refresh", "https://api.example.test"})
 	require.NoError(t, err)
-	require.Equal(t, "google", cli.AuthCommands.Login.Provider)
-	require.Equal(t, defaultOIDCRedirectURL, cli.AuthCommands.Login.RedirectURL)
+	require.Equal(t, "https://api.example.test", cli.AuthCommands.Refresh.Endpoint)
 }
 
-func TestLoginCommandParseLocalProvider(t *testing.T) {
+func TestUserInfoCommandParseEndpoint(t *testing.T) {
 	var cli CLI
 	parser, err := kong.New(&cli, kong.Name("authserver"))
 	require.NoError(t, err)
 
-	_, err = parser.Parse([]string{"login", oidc.OAuthClientKeyLocal})
+	_, err = parser.Parse([]string{"userinfo", "https://api.example.test"})
 	require.NoError(t, err)
-	require.Equal(t, oidc.OAuthClientKeyLocal, cli.AuthCommands.Login.Provider)
-	require.Equal(t, defaultOIDCRedirectURL, cli.AuthCommands.Login.RedirectURL)
+	require.Equal(t, "https://api.example.test", cli.AuthCommands.UserInfo.Endpoint)
 }
 
 func TestChangesCommandParse(t *testing.T) {
@@ -110,28 +107,12 @@ func TestRunCommandParseEmptyNotifyChannel(t *testing.T) {
 	require.Equal(t, "", cli.ServerCommands.RunServer.NotifyChannel)
 }
 
-func TestOIDCIssuerForProviderDefaultsToLocal(t *testing.T) {
-	issuer, err := oidcIssuerForProvider(oidc.PublicClientConfigurations{
-		oidc.OAuthClientKeyLocal: {Issuer: "https://issuer.example.test/api", Provider: "oauth"},
-		"google":                 {Issuer: oidc.GoogleIssuer, Provider: "oauth"},
-	}, "")
+func TestRevokeCommandParseEndpoint(t *testing.T) {
+	var cli CLI
+	parser, err := kong.New(&cli, kong.Name("authserver"))
 	require.NoError(t, err)
-	require.Equal(t, "https://issuer.example.test/api", issuer)
-}
 
-func TestOIDCIssuerForProviderReturnsNamedProvider(t *testing.T) {
-	issuer, err := oidcIssuerForProvider(oidc.PublicClientConfigurations{
-		oidc.OAuthClientKeyLocal: {Issuer: "https://issuer.example.test/api", Provider: "oauth"},
-		"google":                 {Issuer: oidc.GoogleIssuer, Provider: "oauth"},
-	}, "google")
+	_, err = parser.Parse([]string{"revoke", "https://api.example.test"})
 	require.NoError(t, err)
-	require.Equal(t, oidc.GoogleIssuer, issuer)
-}
-
-func TestOIDCIssuerForProviderUnknownProvider(t *testing.T) {
-	_, err := oidcIssuerForProvider(oidc.PublicClientConfigurations{
-		oidc.OAuthClientKeyLocal: {Issuer: "https://issuer.example.test/api", Provider: "oauth"},
-		"google":                 {Issuer: oidc.GoogleIssuer, Provider: "oauth"},
-	}, "github")
-	require.EqualError(t, err, `unknown auth provider "github" (available: google, local)`)
+	require.Equal(t, "https://api.example.test", cli.AuthCommands.Revoke.Endpoint)
 }

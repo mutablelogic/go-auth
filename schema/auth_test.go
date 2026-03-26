@@ -54,26 +54,3 @@ func Test_TokenRequestValidate(t *testing.T) {
 		assert.True(errors.Is(err, auth.ErrInvalidProvider))
 	})
 }
-
-func Test_CredentialsRequestValidate(t *testing.T) {
-	t.Run("MissingEmail", func(t *testing.T) {
-		assert := assert.New(t)
-		err := (&CredentialsRequest{}).Validate()
-		assert.Error(err)
-		assert.True(errors.Is(err, auth.ErrBadParameter))
-	})
-
-	t.Run("InvalidEmail", func(t *testing.T) {
-		assert := assert.New(t)
-		err := (&CredentialsRequest{Email: "not-an-email"}).Validate()
-		assert.Error(err)
-		assert.True(errors.Is(err, auth.ErrBadParameter))
-	})
-
-	t.Run("NormalizesEmail", func(t *testing.T) {
-		require := require.New(t)
-		req := &CredentialsRequest{Email: "  Alice.Example+test@Example.COM  "}
-		require.NoError(req.Validate())
-		require.Equal("alice.example+test@example.com", req.Email)
-	})
-}

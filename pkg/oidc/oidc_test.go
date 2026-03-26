@@ -131,6 +131,13 @@ func TestConfigURL(t *testing.T) {
 	)
 }
 
+func TestOAuthConfigURL(t *testing.T) {
+	assert.Equal(t,
+		"https://issuer.example.com/api/.well-known/oauth-authorization-server",
+		oidc.OAuthConfigURL("https://issuer.example.com/api/"),
+	)
+}
+
 func TestJWKSURL(t *testing.T) {
 	assert.Equal(t,
 		"https://issuer.example.com/api/.well-known/jwks.json",
@@ -179,13 +186,13 @@ func TestNewCodeChallenge(t *testing.T) {
 }
 
 func TestAuthorizationCodeFlow(t *testing.T) {
-	flow, err := oidc.NewAuthorizationCodeFlow(oidc.Configuration{
+	flow, err := oidc.NewAuthorizationCodeFlow(oidc.BaseConfiguration{
 		Issuer:                oidc.GoogleIssuer,
 		AuthorizationEndpoint: "https://accounts.example.test/o/oauth2/v2/auth",
 		TokenEndpoint:         "https://accounts.example.test/token",
-		ScopesSupported:       []string{oidc.ScopeOpenID, oidc.ScopeEmail, oidc.ScopeProfile},
 		CodeChallengeMethods:  []string{oidc.CodeChallengeMethodPlain, oidc.CodeChallengeMethodS256},
-	}, "client-id", "http://127.0.0.1:8085/callback")
+		NonceSupported:        true,
+	}, "client-id", "http://127.0.0.1:8085/callback", oidc.DefaultOIDCAuthorizationScopes...)
 	require.NoError(t, err)
 	require.NotNil(t, flow)
 	assert.Equal(t, oidc.GoogleIssuer, flow.Issuer)
@@ -210,17 +217,65 @@ func TestAuthorizationCodeFlow(t *testing.T) {
 	assert.Equal(t, "openid email profile", query.Get("scope"))
 }
 
+func TestAuthorizationCodeFlowWithoutNonce(t *testing.T) {
+	flow, err := oidc.NewAuthorizationCodeFlow(oidc.BaseConfiguration{
+		Issuer:                "https://oauth.example.test",
+		AuthorizationEndpoint: "https://oauth.example.test/authorize",
+		TokenEndpoint:         "https://oauth.example.test/token",
+		CodeChallengeMethods:  []string{oidc.CodeChallengeMethodS256},
+	}, "client-id", "http://127.0.0.1:8085/callback", "projects:read")
+	require.NoError(t, err)
+	require.NotNil(t, flow)
+	assert.Empty(t, flow.Nonce)
+
+	uri, err := url.Parse(flow.AuthorizationURL)
+	require.NoError(t, err)
+	query := uri.Query()
+	assert.Empty(t, query.Get("nonce"))
+	assert.Equal(t, "projects:read", query.Get("scope"))
+}
+
 func TestAuthorizationScopes(t *testing.T) {
 	assert.Equal(t,
 		[]string{oidc.ScopeOpenID, oidc.ScopeEmail, oidc.ScopeProfile},
-		oidc.AuthorizationScopes(oidc.Configuration{}),
+		oidc.AuthorizationScopes(oidc.OIDCConfiguration{}),
 	)
 	assert.Equal(t,
 		[]string{oidc.ScopeOpenID, oidc.ScopeEmail},
-		oidc.AuthorizationScopes(oidc.Configuration{ScopesSupported: []string{oidc.ScopeOpenID, oidc.ScopeEmail}}),
+		oidc.AuthorizationScopes(oidc.OIDCConfiguration{BaseConfiguration: oidc.BaseConfiguration{ScopesSupported: []string{oidc.ScopeOpenID, oidc.ScopeEmail}}}),
 	)
 	assert.Equal(t,
 		[]string{"custom.scope"},
-		oidc.AuthorizationScopes(oidc.Configuration{}, "custom.scope"),
+		oidc.AuthorizationScopes(oidc.OIDCConfiguration{}, "custom.scope"),
 	)
+	assert.Equal(t,
+		[]string{"projects:read", "projects:write"},
+		oidc.OAuthAuthorizationScopes(oidc.OAuthConfiguration{BaseConfiguration: oidc.BaseConfiguration{ScopesSupported: []string{"projects:read", "projects:write"}}}),
+	)
+	assert.Equal(t,
+		[]string{"custom.scope"},
+		oidc.OAuthAuthorizationScopes(oidc.OAuthConfiguration{}, "custom.scope"),
+	)
+	assert.Nil(t, oidc.OAuthAuthorizationScopes(oidc.OAuthConfiguration{}))
+}
+
+func TestAuthorizationCodeFlowValidateCallback(t *testing.T) {
+	flow := &oidc.AuthorizationCodeFlow{State: "expected-state"}
+	code, err := flow.ValidateCallback("test-code", "expected-state")
+	require.NoError(t, err)
+	assert.Equal(t, "test-code", code)
+}
+
+func TestAuthorizationCodeFlowValidateCallbackStateMismatch(t *testing.T) {
+	flow := &oidc.AuthorizationCodeFlow{State: "expected-state"}
+	_, err := flow.ValidateCallback("test-code", "other-state")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "state mismatch")
+}
+
+func TestAuthorizationCodeFlowValidateCallbackMissingCode(t *testing.T) {
+	flow := &oidc.AuthorizationCodeFlow{State: "expected-state"}
+	_, err := flow.ValidateCallback("", "expected-state")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "missing code")
 }

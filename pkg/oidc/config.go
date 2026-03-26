@@ -1,5 +1,10 @@
 package oidc
 
+import (
+	// Packages
+	types "github.com/mutablelogic/go-server/pkg/types"
+)
+
 ///////////////////////////////////////////////////////////////////////////////
 // GLOBALS
 
@@ -41,6 +46,13 @@ type ClientConfiguration struct {
 // ClientConfigurations contains all configured OAuth clients keyed by
 // provider or role name.
 type ClientConfigurations map[string]ClientConfiguration
+
+///////////////////////////////////////////////////////////////////////////////
+// STRINGIFY
+
+func (c ProtectedResourceMetadata) String() string {
+	return types.Stringify(c)
+}
 
 ///////////////////////////////////////////////////////////////////////////////
 // PUBLIC METHODS

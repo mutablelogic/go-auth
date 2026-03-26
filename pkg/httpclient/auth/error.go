@@ -1,45 +1,82 @@
 package auth
 
 import (
-	"fmt"
 	"net/http"
 	"net/url"
+	"regexp"
+	"strconv"
 	"strings"
+
+	// Packages
+	types "github.com/mutablelogic/go-server/pkg/types"
 )
 
-const authConfigPath = "/auth/config"
+///////////////////////////////////////////////////////////////////////////////
+// TYPES
 
-func (c *Client) authError(err error) error {
-	return err
+type AuthError struct {
+	Scheme     string `json:"scheme"`
+	url.Values `json:"param,omitempty"`
 }
 
-func authConfigReference(requestHeader, responseHeader http.Header, requestURL *url.URL) string {
-	for _, header := range []http.Header{requestHeader, responseHeader} {
-		if ref := authConfigHeader(header); ref != "" {
-			return ref
+///////////////////////////////////////////////////////////////////////////////
+// GLOBALS
+
+const (
+	ContentHeaderAuthenticate = "WWW-Authenticate"
+)
+
+var (
+	// https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/WWW-Authenticate
+	reAuthChallengeExpr = regexp.MustCompile(`^\s*([^\s]+)\s*(.*)$`)
+	reAuthParamExpr     = regexp.MustCompile(`([A-Za-z][A-Za-z0-9_-]*)\s*=\s*"((?:\\.|[^"\\])*)"`)
+)
+
+///////////////////////////////////////////////////////////////////////////////
+// LIFECYCLE
+
+func newAuthError(header http.Header) error {
+	value := strings.TrimSpace(header.Get(ContentHeaderAuthenticate))
+	if value == "" {
+		return nil
+	}
+
+	// Parse the challenge
+	match := reAuthChallengeExpr.FindStringSubmatch(value)
+	if len(match) == 0 {
+		return nil
+	}
+	scheme := strings.TrimSpace(match[1])
+	remainder := strings.TrimSpace(match[2])
+	if remainder == "" {
+		return &AuthError{Scheme: scheme}
+	}
+
+	// Parse challenge parameters
+	params := url.Values{}
+	for _, token := range reAuthParamExpr.FindAllStringSubmatch(remainder, -1) {
+		if len(token) != 3 {
+			continue
 		}
+		value, err := strconv.Unquote(`"` + token[2] + `"`)
+		if err != nil {
+			value = token[2]
+		}
+		params.Add(token[1], value)
 	}
-	if requestURL == nil {
-		return ""
-	}
-	path := strings.TrimRight(requestURL.Path, "/")
-	if path == "" {
-		path = "/"
-	}
-	if path == authConfigPath {
-		return fmt.Sprintf("auth config request: %s", requestURL.String())
-	}
-	return ""
+	return &AuthError{Scheme: scheme, Values: params}
 }
 
-func authConfigHeader(header http.Header) string {
-	if header == nil {
+///////////////////////////////////////////////////////////////////////////////
+// PUBLIC METHODS
+
+func (e *AuthError) String() string {
+	return types.Stringify(e)
+}
+
+func (e *AuthError) Error() string {
+	if e == nil {
 		return ""
 	}
-	for _, key := range []string{"Link", "X-OAuth-Config", "X-Auth-Config", "X-OIDC-Config", "X-OpenID-Configuration"} {
-		if value := strings.TrimSpace(header.Get(key)); value != "" {
-			return fmt.Sprintf("%s: %s", key, value)
-		}
-	}
-	return ""
+	return e.String()
 }

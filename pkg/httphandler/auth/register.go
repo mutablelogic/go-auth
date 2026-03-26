@@ -35,7 +35,6 @@ func RegisterAuthHandlers(manager *managerpkg.Manager, router server.HTTPRouter)
 
 	registerProtectedAlways(UserInfoHandler(manager))
 	register(AuthHandler(manager))
-	register(AuthCredentialsHandler(manager))
 	register(AuthorizationHandler(manager))
 	register(AuthCodeHandler(manager))
 	register(AuthConfigHandler(manager))

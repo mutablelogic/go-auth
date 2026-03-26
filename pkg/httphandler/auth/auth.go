@@ -2,6 +2,8 @@ package auth
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/base64"
 	"fmt"
 	"net/http"
 	"strings"
@@ -19,11 +21,17 @@ import (
 	httpresponse "github.com/mutablelogic/go-server/pkg/httpresponse"
 	jsonschema "github.com/mutablelogic/go-server/pkg/jsonschema"
 	openapi "github.com/mutablelogic/go-server/pkg/openapi/schema"
+	types "github.com/mutablelogic/go-server/pkg/types"
 	oauth2 "golang.org/x/oauth2"
 )
 
 ///////////////////////////////////////////////////////////////////////////////
 // PUBLIC METHODS
+
+const (
+	localAuthorizationCodeType  = "authorization_code"
+	localAuthorizationCodeEmail = "local@example.com"
+)
 
 func AuthHandler(mgr *managerpkg.Manager) (string, http.HandlerFunc, *openapi.PathItem) {
 	return "/auth/login", func(w http.ResponseWriter, r *http.Request) {
@@ -46,17 +54,6 @@ func AuthHandler(mgr *managerpkg.Manager) (string, http.HandlerFunc, *openapi.Pa
 		}
 }
 
-func AuthCredentialsHandler(mgr *managerpkg.Manager) (string, http.HandlerFunc, *openapi.PathItem) {
-	return "/auth/credentials", func(w http.ResponseWriter, r *http.Request) {
-		switch r.Method {
-		case http.MethodPost:
-			_ = loginWithCredentials(r.Context(), mgr, w, r)
-		default:
-			_ = httpresponse.Error(w, httpresponse.Err(http.StatusMethodNotAllowed), r.Method)
-		}
-	}, &openapi.PathItem{Summary: "Local credentials login", Description: "Creates or resolves a local testing identity using only an email address and returns a signed local token plus userinfo."}
-}
-
 func AuthCodeHandler(mgr *managerpkg.Manager) (string, http.HandlerFunc, *openapi.PathItem) {
 	return "/auth/code", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
@@ -65,7 +62,7 @@ func AuthCodeHandler(mgr *managerpkg.Manager) (string, http.HandlerFunc, *openap
 		default:
 			_ = httpresponse.Error(w, httpresponse.Err(http.StatusMethodNotAllowed), r.Method)
 		}
-	}, &openapi.PathItem{Summary: "Authorization code exchange", Description: "Exchanges an OAuth authorization code using the server-side client secret, resolves the upstream identity, and returns a signed local token plus userinfo."}
+	}, &openapi.PathItem{Summary: "Authorization code exchange", Description: "Exchanges either a locally issued OAuth authorization code or an upstream provider authorization code and returns a signed local token plus userinfo."}
 }
 
 func AuthConfigHandler(mgr *managerpkg.Manager) (string, http.HandlerFunc, *openapi.PathItem) {
@@ -77,17 +74,6 @@ func AuthConfigHandler(mgr *managerpkg.Manager) (string, http.HandlerFunc, *open
 			_ = httpresponse.Error(w, httpresponse.Err(http.StatusMethodNotAllowed), r.Method)
 		}
 	}, &openapi.PathItem{Summary: "Public auth configuration", Description: "Returns the upstream authentication provider details that are safe to expose to clients."}
-}
-
-func AuthorizationHandler(mgr *managerpkg.Manager) (string, http.HandlerFunc, *openapi.PathItem) {
-	return "/" + oidc.AuthorizationPath, func(w http.ResponseWriter, r *http.Request) {
-		switch r.Method {
-		case http.MethodGet:
-			_ = authorize(r.Context(), mgr, w, r)
-		default:
-			_ = httpresponse.Error(w, httpresponse.Err(http.StatusMethodNotAllowed), r.Method)
-		}
-	}, &openapi.PathItem{Summary: "Authorization endpoint", Description: "Starts a browser-based authorization flow using the configured upstream provider."}
 }
 
 func RefreshHandler(mgr *managerpkg.Manager) (string, http.HandlerFunc, *openapi.PathItem) {
@@ -123,39 +109,6 @@ func UserInfoHandler(mgr *managerpkg.Manager) (string, http.HandlerFunc, *openap
 	}, &openapi.PathItem{Summary: "Authenticated user info", Description: "Returns the client-facing identity claims for the authenticated local token."}
 }
 
-func ConfigHandler(mgr *managerpkg.Manager) (string, http.HandlerFunc, *openapi.PathItem) {
-	return oidc.ConfigPath, func(w http.ResponseWriter, r *http.Request) {
-		switch r.Method {
-		case http.MethodGet:
-			_ = getOIDCConfig(r.Context(), mgr, w, r)
-		default:
-			_ = httpresponse.Error(w, httpresponse.Err(http.StatusMethodNotAllowed), r.Method)
-		}
-	}, &openapi.PathItem{Summary: "OpenID discovery document", Description: "Returns the OpenID Connect configuration for this server."}
-}
-
-func JWKSHandler(mgr *managerpkg.Manager) (string, http.HandlerFunc, *openapi.PathItem) {
-	return oidc.JWKSPath, func(w http.ResponseWriter, r *http.Request) {
-		switch r.Method {
-		case http.MethodGet:
-			_ = getJWKS(r.Context(), mgr, w, r)
-		default:
-			_ = httpresponse.Error(w, httpresponse.Err(http.StatusMethodNotAllowed), r.Method)
-		}
-	}, &openapi.PathItem{Summary: "JSON Web Key Set", Description: "Returns the public signing keys for this server."}
-}
-
-func ProtectedResourceHandler(mgr *managerpkg.Manager) (string, http.HandlerFunc, *openapi.PathItem) {
-	return oidc.ProtectedResourcePath, func(w http.ResponseWriter, r *http.Request) {
-		switch r.Method {
-		case http.MethodGet:
-			_ = getProtectedResourceMetadata(r.Context(), mgr, w, r)
-		default:
-			_ = httpresponse.Error(w, httpresponse.Err(http.StatusMethodNotAllowed), r.Method)
-		}
-	}, &openapi.PathItem{Summary: "OAuth protected resource metadata", Description: "Returns OAuth protected-resource metadata for this server."}
-}
-
 ///////////////////////////////////////////////////////////////////////////////
 // PRIVATE METHODS
 
@@ -170,50 +123,10 @@ func exchangeToken(ctx context.Context, mgr *managerpkg.Manager, w http.Response
 	}
 }
 
-func authorize(ctx context.Context, mgr *managerpkg.Manager, w http.ResponseWriter, r *http.Request) error {
-	_, config, err := authorizeProviderConfig(mgr, strings.TrimSpace(r.URL.Query().Get("provider")))
-	if err != nil {
-		return httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest).With(err))
-	}
-	redirectURL := strings.TrimSpace(r.URL.Query().Get("redirect_uri"))
-	if redirectURL == "" {
-		return httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest).With("redirect_uri is required"))
-	}
-	clientID := strings.TrimSpace(r.URL.Query().Get("client_id"))
-	if clientID == "" {
-		return httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest).With("client_id is required"))
-	}
-	responseType := strings.TrimSpace(r.URL.Query().Get("response_type"))
-	if responseType == "" {
-		responseType = oidc.ResponseTypeCode
-	}
-	if responseType != oidc.ResponseTypeCode {
-		return httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest).Withf("unsupported response_type %q", responseType))
-	}
-	state := strings.TrimSpace(r.URL.Query().Get("state"))
-	if state == "" {
-		return httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest).With("state is required"))
-	}
-	provider, err := coreoidc.NewProvider(ctx, config.Issuer)
-	if err != nil {
-		return httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest).With(err))
-	}
-	oauthConfig := &oauth2.Config{ClientID: config.ClientID, ClientSecret: config.ClientSecret, RedirectURL: redirectURL, Endpoint: provider.Endpoint(), Scopes: authorizeScopes(r)}
-	options := make([]oauth2.AuthCodeOption, 0, 3)
-	if nonce := strings.TrimSpace(r.URL.Query().Get("nonce")); nonce != "" {
-		options = append(options, oauth2.SetAuthURLParam("nonce", nonce))
-	}
-	if challenge := strings.TrimSpace(r.URL.Query().Get("code_challenge")); challenge != "" {
-		options = append(options, oauth2.SetAuthURLParam("code_challenge", challenge))
-	}
-	if method := strings.TrimSpace(r.URL.Query().Get("code_challenge_method")); method != "" {
-		options = append(options, oauth2.SetAuthURLParam("code_challenge_method", method))
-	}
-	http.Redirect(w, r, oauthConfig.AuthCodeURL(state, options...), http.StatusFound)
-	return nil
-}
-
 func exchangeCode(ctx context.Context, mgr *managerpkg.Manager, w http.ResponseWriter, r *http.Request) error {
+	if isOAuthTokenRequest(r) {
+		return exchangeLocalOAuthToken(ctx, mgr, w, r)
+	}
 	var req schema.AuthorizationCodeRequest
 	if err := httprequest.Read(r, &req); err != nil {
 		return httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest).With(err))
@@ -224,17 +137,6 @@ func exchangeCode(ctx context.Context, mgr *managerpkg.Manager, w http.ResponseW
 	} else {
 		return issueLoginResponse(ctx, mgr, w, r, claims, req.Meta)
 	}
-}
-
-func loginWithCredentials(ctx context.Context, mgr *managerpkg.Manager, w http.ResponseWriter, r *http.Request) error {
-	var req schema.CredentialsRequest
-	if err := httprequest.Read(r, &req); err != nil {
-		return httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest).With(err))
-	} else if err := req.Validate(); err != nil {
-		return httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest).With(err))
-	}
-	identity := schema.IdentityInsert{IdentityKey: schema.IdentityKey{Provider: oidc.OAuthClientKeyLocal, Sub: req.Email}, IdentityMeta: schema.IdentityMeta{Email: req.Email, Claims: map[string]any{"email": req.Email}}}
-	return issueIdentityLoginResponse(ctx, mgr, w, r, identity, req.Meta)
 }
 
 func refreshToken(ctx context.Context, mgr *managerpkg.Manager, w http.ResponseWriter, r *http.Request) error {
@@ -337,6 +239,182 @@ func exchangeAuthorizationCode(ctx context.Context, mgr *managerpkg.Manager, req
 	return claims, nil
 }
 
+func exchangeLocalOAuthToken(ctx context.Context, mgr *managerpkg.Manager, w http.ResponseWriter, r *http.Request) error {
+	if err := r.ParseForm(); err != nil {
+		return httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest).With(err))
+	}
+	grantType := strings.TrimSpace(r.PostForm.Get("grant_type"))
+	switch grantType {
+	case "authorization_code":
+		return exchangeLocalAuthorizationCodeGrant(ctx, mgr, w, r)
+	case "refresh_token":
+		return exchangeLocalRefreshTokenGrant(ctx, mgr, w, r)
+	default:
+		return httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest).Withf("unsupported grant_type %q", grantType))
+	}
+}
+
+func exchangeLocalAuthorizationCodeGrant(ctx context.Context, mgr *managerpkg.Manager, w http.ResponseWriter, r *http.Request) error {
+	config, err := mgr.OIDCConfig(r)
+	if err != nil {
+		return httpresponse.Error(w, httpresponse.Err(http.StatusInternalServerError).With(err))
+	}
+	clientID := strings.TrimSpace(r.PostForm.Get("client_id"))
+	if clientID == "" {
+		return httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest).With("client_id is required"))
+	}
+	redirectURL := strings.TrimSpace(r.PostForm.Get("redirect_uri"))
+	if redirectURL == "" {
+		return httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest).With("redirect_uri is required"))
+	}
+	code := strings.TrimSpace(r.PostForm.Get("code"))
+	if code == "" {
+		return httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest).With("code is required"))
+	}
+	claims, err := mgr.OIDCVerify(code, config.Issuer)
+	if err != nil {
+		return httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest).With(err))
+	}
+	if err := validateLocalAuthorizationCodeClaims(claims, clientID, redirectURL, strings.TrimSpace(r.PostForm.Get("code_verifier"))); err != nil {
+		return httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest).With(err))
+	}
+	email, err := localAuthorizationEmailFromClaims(claims)
+	if err != nil {
+		return httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest).With(err))
+	}
+	identity := schema.IdentityInsert{
+		IdentityKey: schema.IdentityKey{Provider: oidc.OAuthClientKeyLocal, Sub: email},
+		IdentityMeta: schema.IdentityMeta{
+			Email: email,
+			Claims: map[string]any{
+				"email": email,
+				"name":  localAuthorizationName(email),
+			},
+		},
+	}
+	user, session, err := mgr.LoginWithIdentity(ctx, identity, nil)
+	if err != nil {
+		return httpresponse.Error(w, httpErr(err))
+	}
+	accessToken, err := mgr.OIDCSign(loginTokenClaims(config.Issuer, user, session))
+	if err != nil {
+		return httpresponse.Error(w, httpresponse.Err(http.StatusInternalServerError).With(err))
+	}
+	return httpresponse.JSON(w, http.StatusOK, httprequest.Indent(r), localOAuthTokenResponse(accessToken, session.ExpiresAt))
+}
+
+func exchangeLocalRefreshTokenGrant(ctx context.Context, mgr *managerpkg.Manager, w http.ResponseWriter, r *http.Request) error {
+	config, err := mgr.OIDCConfig(r)
+	if err != nil {
+		return httpresponse.Error(w, httpresponse.Err(http.StatusInternalServerError).With(err))
+	}
+	refreshToken := strings.TrimSpace(r.PostForm.Get("refresh_token"))
+	if refreshToken == "" {
+		return httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest).With("refresh_token is required"))
+	}
+	claims, err := mgr.OIDCVerify(refreshToken, config.Issuer)
+	if err != nil {
+		return httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest).With(err))
+	}
+	sessionID, err := sessionIDFromClaims(claims)
+	if err != nil {
+		return httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest).With(err))
+	}
+	user, session, err := mgr.RefreshSession(ctx, sessionID)
+	if err != nil {
+		return httpresponse.Error(w, httpErr(err))
+	}
+	accessToken, err := mgr.OIDCSign(loginTokenClaims(config.Issuer, user, session))
+	if err != nil {
+		return httpresponse.Error(w, httpresponse.Err(http.StatusInternalServerError).With(err))
+	}
+	return httpresponse.JSON(w, http.StatusOK, httprequest.Indent(r), localOAuthTokenResponse(accessToken, session.ExpiresAt))
+}
+
+func isOAuthTokenRequest(r *http.Request) bool {
+	if r == nil {
+		return false
+	}
+	contentType := strings.ToLower(strings.TrimSpace(r.Header.Get("Content-Type")))
+	return strings.HasPrefix(contentType, "application/x-www-form-urlencoded")
+}
+
+func validateLocalAuthorizationCodeClaims(claims map[string]any, clientID, redirectURL, codeVerifier string) error {
+	if value, _ := claims["typ"].(string); strings.TrimSpace(value) != localAuthorizationCodeType {
+		return fmt.Errorf("invalid local authorization code")
+	}
+	if audience, _ := claims["aud"].(string); strings.TrimSpace(audience) != clientID {
+		return fmt.Errorf("authorization code client_id mismatch")
+	}
+	if value, _ := claims["redirect_uri"].(string); strings.TrimSpace(value) != redirectURL {
+		return fmt.Errorf("authorization code redirect_uri mismatch")
+	}
+	challenge, _ := claims["code_challenge"].(string)
+	challenge = strings.TrimSpace(challenge)
+	if challenge == "" {
+		return nil
+	}
+	if codeVerifier == "" {
+		return fmt.Errorf("code_verifier is required")
+	}
+	method, _ := claims["code_challenge_method"].(string)
+	switch strings.TrimSpace(method) {
+	case "", oidc.CodeChallengeMethodPlain:
+		if codeVerifier != challenge {
+			return fmt.Errorf("authorization code verifier mismatch")
+		}
+	case oidc.CodeChallengeMethodS256:
+		sum := sha256.Sum256([]byte(codeVerifier))
+		if base64.RawURLEncoding.EncodeToString(sum[:]) != challenge {
+			return fmt.Errorf("authorization code verifier mismatch")
+		}
+	default:
+		return fmt.Errorf("unsupported code_challenge_method %q", method)
+	}
+	return nil
+}
+
+func localAuthorizationEmailFromClaims(claims map[string]any) (string, error) {
+	email, _ := claims["email"].(string)
+	email = strings.TrimSpace(email)
+	if email == "" {
+		email, _ = claims["sub"].(string)
+		email = strings.TrimSpace(email)
+	}
+	if email == "" {
+		return "", fmt.Errorf("authorization code missing email")
+	}
+	var normalized string
+	if !types.IsEmail(email, nil, &normalized) {
+		return "", fmt.Errorf("authorization code email is invalid")
+	}
+	return strings.ToLower(strings.TrimSpace(normalized)), nil
+}
+
+func localAuthorizationName(email string) string {
+	email = strings.TrimSpace(email)
+	if email == "" {
+		return "Local User"
+	}
+	if local, _, ok := strings.Cut(email, "@"); ok && strings.TrimSpace(local) != "" {
+		return local
+	}
+	return "Local User"
+}
+
+func localOAuthTokenResponse(token string, expiresAt time.Time) map[string]any {
+	expiresIn := int64(time.Until(expiresAt).Seconds())
+	if expiresIn < 0 {
+		expiresIn = 0
+	}
+	return map[string]any{
+		"access_token":  token,
+		"refresh_token": token,
+		"token_type":    "Bearer",
+		"expires_in":    expiresIn,
+	}
+}
+
 func validateAuthorizationCodeNonce(expected string, claims map[string]any) error {
 	expected = strings.TrimSpace(expected)
 	if expected == "" {
@@ -347,42 +425,6 @@ func validateAuthorizationCodeNonce(expected string, claims map[string]any) erro
 		return fmt.Errorf("token nonce mismatch")
 	}
 	return nil
-}
-
-func authorizeProviderConfig(mgr *managerpkg.Manager, provider string) (string, oidc.ClientConfiguration, error) {
-	provider = strings.TrimSpace(provider)
-	if provider != "" {
-		config, err := mgr.OAuthClientConfig(provider)
-		if err != nil {
-			return "", oidc.ClientConfiguration{}, err
-		}
-		if strings.TrimSpace(config.ClientID) == "" {
-			return "", oidc.ClientConfiguration{}, fmt.Errorf("provider %q has no client_id", provider)
-		}
-		return provider, config, nil
-	}
-	public, err := mgr.AuthConfig()
-	if err != nil {
-		return "", oidc.ClientConfiguration{}, err
-	}
-	selected := ""
-	for key, cfg := range public {
-		if key == oidc.OAuthClientKeyLocal || strings.TrimSpace(cfg.ClientID) == "" {
-			continue
-		}
-		if selected != "" {
-			return "", oidc.ClientConfiguration{}, fmt.Errorf("provider is required when multiple upstream providers are configured")
-		}
-		selected = key
-	}
-	if selected == "" {
-		return "", oidc.ClientConfiguration{}, fmt.Errorf("no upstream provider is available for authorization")
-	}
-	config, err := mgr.OAuthClientConfig(selected)
-	if err != nil {
-		return "", oidc.ClientConfiguration{}, err
-	}
-	return selected, config, nil
 }
 
 func authorizeScopes(r *http.Request) []string {
@@ -420,38 +462,6 @@ func sessionIDFromClaims(claims map[string]any) (schema.SessionID, error) {
 		return schema.SessionID{}, httpresponse.Err(http.StatusBadRequest).With("token missing sid claim")
 	}
 	return schema.SessionIDFromString(value)
-}
-
-func getOIDCConfig(_ context.Context, mgr *managerpkg.Manager, w http.ResponseWriter, r *http.Request) error {
-	config, err := mgr.OIDCConfig(r)
-	if err != nil {
-		return httpresponse.Error(w, httpresponse.Err(http.StatusInternalServerError).With(err))
-	}
-	return httpresponse.JSON(w, http.StatusOK, httprequest.Indent(r), config)
-}
-
-func getProtectedResourceMetadata(_ context.Context, mgr *managerpkg.Manager, w http.ResponseWriter, r *http.Request) error {
-	config, err := mgr.ProtectedResourceMetadata(r)
-	if err != nil {
-		return httpresponse.Error(w, httpresponse.Err(http.StatusInternalServerError).With(err))
-	}
-	return httpresponse.JSON(w, http.StatusOK, httprequest.Indent(r), config)
-}
-
-func getAuthConfig(_ context.Context, mgr *managerpkg.Manager, w http.ResponseWriter, r *http.Request) error {
-	config, err := mgr.AuthConfig()
-	if err != nil {
-		return httpresponse.Error(w, httpErr(err))
-	}
-	return httpresponse.JSON(w, http.StatusOK, httprequest.Indent(r), config)
-}
-
-func getJWKS(_ context.Context, mgr *managerpkg.Manager, w http.ResponseWriter, r *http.Request) error {
-	jwks, err := mgr.OIDCJWKSet()
-	if err != nil {
-		return httpresponse.Error(w, httpresponse.Err(http.StatusInternalServerError).With(err))
-	}
-	return httpresponse.JSON(w, http.StatusOK, httprequest.Indent(r), jwks)
 }
 
 func getUserInfo(ctx context.Context, _ *managerpkg.Manager, w http.ResponseWriter, r *http.Request) error {

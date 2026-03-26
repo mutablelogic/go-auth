@@ -5,6 +5,7 @@ import (
 	"os"
 
 	// Packages
+	auth "github.com/djthorpe/go-auth/pkg/cmd/auth"
 	cmd "github.com/mutablelogic/go-server/pkg/cmd"
 	version "github.com/mutablelogic/go-server/pkg/version"
 )
@@ -14,7 +15,7 @@ import (
 
 type CLI struct {
 	ServerCommands
-	AuthCommands
+	auth.Commands
 	ChangesCommands
 	UserCommands
 	UserGroupCommands

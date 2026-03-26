@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/rsa"
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -219,61 +220,82 @@ func Test_http_001(t *testing.T) {
 		assert.Equal(issuer, mustExtractIssuer(t, response.Token))
 	})
 
-	t.Run("AuthCredentialsHandlerMethodNotAllowed", func(t *testing.T) {
-		require := require.New(t)
-
-		mgr, _ := newHTTPTestManager(t)
-		_, handler, _ := AuthCredentialsHandler(mgr)
-		res := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodGet, "/auth/credentials", nil)
-
-		handler(res, req)
-
-		require.Equal(http.StatusMethodNotAllowed, res.Code)
-	})
-
-	t.Run("AuthCredentialsHandlerSuccess", func(t *testing.T) {
+	t.Run("AuthorizationHandlerRedirectsToLocalCallbackByDefault", func(t *testing.T) {
 		assert := assert.New(t)
 		require := require.New(t)
 
 		mgr, issuer := newHTTPTestManager(t)
-		_, handler, _ := AuthCredentialsHandler(mgr)
+		_, handler, _ := AuthorizationHandler(mgr)
+		challenge := codeChallengeForVerifier("verifier-123")
 		res := httptest.NewRecorder()
-		body := mustJSONBody(t, schema.CredentialsRequest{Email: "credentials.success@example.com", Meta: schema.MetaMap{"invite": "test"}})
-		req := httptest.NewRequest(http.MethodPost, "/auth/credentials", body)
+		req := httptest.NewRequest(http.MethodGet, "/auth/authorize?client_id=local-client&redirect_uri=http%3A%2F%2F127.0.0.1%3A8085%2Fcallback&response_type=code&state=state-123&code_challenge="+url.QueryEscape(challenge)+"&code_challenge_method=S256&login_hint=local.success%40example.com", nil)
 		req.Host = "localhost:8084"
-		req.Header.Set("Content-Type", "application/json")
+
+		handler(res, req)
+
+		require.Equal(http.StatusFound, res.Code)
+		location := res.Header().Get("Location")
+		require.NotEmpty(location)
+		uri, err := url.Parse(location)
+		require.NoError(err)
+		assert.Equal("127.0.0.1:8085", uri.Host)
+		assert.Equal("/callback", uri.Path)
+		assert.Equal("state-123", uri.Query().Get("state"))
+		code := uri.Query().Get("code")
+		require.NotEmpty(code)
+
+		claims, err := mgr.OIDCVerify(code, issuer)
+		require.NoError(err)
+		assert.Equal("local.success@example.com", claims["email"])
+		assert.Equal("local-client", claims["aud"])
+		assert.Equal("http://127.0.0.1:8085/callback", claims["redirect_uri"])
+	})
+
+	t.Run("AuthCodeHandlerLocalAuthorizationCodeGrantSuccess", func(t *testing.T) {
+		assert := assert.New(t)
+		require := require.New(t)
+
+		mgr, issuer := newHTTPTestManager(t)
+		_, authorizeHandler, _ := AuthorizationHandler(mgr)
+		challenge := codeChallengeForVerifier("verifier-123")
+		authorizeRes := httptest.NewRecorder()
+		authorizeReq := httptest.NewRequest(http.MethodGet, "/auth/authorize?client_id=local-client&redirect_uri=http%3A%2F%2F127.0.0.1%3A8085%2Fcallback&response_type=code&state=state-123&code_challenge="+url.QueryEscape(challenge)+"&code_challenge_method=S256&login_hint=local.success%40example.com", nil)
+		authorizeReq.Host = "localhost:8084"
+		authorizeHandler(authorizeRes, authorizeReq)
+		require.Equal(http.StatusFound, authorizeRes.Code)
+		callbackURL, err := url.Parse(authorizeRes.Header().Get("Location"))
+		require.NoError(err)
+		code := callbackURL.Query().Get("code")
+		require.NotEmpty(code)
+
+		_, handler, _ := AuthCodeHandler(mgr)
+		res := httptest.NewRecorder()
+		form := url.Values{
+			"grant_type":    {"authorization_code"},
+			"code":          {code},
+			"client_id":     {"local-client"},
+			"redirect_uri":  {"http://127.0.0.1:8085/callback"},
+			"code_verifier": {"verifier-123"},
+		}
+		req := httptest.NewRequest(http.MethodPost, "/auth/code", strings.NewReader(form.Encode()))
+		req.Host = "localhost:8084"
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
 		handler(res, req)
 
 		require.Equal(http.StatusOK, res.Code)
-		var response schema.TokenResponse
+		var response map[string]any
 		require.NoError(json.Unmarshal(res.Body.Bytes(), &response))
-		assert.NotEmpty(response.Token)
-		require.NotNil(response.UserInfo)
-		assert.Equal("credentials.success@example.com", response.UserInfo.Email)
-		assert.Equal(issuer, mustExtractIssuer(t, response.Token))
+		accessToken, _ := response["access_token"].(string)
+		refreshToken, _ := response["refresh_token"].(string)
+		assert.NotEmpty(accessToken)
+		assert.NotEmpty(refreshToken)
+		assert.Equal("Bearer", response["token_type"])
+		assert.Equal(issuer, mustExtractIssuer(t, accessToken))
 
-		listed, err := mgr.ListUsers(context.Background(), schema.UserListRequest{Email: "credentials.success@example.com"})
+		listed, err := mgr.ListUsers(context.Background(), schema.UserListRequest{Email: "local.success@example.com"})
 		require.NoError(err)
 		require.Len(listed.Body, 1)
-		assert.Equal(schema.MetaMap{"invite": "test"}, listed.Body[0].Meta)
-	})
-
-	t.Run("AuthCredentialsHandlerRejectsInvalidEmail", func(t *testing.T) {
-		assert := assert.New(t)
-		require := require.New(t)
-
-		mgr, _ := newHTTPTestManager(t)
-		_, handler, _ := AuthCredentialsHandler(mgr)
-		res := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodPost, "/auth/credentials", mustJSONBody(t, schema.CredentialsRequest{Email: "not-an-email"}))
-		req.Header.Set("Content-Type", "application/json")
-
-		handler(res, req)
-
-		require.Equal(http.StatusBadRequest, res.Code)
-		assert.Contains(res.Body.String(), "email is invalid")
 	})
 
 	t.Run("AuthHandlerReturnsConflictForExistingEmail", func(t *testing.T) {
@@ -478,7 +500,7 @@ func Test_http_001(t *testing.T) {
 		handler(res, req)
 
 		require.Equal(http.StatusOK, res.Code)
-		var response oidc.Configuration
+		var response oidc.OIDCConfiguration
 		require.NoError(json.Unmarshal(res.Body.Bytes(), &response))
 		assert.Equal(issuer, response.Issuer)
 		assert.Equal(oidc.AuthorizationURL(issuer), response.AuthorizationEndpoint)
@@ -496,11 +518,13 @@ func Test_http_001(t *testing.T) {
 		provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			switch r.URL.Path {
 			case "/.well-known/openid-configuration":
-				_ = json.NewEncoder(w).Encode(oidc.Configuration{
-					Issuer:                providerURL,
-					AuthorizationEndpoint: providerURL + "/authorize",
-					TokenEndpoint:         providerURL + "/token",
-					JwksURI:               providerURL + "/jwks",
+				_ = json.NewEncoder(w).Encode(oidc.OIDCConfiguration{
+					BaseConfiguration: oidc.BaseConfiguration{
+						Issuer:                providerURL,
+						AuthorizationEndpoint: providerURL + "/authorize",
+						TokenEndpoint:         providerURL + "/token",
+					},
+					JwksURI: providerURL + "/jwks",
 				})
 			case "/authorize":
 				w.WriteHeader(http.StatusOK)
@@ -514,7 +538,7 @@ func Test_http_001(t *testing.T) {
 		mgr, _ := newHTTPTestManagerWithOpts(t, managerpkg.WithOAuthClient("google", provider.URL, "google-client-id", "google-client-secret"))
 		_, handler, _ := AuthorizationHandler(mgr)
 		res := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodGet, "/auth/authorize?client_id=local-client&redirect_uri=http%3A%2F%2F127.0.0.1%3A8085%2Fcallback&response_type=code&state=state-123&code_challenge=challenge-123&code_challenge_method=S256", nil)
+		req := httptest.NewRequest(http.MethodGet, "/auth/authorize?provider=google&client_id=local-client&redirect_uri=http%3A%2F%2F127.0.0.1%3A8085%2Fcallback&response_type=code&state=state-123&code_challenge=challenge-123&code_challenge_method=S256", nil)
 
 		handler(res, req)
 
@@ -1461,6 +1485,11 @@ func mustJSONBody(t *testing.T, value any) *bytes.Reader {
 	return bytes.NewReader(data)
 }
 
+func codeChallengeForVerifier(verifier string) string {
+	sum := sha256.Sum256([]byte(verifier))
+	return base64.RawURLEncoding.EncodeToString(sum[:])
+}
+
 type testOIDCProvider struct {
 	server       *httptest.Server
 	key          any
@@ -1485,16 +1514,18 @@ func newTestOIDCProvider(t *testing.T, clientID, clientSecret, nonce string) *te
 	mux := http.NewServeMux()
 	mux.HandleFunc("/"+oidc.ConfigPath, func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		require.NoError(t, json.NewEncoder(w).Encode(oidc.Configuration{
-			Issuer:              provider.server.URL,
-			TokenEndpoint:       provider.server.URL + "/token",
-			JwksURI:             oidc.JWKSURL(provider.server.URL),
-			SigningAlgorithms:   []string{oidc.SigningAlgorithm},
-			SubjectTypes:        []string{"public"},
-			ResponseTypes:       []string{oidc.ResponseTypeCode},
-			GrantTypesSupported: []string{"authorization_code"},
-			ScopesSupported:     []string{oidc.ScopeOpenID, oidc.ScopeEmail, oidc.ScopeProfile},
-			ClaimsSupported:     []string{"iss", "sub", "aud", "exp", "iat", "email", "name", "nonce"},
+		require.NoError(t, json.NewEncoder(w).Encode(oidc.OIDCConfiguration{
+			BaseConfiguration: oidc.BaseConfiguration{
+				Issuer:              provider.server.URL,
+				TokenEndpoint:       provider.server.URL + "/token",
+				ResponseTypes:       []string{oidc.ResponseTypeCode},
+				GrantTypesSupported: []string{"authorization_code"},
+				ScopesSupported:     []string{oidc.ScopeOpenID, oidc.ScopeEmail, oidc.ScopeProfile},
+			},
+			JwksURI:           oidc.JWKSURL(provider.server.URL),
+			SigningAlgorithms: []string{oidc.SigningAlgorithm},
+			SubjectTypes:      []string{"public"},
+			ClaimsSupported:   []string{"iss", "sub", "aud", "exp", "iat", "email", "name", "nonce"},
 		}))
 	})
 	mux.HandleFunc("/"+oidc.JWKSPath, func(w http.ResponseWriter, r *http.Request) {

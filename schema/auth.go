@@ -2,12 +2,10 @@ package schema
 
 import (
 	"context"
-	"strings"
 
 	// Packages
 	auth "github.com/djthorpe/go-auth"
 	authoidc "github.com/djthorpe/go-auth/pkg/oidc"
-	types "github.com/mutablelogic/go-server/pkg/types"
 )
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -29,13 +27,6 @@ type AuthorizationCodeRequest struct {
 	CodeVerifier string  `json:"code_verifier,omitempty"`
 	Nonce        string  `json:"nonce,omitempty"`
 	Meta         MetaMap `json:"meta,omitempty"`
-}
-
-// CredentialsRequest contains the local testing-only login information used
-// to synthesize a local identity without storing a password.
-type CredentialsRequest struct {
-	Email string  `json:"email"`
-	Meta  MetaMap `json:"meta,omitempty"`
 }
 
 // RefreshRequest contains a previously issued local session token that should
@@ -93,21 +84,6 @@ func (req *AuthorizationCodeRequest) Validate() error {
 	} else if req.RedirectURL == "" {
 		return auth.ErrBadParameter.With("redirect_url is required")
 	}
-	return nil
-}
-
-func (req *CredentialsRequest) Validate() error {
-	email := strings.TrimSpace(req.Email)
-	if email == "" {
-		return auth.ErrBadParameter.With("email is required")
-	}
-
-	var normalized string
-	if !types.IsEmail(email, nil, &normalized) {
-		return auth.ErrBadParameter.With("email is invalid")
-	}
-
-	req.Email = canonicalizeEmail(normalized)
 	return nil
 }
 
