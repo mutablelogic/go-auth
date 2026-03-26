@@ -12,6 +12,7 @@ import (
 	coreoidc "github.com/coreos/go-oidc/v3/oidc"
 	manager "github.com/djthorpe/go-auth/pkg/manager"
 	oidc "github.com/djthorpe/go-auth/pkg/oidc"
+	schema "github.com/djthorpe/go-auth/schema"
 	jwt "github.com/golang-jwt/jwt/v5"
 	httpresponse "github.com/mutablelogic/go-server/pkg/httpresponse"
 	openapi "github.com/mutablelogic/go-server/pkg/openapi/schema"
@@ -66,7 +67,7 @@ func authorize(ctx context.Context, manager *manager.Manager, w http.ResponseWri
 	if state == "" {
 		return httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest).With("state is required"))
 	}
-	if providerName == "" || providerName == oidc.OAuthClientKeyLocal {
+	if providerName == "" || providerName == schema.OAuthClientKeyLocal {
 		return authorizeLocal(manager, w, r, clientID, redirectURL, state)
 	}
 
@@ -124,7 +125,7 @@ func issueLocalAuthorizationCode(manager *manager.Manager, r *http.Request, clie
 	if manager == nil {
 		return "", fmt.Errorf("manager is required")
 	}
-	issuer, err := manager.OIDCIssuer(r)
+	issuer, err := manager.OIDCIssuer()
 	if err != nil {
 		return "", err
 	}
@@ -171,38 +172,38 @@ func localAuthorizationEmail(r *http.Request) (string, error) {
 	return strings.ToLower(strings.TrimSpace(normalized)), nil
 }
 
-func authorizeProviderConfig(manager *manager.Manager, provider string) (string, oidc.ClientConfiguration, error) {
+func authorizeProviderConfig(manager *manager.Manager, provider string) (string, schema.ClientConfiguration, error) {
 	provider = strings.TrimSpace(provider)
 	if provider != "" {
 		config, err := manager.OAuthClientConfig(provider)
 		if err != nil {
-			return "", oidc.ClientConfiguration{}, err
+			return "", schema.ClientConfiguration{}, err
 		}
 		if strings.TrimSpace(config.ClientID) == "" {
-			return "", oidc.ClientConfiguration{}, fmt.Errorf("provider %q has no client_id", provider)
+			return "", schema.ClientConfiguration{}, fmt.Errorf("provider %q has no client_id", provider)
 		}
 		return provider, config, nil
 	}
 	public, err := manager.AuthConfig()
 	if err != nil {
-		return "", oidc.ClientConfiguration{}, err
+		return "", schema.ClientConfiguration{}, err
 	}
 	selected := ""
 	for key, cfg := range public {
-		if key == oidc.OAuthClientKeyLocal || strings.TrimSpace(cfg.ClientID) == "" {
+		if key == schema.OAuthClientKeyLocal || strings.TrimSpace(cfg.ClientID) == "" {
 			continue
 		}
 		if selected != "" {
-			return "", oidc.ClientConfiguration{}, fmt.Errorf("provider is required when multiple upstream providers are configured")
+			return "", schema.ClientConfiguration{}, fmt.Errorf("provider is required when multiple upstream providers are configured")
 		}
 		selected = key
 	}
 	if selected == "" {
-		return "", oidc.ClientConfiguration{}, fmt.Errorf("no upstream provider is available for authorization")
+		return "", schema.ClientConfiguration{}, fmt.Errorf("no upstream provider is available for authorization")
 	}
 	config, err := manager.OAuthClientConfig(selected)
 	if err != nil {
-		return "", oidc.ClientConfiguration{}, err
+		return "", schema.ClientConfiguration{}, err
 	}
 	return selected, config, nil
 }

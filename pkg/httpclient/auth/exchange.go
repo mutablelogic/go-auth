@@ -13,8 +13,8 @@ import (
 ///////////////////////////////////////////////////////////////////////////////
 // PUBLIC METHODS
 
-// ExchangeCode exchanges an OAuth authorization code for an upstream token
-// response using the supplied flow configuration.
+// ExchangeCode exchanges an authorization code using the supplied flow
+// configuration and returns the token response from the configured endpoint.
 func (c *Client) ExchangeCode(ctx context.Context, flow *oidc.AuthorizationCodeFlow, code, clientSecret string) (*oauth2.Token, error) {
 	if ctx == nil {
 		ctx = context.Background()
@@ -33,6 +33,12 @@ func (c *Client) ExchangeCode(ctx context.Context, flow *oidc.AuthorizationCodeF
 	options := make([]oauth2.AuthCodeOption, 0, 1)
 	if verifier := strings.TrimSpace(flow.CodeVerifier); verifier != "" {
 		options = append(options, oauth2.SetAuthURLParam("code_verifier", verifier))
+	}
+	if provider := strings.TrimSpace(flow.Provider); provider != "" {
+		options = append(options, oauth2.SetAuthURLParam("provider", provider))
+	}
+	if nonce := strings.TrimSpace(flow.Nonce); nonce != "" {
+		options = append(options, oauth2.SetAuthURLParam("nonce", nonce))
 	}
 	token, err := config.Exchange(ctx, code, options...)
 	if err != nil {

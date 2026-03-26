@@ -51,11 +51,11 @@ func (cmd *RevokeCommand) Run(ctx server.Cmd) error {
 	if err != nil {
 		return err
 	}
-	serverMeta, err := authorizationServerForFlow(meta)
+	serverMeta, err := meta.AuthorizationServerForFlow()
 	if err != nil {
 		return err
 	}
-	config, err := authorizationCodeConfig(serverMeta)
+	config, err := serverMeta.AuthorizationCodeConfig()
 	if err != nil {
 		return err
 	}

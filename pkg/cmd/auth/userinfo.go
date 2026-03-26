@@ -71,7 +71,7 @@ func userInfoForEndpoint(ctx server.Cmd, authClient *auth.Client, endpoint strin
 	if err != nil {
 		return nil, err
 	}
-	serverMeta, err := authorizationServerForUserInfo(meta)
+	serverMeta, err := meta.AuthorizationServerForUserInfo()
 	if err != nil {
 		return nil, err
 	}

@@ -15,6 +15,7 @@ import (
 // AuthorizationCodeFlow contains the generated state required to start an
 // interactive OAuth2/OIDC authorization code flow with optional PKCE.
 type AuthorizationCodeFlow struct {
+	Provider              string   `json:"provider,omitempty"`
 	Issuer                string   `json:"issuer,omitempty"`
 	AuthorizationEndpoint string   `json:"authorization_endpoint"`
 	AuthorizationURL      string   `json:"authorization_url"`

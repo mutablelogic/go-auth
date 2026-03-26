@@ -4,15 +4,14 @@ Client and server authentication with local JWT sessions backed by PostgreSQL.
 
 ## Current model
 
-- Upstream identity tokens are exchanged for a locally signed JWT.
+- Authorization codes are exchanged for a locally signed JWT.
 - The local JWT contains embedded `user` and `session` claims.
 - Access tokens are short-lived and currently validated without a database lookup on normal protected requests.
 - Session refresh and revoke operate on the backing PostgreSQL session row.
 
 ## Endpoints
 
-- `POST /auth/login`: exchange an upstream identity token for a local token.
-- `POST /auth/refresh`: refresh a still-eligible local token and session.
+- `POST /auth/code`: exchange an authorization code or refresh token for a local token.
 - `POST /auth/revoke`: revoke a local session token.
 - `GET /changes`: stream protected change notifications as server-sent events.
 - `GET /user`: list users.

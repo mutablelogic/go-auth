@@ -36,13 +36,14 @@ func RegisterManagerHandlers(manager *managerpkg.Manager, router server.HTTPRout
 		register(path, handler, spec)
 	}
 
+	register(ConfigHandler(manager))
+	registerProtected(UserHandler(manager))
+	registerProtected(UserItemHandler(manager))
+	registerProtected(UserGroupHandler(manager))
 	registerProtected(GroupHandler(manager))
 	registerProtected(GroupItemHandler(manager))
 	registerProtected(ChangesHandler(manager))
 	registerProtected(ScopeHandler(manager))
-	registerProtected(UserHandler(manager))
-	registerProtected(UserItemHandler(manager))
-	registerProtected(UserGroupHandler(manager))
 
 	return result
 }

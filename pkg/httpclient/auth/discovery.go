@@ -36,6 +36,93 @@ func (c Config) String() string {
 	return types.Stringify(c)
 }
 
+// AuthorizationServerForFlow selects a discovered authorization server that
+// advertises an authorization endpoint.
+func (c *Config) AuthorizationServerForFlow() (*ServerMetadata, error) {
+	if c == nil || len(c.AuthorizationServers) == 0 {
+		return nil, fmt.Errorf("authorization server metadata is required")
+	}
+	for index := range c.AuthorizationServers {
+		serverMeta := &c.AuthorizationServers[index]
+		if strings.TrimSpace(serverMeta.Oidc.AuthorizationEndpoint) != "" || strings.TrimSpace(serverMeta.OAuth.AuthorizationEndpoint) != "" {
+			return serverMeta, nil
+		}
+	}
+	return nil, fmt.Errorf("no authorization endpoint is advertised")
+}
+
+// AuthorizationServerForRegistration selects a discovered authorization server
+// that can be used for dynamic client registration.
+func (c *Config) AuthorizationServerForRegistration() (*ServerMetadata, error) {
+	if c == nil || len(c.AuthorizationServers) == 0 {
+		return nil, fmt.Errorf("authorization server metadata is required")
+	}
+	for index := range c.AuthorizationServers {
+		serverMeta := &c.AuthorizationServers[index]
+		if registrationEndpoint(serverMeta) != "" &&
+			(strings.TrimSpace(serverMeta.Oidc.AuthorizationEndpoint) != "" || strings.TrimSpace(serverMeta.OAuth.AuthorizationEndpoint) != "") {
+			return serverMeta, nil
+		}
+	}
+	for index := range c.AuthorizationServers {
+		serverMeta := &c.AuthorizationServers[index]
+		if registrationEndpoint(serverMeta) != "" {
+			return serverMeta, nil
+		}
+	}
+	return nil, fmt.Errorf("no registration endpoint is advertised")
+}
+
+// AuthorizationServerForUserInfo selects a discovered authorization server
+// that advertises a userinfo endpoint.
+func (c *Config) AuthorizationServerForUserInfo() (*ServerMetadata, error) {
+	if c == nil || len(c.AuthorizationServers) == 0 {
+		return nil, fmt.Errorf("authorization server metadata is required")
+	}
+	for index := range c.AuthorizationServers {
+		serverMeta := &c.AuthorizationServers[index]
+		if strings.TrimSpace(serverMeta.Oidc.UserInfoEndpoint) != "" {
+			return serverMeta, nil
+		}
+	}
+	return nil, fmt.Errorf("no userinfo endpoint is advertised")
+}
+
+// AuthorizationCodeConfig converts the selected authorization server metadata
+// into the minimal OIDC/OAuth configuration needed to build an auth code flow.
+func (c *Config) AuthorizationCodeConfig() (oidc.BaseConfiguration, error) {
+	serverMeta, err := c.AuthorizationServerForFlow()
+	if err != nil {
+		return oidc.BaseConfiguration{}, err
+	}
+	return serverMeta.AuthorizationCodeConfig()
+}
+
+// AuthorizationCodeConfig converts discovered server metadata into a base
+// configuration suitable for authorization code flows.
+func (serverMeta *ServerMetadata) AuthorizationCodeConfig() (oidc.BaseConfiguration, error) {
+	if serverMeta == nil {
+		return oidc.BaseConfiguration{}, fmt.Errorf("authorization server metadata is required")
+	}
+	if strings.TrimSpace(serverMeta.Oidc.AuthorizationEndpoint) != "" {
+		config := serverMeta.Oidc.BaseConfiguration
+		if strings.TrimSpace(config.Issuer) == "" {
+			config.Issuer = strings.TrimSpace(serverMeta.Issuer)
+		}
+		config.NonceSupported = true
+		return config, nil
+	}
+	if strings.TrimSpace(serverMeta.OAuth.AuthorizationEndpoint) != "" {
+		config := serverMeta.OAuth.BaseConfiguration
+		if strings.TrimSpace(config.Issuer) == "" {
+			config.Issuer = strings.TrimSpace(serverMeta.Issuer)
+		}
+		config.NonceSupported = false
+		return config, nil
+	}
+	return oidc.BaseConfiguration{}, fmt.Errorf("no authorization endpoint is advertised")
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 // PUBLIC METHODS
 
@@ -96,6 +183,20 @@ func (c *Client) Discover(ctx context.Context, issuer string) (*Config, error) {
 	}
 
 	return &config, nil
+}
+
+// DiscoverFromIssuer resolves authorization server metadata directly from a
+// known issuer URL without first probing protected-resource metadata.
+func (c *Client) DiscoverFromIssuer(ctx context.Context, issuer string) (*Config, error) {
+	serverMeta, err := c.discoverFromIssuer(ctx, issuer)
+	if err != nil {
+		return nil, err
+	}
+	config := &Config{}
+	if serverMeta != nil {
+		config.AuthorizationServers = append(config.AuthorizationServers, types.Value(serverMeta))
+	}
+	return config, nil
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -222,6 +323,16 @@ func absoluteURL(raw string) string {
 	return uri.String()
 }
 
+func registrationEndpoint(serverMeta *ServerMetadata) string {
+	if serverMeta == nil {
+		return ""
+	}
+	if endpoint := strings.TrimSpace(serverMeta.Oidc.RegistrationEndpoint); endpoint != "" {
+		return endpoint
+	}
+	return strings.TrimSpace(serverMeta.OAuth.RegistrationEndpoint)
+}
+
 func interoperabilityIssuerCandidates(resource string) []string {
 	uri, err := url.Parse(strings.TrimSpace(resource))
 	if err != nil || uri.Scheme == "" || uri.Host == "" {
@@ -325,6 +436,14 @@ func metadataCandidates(raw, wellKnownPath, compatibility string) []string {
 		result = append(result, value)
 	}
 
+	// Prefer the canonical issuer-specific well-known URL first. For issuers with
+	// a path component like http://host/api this resolves to
+	// http://host/api/.well-known/openid-configuration, which avoids probing a
+	// series of less likely fallback candidates before the correct endpoint.
+	if compatibility := strings.TrimSpace(compatibility); compatibility != "" {
+		appendCandidate(compatibility)
+	}
+
 	uri, err := url.Parse(strings.TrimSpace(raw))
 	if err != nil || uri.Scheme == "" || uri.Host == "" {
 		return nil
@@ -342,39 +461,29 @@ func metadataCandidates(raw, wellKnownPath, compatibility string) []string {
 	root := &url.URL{Scheme: uri.Scheme, Host: uri.Host, Path: "/" + wellKnownPath}
 	appendCandidate(root.String())
 
-	if compatibility := strings.TrimSpace(compatibility); compatibility != "" {
-		appendCandidate(compatibility)
-	}
-
 	return result
 }
 
 // DiscoverFromIssuer loads authorization server metadata from an issuer URL.
 func (c *Client) discoverFromIssuer(ctx context.Context, issuer string) (*ServerMetadata, error) {
-	var found bool
 	meta := ServerMetadata{
 		Issuer: strings.TrimSpace(issuer),
 	}
 
-	// Discover OIDC and OAuth metadata from the issuer URL, trying multiple candidates for compatibility with different server implementations
+	// Prefer OIDC discovery when available; it already carries the shared base
+	// configuration fields used by the auth client flows.
 	for _, endpoint := range oidcMetadataCandidates(meta.Issuer) {
 		if err := c.DoWithContext(ctx, nil, &meta.Oidc, client.OptReqEndpoint(endpoint)); err == nil {
-			found = true
-			break
+			return types.Ptr(meta), nil
 		}
 	}
 
+	// Fall back to OAuth authorization-server metadata when no OIDC document is available.
 	for _, endpoint := range oauthMetadataCandidates(meta.Issuer) {
 		if err := c.DoWithContext(ctx, nil, &meta.OAuth, client.OptReqEndpoint(endpoint)); err == nil {
-			found = true
-			break
+			return types.Ptr(meta), nil
 		}
 	}
 
-	// If some valid metadata was found, return it, otherwise return an error
-	if found {
-		return types.Ptr(meta), nil
-	} else {
-		return nil, fmt.Errorf("fetch auth server metadata for %q: no valid OIDC or OAuth configuration found", meta.Issuer)
-	}
+	return nil, fmt.Errorf("fetch auth server metadata for %q: no valid OIDC or OAuth configuration found", meta.Issuer)
 }

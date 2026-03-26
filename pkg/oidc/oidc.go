@@ -62,6 +62,7 @@ const (
 	JWKSPath              = ".well-known/jwks.json"
 	AuthorizationPath     = "auth/authorize"
 	AuthCodePath          = "auth/code"
+	AuthRevokePath        = "auth/revoke"
 	UserInfoPath          = "auth/userinfo"
 	SigningAlgorithm      = "RS256"
 	KeyID                 = "dev-main-2026-03"
@@ -141,6 +142,15 @@ func AuthorizationURL(issuer string) string {
 // AuthCodeURL returns the local authorization-code exchange URL for an issuer.
 func AuthCodeURL(issuer string) string {
 	uri, err := url.JoinPath(issuer, AuthCodePath)
+	if err != nil {
+		return issuer
+	}
+	return uri
+}
+
+// AuthRevokeURL returns the local token revocation URL for an issuer.
+func AuthRevokeURL(issuer string) string {
+	uri, err := url.JoinPath(issuer, AuthRevokePath)
 	if err != nil {
 		return issuer
 	}

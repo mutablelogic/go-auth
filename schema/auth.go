@@ -1,21 +1,12 @@
 package schema
 
 import (
-	"context"
-
 	// Packages
 	auth "github.com/djthorpe/go-auth"
-	authoidc "github.com/djthorpe/go-auth/pkg/oidc"
 )
 
 ///////////////////////////////////////////////////////////////////////////////
 // TYPES
-
-type TokenRequest struct {
-	Provider string  `json:"provider" enum:"oauth"`
-	Token    string  `json:"token"`
-	Meta     MetaMap `json:"meta,omitempty"`
-}
 
 // AuthorizationCodeRequest contains the upstream provider key and OAuth
 // authorization code that should be exchanged server-side for a verified
@@ -29,8 +20,7 @@ type AuthorizationCodeRequest struct {
 	Meta         MetaMap `json:"meta,omitempty"`
 }
 
-// RefreshRequest contains a previously issued local session token that should
-// be verified and, if still eligible, refreshed.
+// RefreshRequest contains a previously issued local session token.
 type RefreshRequest struct {
 	Token string `json:"token"`
 }
@@ -51,28 +41,50 @@ type TokenResponse struct {
 	UserInfo *UserInfo `json:"userinfo,omitempty" readonly:""`
 }
 
+// PublicClientConfiguration contains the upstream provider details that are
+// safe to expose to clients that need to initiate authentication.
+type PublicClientConfiguration struct {
+	Issuer   string `json:"issuer"`
+	ClientID string `json:"client_id,omitempty"`
+	Provider string `json:"provider"`
+}
+
+// PublicClientConfigurations contains shareable client configuration keyed by
+// provider or role name.
+type PublicClientConfigurations map[string]PublicClientConfiguration
+
+// ClientConfiguration contains the full upstream provider configuration,
+// including the client secret that must remain server-side.
+type ClientConfiguration struct {
+	PublicClientConfiguration
+	ClientSecret string `json:"client_secret,omitempty"`
+}
+
+// ClientConfigurations contains all configured OAuth clients keyed by
+// provider or role name.
+type ClientConfigurations map[string]ClientConfiguration
+
 ///////////////////////////////////////////////////////////////////////////////
 // GLOBALS
 
 const (
-	ProviderOAuth = "oauth"
+	ProviderOAuth       = "oauth"
+	OAuthClientKeyLocal = "local"
 )
 
 ///////////////////////////////////////////////////////////////////////////////
-// PUBLIC FUNCTIONS
+// LIFECYCLE
 
-func (req *TokenRequest) Validate(ctx context.Context) (map[string]any, error) {
-	if req.Provider == "" {
-		return nil, auth.ErrInvalidProvider.With("provider is required")
-	} else if req.Token == "" {
-		return nil, auth.ErrBadParameter.With("token is required")
+func NewUserInfo(user *User) *UserInfo {
+	if user == nil {
+		return nil
 	}
-
-	switch req.Provider {
-	case ProviderOAuth:
-		return authoidc.VerifyToken(ctx, req.Token)
-	default:
-		return nil, auth.ErrInvalidProvider.Withf("unsupported provider %q", req.Provider)
+	return &UserInfo{
+		Sub:    user.ID,
+		Email:  user.Email,
+		Name:   user.Name,
+		Groups: user.Groups,
+		Scopes: user.Scopes,
 	}
 }
 
@@ -87,15 +99,16 @@ func (req *AuthorizationCodeRequest) Validate() error {
 	return nil
 }
 
-func NewUserInfo(user *User) *UserInfo {
-	if user == nil {
-		return nil
+// Public returns the shareable subset of the client configuration.
+func (cfg ClientConfiguration) Public() PublicClientConfiguration {
+	return cfg.PublicClientConfiguration
+}
+
+// Public returns the shareable subset of all configured clients.
+func (cfg ClientConfigurations) Public() PublicClientConfigurations {
+	result := make(PublicClientConfigurations, len(cfg))
+	for key, value := range cfg {
+		result[key] = value.Public()
 	}
-	return &UserInfo{
-		Sub:    user.ID,
-		Email:  user.Email,
-		Name:   user.Name,
-		Groups: user.Groups,
-		Scopes: user.Scopes,
-	}
+	return result
 }

@@ -107,7 +107,7 @@ func (cmd *AuthorizeCommand) Run(ctx server.Cmd) error {
 	if redirectURL == "" {
 		redirectURL = defaultRedirectURL
 	}
-	config, err := authorizationCodeConfig(serverMeta)
+	config, err := serverMeta.AuthorizationCodeConfig()
 	if err != nil {
 		return err
 	}
@@ -171,7 +171,7 @@ func (cmd *AuthorizeCommand) authorizationServerAndClientCredentials(ctx server.
 		clientSecret = storedClientSecret(ctx, meta, cmd.Endpoint)
 	}
 	if clientID != "" {
-		serverMeta, err := authorizationServerForFlow(meta)
+		serverMeta, err := meta.AuthorizationServerForFlow()
 		if err != nil {
 			return nil, "", "", err
 		}
@@ -182,7 +182,7 @@ func (cmd *AuthorizeCommand) authorizationServerAndClientCredentials(ctx server.
 	}
 
 	// Register client dynamically if client ID is not provided or stored
-	serverMeta, err := authorizationServerForRegistration(meta)
+	serverMeta, err := meta.AuthorizationServerForRegistration()
 	if err != nil {
 		return nil, "", "", fmt.Errorf("client ID is required or dynamic registration must succeed: %w", err)
 	}
@@ -219,82 +219,6 @@ func (cmd *AuthorizeCommand) authorizationScopes(serverMeta *auth.ServerMetadata
 		}
 	}
 	return oidc.DefaultOIDCAuthorizationScopes
-}
-
-func authorizationServerForFlow(meta *auth.Config) (*auth.ServerMetadata, error) {
-	if meta == nil || len(meta.AuthorizationServers) == 0 {
-		return nil, fmt.Errorf("authorization server metadata is required")
-	}
-	for index := range meta.AuthorizationServers {
-		serverMeta := &meta.AuthorizationServers[index]
-		if strings.TrimSpace(serverMeta.Oidc.AuthorizationEndpoint) != "" || strings.TrimSpace(serverMeta.OAuth.AuthorizationEndpoint) != "" {
-			return serverMeta, nil
-		}
-	}
-	return nil, fmt.Errorf("no authorization endpoint is advertised")
-}
-
-func authorizationServerForRegistration(meta *auth.Config) (*auth.ServerMetadata, error) {
-	if meta == nil || len(meta.AuthorizationServers) == 0 {
-		return nil, fmt.Errorf("authorization server metadata is required")
-	}
-	for index := range meta.AuthorizationServers {
-		serverMeta := &meta.AuthorizationServers[index]
-		if registrationEndpoint(serverMeta) != "" &&
-			(strings.TrimSpace(serverMeta.Oidc.AuthorizationEndpoint) != "" || strings.TrimSpace(serverMeta.OAuth.AuthorizationEndpoint) != "") {
-			return serverMeta, nil
-		}
-	}
-	for index := range meta.AuthorizationServers {
-		serverMeta := &meta.AuthorizationServers[index]
-		if registrationEndpoint(serverMeta) != "" {
-			return serverMeta, nil
-		}
-	}
-	return nil, fmt.Errorf("no registration endpoint is advertised")
-}
-
-func registrationEndpoint(serverMeta *auth.ServerMetadata) string {
-	if serverMeta == nil {
-		return ""
-	}
-	if endpoint := strings.TrimSpace(serverMeta.Oidc.RegistrationEndpoint); endpoint != "" {
-		return endpoint
-	}
-	return strings.TrimSpace(serverMeta.OAuth.RegistrationEndpoint)
-}
-
-func authorizationServerForUserInfo(meta *auth.Config) (*auth.ServerMetadata, error) {
-	if meta == nil || len(meta.AuthorizationServers) == 0 {
-		return nil, fmt.Errorf("authorization server metadata is required")
-	}
-	for index := range meta.AuthorizationServers {
-		serverMeta := &meta.AuthorizationServers[index]
-		if strings.TrimSpace(serverMeta.Oidc.UserInfoEndpoint) != "" {
-			return serverMeta, nil
-		}
-	}
-	return nil, fmt.Errorf("no userinfo endpoint is advertised")
-}
-
-func authorizationCodeConfig(serverMeta *auth.ServerMetadata) (oidc.BaseConfiguration, error) {
-	if strings.TrimSpace(serverMeta.Oidc.AuthorizationEndpoint) != "" {
-		config := serverMeta.Oidc.BaseConfiguration
-		if strings.TrimSpace(config.Issuer) == "" {
-			config.Issuer = strings.TrimSpace(serverMeta.Issuer)
-		}
-		config.NonceSupported = true
-		return config, nil
-	} else if strings.TrimSpace(serverMeta.OAuth.AuthorizationEndpoint) != "" {
-		config := serverMeta.OAuth.BaseConfiguration
-		if strings.TrimSpace(config.Issuer) == "" {
-			config.Issuer = strings.TrimSpace(serverMeta.Issuer)
-		}
-		config.NonceSupported = false
-		return config, nil
-	} else {
-		return oidc.BaseConfiguration{}, fmt.Errorf("no authorization endpoint is advertised")
-	}
 }
 
 func compactScopes(scopes []string) []string {

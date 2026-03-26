@@ -10,10 +10,7 @@ The handlers are wired by `RegisterAuthHandlers` and currently register these ro
 | `GET` | `.well-known/oauth-protected-resource` | No | Return OAuth protected-resource metadata |
 | `GET` | `.well-known/jwks.json` | No | Return the public signing keys used for local JWTs |
 | `GET` | `auth/authorize` | No | Start a local browser authorization flow, or redirect to an explicit upstream provider |
-| `POST` | `auth/login` | No | Exchange a verified upstream identity token for a local JWT session token |
-| `POST` | `auth/code` | No | Exchange either a local OAuth authorization code or an upstream-provider authorization code |
-| `GET` | `auth/config` | No | Return public client configuration for available auth providers |
-| `POST` | `auth/refresh` | No | Refresh a previously issued local session token |
+| `POST` | `auth/code` | No | Exchange an authorization code or refresh token for local bearer tokens |
 | `POST` | `auth/revoke` | No | Revoke a previously issued local session token |
 | `GET` | `auth/userinfo` | Yes | Return the authenticated user's local claims |
 
@@ -21,7 +18,8 @@ The handlers are wired by `RegisterAuthHandlers` and currently register these ro
 
 - All routes return `405 Method Not Allowed` for unsupported HTTP methods.
 - JSON request bodies must use `Content-Type: application/json`.
-- `POST /auth/refresh` and `POST /auth/revoke` accept the local token in the JSON body, not in the `Authorization` header.
+- `POST /auth/code` and `POST /auth/revoke` accept form-encoded OAuth requests.
+- `POST /auth/revoke` also accepts the local token in the JSON body, not in the `Authorization` header.
 - `GET /auth/userinfo` is the only route in this package that is always wrapped with bearer-token middleware.
 - Local tokens are signed by this server and include embedded `user` and `session` claims.
 
@@ -57,55 +55,13 @@ Typical error cases:
 - `400 Bad Request` when `response_type` is not `code`.
 - `400 Bad Request` when the provider cannot be resolved from configuration.
 
-### `POST /auth/login`
-
-Exchanges a verified upstream identity token for a local signed JWT and local user info.
-
-Request body:
-
-```json
-{
-  "provider": "oauth",
-  "token": "<upstream-id-token>",
-  "meta": {
-    "invite": "optional"
-  }
-}
-```
-
-Notes:
-
-- `provider` is currently expected to be `oauth`.
-- The supplied token must already be a valid upstream identity token.
-- The upstream claims must resolve to a local identity with at least a usable `sub` claim.
-- `meta` is forwarded into the login flow and can be used to attach session or invitation context.
-
-Success response: `200 OK`
-
-```json
-{
-  "token": "<local-jwt>",
-  "userinfo": {
-    "sub": "<user-uuid>",
-    "email": "user@example.com",
-    "name": "Example User",
-    "groups": ["group-a"],
-    "scopes": ["scope-a"]
-  }
-}
-```
-
-Typical error cases:
-
-- `400 Bad Request` for malformed JSON, unsupported providers, invalid upstream tokens, or missing required claims.
-- `409 Conflict` when the verified identity conflicts with an existing user account.
-
 ### `POST /auth/code`
 
 Exchanges an authorization code and returns local auth tokens.
 
 - For local testing, this endpoint accepts a standard form-encoded OAuth token request and returns a local bearer token.
-- For upstream providers, it still accepts the JSON request body used by the existing server-side provider exchange path.
+- For upstream providers, it accepts either the same form contract or the existing JSON request body.
+- Refresh is also handled here with `grant_type=refresh_token`.
 
 Request body:
 
@@ -131,73 +87,22 @@ Notes:
 
 Success response: `200 OK`
 
-- Same response shape as `POST /auth/login`.
+- Form mode returns an OAuth token response:
+
+```json
+{
+  "access_token": "<local-jwt>",
+  "refresh_token": "<local-jwt>",
+  "token_type": "Bearer",
+  "expires_in": 900
+}
+```
+
+- JSON mode returns the legacy local token and `userinfo` response.
 
 Typical error cases:
 
 - `400 Bad Request` for missing fields, failed code exchange, missing upstream `id_token`, or nonce mismatch.
-
-### `GET /auth/config`
-
-Returns the public auth client configuration that is safe to expose to clients.
-
-Success response: `200 OK`
-
-Example:
-
-```json
-{
-  "local": {
-    "issuer": "http://localhost:8084/api",
-    "provider": "oauth"
-  },
-  "google": {
-    "issuer": "https://accounts.google.com",
-    "client_id": "google-client-id",
-    "provider": "oauth"
-  }
-}
-```
-
-Notes:
-
-- The response includes the local issuer entry.
-- Upstream `client_secret` values are never exposed here.
-
-Typical error cases:
-
-- Handler-specific failures are translated to standard HTTP errors from the manager layer.
-
-### `POST /auth/refresh`
-
-Verifies a previously issued local token, extracts its session ID, refreshes that session, and signs a new local token.
-
-Request body:
-
-```json
-{
-  "token": "<local-jwt>"
-}
-```
-
-Notes:
-
-- The token value is trimmed before validation.
-- The JWT must contain a `sid` claim referencing an existing session.
-- The refreshed response only returns a new token, not `userinfo`.
-
-Success response: `200 OK`
-
-```json
-{
-  "token": "<refreshed-local-jwt>"
-}
-```
-
-Typical error cases:
-
-- `400 Bad Request` when `token` is missing, invalid, or missing the `sid` claim.
-- `404 Not Found` when the referenced session no longer exists.
 
 ### `POST /auth/revoke`
 

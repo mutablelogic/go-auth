@@ -30,39 +30,23 @@
         }
 
         async fetchConfig() {
-            return this.request("/config");
+            throw new Error("Deprecated browser login config path: this page no longer uses /auth/config.");
         }
 
         async fetchProviders() {
-            return this.fetchConfig();
+            throw new Error("Deprecated browser login provider path: use the authorization-code flow instead.");
         }
 
         async loginWithOAuthToken(provider, token) {
-            return this.request("/login", {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json"
-                },
-                body: JSON.stringify({
-                    provider,
-                    token,
-                })
-            });
+            void provider;
+            void token;
+            throw new Error("Deprecated client login path: use the browser authorization-code flow instead of /auth/login.");
         }
 
         async loginWithCredentials(email, meta) {
-            const body = { email };
-            if (meta && Object.keys(meta).length > 0) {
-                body.meta = meta;
-            }
-
-            return this.request("/credentials", {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json"
-                },
-                body: JSON.stringify(body)
-            });
+            void email;
+            void meta;
+            throw new Error("Deprecated client login path: use the browser authorization-code flow instead of /auth/credentials.");
         }
 
         async fetchUserInfo(token) {
@@ -75,14 +59,17 @@
         }
 
         async refreshToken(token) {
-            return this.request("/refresh", {
+            const body = new URLSearchParams({
+                grant_type: "refresh_token",
+                refresh_token: token,
+            });
+
+            return this.request("/code", {
                 method: "POST",
                 headers: {
-                    "Content-Type": "application/json"
+                    "Content-Type": "application/x-www-form-urlencoded"
                 },
-                body: JSON.stringify({
-                    token,
-                })
+                body,
             });
         }
 

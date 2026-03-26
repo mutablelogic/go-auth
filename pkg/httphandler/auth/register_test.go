@@ -50,7 +50,7 @@ func TestRegisterAuthHandlers(t *testing.T) {
 
 		err := RegisterAuthHandlers(mgr, router)
 		require.NoError(err)
-		require.Len(router.routes, 10)
+		require.Len(router.routes, 7)
 
 		paths := make([]string, 0, len(router.routes))
 		for _, route := range router.routes {
@@ -60,13 +60,10 @@ func TestRegisterAuthHandlers(t *testing.T) {
 			assert.True(route.middleware)
 		}
 
-		assert.Contains(paths, "/auth/login")
 		assert.Contains(paths, oidc.AuthorizationPath)
-		assert.Contains(paths, "/auth/code")
-		assert.Contains(paths, "/auth/config")
-		assert.Contains(paths, "/auth/userinfo")
-		assert.Contains(paths, "/auth/refresh")
-		assert.Contains(paths, "/auth/revoke")
+		assert.Contains(paths, "auth/code")
+		assert.Contains(paths, "auth/userinfo")
+		assert.Contains(paths, "auth/revoke")
 		assert.Contains(paths, oidc.ConfigPath)
 		assert.Contains(paths, oidc.ProtectedResourcePath)
 		assert.Contains(paths, oidc.JWKSPath)
@@ -82,7 +79,7 @@ func TestRegisterAuthHandlers(t *testing.T) {
 		err := RegisterAuthHandlers(mgr, router)
 		require.NoError(err)
 
-		route, ok := router.route("/auth/userinfo")
+		route, ok := router.route("auth/userinfo")
 		require.True(ok)
 
 		res := httptest.NewRecorder()

@@ -7,6 +7,7 @@ import (
 	// Packages
 	auth "github.com/djthorpe/go-auth"
 	oidc "github.com/djthorpe/go-auth/pkg/oidc"
+	schema "github.com/djthorpe/go-auth/schema"
 	jwt "github.com/golang-jwt/jwt/v5"
 	jwk "github.com/lestrrat-go/jwx/v2/jwk"
 )
@@ -38,18 +39,17 @@ func (m *Manager) OIDCVerify(token, issuer string) (map[string]any, error) {
 }
 
 // OIDCIssuer returns the canonical issuer for locally signed tokens.
-func (m *Manager) OIDCIssuer(r *http.Request) (string, error) {
-	if config, ok := m.oauth[oidc.OAuthClientKeyLocal]; ok {
+func (m *Manager) OIDCIssuer() (string, error) {
+	if config, ok := m.oauth[schema.OAuthClientKeyLocal]; ok {
 		if issuer := strings.TrimSpace(config.Issuer); issuer != "" {
 			return issuer, nil
 		}
 	}
-	_ = r
 	return "", auth.ErrBadParameter.With("issuer is not configured")
 }
 
 func (m *Manager) OIDCConfig(r *http.Request) (oidc.OIDCConfiguration, error) {
-	issuer, err := m.OIDCIssuer(r)
+	issuer, err := m.OIDCIssuer()
 	if err != nil {
 		return oidc.OIDCConfiguration{}, err
 	}
@@ -58,6 +58,7 @@ func (m *Manager) OIDCConfig(r *http.Request) (oidc.OIDCConfiguration, error) {
 			Issuer:                issuer,
 			AuthorizationEndpoint: oidc.AuthorizationURL(issuer),
 			TokenEndpoint:         oidc.AuthCodeURL(issuer),
+			RevocationEndpoint:    oidc.AuthRevokeURL(issuer),
 			ResponseTypes:         []string{oidc.ResponseTypeCode},
 			GrantTypesSupported:   []string{"authorization_code", "refresh_token"},
 			ScopesSupported:       []string{oidc.ScopeOpenID, oidc.ScopeEmail, oidc.ScopeProfile},
@@ -73,7 +74,7 @@ func (m *Manager) OIDCConfig(r *http.Request) (oidc.OIDCConfiguration, error) {
 
 // ProtectedResourceMetadata returns OAuth protected-resource metadata for this server.
 func (m *Manager) ProtectedResourceMetadata(r *http.Request) (oidc.ProtectedResourceMetadata, error) {
-	issuer, err := m.OIDCIssuer(r)
+	issuer, err := m.OIDCIssuer()
 	if err != nil {
 		return oidc.ProtectedResourceMetadata{}, err
 	}
@@ -85,29 +86,19 @@ func (m *Manager) ProtectedResourceMetadata(r *http.Request) (oidc.ProtectedReso
 	}, nil
 }
 
-// AuthConfig returns the shareable upstream provider configuration exposed by
-// /auth/config. The client secret remains server-side.
-
-func (m *Manager) AuthConfig() (oidc.PublicClientConfigurations, error) {
-	if len(m.oauth) == 0 {
-		return nil, auth.ErrNotFound.With("oauth clients are not configured")
-	}
-	return m.oauth.Public(), nil
-}
-
 // OAuthClientConfig returns the full configured OAuth client for the supplied
 // provider key, including the server-side client secret.
-func (m *Manager) OAuthClientConfig(key string) (oidc.ClientConfiguration, error) {
+func (m *Manager) OAuthClientConfig(key string) (schema.ClientConfiguration, error) {
 	key = strings.TrimSpace(key)
 	if key == "" {
-		return oidc.ClientConfiguration{}, auth.ErrInvalidProvider.With("provider is required")
+		return schema.ClientConfiguration{}, auth.ErrInvalidProvider.With("provider is required")
 	}
 	if len(m.oauth) == 0 {
-		return oidc.ClientConfiguration{}, auth.ErrNotFound.With("oauth clients are not configured")
+		return schema.ClientConfiguration{}, auth.ErrNotFound.With("oauth clients are not configured")
 	}
 	config, ok := m.oauth[key]
 	if !ok {
-		return oidc.ClientConfiguration{}, auth.ErrInvalidProvider.Withf("unsupported provider %q", key)
+		return schema.ClientConfiguration{}, auth.ErrInvalidProvider.Withf("unsupported provider %q", key)
 	}
 	return config, nil
 }

@@ -159,6 +159,13 @@ func TestAuthCodeURL(t *testing.T) {
 	)
 }
 
+func TestAuthRevokeURL(t *testing.T) {
+	assert.Equal(t,
+		"https://issuer.example.com/api/auth/revoke",
+		oidc.AuthRevokeURL("https://issuer.example.com/api/"),
+	)
+}
+
 func TestUserInfoURL(t *testing.T) {
 	assert.Equal(t,
 		"https://issuer.example.com/api/auth/userinfo",

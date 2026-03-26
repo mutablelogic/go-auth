@@ -61,11 +61,11 @@ func refreshStoredToken(ctx server.Cmd, authClient *auth.Client, endpoint, clien
 	if err != nil {
 		return nil, err
 	}
-	serverMeta, err := authorizationServerForFlow(meta)
+	serverMeta, err := meta.AuthorizationServerForFlow()
 	if err != nil {
 		return nil, err
 	}
-	config, err := authorizationCodeConfig(serverMeta)
+	config, err := serverMeta.AuthorizationCodeConfig()
 	if err != nil {
 		return nil, err
 	}
@@ -104,6 +104,16 @@ func refreshStoredToken(ctx server.Cmd, authClient *auth.Client, endpoint, clien
 }
 
 func discoverAuthMetadata(ctx server.Cmd, authClient *auth.Client, endpoint string) (*auth.Config, error) {
+	endpoint = strings.TrimSpace(endpoint)
+	if ctx != nil {
+		if issuer := strings.TrimSpace(ctx.GetString(issuerStoreKey(endpoint))); issuer != "" {
+			meta, err := authClient.DiscoverFromIssuer(ctx.Context(), issuer)
+			if err == nil && meta != nil && len(meta.AuthorizationServers) > 0 {
+				return meta, nil
+			}
+		}
+	}
+
 	var meta *auth.Config
 	if err := authClient.DoAuthWithContext(ctx.Context(), nil, nil, client.OptReqEndpoint(endpoint)); err != nil {
 		meta_, discoverErr := authClient.DiscoverWithError(ctx.Context(), err)

@@ -29,7 +29,7 @@ func NewAuthN(mgr *manager.Manager) func(http.HandlerFunc) http.HandlerFunc {
 				writeUnauthorized(w, r, mgr, "invalid_request", "missing bearer token")
 				return
 			}
-			issuer, err := mgr.OIDCIssuer(r)
+			issuer, err := mgr.OIDCIssuer()
 			if err != nil {
 				_ = httpresponse.Error(w, httpresponse.ErrInternalError.With(err))
 				return
@@ -152,7 +152,7 @@ func writeUnauthorized(w http.ResponseWriter, r *http.Request, mgr *manager.Mana
 		challenge = append(challenge, fmt.Sprintf(`error_description=%q`, description))
 	}
 	if mgr != nil {
-		if issuer, err := mgr.OIDCIssuer(r); err == nil {
+		if issuer, err := mgr.OIDCIssuer(); err == nil {
 			resourceMetadata := strings.TrimRight(issuer, "/") + "/" + oidc.ProtectedResourcePath
 			challenge = append(challenge, fmt.Sprintf(`resource_metadata=%q`, resourceMetadata))
 		}

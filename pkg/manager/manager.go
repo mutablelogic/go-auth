@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	// Packages
+	auth "github.com/djthorpe/go-auth"
 	schema "github.com/djthorpe/go-auth/schema"
 	pg "github.com/mutablelogic/go-pg"
 	broadcaster "github.com/mutablelogic/go-pg/pkg/broadcaster"
@@ -22,7 +23,7 @@ type Manager struct {
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-// PUBLIC METHODS
+// LIFECYCLE
 
 // New creates a Manager, ensures the schema exists, and bootstraps all
 // database objects from the embedded objects.sql. If schemaName is empty
@@ -71,6 +72,18 @@ func New(ctx context.Context, pool pg.PoolConn, opts ...Opt) (*Manager, error) {
 
 	// Return the manager
 	return self, nil
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// LIFECYCLE
+
+// AuthConfig returns the shareable upstream provider configuration exposed by
+// /auth/config. The client secret remains server-side.
+func (m *Manager) AuthConfig() (schema.PublicClientConfigurations, error) {
+	if len(m.oauth) == 0 {
+		return nil, auth.ErrNotFound.With("oauth clients are not configured")
+	}
+	return m.oauth.Public(), nil
 }
 
 ///////////////////////////////////////////////////////////////////////////////

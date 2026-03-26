@@ -18,7 +18,16 @@
         clear() {
             this.rootNode.replaceChildren(this.feedbackNode());
             this.rootNode.hidden = false;
-            this.setFeedback(this.feedbackNode(), "Choose a provider to login", "info");
+            this.setFeedback(this.feedbackNode(), "Browser login on this page has been deprecated.", "info");
+        }
+
+        showDeprecatedLogin() {
+            this.clear();
+            this.setFeedback(
+                this.feedbackNode(),
+                "Browser login here has been removed. Use the manager or auth CLI login flow, or start an authorization-code flow against /auth/authorize.",
+                "error"
+            );
         }
 
         createProvider(title, className) {

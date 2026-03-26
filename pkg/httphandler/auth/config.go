@@ -67,14 +67,6 @@ func getProtectedResourceMetadata(_ context.Context, mgr *manager.Manager, w htt
 	return httpresponse.JSON(w, http.StatusOK, httprequest.Indent(r), config)
 }
 
-func getAuthConfig(_ context.Context, mgr *manager.Manager, w http.ResponseWriter, r *http.Request) error {
-	config, err := mgr.AuthConfig()
-	if err != nil {
-		return httpresponse.Error(w, httpErr(err))
-	}
-	return httpresponse.JSON(w, http.StatusOK, httprequest.Indent(r), config)
-}
-
 func getJWKS(_ context.Context, mgr *manager.Manager, w http.ResponseWriter, r *http.Request) error {
 	jwks, err := mgr.OIDCJWKSet()
 	if err != nil {

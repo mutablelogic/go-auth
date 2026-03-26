@@ -158,7 +158,7 @@ func (server *RunServer) WithManager(ctx server.Cmd, fn func(*manager.Manager, s
 	if issuer == "" {
 		return fmt.Errorf("issuer could not be determined from server configuration")
 	}
-	opts = append(opts, manager.WithOAuthClient(oidc.OAuthClientKeyLocal, issuer, "", ""))
+	opts = append(opts, manager.WithOAuthClient(schema.OAuthClientKeyLocal, issuer, "", ""))
 	if clientID, clientSecret := strings.TrimSpace(server.GoogleFlags.ClientID), strings.TrimSpace(server.GoogleFlags.ClientSecret); clientID != "" || clientSecret != "" {
 		opts = append(opts, manager.WithOAuthClient("google", oidc.GoogleIssuer, clientID, clientSecret))
 	}

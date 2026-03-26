@@ -2,6 +2,7 @@ package manager
 
 import (
 	// Packages
+	auth "github.com/djthorpe/go-auth/pkg/httpclient/auth"
 	client "github.com/mutablelogic/go-client"
 )
 
@@ -10,7 +11,7 @@ import (
 
 // Client is a management HTTP client that wraps the base HTTP client.
 type Client struct {
-	*client.Client
+	*auth.Client
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -19,7 +20,7 @@ type Client struct {
 // New creates a new management HTTP client with the given base URL and options.
 func New(url string, opts ...client.ClientOpt) (*Client, error) {
 	c := new(Client)
-	if client, err := client.New(append(opts, client.OptEndpoint(url))...); err != nil {
+	if client, err := auth.New(url, opts...); err != nil {
 		return nil, err
 	} else {
 		c.Client = client

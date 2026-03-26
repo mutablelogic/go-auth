@@ -12,15 +12,12 @@ import (
 	// Packages
 	coreoidc "github.com/coreos/go-oidc/v3/oidc"
 	managerpkg "github.com/djthorpe/go-auth/pkg/manager"
-	middleware "github.com/djthorpe/go-auth/pkg/middleware"
 	oidc "github.com/djthorpe/go-auth/pkg/oidc"
 	schema "github.com/djthorpe/go-auth/schema"
 	jwt "github.com/golang-jwt/jwt/v5"
 	uuid "github.com/google/uuid"
 	httprequest "github.com/mutablelogic/go-server/pkg/httprequest"
 	httpresponse "github.com/mutablelogic/go-server/pkg/httpresponse"
-	jsonschema "github.com/mutablelogic/go-server/pkg/jsonschema"
-	openapi "github.com/mutablelogic/go-server/pkg/openapi/schema"
 	types "github.com/mutablelogic/go-server/pkg/types"
 	oauth2 "golang.org/x/oauth2"
 )
@@ -33,154 +30,8 @@ const (
 	localAuthorizationCodeEmail = "local@example.com"
 )
 
-func AuthHandler(mgr *managerpkg.Manager) (string, http.HandlerFunc, *openapi.PathItem) {
-	return "/auth/login", func(w http.ResponseWriter, r *http.Request) {
-			switch r.Method {
-			case http.MethodPost:
-				_ = exchangeToken(r.Context(), mgr, w, r)
-			default:
-				_ = httpresponse.Error(w, httpresponse.Err(http.StatusMethodNotAllowed), r.Method)
-			}
-		}, &openapi.PathItem{
-			Summary:     "Auth operations",
-			Description: "Exchange a verified provider token for the corresponding local user.",
-			Post: &openapi.Operation{
-				Tags:        []string{"Auth"},
-				Summary:     "Exchange identity token",
-				Description: "Validates the upstream identity token, resolves the matching identity, and returns a signed local token plus userinfo.",
-				RequestBody: &openapi.RequestBody{Description: "Provider token and metadata used for authentication.", Required: true, Content: map[string]openapi.MediaType{"application/json": {Schema: jsonschema.MustFor[schema.TokenRequest]()}}},
-				Responses:   map[string]openapi.Response{"200": {Description: "Signed local session token and userinfo.", Content: map[string]openapi.MediaType{"application/json": {Schema: tokenResponseSchema()}}}, "400": {Description: "Invalid request body, unsupported provider, or token verification failure."}, "409": {Description: "The verified identity conflicts with an existing account."}},
-			},
-		}
-}
-
-func AuthCodeHandler(mgr *managerpkg.Manager) (string, http.HandlerFunc, *openapi.PathItem) {
-	return "/auth/code", func(w http.ResponseWriter, r *http.Request) {
-		switch r.Method {
-		case http.MethodPost:
-			_ = exchangeCode(r.Context(), mgr, w, r)
-		default:
-			_ = httpresponse.Error(w, httpresponse.Err(http.StatusMethodNotAllowed), r.Method)
-		}
-	}, &openapi.PathItem{Summary: "Authorization code exchange", Description: "Exchanges either a locally issued OAuth authorization code or an upstream provider authorization code and returns a signed local token plus userinfo."}
-}
-
-func AuthConfigHandler(mgr *managerpkg.Manager) (string, http.HandlerFunc, *openapi.PathItem) {
-	return "/auth/config", func(w http.ResponseWriter, r *http.Request) {
-		switch r.Method {
-		case http.MethodGet:
-			_ = getAuthConfig(r.Context(), mgr, w, r)
-		default:
-			_ = httpresponse.Error(w, httpresponse.Err(http.StatusMethodNotAllowed), r.Method)
-		}
-	}, &openapi.PathItem{Summary: "Public auth configuration", Description: "Returns the upstream authentication provider details that are safe to expose to clients."}
-}
-
-func RefreshHandler(mgr *managerpkg.Manager) (string, http.HandlerFunc, *openapi.PathItem) {
-	return "/auth/refresh", func(w http.ResponseWriter, r *http.Request) {
-		switch r.Method {
-		case http.MethodPost:
-			_ = refreshToken(r.Context(), mgr, w, r)
-		default:
-			_ = httpresponse.Error(w, httpresponse.Err(http.StatusMethodNotAllowed), r.Method)
-		}
-	}, &openapi.PathItem{Summary: "Session refresh", Description: "Refresh a previously issued local session token when the current session remains eligible."}
-}
-
-func RevokeHandler(mgr *managerpkg.Manager) (string, http.HandlerFunc, *openapi.PathItem) {
-	return "/auth/revoke", func(w http.ResponseWriter, r *http.Request) {
-		switch r.Method {
-		case http.MethodPost:
-			_ = revokeToken(r.Context(), mgr, w, r)
-		default:
-			_ = httpresponse.Error(w, httpresponse.Err(http.StatusMethodNotAllowed), r.Method)
-		}
-	}, &openapi.PathItem{Summary: "Session revocation", Description: "Revoke a previously issued local session token so the underlying session can no longer be refreshed or accepted by session-aware checks."}
-}
-
-func UserInfoHandler(mgr *managerpkg.Manager) (string, http.HandlerFunc, *openapi.PathItem) {
-	return "/auth/userinfo", func(w http.ResponseWriter, r *http.Request) {
-		switch r.Method {
-		case http.MethodGet:
-			_ = getUserInfo(r.Context(), mgr, w, r)
-		default:
-			_ = httpresponse.Error(w, httpresponse.Err(http.StatusMethodNotAllowed), r.Method)
-		}
-	}, &openapi.PathItem{Summary: "Authenticated user info", Description: "Returns the client-facing identity claims for the authenticated local token."}
-}
-
 ///////////////////////////////////////////////////////////////////////////////
 // PRIVATE METHODS
-
-func exchangeToken(ctx context.Context, mgr *managerpkg.Manager, w http.ResponseWriter, r *http.Request) error {
-	var req schema.TokenRequest
-	if err := httprequest.Read(r, &req); err != nil {
-		return httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest).With(err))
-	} else if claims, err := req.Validate(ctx); err != nil {
-		return httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest).With(err))
-	} else {
-		return issueLoginResponse(ctx, mgr, w, r, claims, req.Meta)
-	}
-}
-
-func exchangeCode(ctx context.Context, mgr *managerpkg.Manager, w http.ResponseWriter, r *http.Request) error {
-	if isOAuthTokenRequest(r) {
-		return exchangeLocalOAuthToken(ctx, mgr, w, r)
-	}
-	var req schema.AuthorizationCodeRequest
-	if err := httprequest.Read(r, &req); err != nil {
-		return httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest).With(err))
-	} else if err := req.Validate(); err != nil {
-		return httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest).With(err))
-	} else if claims, err := exchangeAuthorizationCode(ctx, mgr, &req); err != nil {
-		return httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest).With(err))
-	} else {
-		return issueLoginResponse(ctx, mgr, w, r, claims, req.Meta)
-	}
-}
-
-func refreshToken(ctx context.Context, mgr *managerpkg.Manager, w http.ResponseWriter, r *http.Request) error {
-	var req schema.RefreshRequest
-	token := ""
-	if err := httprequest.Read(r, &req); err != nil {
-		return httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest).With(err))
-	} else if token = strings.TrimSpace(req.Token); token == "" {
-		return httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest).With("token is required"))
-	} else if config, err := mgr.OIDCConfig(r); err != nil {
-		return httpresponse.Error(w, httpresponse.Err(http.StatusInternalServerError).With(err))
-	} else if claims, err := mgr.OIDCVerify(token, config.Issuer); err != nil {
-		return httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest).With(err))
-	} else if session, err := sessionIDFromClaims(claims); err != nil {
-		return httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest).With(err))
-	} else if user, refreshed, err := mgr.RefreshSession(ctx, session); err != nil {
-		return httpresponse.Error(w, httpErr(err))
-	} else if token, err := mgr.OIDCSign(loginTokenClaims(config.Issuer, user, refreshed)); err != nil {
-		return httpresponse.Error(w, httpresponse.Err(http.StatusInternalServerError).With(err))
-	} else {
-		return httpresponse.JSON(w, http.StatusOK, httprequest.Indent(r), schema.TokenResponse{Token: token})
-	}
-}
-
-func revokeToken(ctx context.Context, mgr *managerpkg.Manager, w http.ResponseWriter, r *http.Request) error {
-	var req schema.RefreshRequest
-	token := ""
-	if err := httprequest.Read(r, &req); err != nil {
-		return httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest).With(err))
-	} else if token = strings.TrimSpace(req.Token); token == "" {
-		return httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest).With("token is required"))
-	} else if config, err := mgr.OIDCConfig(r); err != nil {
-		return httpresponse.Error(w, httpresponse.Err(http.StatusInternalServerError).With(err))
-	} else if claims, err := mgr.OIDCVerify(token, config.Issuer); err != nil {
-		return httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest).With(err))
-	} else if session, err := sessionIDFromClaims(claims); err != nil {
-		return httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest).With(err))
-	} else if _, err := mgr.RevokeSession(ctx, session); err != nil {
-		return httpresponse.Error(w, httpErr(err))
-	} else {
-		w.WriteHeader(http.StatusNoContent)
-		return nil
-	}
-}
 
 func issueLoginResponse(ctx context.Context, mgr *managerpkg.Manager, w http.ResponseWriter, r *http.Request, claims map[string]any, meta schema.MetaMap) error {
 	if identity, err := schema.NewIdentityFromClaims(claims); err != nil {
@@ -199,6 +50,26 @@ func issueIdentityLoginResponse(ctx context.Context, mgr *managerpkg.Manager, w 
 		return httpresponse.Error(w, httpresponse.Err(http.StatusInternalServerError).With(err))
 	} else {
 		return httpresponse.JSON(w, http.StatusOK, httprequest.Indent(r), schema.TokenResponse{Token: token, UserInfo: schema.NewUserInfo(user)})
+	}
+}
+
+func issueOAuthLoginResponse(ctx context.Context, mgr *managerpkg.Manager, w http.ResponseWriter, r *http.Request, claims map[string]any, meta schema.MetaMap) error {
+	if identity, err := schema.NewIdentityFromClaims(claims); err != nil {
+		return httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest).With(err))
+	} else {
+		return issueOAuthIdentityResponse(ctx, mgr, w, r, identity, meta)
+	}
+}
+
+func issueOAuthIdentityResponse(ctx context.Context, mgr *managerpkg.Manager, w http.ResponseWriter, r *http.Request, identity schema.IdentityInsert, meta schema.MetaMap) error {
+	if user, session, err := mgr.LoginWithIdentity(ctx, identity, meta); err != nil {
+		return httpresponse.Error(w, httpErr(err))
+	} else if config, err := mgr.OIDCConfig(r); err != nil {
+		return httpresponse.Error(w, httpresponse.Err(http.StatusInternalServerError).With(err))
+	} else if token, err := mgr.OIDCSign(loginTokenClaims(config.Issuer, user, session)); err != nil {
+		return httpresponse.Error(w, httpresponse.Err(http.StatusInternalServerError).With(err))
+	} else {
+		return httpresponse.JSON(w, http.StatusOK, httprequest.Indent(r), localOAuthTokenResponse(token, session.ExpiresAt))
 	}
 }
 
@@ -246,7 +117,17 @@ func exchangeLocalOAuthToken(ctx context.Context, mgr *managerpkg.Manager, w htt
 	grantType := strings.TrimSpace(r.PostForm.Get("grant_type"))
 	switch grantType {
 	case "authorization_code":
-		return exchangeLocalAuthorizationCodeGrant(ctx, mgr, w, r)
+		req := authorizationCodeRequestFromForm(r.PostForm)
+		if strings.TrimSpace(req.Provider) == "" {
+			req.Provider = schema.OAuthClientKeyLocal
+		}
+		if err := req.Validate(); err != nil {
+			return httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest).With(err))
+		}
+		if req.Provider == schema.OAuthClientKeyLocal {
+			return exchangeLocalAuthorizationCodeGrant(ctx, mgr, w, r, &req)
+		}
+		return exchangeProviderAuthorizationCodeGrant(ctx, mgr, w, r, &req)
 	case "refresh_token":
 		return exchangeLocalRefreshTokenGrant(ctx, mgr, w, r)
 	default:
@@ -254,7 +135,7 @@ func exchangeLocalOAuthToken(ctx context.Context, mgr *managerpkg.Manager, w htt
 	}
 }
 
-func exchangeLocalAuthorizationCodeGrant(ctx context.Context, mgr *managerpkg.Manager, w http.ResponseWriter, r *http.Request) error {
+func exchangeLocalAuthorizationCodeGrant(ctx context.Context, mgr *managerpkg.Manager, w http.ResponseWriter, r *http.Request, req *schema.AuthorizationCodeRequest) error {
 	config, err := mgr.OIDCConfig(r)
 	if err != nil {
 		return httpresponse.Error(w, httpresponse.Err(http.StatusInternalServerError).With(err))
@@ -263,19 +144,19 @@ func exchangeLocalAuthorizationCodeGrant(ctx context.Context, mgr *managerpkg.Ma
 	if clientID == "" {
 		return httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest).With("client_id is required"))
 	}
-	redirectURL := strings.TrimSpace(r.PostForm.Get("redirect_uri"))
-	if redirectURL == "" {
-		return httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest).With("redirect_uri is required"))
+	if req == nil {
+		parsed := authorizationCodeRequestFromForm(r.PostForm)
+		parsed.Provider = schema.OAuthClientKeyLocal
+		req = &parsed
 	}
-	code := strings.TrimSpace(r.PostForm.Get("code"))
-	if code == "" {
-		return httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest).With("code is required"))
+	if err := req.Validate(); err != nil {
+		return httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest).With(err))
 	}
-	claims, err := mgr.OIDCVerify(code, config.Issuer)
+	claims, err := mgr.OIDCVerify(req.Code, config.Issuer)
 	if err != nil {
 		return httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest).With(err))
 	}
-	if err := validateLocalAuthorizationCodeClaims(claims, clientID, redirectURL, strings.TrimSpace(r.PostForm.Get("code_verifier"))); err != nil {
+	if err := validateLocalAuthorizationCodeClaims(claims, clientID, req.RedirectURL, req.CodeVerifier); err != nil {
 		return httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest).With(err))
 	}
 	email, err := localAuthorizationEmailFromClaims(claims)
@@ -283,7 +164,7 @@ func exchangeLocalAuthorizationCodeGrant(ctx context.Context, mgr *managerpkg.Ma
 		return httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest).With(err))
 	}
 	identity := schema.IdentityInsert{
-		IdentityKey: schema.IdentityKey{Provider: oidc.OAuthClientKeyLocal, Sub: email},
+		IdentityKey: schema.IdentityKey{Provider: schema.OAuthClientKeyLocal, Sub: email},
 		IdentityMeta: schema.IdentityMeta{
 			Email: email,
 			Claims: map[string]any{
@@ -292,15 +173,22 @@ func exchangeLocalAuthorizationCodeGrant(ctx context.Context, mgr *managerpkg.Ma
 			},
 		},
 	}
-	user, session, err := mgr.LoginWithIdentity(ctx, identity, nil)
-	if err != nil {
-		return httpresponse.Error(w, httpErr(err))
+	return issueOAuthIdentityResponse(ctx, mgr, w, r, identity, req.Meta)
+}
+
+func exchangeProviderAuthorizationCodeGrant(ctx context.Context, mgr *managerpkg.Manager, w http.ResponseWriter, r *http.Request, req *schema.AuthorizationCodeRequest) error {
+	if req == nil {
+		parsed := authorizationCodeRequestFromForm(r.PostForm)
+		req = &parsed
 	}
-	accessToken, err := mgr.OIDCSign(loginTokenClaims(config.Issuer, user, session))
-	if err != nil {
-		return httpresponse.Error(w, httpresponse.Err(http.StatusInternalServerError).With(err))
+	if err := req.Validate(); err != nil {
+		return httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest).With(err))
 	}
-	return httpresponse.JSON(w, http.StatusOK, httprequest.Indent(r), localOAuthTokenResponse(accessToken, session.ExpiresAt))
+	claims, err := exchangeAuthorizationCode(ctx, mgr, req)
+	if err != nil {
+		return httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest).With(err))
+	}
+	return issueOAuthLoginResponse(ctx, mgr, w, r, claims, req.Meta)
 }
 
 func exchangeLocalRefreshTokenGrant(ctx context.Context, mgr *managerpkg.Manager, w http.ResponseWriter, r *http.Request) error {
@@ -337,6 +225,24 @@ func isOAuthTokenRequest(r *http.Request) bool {
 	}
 	contentType := strings.ToLower(strings.TrimSpace(r.Header.Get("Content-Type")))
 	return strings.HasPrefix(contentType, "application/x-www-form-urlencoded")
+}
+
+func authorizationCodeRequestFromForm(values map[string][]string) schema.AuthorizationCodeRequest {
+	req := schema.AuthorizationCodeRequest{
+		Provider:     strings.TrimSpace(firstFormValue(values, "provider")),
+		Code:         strings.TrimSpace(firstFormValue(values, "code")),
+		RedirectURL:  strings.TrimSpace(firstFormValue(values, "redirect_uri")),
+		CodeVerifier: strings.TrimSpace(firstFormValue(values, "code_verifier")),
+		Nonce:        strings.TrimSpace(firstFormValue(values, "nonce")),
+	}
+	return req
+}
+
+func firstFormValue(values map[string][]string, key string) string {
+	if len(values[key]) == 0 {
+		return ""
+	}
+	return values[key][0]
 }
 
 func validateLocalAuthorizationCodeClaims(claims map[string]any, clientID, redirectURL, codeVerifier string) error {
@@ -462,12 +368,4 @@ func sessionIDFromClaims(claims map[string]any) (schema.SessionID, error) {
 		return schema.SessionID{}, httpresponse.Err(http.StatusBadRequest).With("token missing sid claim")
 	}
 	return schema.SessionIDFromString(value)
-}
-
-func getUserInfo(ctx context.Context, _ *managerpkg.Manager, w http.ResponseWriter, r *http.Request) error {
-	user, ok := middleware.UserFromContext(ctx)
-	if !ok || user == nil {
-		return httpresponse.Error(w, httpresponse.Err(http.StatusInternalServerError).With("authenticated user missing from context"))
-	}
-	return httpresponse.JSON(w, http.StatusOK, httprequest.Indent(r), schema.NewUserInfo(user))
 }

@@ -7,7 +7,7 @@ import (
 	"time"
 
 	// Packages
-	oidc "github.com/djthorpe/go-auth/pkg/oidc"
+
 	schema "github.com/djthorpe/go-auth/schema"
 )
 
@@ -42,7 +42,7 @@ type opt struct {
 	sessionttl   time.Duration
 	cleanupint   time.Duration
 	cleanuplimit int
-	oauth        oidc.ClientConfigurations
+	oauth        schema.ClientConfigurations
 	hooks        any
 }
 
@@ -95,12 +95,12 @@ func WithOAuthClient(key, issuer, clientID, clientSecret string) Opt {
 			return fmt.Errorf("oauth issuer cannot be empty")
 		}
 		if o.oauth == nil {
-			o.oauth = make(oidc.ClientConfigurations)
+			o.oauth = make(schema.ClientConfigurations)
 		} else if _, exists := o.oauth[key]; exists {
 			return fmt.Errorf("oauth key %q already configured", key)
 		}
-		o.oauth[key] = oidc.ClientConfiguration{
-			PublicClientConfiguration: oidc.PublicClientConfiguration{
+		o.oauth[key] = schema.ClientConfiguration{
+			PublicClientConfiguration: schema.PublicClientConfiguration{
 				Issuer:   issuer,
 				ClientID: clientID,
 				Provider: schema.ProviderOAuth,

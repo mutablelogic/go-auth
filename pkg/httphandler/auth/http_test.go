@@ -93,19 +93,6 @@ func TestMain(m *testing.M) {
 }
 
 func Test_http_001(t *testing.T) {
-	t.Run("AuthHandlerMethodNotAllowed", func(t *testing.T) {
-		require := require.New(t)
-
-		mgr, _ := newHTTPTestManager(t)
-		_, handler, _ := AuthHandler(mgr)
-		res := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodGet, "/auth/login", nil)
-
-		handler(res, req)
-
-		require.Equal(http.StatusMethodNotAllowed, res.Code)
-	})
-
 	t.Run("ChangesHandlerMethodNotAllowed", func(t *testing.T) {
 		require := require.New(t)
 
@@ -182,42 +169,6 @@ func Test_http_001(t *testing.T) {
 		assert.Contains(res.BodyString(), `"schema":"auth"`)
 		assert.Contains(res.BodyString(), `"table":"group"`)
 		assert.Contains(res.BodyString(), `"action":"INSERT"`)
-	})
-
-	t.Run("AuthHandlerSuccess", func(t *testing.T) {
-		assert := assert.New(t)
-		require := require.New(t)
-
-		provider := newTestOIDCProvider(t, "google-client-id", "google-client-secret", "nonce-123")
-		defer provider.Close()
-		upstreamToken := provider.IssueToken(t, jwt.MapClaims{
-			"iss":   provider.Issuer(),
-			"sub":   "auth-handler-success",
-			"aud":   "google-client-id",
-			"exp":   time.Now().Add(time.Hour).Unix(),
-			"iat":   time.Now().Unix(),
-			"email": "auth.handler.success@example.com",
-			"name":  "Auth Handler Success",
-		})
-
-		mgr, issuer := newHTTPTestManager(t)
-
-		_, handler, _ := AuthHandler(mgr)
-		res := httptest.NewRecorder()
-		body := mustJSONBody(t, schema.TokenRequest{Provider: schema.ProviderOAuth, Token: upstreamToken})
-		req := httptest.NewRequest(http.MethodPost, "/auth/login", body)
-		req.Host = "localhost:8084"
-		req.Header.Set("Content-Type", "application/json")
-
-		handler(res, req)
-
-		require.Equal(http.StatusOK, res.Code)
-		var response schema.TokenResponse
-		require.NoError(json.Unmarshal(res.Body.Bytes(), &response))
-		assert.NotEmpty(response.Token)
-		require.NotNil(response.UserInfo)
-		assert.Equal("auth.handler.success@example.com", response.UserInfo.Email)
-		assert.Equal(issuer, mustExtractIssuer(t, response.Token))
 	})
 
 	t.Run("AuthorizationHandlerRedirectsToLocalCallbackByDefault", func(t *testing.T) {
@@ -298,40 +249,6 @@ func Test_http_001(t *testing.T) {
 		require.Len(listed.Body, 1)
 	})
 
-	t.Run("AuthHandlerReturnsConflictForExistingEmail", func(t *testing.T) {
-		assert := assert.New(t)
-		require := require.New(t)
-
-		provider := newTestOIDCProvider(t, "google-client-id", "google-client-secret", "nonce-123")
-		defer provider.Close()
-		upstreamToken := provider.IssueToken(t, jwt.MapClaims{
-			"iss":   provider.Issuer(),
-			"sub":   "unlinked-subject",
-			"aud":   "google-client-id",
-			"exp":   time.Now().Add(time.Hour).Unix(),
-			"iat":   time.Now().Unix(),
-			"email": "existing.user@example.com",
-			"name":  "Existing User",
-		})
-
-		mgr, _ := newHTTPTestManager(t)
-		_, err := mgr.CreateUser(context.Background(), schema.UserMeta{
-			Name:  "Existing User",
-			Email: "existing.user@example.com",
-		}, nil)
-		require.NoError(err)
-
-		_, handler, _ := AuthHandler(mgr)
-		res := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodPost, "/auth/login", mustJSONBody(t, schema.TokenRequest{Provider: schema.ProviderOAuth, Token: upstreamToken}))
-		req.Header.Set("Content-Type", "application/json")
-
-		handler(res, req)
-
-		require.Equal(http.StatusConflict, res.Code)
-		assert.Contains(res.Body.String(), "existing.user@example.com")
-	})
-
 	t.Run("AuthCodeHandlerSuccess", func(t *testing.T) {
 		assert := assert.New(t)
 		require := require.New(t)
@@ -360,6 +277,42 @@ func Test_http_001(t *testing.T) {
 		require.NotNil(response.UserInfo)
 		assert.Equal("auth.code.success@example.com", response.UserInfo.Email)
 		assert.Equal(issuer, mustExtractIssuer(t, response.Token))
+		assert.Equal("auth-code", provider.FormValue("code"))
+		assert.Equal("http://127.0.0.1:8085/callback", provider.FormValue("redirect_uri"))
+		assert.Equal("verifier-123", provider.FormValue("code_verifier"))
+	})
+
+	t.Run("AuthCodeHandlerFormSuccess", func(t *testing.T) {
+		assert := assert.New(t)
+		require := require.New(t)
+
+		provider := newTestOIDCProvider(t, "google-client-id", "google-client-secret", "nonce-123")
+		defer provider.Close()
+
+		mgr, issuer := newHTTPTestManagerWithOpts(t, managerpkg.WithOAuthClient("google", provider.Issuer(), "google-client-id", "google-client-secret"))
+		_, handler, _ := AuthCodeHandler(mgr)
+		res := httptest.NewRecorder()
+		form := url.Values{
+			"grant_type":    {"authorization_code"},
+			"provider":      {"google"},
+			"client_id":     {"local-client"},
+			"code":          {"auth-code"},
+			"redirect_uri":  {"http://127.0.0.1:8085/callback"},
+			"code_verifier": {"verifier-123"},
+			"nonce":         {"nonce-123"},
+		}
+		req := httptest.NewRequest(http.MethodPost, "/auth/code", strings.NewReader(form.Encode()))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+		handler(res, req)
+
+		require.Equal(http.StatusOK, res.Code)
+		var response map[string]any
+		require.NoError(json.Unmarshal(res.Body.Bytes(), &response))
+		accessToken, _ := response["access_token"].(string)
+		assert.NotEmpty(accessToken)
+		assert.Equal("Bearer", response["token_type"])
+		assert.Equal(issuer, mustExtractIssuer(t, accessToken))
 		assert.Equal("auth-code", provider.FormValue("code"))
 		assert.Equal("http://127.0.0.1:8085/callback", provider.FormValue("redirect_uri"))
 		assert.Equal("verifier-123", provider.FormValue("code_verifier"))
@@ -423,68 +376,6 @@ func Test_http_001(t *testing.T) {
 		handler(res, req)
 
 		require.Equal(http.StatusMethodNotAllowed, res.Code)
-	})
-
-	t.Run("AuthHandlerValidateFailure", func(t *testing.T) {
-		assert := assert.New(t)
-		require := require.New(t)
-
-		mgr, _ := newHTTPTestManager(t)
-
-		_, handler, _ := AuthHandler(mgr)
-		res := httptest.NewRecorder()
-		body := mustJSONBody(t, schema.TokenRequest{Provider: schema.ProviderOAuth, Token: "not-a-jwt"})
-		req := httptest.NewRequest(http.MethodPost, "/auth/login", body)
-		req.Header.Set("Content-Type", "application/json")
-
-		handler(res, req)
-
-		require.Equal(http.StatusBadRequest, res.Code)
-		assert.Contains(res.Body.String(), "parse JWT")
-	})
-
-	t.Run("AuthHandlerRejectsUnsupportedProvider", func(t *testing.T) {
-		assert := assert.New(t)
-		require := require.New(t)
-
-		mgr, _ := newHTTPTestManager(t)
-		_, handler, _ := AuthHandler(mgr)
-		res := httptest.NewRecorder()
-		body := mustJSONBody(t, schema.TokenRequest{Provider: "unknown", Token: "abc"})
-		req := httptest.NewRequest(http.MethodPost, "/auth/login", body)
-		req.Header.Set("Content-Type", "application/json")
-
-		handler(res, req)
-
-		require.Equal(http.StatusBadRequest, res.Code)
-		assert.Contains(res.Body.String(), "unsupported provider")
-	})
-
-	t.Run("AuthHandlerIdentityFailure", func(t *testing.T) {
-		assert := assert.New(t)
-		require := require.New(t)
-
-		provider := newTestOIDCProvider(t, "google-client-id", "google-client-secret", "nonce-123")
-		defer provider.Close()
-		upstreamToken := provider.IssueToken(t, jwt.MapClaims{
-			"iss":   provider.Issuer(),
-			"aud":   "google-client-id",
-			"exp":   time.Now().Add(time.Hour).Unix(),
-			"iat":   time.Now().Unix(),
-			"email": "missing.sub@example.com",
-		})
-
-		mgr, _ := newHTTPTestManager(t)
-
-		_, handler, _ := AuthHandler(mgr)
-		res := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodPost, "/auth/login", mustJSONBody(t, schema.TokenRequest{Provider: schema.ProviderOAuth, Token: upstreamToken}))
-		req.Header.Set("Content-Type", "application/json")
-
-		handler(res, req)
-
-		require.Equal(http.StatusBadRequest, res.Code)
-		assert.Contains(res.Body.String(), "claims missing sub")
 	})
 
 	t.Run("ConfigHandlerReturnsIssuer", func(t *testing.T) {
@@ -590,67 +481,6 @@ func Test_http_001(t *testing.T) {
 		assert.Equal([]string{issuer}, response.AuthorizationServers)
 		assert.Equal([]string{"header"}, response.BearerMethodsSupported)
 		assert.Equal("go-auth", response.ResourceName)
-	})
-
-	t.Run("AuthConfigHandlerReturnsPublicConfig", func(t *testing.T) {
-		assert := assert.New(t)
-		require := require.New(t)
-
-		mgr, _ := newHTTPTestManagerWithOpts(t, managerpkg.WithOAuthClient("google", oidc.GoogleIssuer, "google-client-id", "google-client-secret"))
-		_, handler, _ := AuthConfigHandler(mgr)
-		res := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodGet, "/auth/config", nil)
-
-		handler(res, req)
-
-		require.Equal(http.StatusOK, res.Code)
-		var response oidc.PublicClientConfigurations
-		require.NoError(json.Unmarshal(res.Body.Bytes(), &response))
-		local, ok := response[oidc.OAuthClientKeyLocal]
-		require.True(ok)
-		assert.Equal("http://localhost:8084/api", local.Issuer)
-		assert.Equal("", local.ClientID)
-		assert.Equal(schema.ProviderOAuth, local.Provider)
-		google, ok := response["google"]
-		require.True(ok)
-		assert.Equal(oidc.GoogleIssuer, google.Issuer)
-		assert.Equal("google-client-id", google.ClientID)
-		assert.Equal(schema.ProviderOAuth, google.Provider)
-		assert.NotContains(res.Body.String(), "google-client-secret")
-	})
-
-	t.Run("AuthConfigHandlerReturnsLocalConfig", func(t *testing.T) {
-		assert := assert.New(t)
-		require := require.New(t)
-
-		mgr, _ := newHTTPTestManager(t)
-		_, handler, _ := AuthConfigHandler(mgr)
-		res := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodGet, "/auth/config", nil)
-
-		handler(res, req)
-
-		require.Equal(http.StatusOK, res.Code)
-		var response oidc.PublicClientConfigurations
-		require.NoError(json.Unmarshal(res.Body.Bytes(), &response))
-		local, ok := response[oidc.OAuthClientKeyLocal]
-		require.True(ok)
-		assert.Equal("http://localhost:8084/api", local.Issuer)
-		assert.Equal("", local.ClientID)
-		assert.Equal(schema.ProviderOAuth, local.Provider)
-	})
-
-	t.Run("AuthConfigHandlerMethodNotAllowed", func(t *testing.T) {
-		require := require.New(t)
-
-		mgr, _ := newHTTPTestManager(t)
-		_, handler, _ := AuthConfigHandler(mgr)
-		res := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodPost, "/auth/config", nil)
-
-		handler(res, req)
-
-		require.Equal(http.StatusMethodNotAllowed, res.Code)
 	})
 
 	t.Run("ConfigHandlerMethodNotAllowed", func(t *testing.T) {
@@ -1117,116 +947,6 @@ func Test_http_001(t *testing.T) {
 		require.Equal(http.StatusNotFound, getRes.Code)
 	})
 
-	t.Run("RefreshHandlerReturnsRefreshedToken", func(t *testing.T) {
-		assert := assert.New(t)
-		require := require.New(t)
-
-		mgr, issuer := newHTTPTestManager(t)
-		user, session, token := mustLoginToken(t, mgr, issuer)
-
-		_, handler, _ := RefreshHandler(mgr)
-		res := httptest.NewRecorder()
-		body := mustJSONBody(t, schema.RefreshRequest{Token: token})
-		req := httptest.NewRequest(http.MethodPost, "/auth/refresh", body)
-		req.Host = "localhost:8084"
-		req.Header.Set("Content-Type", "application/json")
-
-		handler(res, req)
-
-		require.Equal(http.StatusOK, res.Code)
-		var response schema.TokenResponse
-		require.NoError(json.Unmarshal(res.Body.Bytes(), &response))
-		assert.NotEmpty(response.Token)
-		assert.Nil(response.UserInfo)
-		claims, err := newHTTPTestManagerForToken(t, response.Token)
-		require.NoError(err)
-		assert.Equal(issuer, claims["iss"])
-		assert.Equal(uuid.UUID(user.ID).String(), claims["sub"])
-		assert.Equal(uuid.UUID(session.ID).String(), claims["sid"])
-		assert.Contains(claims, "user")
-		assert.Contains(claims, "session")
-	})
-
-	t.Run("RefreshHandlerTrimsToken", func(t *testing.T) {
-		assert := assert.New(t)
-		require := require.New(t)
-
-		mgr, issuer := newHTTPTestManager(t)
-		user, session, token := mustLoginToken(t, mgr, issuer)
-
-		_, handler, _ := RefreshHandler(mgr)
-		res := httptest.NewRecorder()
-		body := mustJSONBody(t, schema.RefreshRequest{Token: "  \n" + token + "\t  "})
-		req := httptest.NewRequest(http.MethodPost, "/auth/refresh", body)
-		req.Host = "localhost:8084"
-		req.Header.Set("Content-Type", "application/json")
-
-		handler(res, req)
-
-		require.Equal(http.StatusOK, res.Code)
-		var response schema.TokenResponse
-		require.NoError(json.Unmarshal(res.Body.Bytes(), &response))
-		assert.NotEmpty(response.Token)
-		claims, err := newHTTPTestManagerForToken(t, response.Token)
-		require.NoError(err)
-		assert.Equal(issuer, claims["iss"])
-		assert.Equal(uuid.UUID(user.ID).String(), claims["sub"])
-		assert.Equal(uuid.UUID(session.ID).String(), claims["sid"])
-	})
-
-	t.Run("RefreshHandlerMissingToken", func(t *testing.T) {
-		assert := assert.New(t)
-		require := require.New(t)
-
-		mgr, _ := newHTTPTestManager(t)
-		_, handler, _ := RefreshHandler(mgr)
-		res := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodPost, "/auth/refresh", mustJSONBody(t, schema.RefreshRequest{}))
-		req.Header.Set("Content-Type", "application/json")
-
-		handler(res, req)
-
-		require.Equal(http.StatusBadRequest, res.Code)
-		assert.Contains(res.Body.String(), "token is required")
-	})
-
-	t.Run("RefreshHandlerMissingSession", func(t *testing.T) {
-		assert := assert.New(t)
-		require := require.New(t)
-
-		mgr, issuer := newHTTPTestManager(t)
-		user, _ := mustLoginSession(t, mgr)
-		token := mustSignTokenForSession(t, mgr, issuer, user, schema.Session{
-			ID:        schema.SessionID(uuid.New()),
-			User:      user.ID,
-			ExpiresAt: time.Now().Add(15 * time.Minute),
-		})
-
-		_, handler, _ := RefreshHandler(mgr)
-		res := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodPost, "/auth/refresh", mustJSONBody(t, schema.RefreshRequest{Token: token}))
-		req.Host = "localhost:8084"
-		req.Header.Set("Content-Type", "application/json")
-
-		handler(res, req)
-
-		require.Equal(http.StatusNotFound, res.Code)
-		assert.Contains(res.Body.String(), "not found")
-	})
-
-	t.Run("RefreshHandlerMethodNotAllowed", func(t *testing.T) {
-		require := require.New(t)
-
-		mgr, _ := newHTTPTestManager(t)
-		_, handler, _ := RefreshHandler(mgr)
-		res := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodGet, "/auth/refresh", nil)
-
-		handler(res, req)
-
-		require.Equal(http.StatusMethodNotAllowed, res.Code)
-	})
-
 	t.Run("RevokeHandlerReturnsNoContent", func(t *testing.T) {
 		assert := assert.New(t)
 		require := require.New(t)
@@ -1435,7 +1155,7 @@ func newHTTPTestManagerWithOpts(t *testing.T, opts ...managerpkg.Opt) (*managerp
 	issuer := "http://localhost:8084/api"
 	managerOpts := append([]managerpkg.Opt{
 		managerpkg.WithPrivateKey(key),
-		managerpkg.WithOAuthClient(oidc.OAuthClientKeyLocal, issuer, "", ""),
+		managerpkg.WithOAuthClient(schema.OAuthClientKeyLocal, issuer, "", ""),
 		managerpkg.WithSessionTTL(15 * time.Minute),
 	}, opts...)
 	mgr, err := managerpkg.New(context.Background(), c, managerOpts...)
