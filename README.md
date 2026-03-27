@@ -211,6 +211,132 @@ sequenceDiagram
     R->>C: Response
 ```
 
+### Login hooks
+
+When embedding `pkg/manager` directly in a larger service, you can supply a hooks object via `manager.WithHooks(...)` to customise login-time behaviour. The object may implement one or both interfaces:
+
+```go
+// UserCreationHook is called the first time a provider identity logs in and
+// no matching local user exists. Return a modified UserMeta to adjust the
+// proposed user record (e.g. set status, assign groups), or return an error
+// to reject the login.
+type UserCreationHook interface {
+    OnUserCreate(ctx context.Context, identity schema.IdentityInsert, meta schema.UserMeta) (schema.UserMeta, error)
+}
+
+// IdentityLinkHook is called when a provider identity logs in with an email
+// that matches an existing local user created via a different provider.
+// Return nil to allow the link, or an error to reject it.
+type IdentityLinkHook interface {
+    OnIdentityLink(ctx context.Context, identity schema.IdentityInsert, existing *schema.User) error
+}
+```
+
+Example — activate new users automatically and allow identity linking only when the email addresses match exactly:
+
+```go
+type loginHooks struct{}
+
+func (loginHooks) OnUserCreate(_ context.Context, _ schema.IdentityInsert, meta schema.UserMeta) (schema.UserMeta, error) {
+    meta.Status = types.Ptr(schema.UserStatusActive)
+    return meta, nil
+}
+
+func (loginHooks) OnIdentityLink(_ context.Context, identity schema.IdentityInsert, existing *schema.User) error {
+    if identity.Email != existing.Email {
+        return fmt.Errorf("email mismatch")
+    }
+    return nil
+}
+
+mgr, err := manager.New(ctx, conn,
+    manager.WithPrivateKey(key),
+    manager.WithHooks(loginHooks{}),
+)
+```
+
+If no `UserCreationHook` is registered, new users are created with the default status from the database schema. If no `IdentityLinkHook` is registered, linking a new provider identity to an existing user with the same email is rejected.
+
+### Change notifications
+
+When `--notify-channel` is set (default `backend.table_change`), the server listens on a PostgreSQL `LISTEN/NOTIFY` channel and streams change events whenever a user, group, identity, session, or scope row is inserted, updated, or deleted.
+
+**Programmatically** — subscribe via `manager.ChangeNotification` when embedding `pkg/manager` directly:
+
+```go
+err := mgr.ChangeNotification(ctx, func(change schema.ChangeNotification) {
+    fmt.Printf("table=%s action=%s\n", change.Table, change.Action)
+})
+```
+
+Each `schema.ChangeNotification` carries `Schema`, `Table`, and `Action` (`INSERT`, `UPDATE`, `DELETE`, or `TRUNCATE`).
+
+**Via the CLI** — the `changes` command streams the same events over SSE from the management API:
+
+```bash
+authserver changes
+```
+
+Notifications are disabled when `--notify-channel` is set to an empty string.
+
+### Database objects
+
+#### User
+
+| Field | Type | Notes |
+|---|---|---|
+| `id` | UUID | Immutable primary key |
+| `name` | string | Display name |
+| `email` | string | Canonical email address — used to merge logins across providers |
+| `status` | string | `new`, `active`, `inactive`, `suspended`, or `deleted` |
+| `groups` | []string | Group IDs the user belongs to |
+| `disabled_groups` | []string | Groups the user belongs to that are currently disabled (read-only) |
+| `scopes` | []string | Effective scopes derived from the user's enabled groups (read-only) |
+| `claims` | object | Merged claims from all linked provider identities (read-only) |
+| `meta` | object | Arbitrary application-defined key/value metadata |
+| `effective_meta` | object | Merged metadata from the user's groups and the user row (read-only) |
+| `expires_at` | timestamp | Optional account expiry — middleware rejects the token after this time |
+| `created_at` | timestamp | Immutable |
+| `modified_at` | timestamp | Updated on any change |
+
+#### Group
+
+| Field | Type | Notes |
+|---|---|---|
+| `id` | string | Human-readable identifier (e.g. `admin`, `readonly`) |
+| `description` | string | Optional human-readable label |
+| `enabled` | bool | Disabled groups do not contribute scopes to their members |
+| `scopes` | []string | Scopes granted to members of this group |
+| `meta` | object | Arbitrary application-defined key/value metadata |
+
+#### Identity
+
+An identity links a provider account to a local user. One user may have multiple identities across different providers.
+
+| Field | Type | Notes |
+|---|---|---|
+| `provider` | string | Issuer URL of the identity provider |
+| `sub` | string | Subject identifier from the provider |
+| `email` | string | Email address as reported by the provider |
+| `claims` | object | Raw claims from the provider's token |
+| `user` | UUID | The local user this identity belongs to |
+| `created_at` | timestamp | Immutable |
+| `modified_at` | timestamp | Updated on each login |
+
+#### Session
+
+| Field | Type | Notes |
+|---|---|---|
+| `id` | UUID | Immutable primary key, embedded in issued JWTs as `sid` |
+| `user` | UUID | The user this session belongs to |
+| `expires_at` | timestamp | Middleware rejects tokens after this time |
+| `revoked_at` | timestamp | Set when the session is explicitly revoked |
+| `created_at` | timestamp | Immutable |
+
+#### Scope
+
+Scopes are plain strings assigned to groups. The scope list is the union of all enabled groups the user belongs to and is embedded in issued tokens. The `scopes` endpoint returns all distinct scope values across all groups, and supports prefix search via the `q` query parameter.
+
 ## Development
 
 Contributions are welcome.
