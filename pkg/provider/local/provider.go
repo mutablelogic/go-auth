@@ -1,3 +1,17 @@
+// Copyright 2026 David Thorpe
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package local
 
 import (
@@ -209,17 +223,13 @@ func validateAuthorizationCodeClaims(claims map[string]any, redirectURL, codeVer
 	challenge, _ := claims["code_challenge"].(string)
 	challenge = strings.TrimSpace(challenge)
 	if challenge == "" {
-		return nil
+		return fmt.Errorf("code_challenge is required")
 	}
 	if codeVerifier == "" {
 		return fmt.Errorf("code_verifier is required")
 	}
 	method, _ := claims["code_challenge_method"].(string)
 	switch strings.TrimSpace(method) {
-	case "", oidc.CodeChallengeMethodPlain:
-		if codeVerifier != challenge {
-			return fmt.Errorf("authorization code verifier mismatch")
-		}
 	case oidc.CodeChallengeMethodS256:
 		sum := sha256.Sum256([]byte(codeVerifier))
 		if base64.RawURLEncoding.EncodeToString(sum[:]) != challenge {

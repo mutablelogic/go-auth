@@ -15,35 +15,30 @@
 package manager
 
 import (
-	"fmt"
+	"net/url"
 
 	// Packages
-	manager "github.com/djthorpe/go-auth/pkg/httpclient/manager"
-	schema "github.com/djthorpe/go-auth/schema"
 	server "github.com/mutablelogic/go-server"
+	browser "github.com/pkg/browser"
 )
 
 ///////////////////////////////////////////////////////////////////////////////
 // TYPES
 
-type ScopeCommands struct {
-	Scopes ListScopesCommand `cmd:"" name:"scopes" help:"Get Scopes." group:"USER MANAGER"`
-}
-
-type ListScopesCommand struct {
-	schema.ScopeListRequest
-}
+type UICommand struct{}
 
 ///////////////////////////////////////////////////////////////////////////////
 // COMMANDS
 
-func (cmd *ListScopesCommand) Run(ctx server.Cmd) error {
-	return WithClient(ctx, func(manager *manager.Client, endpoint string) error {
-		scopes, err := manager.ListScopes(ctx.Context(), cmd.ScopeListRequest)
-		if err != nil {
-			return err
-		}
-		fmt.Println(scopes)
-		return nil
-	})
+func (cmd *UICommand) Run(ctx server.Cmd) error {
+	endpoint, _, err := ctx.ClientEndpoint()
+	if err != nil {
+		return err
+	}
+	u, err := url.Parse(endpoint)
+	if err != nil {
+		return err
+	}
+	u.Path = "/"
+	return browser.OpenURL(u.String())
 }

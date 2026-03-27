@@ -1,3 +1,17 @@
+// Copyright 2026 David Thorpe
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package auth
 
 import (
@@ -56,6 +70,17 @@ func authorize(ctx context.Context, manager *manager.Manager, w http.ResponseWri
 	if state == "" {
 		return httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest).With("state is required"))
 	}
+
+	// PKCE — S256 is required; plain is not accepted
+	codeChallenge := strings.TrimSpace(params.Get("code_challenge"))
+	if codeChallenge == "" {
+		return httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest).With("code_challenge is required"))
+	}
+	codeChallengeMethod := strings.TrimSpace(params.Get("code_challenge_method"))
+	if codeChallengeMethod != oidc.CodeChallengeMethodS256 {
+		return httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest).Withf("code_challenge_method must be %q", oidc.CodeChallengeMethodS256))
+	}
+
 	provider, err := authorizationProvider(manager, providerName)
 	if err != nil {
 		return httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest).With(err))

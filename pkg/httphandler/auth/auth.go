@@ -1,3 +1,17 @@
+// Copyright 2026 David Thorpe
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package auth
 
 import (
@@ -173,7 +187,7 @@ func authorizeScopes(r *http.Request) []string {
 
 func loginTokenClaims(issuer string, user *schema.User, session *schema.Session) jwt.MapClaims {
 	now := time.Now().UTC()
-	claims := jwt.MapClaims{"iss": issuer, "sub": uuid.UUID(user.ID).String(), "sid": uuid.UUID(session.ID).String(), "iat": now.Unix(), "nbf": now.Unix(), "exp": session.ExpiresAt.UTC().Unix(), "user": user, "session": session}
+	claims := jwt.MapClaims{"iss": issuer, "aud": issuer, "sub": uuid.UUID(user.ID).String(), "sid": uuid.UUID(session.ID).String(), "iat": now.Unix(), "nbf": now.Unix(), "exp": session.ExpiresAt.UTC().Unix(), "user": user, "session": session}
 	if user.Email != "" {
 		claims["email"] = user.Email
 	}
