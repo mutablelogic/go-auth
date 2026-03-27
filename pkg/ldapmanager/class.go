@@ -143,6 +143,53 @@ func (manager *Manager) listSchemaValues(ctx context.Context, subschemadn, attr 
 	}, attr)
 }
 
+// discoverGroupClasses queries the subschema and returns a compatible set of
+// group classes for new entries: one structural class plus optional auxiliary
+// classes such as posixGroup when the server supports them.
+// The manager lock MUST be held by the caller.
+func (manager *Manager) discoverGroupClasses(ctx context.Context) ([]string, error) {
+	subschemadn, err := manager.subschemaDN(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	classes := make(map[string]*schema.ObjectClass)
+	if err := manager.listSchemaValues(ctx, subschemadn, schema.AttrObjectClasses, func(values []string) error {
+		for _, oc := range parseObjectClasses(values) {
+			if oc == nil {
+				continue
+			}
+			for _, name := range oc.Name {
+				classes[strings.ToLower(name)] = oc
+			}
+		}
+		return nil
+	}); err != nil {
+		return nil, err
+	}
+
+	var result []string
+	for _, known := range schema.WellKnownGroupClasses {
+		oc := classes[strings.ToLower(known)]
+		if oc == nil {
+			continue
+		}
+		if strings.EqualFold(oc.ClassKind, string(schema.ObjectClassKindStructural)) {
+			result = append(result, known)
+			break
+		}
+	}
+
+	if oc := classes[strings.ToLower("posixGroup")]; oc != nil && strings.EqualFold(oc.ClassKind, string(schema.ObjectClassKindAuxiliary)) {
+		result = append(result, "posixGroup")
+	}
+
+	if len(result) == 0 {
+		return nil, nil
+	}
+	return result, nil
+}
+
 func parseObjectClasses(values []string) []*schema.ObjectClass {
 	result := make([]*schema.ObjectClass, 0, len(values))
 	for _, value := range values {

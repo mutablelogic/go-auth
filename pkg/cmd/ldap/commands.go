@@ -20,5 +20,6 @@ package ldap
 type LDAPCommands struct {
 	ClassCommands
 	AttrCommands
+	GroupCommands
 	ObjectCommands
 }

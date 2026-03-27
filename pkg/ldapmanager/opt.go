@@ -20,6 +20,7 @@ import (
 	// Packages
 	schema "github.com/djthorpe/go-auth/schema/ldap"
 	httpresponse "github.com/mutablelogic/go-server/pkg/httpresponse"
+	types "github.com/mutablelogic/go-server/pkg/types"
 )
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -65,20 +66,20 @@ func WithUserSchema(dn string, classes ...string) Opt {
 		} else if bdn, err := schema.NewDN(dn); err != nil {
 			return httpresponse.ErrBadRequest.With("DN is invalid: ", err)
 		} else {
-			o.users = &schema.Group{DN: bdn, ObjectClass: classes}
+			o.users = types.Ptr(schema.Group{DN: bdn, ObjectClass: classes})
 		}
 		return nil
 	}
 }
 
-func WithGroupSchema(dn string, classes ...string) Opt {
+func WithGroupSchema(dn string) Opt {
 	return func(o *opt) error {
 		if dn == "" {
 			return httpresponse.ErrBadRequest.With("DN is empty")
 		} else if bdn, err := schema.NewDN(dn); err != nil {
 			return httpresponse.ErrBadRequest.With("DN is invalid: ", err)
 		} else {
-			o.groups = &schema.Group{DN: bdn, ObjectClass: classes}
+			o.groups = types.Ptr(schema.Group{DN: bdn})
 		}
 		return nil
 	}

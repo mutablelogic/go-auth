@@ -21,3 +21,9 @@ type Group struct {
 	DN          *DN      `json:"dn,omitempty"`
 	ObjectClass []string `json:"objectclass,omitempty"`
 }
+
+// DefaultGroupObjectClasses is used when no group object classes are configured.
+var DefaultGroupObjectClasses = []string{"groupOfNames"}
+
+// WellKnownGroupClasses is the list of object classes checked during auto-discovery.
+var WellKnownGroupClasses = []string{"group", "posixGroup", "groupOfNames", "groupOfUniqueNames", "groupOfMembers"}

@@ -42,10 +42,11 @@ type RunServer struct {
 }
 
 type LDAPFlags struct {
-	Url    string `long:"url" description:"LDAP URL to listen on" default:"ldap://localhost:389" env:"LDAP_URL"`
-	User   string `long:"user" description:"Bind user DN for LDAP manager" default:"cn=admin,dc=example,dc=org" env:"LDAP_USER"`
-	Pass   string `long:"pass" description:"Bind password for LDAP manager" env:"LDAP_PASS"`
-	BaseDN string `long:"base-dn" description:"Base DN for LDAP entries" default:"dc=example,dc=org" env:"LDAP_BASEDN"`
+	Url     string `long:"url" description:"LDAP URL to listen on" default:"ldap://localhost:389" env:"LDAP_URL"`
+	User    string `long:"user" description:"Bind user DN for LDAP manager" default:"cn=admin,dc=example,dc=org" env:"LDAP_USER"`
+	Pass    string `long:"pass" description:"Bind password for LDAP manager" env:"LDAP_PASS"`
+	BaseDN  string `long:"base-dn" description:"Base DN for LDAP entries" default:"dc=example,dc=org" env:"LDAP_BASEDN"`
+	GroupDN string `long:"group-dn" description:"Relative DN for the group subtree (e.g. ou=groups)" env:"LDAP_GROUP_DN" optional:""`
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -91,6 +92,9 @@ func (server *RunServer) WithManager(ctx server.Cmd, fn func(*ldap.Manager, stri
 		ldap.WithUser(server.User),
 		ldap.WithPassword(server.Pass),
 		ldap.WithBaseDN(server.BaseDN),
+	}
+	if server.GroupDN != "" {
+		opts = append(opts, ldap.WithGroupSchema(server.GroupDN))
 	}
 
 	// Create the manager with the options required

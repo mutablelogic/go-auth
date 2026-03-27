@@ -15,6 +15,7 @@
 package ldap
 
 import (
+	"context"
 	"crypto/tls"
 	"errors"
 	"fmt"
@@ -145,8 +146,10 @@ func (ldap *Manager) User() string {
 	}
 }
 
-// Connect to the LDAP server, or ping the server if already connected
-func (manager *Manager) Connect() error {
+// Connect to the LDAP server, or ping the server if already connected.
+// On a fresh connection, group classes are auto-discovered from the subschema
+// while the lock is held, so no HTTP handler can observe an empty class list.
+func (manager *Manager) Connect(ctx context.Context) error {
 	manager.Lock()
 	defer manager.Unlock()
 
@@ -157,6 +160,15 @@ func (manager *Manager) Connect() error {
 			return ldaperr(err)
 		} else {
 			manager.conn = conn
+		}
+		// Discover group classes while we hold the lock so CreateGroup always
+		// sees a resolved class list before it can run.
+		if manager.groups != nil && len(manager.groups.ObjectClass) == 0 {
+			classes, err := manager.discoverGroupClasses(ctx)
+			if err != nil || len(classes) == 0 {
+				classes = schema.DefaultGroupObjectClasses
+			}
+			manager.groups.ObjectClass = classes
 		}
 	} else if _, err := manager.conn.WhoAmI([]ldap.Control{}); err != nil {
 		// TODO: ldap.ErrorNetwork, ldap.LDAPResultBusy, ldap.LDAPResultUnavailable:
@@ -281,206 +293,3 @@ func (manager *Manager) absdn(dn string, base *schema.DN) (*schema.DN, error) {
 	}
 	return rdn, nil
 }
-
-/*
-///////////////////////////////////////////////////////////////////////////////
-// PUBLIC METHODS - USERS AND GROUPS
-
-// Return all users
-func (manager *Manager) ListUsers(ctx context.Context, request schema.ObjectListRequest) ([]*schema.ObjectList, error) {
-	// TODO
-	return nil, httpresponse.ErrNotImplemented.With("ListUsers not implemented")
-}
-
-// Return all groups
-func (manager *Manager) ListGroups(ctx context.Context, request schema.ObjectListRequest) ([]*schema.ObjectList, error) {
-	// TODO
-	return nil, httpresponse.ErrNotImplemented.With("ListGroups not implemented")
-}
-
-// Get a user
-func (manager *Manager) GetUser(ctx context.Context, dn string) (*schema.Object, error) {
-	// TODO
-	return nil, httpresponse.ErrNotImplemented.With("GetUser not implemented")
-}
-
-// Get a group
-func (manager *Manager) GetGroup(ctx context.Context, dn string) (*schema.Object, error) {
-	// TODO
-	return nil, httpresponse.ErrNotImplemented.With("GetGroup not implemented")
-}
-
-// Create a user
-func (manager *Manager) CreateUser(ctx context.Context, user string, attrs url.Values) (*schema.Object, error) {
-	// TODO
-	return nil, httpresponse.ErrNotImplemented.With("CreateUser not implemented")
-}
-
-// Create a group
-func (manager *Manager) CreateGroup(ctx context.Context, group string, attrs url.Values) (*schema.Object, error) {
-	// TODO
-	return nil, httpresponse.ErrNotImplemented.With("CreateGroup not implemented")
-}
-
-// Delete a user
-func (manager *Manager) DeleteUser(ctx context.Context, dn string) (*schema.Object, error) {
-	// TODO
-	return nil, httpresponse.ErrNotImplemented.With("DeleteUser not implemented")
-}
-
-// Delete a group
-func (manager *Manager) DeleteGroup(ctx context.Context, dn string) (*schema.Object, error) {
-	// TODO
-	return nil, httpresponse.ErrNotImplemented.With("DeleteGroup not implemented")
-}
-
-// Add a user to a group, and return the group
-func (manager *Manager) AddGroupUser(ctx context.Context, dn, user string) (*schema.Object, error) {
-	// TODO
-	return nil, httpresponse.ErrNotImplemented.With("DeleteGroup not implemented")
-}
-
-// Remove a user from a group, and return the group
-func (manager *Manager) RemoveGroupUser(ctx context.Context, dn, user string) (*schema.Object, error) {
-	// TODO
-	return nil, httpresponse.ErrNotImplemented.With("DeleteGroup not implemented")
-}
-
-/*
-// Return all groups
-func (ldap *ldap) GetGroups() ([]*schema.Object, error) {
-	return ldap.Get(ldap.schema.GroupObjectClass[0])
-}
-
-// Create a group with the given attributes
-func (ldap *ldap) CreateGroup(group string, attrs ...schema.Attr) (*schema.Object, error) {
-	ldap.Lock()
-	defer ldap.Unlock()
-
-	// Check connection
-	if ldap.conn == nil {
-		return nil, ErrOutOfOrder.With("Not connected")
-	}
-
-	// Create group
-	o, err := ldap.schema.NewGroup(ldap.dn, group, attrs...)
-	if err != nil {
-		return nil, err
-	}
-
-	// If the gid is not set, then set it to the next available gid
-	var nextGid int
-	gid, err := ldap.SearchOne("(&(objectclass=device)(cn=lastgid))")
-	if err != nil {
-		return nil, err
-	} else if gid == nil {
-		return nil, ErrNotImplemented.With("lastgid not found")
-	} else if gid_, err := strconv.ParseInt(gid.Get("serialNumber"), 10, 32); err != nil {
-		return nil, ErrNotImplemented.With("lastgid not found")
-	} else {
-		nextGid = int(gid_) + 1
-		if err := schema.OptGroupId(int(gid_))(o); err != nil {
-			return nil, err
-		}
-	}
-
-	// Create the request
-	addReq := goldap.NewAddRequest(o.DN, []goldap.Control{})
-	for name, values := range o.Values {
-		addReq.Attribute(name, values)
-	}
-
-	// Request -> Response
-	if err := ldap.conn.Add(addReq); err != nil {
-		return nil, err
-	}
-
-	// Increment the gid
-	if gid != nil && nextGid > 0 {
-		modify := goldap.NewModifyRequest(gid.DN, []goldap.Control{})
-		modify.Replace("serialNumber", []string{fmt.Sprint(nextGid)})
-		if err := ldap.conn.Modify(modify); err != nil {
-			return nil, err
-		}
-	}
-
-	// TODO: Retrieve the group
-
-	// Return success
-	return o, nil
-}
-
-// Add a user to a group
-func (ldap *ldap) AddGroupUser(user, group *schema.Object) error {
-	// Use uniqueMember for groupOfUniqueNames,
-	// use memberUid for posixGroup
-	// use member for groupOfNames or if not posix
-	return ErrNotImplemented
-}
-
-// Remove a user from a group
-func (ldap *ldap) RemoveGroupUser(user, group *schema.Object) error {
-	// Use uniqueMember for groupOfUniqueNames,
-	// use memberUid for posixGroup
-	// use member for groupOfNames or if not posix
-	return ErrNotImplemented
-}
-
-// Create a user in a specific group with the given attributes
-func (ldap *ldap) CreateUser(name string, attrs ...schema.Attr) (*schema.Object, error) {
-	ldap.Lock()
-	defer ldap.Unlock()
-
-	// Check connection
-	if ldap.conn == nil {
-		return nil, ErrOutOfOrder.With("Not connected")
-	}
-
-	// Create user object
-	o, err := ldap.schema.NewUser(ldap.dn, name, attrs...)
-	if err != nil {
-		return nil, err
-	}
-
-	// If the uid is not set, then set it to the next available uid
-	var nextId int
-	uid, err := ldap.SearchOne("(&(objectclass=device)(cn=lastuid))")
-	if err != nil {
-		return nil, err
-	} else if uid == nil {
-		return nil, ErrNotImplemented.With("lastuid not found")
-	} else if uid_, err := strconv.ParseInt(uid.Get("serialNumber"), 10, 32); err != nil {
-		return nil, ErrNotImplemented.With("lastuid not found")
-	} else {
-		nextId = int(uid_) + 1
-		if err := schema.OptUserId(int(uid_))(o); err != nil {
-			return nil, err
-		}
-	}
-
-	// Create the request
-	addReq := goldap.NewAddRequest(o.DN, []goldap.Control{})
-	for name, values := range o.Values {
-		addReq.Attribute(name, values)
-	}
-
-	// Request -> Response
-	if err := ldap.conn.Add(addReq); err != nil {
-		return nil, err
-	}
-
-	// Increment the uid
-	if uid != nil && nextId > 0 {
-		modify := goldap.NewModifyRequest(uid.DN, []goldap.Control{})
-		modify.Replace("serialNumber", []string{fmt.Sprint(nextId)})
-		if err := ldap.conn.Modify(modify); err != nil {
-			return nil, err
-		}
-	}
-
-	// TODO: Add the user to a group
-
-	// Return success
-	return o, nil
-}
-*/

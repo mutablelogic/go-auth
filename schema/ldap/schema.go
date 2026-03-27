@@ -39,4 +39,8 @@ const (
 	AttrObjectClasses  = "objectClasses"
 	AttrAttributeTypes = "attributeTypes"
 	AttrSubSchemaDN    = "subschemaSubentry"
+
+	// Initial GID/UID allocated when the lastgid/lastuid device entry is first created
+	InitialGID = 1000
+	InitialUID = 1000
 )
