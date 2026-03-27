@@ -43,6 +43,7 @@ $(foreach dir,$(CMD_DIRS),$(eval $(call cmd-alias-rule,$(dir))))
 define wasm-rule
 $(BUILDDIR)/$(notdir $(1)).wasm: $(shell find $(1) -type f) $(NPM) | wasmbuild gowasm-dep
 	@echo "Building $(1)"
+	@rm -rf $$@
 	@$(BUILDDIR)/wasmbuild build --go=${GOWASM} --go-flags='-ldflags "$(LD_FLAGS)"' -o $$@ ./$(1)
 endef
 
