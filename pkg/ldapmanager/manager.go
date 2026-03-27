@@ -15,7 +15,6 @@
 package ldap
 
 import (
-	"context"
 	"crypto/tls"
 	"errors"
 	"fmt"
@@ -36,13 +35,14 @@ import (
 // LDAP manager
 type Manager struct {
 	sync.Mutex
-	url        *url.URL
-	tls        *tls.Config
-	user, pass string
-	dn         *schema.DN
-	conn       *ldap.Conn
-	users      *schema.Group
-	groups     *schema.Group
+	url           *url.URL
+	tls           *tls.Config
+	user, pass    string
+	dn            *schema.DN
+	conn          *ldap.Conn
+	users         *schema.Group
+	groups        *schema.Group
+	discoveryOnce sync.Once
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -147,9 +147,7 @@ func (ldap *Manager) User() string {
 }
 
 // Connect to the LDAP server, or ping the server if already connected.
-// On a fresh connection, group classes are auto-discovered from the subschema
-// while the lock is held, so no HTTP handler can observe an empty class list.
-func (manager *Manager) Connect(ctx context.Context) error {
+func (manager *Manager) Connect() error {
 	manager.Lock()
 	defer manager.Unlock()
 
@@ -160,15 +158,6 @@ func (manager *Manager) Connect(ctx context.Context) error {
 			return ldaperr(err)
 		} else {
 			manager.conn = conn
-		}
-		// Discover group classes while we hold the lock so CreateGroup always
-		// sees a resolved class list before it can run.
-		if manager.groups != nil && len(manager.groups.ObjectClass) == 0 {
-			classes, err := manager.discoverGroupClasses(ctx)
-			if err != nil || len(classes) == 0 {
-				classes = schema.DefaultGroupObjectClasses
-			}
-			manager.groups.ObjectClass = classes
 		}
 	} else if _, err := manager.conn.WhoAmI([]ldap.Control{}); err != nil {
 		// TODO: ldap.ErrorNetwork, ldap.LDAPResultBusy, ldap.LDAPResultUnavailable:

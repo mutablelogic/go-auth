@@ -90,8 +90,12 @@ func (c *Client) ChangeObjectPassword(ctx context.Context, dn string, req schema
 	return types.Ptr(response), nil
 }
 
-func (c *Client) DeleteObject(ctx context.Context, dn string) error {
-	return c.DoWithContext(ctx, client.MethodDelete, nil, client.OptPath("object", dn))
+func (c *Client) DeleteObject(ctx context.Context, dn string) (*schema.Object, error) {
+	var response schema.Object
+	if err := c.DoWithContext(ctx, client.MethodDelete, &response, client.OptPath("object", dn)); err != nil {
+		return nil, err
+	}
+	return types.Ptr(response), nil
 }
 
 ///////////////////////////////////////////////////////////////////////////////

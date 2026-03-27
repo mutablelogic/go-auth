@@ -41,11 +41,17 @@ type GroupCreateCommand struct {
 	Attrs []string `arg:"" optional:"" name:"attrs" help:"Attributes as key=value1,value2"`
 }
 
+type GroupUpdateCommand struct {
+	CN    string   `arg:"" name:"cn" help:"Group common name"`
+	Attrs []string `arg:"" name:"attrs" help:"Attributes as key=value1,value2"`
+}
+
 type GroupCommands struct {
 	Group  GroupListCommand   `cmd:"" name:"groups" help:"List groups." group:"LDAP USERS & GROUPS"`
-	Get    GroupGetCommand    `cmd:"" name:"group-get" help:"Get group." group:"LDAP USERS & GROUPS"`
+	Get    GroupGetCommand    `cmd:"" name:"group" help:"Get group." group:"LDAP USERS & GROUPS"`
 	Delete GroupDeleteCommand `cmd:"" name:"group-delete" help:"Delete group." group:"LDAP USERS & GROUPS"`
 	Create GroupCreateCommand `cmd:"" name:"group-create" help:"Create group." group:"LDAP USERS & GROUPS"`
+	Update GroupUpdateCommand `cmd:"" name:"group-update" help:"Update group." group:"LDAP USERS & GROUPS"`
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -87,11 +93,7 @@ func (cmd *GroupDeleteCommand) Run(ctx server.Cmd) error {
 		if err != nil {
 			return err
 		}
-		if ctx.IsDebug() {
-			fmt.Println(group)
-		} else {
-			fmt.Println(group.LDIF())
-		}
+		printDeletedObject(ctx, group)
 		return nil
 	})
 }
@@ -107,6 +109,25 @@ func (cmd *GroupCreateCommand) Run(ctx server.Cmd) error {
 			req = &schema.ObjectPutRequest{Attrs: attrs}
 		}
 		group, err := manager.CreateGroup(ctx.Context(), cmd.CN, req)
+		if err != nil {
+			return err
+		}
+		if ctx.IsDebug() {
+			fmt.Println(group)
+		} else {
+			fmt.Println(group.LDIF())
+		}
+		return nil
+	})
+}
+
+func (cmd *GroupUpdateCommand) Run(ctx server.Cmd) error {
+	return WithClient(ctx, func(manager *ldap.Client, endpoint string) error {
+		attrs, err := objectAttrs(cmd.Attrs)
+		if err != nil {
+			return err
+		}
+		group, err := manager.UpdateGroup(ctx.Context(), cmd.CN, schema.ObjectPutRequest{Attrs: attrs})
 		if err != nil {
 			return err
 		}

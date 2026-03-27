@@ -44,18 +44,18 @@ func (manager *Manager) Run(ctx context.Context, logger *slog.Logger) error {
 			}
 			return nil
 		case <-ticker.C:
-			if err := manager.Connect(ctx); err != nil {
+			if err := manager.Connect(); err != nil {
 				// Connection error
 				logger.Error("LDAP connection error", "error", err.Error())
 				retries = min(retries+1, schema.MaxRetries)
 				ticker.Reset(schema.MinRetryInterval * time.Duration(retries*retries))
 			} else {
 				// Connection successful
+				manager.discoveryOnce.Do(func() {
+					manager.discoverSchemas(ctx, logger)
+				})
 				if retries > 0 {
 					logger.Info("LDAP connected", "url", manager.Host())
-				}
-				if manager.groups != nil {
-					logger.Debug("group schema", "dn", manager.groups.DN.String(), "classes", manager.groups.ObjectClass)
 				}
 				retries = 0
 				ticker.Reset(schema.MinRetryInterval * time.Duration(schema.MaxRetries))

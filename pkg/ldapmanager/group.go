@@ -154,6 +154,46 @@ func (manager *Manager) CreateGroup(ctx context.Context, cn string, attrs url.Va
 	})
 }
 
+// Update attributes for a group. It will replace the attributes where the
+// values are not empty, and delete the attributes where the values are empty.
+// If the request changes the naming attribute, the entry is renamed first and
+// then modified. The updated group is returned.
+func (manager *Manager) UpdateGroup(ctx context.Context, cn string, attrs url.Values) (*schema.Object, error) {
+	var result *schema.Object
+	return result, manager.withGroups(cn, func(groupDN *schema.DN) error {
+		attrs, err := (schema.ObjectPutRequest{Attrs: attrs}).ValidateUpdate()
+		if err != nil {
+			return err
+		}
+
+		currentDN, targetDN, newRDN, rename, err := updateTargetDN(groupDN, attrs)
+		if err != nil {
+			return err
+		}
+		if rename {
+			if err := manager.conn.ModifyDN(ldap.NewModifyDNRequest(currentDN, newRDN, true, "")); err != nil {
+				return ldaperr(err)
+			}
+		}
+
+		modifyReq := ldap.NewModifyRequest(targetDN, []ldap.Control{})
+		for key, values := range attrs {
+			if len(values) == 0 {
+				modifyReq.Delete(key, nil)
+			} else {
+				modifyReq.Replace(key, values)
+			}
+		}
+
+		if err := manager.conn.Modify(modifyReq); err != nil {
+			return ldaperr(err)
+		}
+
+		result, err = manager.get(ctx, ldap.ScopeBaseObject, targetDN, "(objectClass=*)")
+		return err
+	})
+}
+
 // Add a user to a group, and return the group
 func (manager *Manager) AddGroupUser(ctx context.Context, cn, user string) (*schema.Object, error) {
 	// TODO

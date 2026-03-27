@@ -16,6 +16,7 @@ package ldap
 
 import (
 	"context"
+	"log/slog"
 	"strings"
 
 	// Packages
@@ -143,11 +144,7 @@ func (manager *Manager) listSchemaValues(ctx context.Context, subschemadn, attr 
 	}, attr)
 }
 
-// discoverGroupClasses queries the subschema and returns a compatible set of
-// group classes for new entries: one structural class plus optional auxiliary
-// classes such as posixGroup when the server supports them.
-// The manager lock MUST be held by the caller.
-func (manager *Manager) discoverGroupClasses(ctx context.Context) ([]string, error) {
+func (manager *Manager) discoverObjectClasses(ctx context.Context) (map[string]*schema.ObjectClass, error) {
 	subschemadn, err := manager.subschemaDN(ctx)
 	if err != nil {
 		return nil, err
@@ -167,9 +164,13 @@ func (manager *Manager) discoverGroupClasses(ctx context.Context) ([]string, err
 	}); err != nil {
 		return nil, err
 	}
+	return classes, nil
+}
+
+func selectDiscoveredClasses(classes map[string]*schema.ObjectClass, structural, auxiliary []string) []string {
 
 	var result []string
-	for _, known := range schema.WellKnownGroupClasses {
+	for _, known := range structural {
 		oc := classes[strings.ToLower(known)]
 		if oc == nil {
 			continue
@@ -180,14 +181,74 @@ func (manager *Manager) discoverGroupClasses(ctx context.Context) ([]string, err
 		}
 	}
 
-	if oc := classes[strings.ToLower("posixGroup")]; oc != nil && strings.EqualFold(oc.ClassKind, string(schema.ObjectClassKindAuxiliary)) {
-		result = append(result, "posixGroup")
+	for _, known := range auxiliary {
+		oc := classes[strings.ToLower(known)]
+		if oc != nil && strings.EqualFold(oc.ClassKind, string(schema.ObjectClassKindAuxiliary)) {
+			result = append(result, known)
+		}
 	}
+
+	return result
+}
+
+// discoverGroupClasses queries the subschema and returns a compatible set of
+// group classes for new entries: one structural class plus optional auxiliary
+// classes such as posixGroup when the server supports them.
+// The manager lock MUST be held by the caller.
+func (manager *Manager) discoverGroupClasses(ctx context.Context) ([]string, error) {
+	classes, err := manager.discoverObjectClasses(ctx)
+	if err != nil {
+		return nil, err
+	}
+	result := selectDiscoveredClasses(classes, schema.WellKnownGroupClasses, []string{"posixGroup"})
+	if len(result) == 0 {
+		return nil, nil
+	}
+	return result, nil
+}
+
+// discoverUserClasses queries the subschema and returns a compatible set of
+// user classes for new entries: one structural class plus optional auxiliary
+// classes such as posixAccount when the server supports them.
+// The manager lock MUST be held by the caller.
+func (manager *Manager) discoverUserClasses(ctx context.Context) ([]string, error) {
+	classes, err := manager.discoverObjectClasses(ctx)
+	if err != nil {
+		return nil, err
+	}
+	result := selectDiscoveredClasses(classes, schema.WellKnownUserClasses, schema.WellKnownUserAuxiliaryClasses)
 
 	if len(result) == 0 {
 		return nil, nil
 	}
 	return result, nil
+}
+
+func (manager *Manager) discoverSchemas(ctx context.Context, logger *slog.Logger) {
+	manager.Lock()
+	defer manager.Unlock()
+
+	if manager.groups != nil && len(manager.groups.ObjectClass) == 0 {
+		classes, err := manager.discoverGroupClasses(ctx)
+		if err != nil || len(classes) == 0 {
+			classes = schema.DefaultGroupObjectClasses
+		}
+		manager.groups.ObjectClass = classes
+		if logger != nil {
+			logger.Debug("group schema", "dn", manager.groups.DN.String(), "classes", manager.groups.ObjectClass)
+		}
+	}
+
+	if manager.users != nil && len(manager.users.ObjectClass) == 0 {
+		classes, err := manager.discoverUserClasses(ctx)
+		if err != nil || len(classes) == 0 {
+			classes = schema.DefaultUserObjectClasses
+		}
+		manager.users.ObjectClass = classes
+		if logger != nil {
+			logger.Debug("user schema", "dn", manager.users.DN.String(), "classes", manager.users.ObjectClass)
+		}
+	}
 }
 
 func parseObjectClasses(values []string) []*schema.ObjectClass {

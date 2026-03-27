@@ -42,6 +42,8 @@ func RegisterHandlers(manager *ldap.Manager, router server.HTTPRouter, authEnabl
 	}
 	register(ClassHandler(manager))
 	register(AttrHandler(manager))
+	register(UserHandler(manager))
+	register(UserResourceHandler(manager))
 	register(GroupHandler(manager))
 	register(GroupResourceHandler(manager))
 	register(ObjectHandler(manager))

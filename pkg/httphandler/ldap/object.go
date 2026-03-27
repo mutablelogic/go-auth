@@ -136,7 +136,7 @@ func ObjectResourceHandler(manager *ldap.Manager) (string, http.HandlerFunc, *op
 				Description: "Deletes the LDAP object at the specified distinguished name.",
 				Parameters:  []openapi.Parameter{{Name: "dn", In: openapi.ParameterInPath, Description: "Distinguished name.", Required: true, Schema: dnSchema}},
 				Responses: map[string]openapi.Response{
-					"204": {Description: "Deleted object."},
+					"200": {Description: "Deleted object.", Content: map[string]openapi.MediaType{"application/json": {Schema: jsonschema.MustFor[schema.Object]()}}},
 					"400": {Description: "Invalid distinguished name."},
 					"404": {Description: "Object not found."},
 				},
@@ -315,9 +315,10 @@ func changePasswordObject(ctx context.Context, manager *ldap.Manager, w http.Res
 	return httpresponse.JSON(w, http.StatusOK, httprequest.Indent(r), object.WithPassword(generatedPassword))
 }
 
-func deleteObject(ctx context.Context, manager *ldap.Manager, w http.ResponseWriter, _ *http.Request, dn string) error {
-	if _, err := manager.Delete(ctx, dn); err != nil {
+func deleteObject(ctx context.Context, manager *ldap.Manager, w http.ResponseWriter, r *http.Request, dn string) error {
+	object, err := manager.Delete(ctx, dn)
+	if err != nil {
 		return httpresponse.Error(w, httpErr(err))
 	}
-	return httpresponse.Empty(w, http.StatusNoContent)
+	return httpresponse.JSON(w, http.StatusOK, httprequest.Indent(r), object)
 }

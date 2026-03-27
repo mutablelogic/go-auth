@@ -147,10 +147,11 @@ func (cmd *UpdateObjectCommand) Run(ctx server.Cmd) error {
 
 func (cmd *DeleteObjectCommand) Run(ctx server.Cmd) error {
 	return WithClient(ctx, func(manager *ldap.Client, endpoint string) error {
-		if err := manager.DeleteObject(ctx.Context(), cmd.DN); err != nil {
+		object, err := manager.DeleteObject(ctx.Context(), cmd.DN)
+		if err != nil {
 			return err
 		}
-		fmt.Println(cmd.DN)
+		printDeletedObject(ctx, object)
 		return nil
 	})
 }
@@ -216,6 +217,16 @@ func objectAttrs(values []string) (url.Values, error) {
 		}
 	}
 	return attrs, nil
+}
+
+func printDeletedObject(ctx server.Cmd, object *schema.Object) {
+	if ctx.IsDebug() {
+		fmt.Println("# deleted object")
+		fmt.Println(object)
+		return
+	}
+	fmt.Println("# deleted object")
+	fmt.Println(object.LDIF())
 }
 
 func promptPasswordIfMissing(prompt, value string) (string, error) {

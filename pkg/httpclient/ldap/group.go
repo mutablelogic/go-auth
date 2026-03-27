@@ -60,6 +60,18 @@ func (c *Client) CreateGroup(ctx context.Context, cn string, req *schema.ObjectP
 	return types.Ptr(response), nil
 }
 
+func (c *Client) UpdateGroup(ctx context.Context, cn string, req schema.ObjectPutRequest) (*schema.Object, error) {
+	var response schema.Object
+	body, err := client.NewJSONRequestEx(http.MethodPatch, req, types.ContentTypeJSON)
+	if err != nil {
+		return nil, err
+	}
+	if err := c.DoWithContext(ctx, body, &response, client.OptPath("group", cn)); err != nil {
+		return nil, err
+	}
+	return types.Ptr(response), nil
+}
+
 func (c *Client) DeleteGroup(ctx context.Context, cn string) (*schema.Object, error) {
 	var response schema.Object
 	if err := c.DoWithContext(ctx, client.MethodDelete, &response, client.OptPath("group", cn)); err != nil {

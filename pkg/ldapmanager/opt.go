@@ -59,7 +59,7 @@ func applyOpts(opts ...Opt) (*opt, error) {
 ////////////////////////////////////////////////////////////////////////////////
 // PUBLIC METHODS
 
-func WithUserSchema(dn string, classes ...string) Opt {
+func WithUserDN(dn string, classes ...string) Opt {
 	return func(o *opt) error {
 		if dn == "" {
 			return httpresponse.ErrBadRequest.With("DN is empty")
@@ -72,7 +72,7 @@ func WithUserSchema(dn string, classes ...string) Opt {
 	}
 }
 
-func WithGroupSchema(dn string) Opt {
+func WithGroupDN(dn string) Opt {
 	return func(o *opt) error {
 		if dn == "" {
 			return httpresponse.ErrBadRequest.With("DN is empty")

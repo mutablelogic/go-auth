@@ -18,6 +18,7 @@ import (
 	"context"
 	"net/http"
 	"net/url"
+	"strings"
 
 	// Packages
 	ldap "github.com/djthorpe/go-auth/pkg/ldapmanager"
@@ -74,6 +75,8 @@ func GroupResourceHandler(manager *ldap.Manager) (string, http.HandlerFunc, *ope
 				_ = getGroup(r.Context(), manager, w, r, cn)
 			case http.MethodPut:
 				_ = createGroup(r.Context(), manager, w, r, cn)
+			case http.MethodPatch:
+				_ = updateGroup(r.Context(), manager, w, r, cn)
 			case http.MethodDelete:
 				_ = deleteGroup(r.Context(), manager, w, r, cn)
 			default:
@@ -107,6 +110,22 @@ func GroupResourceHandler(manager *ldap.Manager) (string, http.HandlerFunc, *ope
 					"201": {Description: "Created group."},
 					"400": {Description: "Invalid common name or request body."},
 					"409": {Description: "Group already exists."},
+				},
+			},
+			Patch: &openapi.Operation{
+				Tags:        []string{"Groups"},
+				Summary:     "Update group",
+				Description: "Updates LDAP group attributes for the specified common name. If the group naming attribute changes, the entry is renamed first.",
+				Parameters:  []openapi.Parameter{{Name: "cn", In: openapi.ParameterInPath, Description: "Group common name.", Required: true, Schema: cnSchema}},
+				RequestBody: &openapi.RequestBody{
+					Description: "LDAP group attributes to replace or delete. Empty values delete an attribute.",
+					Required:    true,
+					Content:     map[string]openapi.MediaType{"application/json": {Schema: jsonschema.MustFor[schema.ObjectPutRequest]()}},
+				},
+				Responses: map[string]openapi.Response{
+					"200": {Description: "Updated group.", Content: map[string]openapi.MediaType{"application/json": {Schema: jsonschema.MustFor[schema.Object]()}}},
+					"400": {Description: "Invalid common name or request body."},
+					"404": {Description: "Group not found."},
 				},
 			},
 			Delete: &openapi.Operation{
@@ -152,7 +171,11 @@ func createGroup(ctx context.Context, manager *ldap.Manager, w http.ResponseWrit
 	var req schema.ObjectPutRequest
 	if r.ContentLength != 0 || r.Header.Get("Content-Type") != "" {
 		if err := httprequest.Read(r, &req); err != nil {
-			return httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest), err.Error())
+			if strings.Contains(err.Error(), "Missing request body") {
+				req = schema.ObjectPutRequest{}
+			} else {
+				return httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest), err.Error())
+			}
 		}
 	}
 	group, err := manager.CreateGroup(ctx, cn, req.Attrs)
@@ -160,6 +183,18 @@ func createGroup(ctx context.Context, manager *ldap.Manager, w http.ResponseWrit
 		return httpresponse.Error(w, httpErr(err))
 	}
 	return httpresponse.JSON(w, http.StatusCreated, httprequest.Indent(r), group)
+}
+
+func updateGroup(ctx context.Context, manager *ldap.Manager, w http.ResponseWriter, r *http.Request, cn string) error {
+	var req schema.ObjectPutRequest
+	if err := httprequest.Read(r, &req); err != nil {
+		return httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest), err.Error())
+	}
+	group, err := manager.UpdateGroup(ctx, cn, req.Attrs)
+	if err != nil {
+		return httpresponse.Error(w, httpErr(err))
+	}
+	return httpresponse.JSON(w, http.StatusOK, httprequest.Indent(r), group)
 }
 
 func deleteGroup(ctx context.Context, manager *ldap.Manager, w http.ResponseWriter, r *http.Request, cn string) error {

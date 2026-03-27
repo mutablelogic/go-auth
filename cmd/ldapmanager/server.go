@@ -46,6 +46,7 @@ type LDAPFlags struct {
 	User    string `long:"user" description:"Bind user DN for LDAP manager" default:"cn=admin,dc=example,dc=org" env:"LDAP_USER"`
 	Pass    string `long:"pass" description:"Bind password for LDAP manager" env:"LDAP_PASS"`
 	BaseDN  string `long:"base-dn" description:"Base DN for LDAP entries" default:"dc=example,dc=org" env:"LDAP_BASEDN"`
+	UserDN  string `long:"user-dn" description:"Relative DN for the user subtree (e.g. ou=users)" env:"LDAP_USER_DN" optional:""`
 	GroupDN string `long:"group-dn" description:"Relative DN for the group subtree (e.g. ou=groups)" env:"LDAP_GROUP_DN" optional:""`
 }
 
@@ -93,8 +94,13 @@ func (server *RunServer) WithManager(ctx server.Cmd, fn func(*ldap.Manager, stri
 		ldap.WithPassword(server.Pass),
 		ldap.WithBaseDN(server.BaseDN),
 	}
+
+	// Set user and group DNs if configured
 	if server.GroupDN != "" {
-		opts = append(opts, ldap.WithGroupSchema(server.GroupDN))
+		opts = append(opts, ldap.WithGroupDN(server.GroupDN))
+	}
+	if server.UserDN != "" {
+		opts = append(opts, ldap.WithUserDN(server.UserDN))
 	}
 
 	// Create the manager with the options required

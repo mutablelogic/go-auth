@@ -18,8 +18,9 @@ package ldap
 // TYPES
 
 type LDAPCommands struct {
-	ClassCommands
-	AttrCommands
+	UserCommands
 	GroupCommands
 	ObjectCommands
+	ClassCommands
+	AttrCommands
 }
