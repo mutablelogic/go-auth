@@ -8,9 +8,8 @@ import (
 ///////////////////////////////////////////////////////////////////////////////
 // TYPES
 
-// AuthorizationCodeRequest contains the upstream provider key and OAuth
-// authorization code that should be exchanged server-side for a verified
-// identity token.
+// AuthorizationCodeRequest contains the provider key and authorization code
+// that should be exchanged server-side for a verified identity token.
 type AuthorizationCodeRequest struct {
 	Provider     string  `json:"provider"`
 	Code         string  `json:"code"`
@@ -52,22 +51,14 @@ type PublicClientConfiguration struct {
 // provider or role name.
 type PublicClientConfigurations map[string]PublicClientConfiguration
 
-// ClientConfiguration contains the full upstream provider configuration,
-// including the client secret that must remain server-side.
-type ClientConfiguration struct {
-	PublicClientConfiguration
-	ClientSecret string `json:"client_secret,omitempty"`
-}
-
-// ClientConfigurations contains all configured OAuth clients keyed by
-// provider or role name.
-type ClientConfigurations map[string]ClientConfiguration
-
 ///////////////////////////////////////////////////////////////////////////////
 // GLOBALS
 
 const (
-	OAuthClientKeyLocal = "local"
+	// ProviderKeyLocal is the reserved provider key for the built-in local
+	// issuer. When this provider is not registered, the server has no local
+	// issuer and cannot mint local session tokens from the browser login flow.
+	ProviderKeyLocal = "local"
 )
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -95,18 +86,4 @@ func (req *AuthorizationCodeRequest) Validate() error {
 		return auth.ErrBadParameter.With("redirect_url is required")
 	}
 	return nil
-}
-
-// Public returns the shareable subset of the client configuration.
-func (cfg ClientConfiguration) Public() PublicClientConfiguration {
-	return cfg.PublicClientConfiguration
-}
-
-// Public returns the shareable subset of all configured clients.
-func (cfg ClientConfigurations) Public() PublicClientConfigurations {
-	result := make(PublicClientConfigurations, len(cfg))
-	for key, value := range cfg {
-		result[key] = value.Public()
-	}
-	return result
 }

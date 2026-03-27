@@ -16,7 +16,6 @@ import (
 	authhandler "github.com/djthorpe/go-auth/pkg/httphandler/auth"
 	managerhandler "github.com/djthorpe/go-auth/pkg/httphandler/manager"
 	manager "github.com/djthorpe/go-auth/pkg/manager"
-	oidc "github.com/djthorpe/go-auth/pkg/oidc"
 	schema "github.com/djthorpe/go-auth/schema"
 	server "github.com/mutablelogic/go-server"
 	cmd "github.com/mutablelogic/go-server/pkg/cmd"
@@ -36,21 +35,16 @@ type RunServer struct {
 	cmd.RunServer
 	PostgresFlags
 	LocalProviderFlags
-	GoogleFlags   `embed:"" prefix:"google."`
-	CleanupFlags  `embed:"" prefix:"cleanup."`
-	NotifyChannel string `name:"notify-channel" help:"PostgreSQL LISTEN/NOTIFY channel for table change streaming. Empty disables change notifications." default:"backend.table_change"`
-	Auth          bool   `name:"auth" help:"Whether to enable authentication for protected endpoints." default:"true" negatable:""`
-	UI            bool   `name:"ui" help:"Whether to serve the embedded web user interface" default:"true" negatable:""`
+	GoogleProviderFlags `embed:"" prefix:"google."`
+	CleanupFlags        `embed:"" prefix:"cleanup."`
+	NotifyChannel       string `name:"notify-channel" help:"PostgreSQL LISTEN/NOTIFY channel for table change streaming. Empty disables change notifications." default:"backend.table_change"`
+	Auth                bool   `name:"auth" help:"Whether to enable authentication for protected endpoints." default:"true" negatable:""`
+	UI                  bool   `name:"ui" help:"Whether to serve the embedded web user interface" default:"true" negatable:""`
 }
 
 type CleanupFlags struct {
 	Interval time.Duration `name:"interval" help:"How often to prune stale sessions. Defaults to the manager default when unset."`
 	Limit    int           `name:"limit" help:"Maximum stale sessions to prune in one pass. Defaults to the manager default when unset."`
-}
-
-type GoogleFlags struct {
-	ClientID     string `name:"client-id" env:"GOOGLE_CLIENT_ID" help:"Google OAuth client ID exposed via /auth/config."`
-	ClientSecret string `name:"client-secret" env:"GOOGLE_CLIENT_SECRET" help:"Google OAuth client secret kept server-side."`
 }
 
 type contextCmd struct {
@@ -162,14 +156,15 @@ func (server *RunServer) WithManager(ctx server.Cmd, fn func(*manager.Manager, s
 	if issuer == "" {
 		return fmt.Errorf("issuer could not be determined from server configuration")
 	}
-	opts = append(opts, manager.WithOAuthClient(schema.OAuthClientKeyLocal, issuer, "", ""))
 	if provider, err := server.LocalProviderFlags.NewProvider(key, issuer); err != nil {
 		return fmt.Errorf("local provider: %w", err)
 	} else if provider != nil {
 		opts = append(opts, manager.WithProvider(provider))
 	}
-	if clientID, clientSecret := strings.TrimSpace(server.GoogleFlags.ClientID), strings.TrimSpace(server.GoogleFlags.ClientSecret); clientID != "" || clientSecret != "" {
-		opts = append(opts, manager.WithOAuthClient("google", oidc.GoogleIssuer, clientID, clientSecret))
+	if provider, err := server.GoogleProviderFlags.NewProvider(); err != nil {
+		return fmt.Errorf("google provider: %w", err)
+	} else if provider != nil {
+		opts = append(opts, manager.WithProvider(provider))
 	}
 	if channel := strings.TrimSpace(server.NotifyChannel); channel != "" {
 		opts = append(opts, manager.WithNotificationChannel(channel))

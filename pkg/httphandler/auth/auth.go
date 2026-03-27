@@ -2,13 +2,11 @@ package auth
 
 import (
 	"context"
-	"fmt"
 	"net/http"
 	"strings"
 	"time"
 
 	// Packages
-	coreoidc "github.com/coreos/go-oidc/v3/oidc"
 	managerpkg "github.com/djthorpe/go-auth/pkg/manager"
 	oidc "github.com/djthorpe/go-auth/pkg/oidc"
 	providerpkg "github.com/djthorpe/go-auth/pkg/provider"
@@ -17,22 +15,10 @@ import (
 	uuid "github.com/google/uuid"
 	httprequest "github.com/mutablelogic/go-server/pkg/httprequest"
 	httpresponse "github.com/mutablelogic/go-server/pkg/httpresponse"
-	oauth2 "golang.org/x/oauth2"
 )
 
 ///////////////////////////////////////////////////////////////////////////////
-// PUBLIC METHODS
-
-///////////////////////////////////////////////////////////////////////////////
 // PRIVATE METHODS
-
-func issueLoginResponse(ctx context.Context, mgr *managerpkg.Manager, w http.ResponseWriter, r *http.Request, claims map[string]any, meta schema.MetaMap) error {
-	if identity, err := schema.NewIdentityFromClaims(claims); err != nil {
-		return httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest).With(err))
-	} else {
-		return issueIdentityLoginResponse(ctx, mgr, w, r, identity, meta)
-	}
-}
 
 func issueIdentityLoginResponse(ctx context.Context, mgr *managerpkg.Manager, w http.ResponseWriter, r *http.Request, identity schema.IdentityInsert, meta schema.MetaMap) error {
 	if user, session, err := mgr.LoginWithIdentity(ctx, identity, meta); err != nil {
@@ -46,15 +32,7 @@ func issueIdentityLoginResponse(ctx context.Context, mgr *managerpkg.Manager, w 
 	}
 }
 
-func issueOAuthLoginResponse(ctx context.Context, mgr *managerpkg.Manager, w http.ResponseWriter, r *http.Request, claims map[string]any, meta schema.MetaMap) error {
-	if identity, err := schema.NewIdentityFromClaims(claims); err != nil {
-		return httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest).With(err))
-	} else {
-		return issueOAuthIdentityResponse(ctx, mgr, w, r, identity, meta)
-	}
-}
-
-func issueOAuthIdentityResponse(ctx context.Context, mgr *managerpkg.Manager, w http.ResponseWriter, r *http.Request, identity schema.IdentityInsert, meta schema.MetaMap) error {
+func issueTokenFormIdentityResponse(ctx context.Context, mgr *managerpkg.Manager, w http.ResponseWriter, r *http.Request, identity schema.IdentityInsert, meta schema.MetaMap) error {
 	if user, session, err := mgr.LoginWithIdentity(ctx, identity, meta); err != nil {
 		return httpresponse.Error(w, httpErr(err))
 	} else if config, err := mgr.OIDCConfig(r); err != nil {
@@ -62,48 +40,11 @@ func issueOAuthIdentityResponse(ctx context.Context, mgr *managerpkg.Manager, w 
 	} else if token, err := mgr.OIDCSign(loginTokenClaims(config.Issuer, user, session)); err != nil {
 		return httpresponse.Error(w, httpresponse.Err(http.StatusInternalServerError).With(err))
 	} else {
-		return httpresponse.JSON(w, http.StatusOK, httprequest.Indent(r), localOAuthTokenResponse(token, session.ExpiresAt))
+		return httpresponse.JSON(w, http.StatusOK, httprequest.Indent(r), tokenFormResponse(token, session.ExpiresAt))
 	}
 }
 
-func exchangeAuthorizationCode(ctx context.Context, mgr *managerpkg.Manager, req *schema.AuthorizationCodeRequest) (map[string]any, error) {
-	config, err := mgr.OAuthClientConfig(req.Provider)
-	if err != nil {
-		return nil, err
-	}
-	provider, err := coreoidc.NewProvider(ctx, config.Issuer)
-	if err != nil {
-		return nil, err
-	}
-	oauthConfig := &oauth2.Config{ClientID: config.ClientID, ClientSecret: config.ClientSecret, RedirectURL: req.RedirectURL, Endpoint: provider.Endpoint()}
-	options := make([]oauth2.AuthCodeOption, 0, 1)
-	if verifier := strings.TrimSpace(req.CodeVerifier); verifier != "" {
-		options = append(options, oauth2.SetAuthURLParam("code_verifier", verifier))
-	}
-	token, err := oauthConfig.Exchange(ctx, req.Code, options...)
-	if err != nil {
-		return nil, err
-	}
-	rawIDToken, _ := token.Extra("id_token").(string)
-	rawIDToken = strings.TrimSpace(rawIDToken)
-	if rawIDToken == "" {
-		return nil, fmt.Errorf("upstream token response missing id_token")
-	}
-	verified, err := provider.Verifier(&coreoidc.Config{ClientID: config.ClientID}).Verify(ctx, rawIDToken)
-	if err != nil {
-		return nil, err
-	}
-	claims := make(map[string]any)
-	if err := verified.Claims(&claims); err != nil {
-		return nil, err
-	}
-	if err := validateAuthorizationCodeNonce(req.Nonce, claims); err != nil {
-		return nil, err
-	}
-	return claims, nil
-}
-
-func exchangeLocalOAuthToken(ctx context.Context, mgr *managerpkg.Manager, w http.ResponseWriter, r *http.Request) error {
+func exchangeTokenFormRequest(ctx context.Context, mgr *managerpkg.Manager, w http.ResponseWriter, r *http.Request) error {
 	if err := r.ParseForm(); err != nil {
 		return httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest).With(err))
 	}
@@ -111,20 +52,16 @@ func exchangeLocalOAuthToken(ctx context.Context, mgr *managerpkg.Manager, w htt
 	switch grantType {
 	case "authorization_code":
 		req := authorizationCodeRequestFromForm(r.PostForm)
-		if strings.TrimSpace(req.Provider) == "" {
-			req.Provider = schema.OAuthClientKeyLocal
-		}
 		if err := req.Validate(); err != nil {
 			return httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest).With(err))
 		}
-		if provider, err := mgr.Provider(req.Provider); err == nil {
-			return exchangeRegisteredAuthorizationCodeGrant(ctx, mgr, provider, w, r, &req)
-		} else if req.Provider == schema.OAuthClientKeyLocal {
-			return httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest).Withf("provider %q is not configured", req.Provider))
+		provider, err := mgr.Provider(req.Provider)
+		if err != nil {
+			return httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest).With(err))
 		}
-		return exchangeProviderAuthorizationCodeGrant(ctx, mgr, w, r, &req)
+		return exchangeRegisteredAuthorizationCodeGrant(ctx, mgr, provider, w, r, &req)
 	case "refresh_token":
-		return exchangeLocalRefreshTokenGrant(ctx, mgr, w, r)
+		return exchangeRefreshTokenGrant(ctx, mgr, w, r)
 	default:
 		return httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest).Withf("unsupported grant_type %q", grantType))
 	}
@@ -153,25 +90,10 @@ func exchangeRegisteredAuthorizationCodeGrant(ctx context.Context, mgr *managerp
 	if identity == nil {
 		return httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest).Withf("provider %q returned no identity", req.Provider))
 	}
-	return issueOAuthIdentityResponse(ctx, mgr, w, r, *identity, req.Meta)
+	return issueTokenFormIdentityResponse(ctx, mgr, w, r, *identity, req.Meta)
 }
 
-func exchangeProviderAuthorizationCodeGrant(ctx context.Context, mgr *managerpkg.Manager, w http.ResponseWriter, r *http.Request, req *schema.AuthorizationCodeRequest) error {
-	if req == nil {
-		parsed := authorizationCodeRequestFromForm(r.PostForm)
-		req = &parsed
-	}
-	if err := req.Validate(); err != nil {
-		return httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest).With(err))
-	}
-	claims, err := exchangeAuthorizationCode(ctx, mgr, req)
-	if err != nil {
-		return httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest).With(err))
-	}
-	return issueOAuthLoginResponse(ctx, mgr, w, r, claims, req.Meta)
-}
-
-func exchangeLocalRefreshTokenGrant(ctx context.Context, mgr *managerpkg.Manager, w http.ResponseWriter, r *http.Request) error {
+func exchangeRefreshTokenGrant(ctx context.Context, mgr *managerpkg.Manager, w http.ResponseWriter, r *http.Request) error {
 	config, err := mgr.OIDCConfig(r)
 	if err != nil {
 		return httpresponse.Error(w, httpresponse.Err(http.StatusInternalServerError).With(err))
@@ -196,10 +118,10 @@ func exchangeLocalRefreshTokenGrant(ctx context.Context, mgr *managerpkg.Manager
 	if err != nil {
 		return httpresponse.Error(w, httpresponse.Err(http.StatusInternalServerError).With(err))
 	}
-	return httpresponse.JSON(w, http.StatusOK, httprequest.Indent(r), localOAuthTokenResponse(accessToken, session.ExpiresAt))
+	return httpresponse.JSON(w, http.StatusOK, httprequest.Indent(r), tokenFormResponse(accessToken, session.ExpiresAt))
 }
 
-func isOAuthTokenRequest(r *http.Request) bool {
+func isFormEncodedTokenRequest(r *http.Request) bool {
 	if r == nil {
 		return false
 	}
@@ -225,7 +147,7 @@ func firstFormValue(values map[string][]string, key string) string {
 	return values[key][0]
 }
 
-func localOAuthTokenResponse(token string, expiresAt time.Time) map[string]any {
+func tokenFormResponse(token string, expiresAt time.Time) map[string]any {
 	expiresIn := int64(time.Until(expiresAt).Seconds())
 	if expiresIn < 0 {
 		expiresIn = 0
@@ -236,18 +158,6 @@ func localOAuthTokenResponse(token string, expiresAt time.Time) map[string]any {
 		"token_type":    "Bearer",
 		"expires_in":    expiresIn,
 	}
-}
-
-func validateAuthorizationCodeNonce(expected string, claims map[string]any) error {
-	expected = strings.TrimSpace(expected)
-	if expected == "" {
-		return nil
-	}
-	actual, _ := claims["nonce"].(string)
-	if strings.TrimSpace(actual) != expected {
-		return fmt.Errorf("token nonce mismatch")
-	}
-	return nil
 }
 
 func authorizeScopes(r *http.Request) []string {

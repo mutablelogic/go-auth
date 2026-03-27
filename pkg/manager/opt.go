@@ -42,7 +42,6 @@ type opt struct {
 	sessionttl   time.Duration
 	cleanupint   time.Duration
 	cleanuplimit int
-	oauth        schema.ClientConfigurations
 	providers    map[string]providerpkg.Provider
 	hooks        any
 }
@@ -80,33 +79,6 @@ func WithPrivateKey(key *rsa.PrivateKey) Opt {
 			return fmt.Errorf("private key is required")
 		}
 		o.privateKey = key
-		return nil
-	}
-}
-
-// WithOAuthClient stores the upstream OAuth client configuration. The client
-// ID and issuer are exposed via /auth/config, while the client secret remains
-// server-side.
-func WithOAuthClient(key, issuer, clientID, clientSecret string) Opt {
-	return func(o *opt) error {
-		if key == "" {
-			return fmt.Errorf("oauth key cannot be empty")
-		}
-		if issuer == "" {
-			return fmt.Errorf("oauth issuer cannot be empty")
-		}
-		if o.oauth == nil {
-			o.oauth = make(schema.ClientConfigurations)
-		} else if _, exists := o.oauth[key]; exists {
-			return fmt.Errorf("oauth key %q already configured", key)
-		}
-		o.oauth[key] = schema.ClientConfiguration{
-			PublicClientConfiguration: schema.PublicClientConfiguration{
-				Issuer:   issuer,
-				ClientID: clientID,
-			},
-			ClientSecret: clientSecret,
-		}
 		return nil
 	}
 }

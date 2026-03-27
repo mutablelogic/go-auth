@@ -20,6 +20,7 @@ type formData struct {
 	Title               string
 	Error               string
 	Action              string
+	Provider            string
 	ClientID            string
 	RedirectURL         string
 	State               string
@@ -61,6 +62,7 @@ func (p *Provider) serveForm(w http.ResponseWriter, r *http.Request, formError s
 		Title:               p.title,
 		Error:               formError,
 		Action:              r.URL.Path,
+		Provider:            p.key,
 		ClientID:            strings.TrimSpace(query.Get("client_id")),
 		RedirectURL:         strings.TrimSpace(query.Get("redirect_uri")),
 		State:               strings.TrimSpace(query.Get("state")),

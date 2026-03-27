@@ -33,7 +33,7 @@ func RevokeHandler(mgr *manager.Manager) (string, http.HandlerFunc, *openapi.Pat
 
 func revokeToken(ctx context.Context, mgr *manager.Manager, w http.ResponseWriter, r *http.Request) error {
 	token := ""
-	if isOAuthTokenRequest(r) {
+	if isFormEncodedTokenRequest(r) {
 		if err := r.ParseForm(); err != nil {
 			return httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest).With(err))
 		}

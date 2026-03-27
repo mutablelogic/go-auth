@@ -40,13 +40,8 @@ func (m *Manager) OIDCVerify(token, issuer string) (map[string]any, error) {
 
 // OIDCIssuer returns the canonical issuer for locally signed tokens.
 func (m *Manager) OIDCIssuer() (string, error) {
-	if provider, ok := m.providers[schema.OAuthClientKeyLocal]; ok && provider != nil {
+	if provider, ok := m.providers[schema.ProviderKeyLocal]; ok && provider != nil {
 		if issuer := strings.TrimSpace(provider.PublicConfig().Issuer); issuer != "" {
-			return issuer, nil
-		}
-	}
-	if config, ok := m.oauth[schema.OAuthClientKeyLocal]; ok {
-		if issuer := strings.TrimSpace(config.Issuer); issuer != "" {
 			return issuer, nil
 		}
 	}
@@ -89,21 +84,4 @@ func (m *Manager) ProtectedResourceMetadata(r *http.Request) (oidc.ProtectedReso
 		BearerMethodsSupported: []string{"header"},
 		ResourceName:           "go-auth",
 	}, nil
-}
-
-// OAuthClientConfig returns the full configured OAuth client for the supplied
-// provider key, including the server-side client secret.
-func (m *Manager) OAuthClientConfig(key string) (schema.ClientConfiguration, error) {
-	key = strings.TrimSpace(key)
-	if key == "" {
-		return schema.ClientConfiguration{}, auth.ErrInvalidProvider.With("provider is required")
-	}
-	if len(m.oauth) == 0 {
-		return schema.ClientConfiguration{}, auth.ErrNotFound.With("oauth clients are not configured")
-	}
-	config, ok := m.oauth[key]
-	if !ok {
-		return schema.ClientConfiguration{}, auth.ErrInvalidProvider.Withf("unsupported provider %q", key)
-	}
-	return config, nil
 }

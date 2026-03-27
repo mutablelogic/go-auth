@@ -5,9 +5,9 @@ import (
 	"net/http"
 
 	// Packages
-
 	managerpkg "github.com/djthorpe/go-auth/pkg/manager"
 	oidc "github.com/djthorpe/go-auth/pkg/oidc"
+	providerpkg "github.com/djthorpe/go-auth/pkg/provider"
 	schema "github.com/djthorpe/go-auth/schema"
 	httprequest "github.com/mutablelogic/go-server/pkg/httprequest"
 	httpresponse "github.com/mutablelogic/go-server/pkg/httpresponse"
@@ -25,24 +25,38 @@ func AuthCodeHandler(mgr *managerpkg.Manager) (string, http.HandlerFunc, *openap
 		default:
 			_ = httpresponse.Error(w, httpresponse.Err(http.StatusMethodNotAllowed), r.Method)
 		}
-	}, &openapi.PathItem{Summary: "Authorization code exchange", Description: "Exchanges either a locally issued OAuth authorization code or an upstream provider authorization code and returns a signed local token plus userinfo."}
+	}, &openapi.PathItem{Summary: "Authorization code exchange", Description: "Exchanges a registered-provider authorization code and returns a signed local token plus userinfo."}
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 // PRIVATE METHODS
 
 func exchangeCode(ctx context.Context, mgr *managerpkg.Manager, w http.ResponseWriter, r *http.Request) error {
-	if isOAuthTokenRequest(r) {
-		return exchangeLocalOAuthToken(ctx, mgr, w, r)
+	if isFormEncodedTokenRequest(r) {
+		return exchangeTokenFormRequest(ctx, mgr, w, r)
 	}
 	var req schema.AuthorizationCodeRequest
 	if err := httprequest.Read(r, &req); err != nil {
 		return httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest).With(err))
 	} else if err := req.Validate(); err != nil {
 		return httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest).With(err))
-	} else if claims, err := exchangeAuthorizationCode(ctx, mgr, &req); err != nil {
-		return httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest).With(err))
 	} else {
-		return issueLoginResponse(ctx, mgr, w, r, claims, req.Meta)
+		provider, err := mgr.Provider(req.Provider)
+		if err != nil {
+			return httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest).With(err))
+		}
+		identity, err := provider.ExchangeAuthorizationCode(ctx, providerpkg.ExchangeRequest{
+			Code:         req.Code,
+			RedirectURL:  req.RedirectURL,
+			CodeVerifier: req.CodeVerifier,
+			Nonce:        req.Nonce,
+		})
+		if err != nil {
+			return httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest).With(err))
+		}
+		if identity == nil {
+			return httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest).Withf("provider %q returned no identity", req.Provider))
+		}
+		return issueIdentityLoginResponse(ctx, mgr, w, r, *identity, req.Meta)
 	}
 }

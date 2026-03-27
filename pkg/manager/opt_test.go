@@ -31,26 +31,6 @@ func Test_opt_001(t *testing.T) {
 		assert.NoError(options.apply(nil))
 	})
 
-	t.Run("WithOAuthClient", func(t *testing.T) {
-		assert := assert.New(t)
-
-		options := new(opt)
-		assert.NoError(WithOAuthClient("google", "https://accounts.google.com", "google-client-id", "google-client-secret")(options))
-		config, ok := options.oauth["google"]
-		assert.True(ok)
-		assert.Equal("google-client-id", config.ClientID)
-		assert.Equal("google-client-secret", config.ClientSecret)
-		assert.Equal("https://accounts.google.com", config.Issuer)
-		assert.EqualError(WithOAuthClient("", "https://accounts.google.com", "google-client-id", "google-client-secret")(options), "oauth key cannot be empty")
-		assert.EqualError(WithOAuthClient("google", "", "google-client-id", "google-client-secret")(options), "oauth issuer cannot be empty")
-		assert.EqualError(WithOAuthClient("google", "https://accounts.google.com", "other-client-id", "other-client-secret")(options), "oauth key \"google\" already configured")
-		assert.NoError(WithOAuthClient("local", "https://issuer.example.test/api", "", "")(options))
-		local, ok := options.oauth["local"]
-		assert.True(ok)
-		assert.Empty(local.ClientID)
-		assert.Empty(local.ClientSecret)
-	})
-
 	t.Run("WithProvider", func(t *testing.T) {
 		assert := assert.New(t)
 		require := require.New(t)
@@ -59,9 +39,9 @@ func Test_opt_001(t *testing.T) {
 		provider := testLocalProvider(t)
 		require.NoError(WithProvider(provider)(options))
 
-		provider, ok := options.providers[schema.OAuthClientKeyLocal]
+		provider, ok := options.providers[schema.ProviderKeyLocal]
 		require.True(ok)
-		assert.Equal(schema.OAuthClientKeyLocal, provider.Key())
+		assert.Equal(schema.ProviderKeyLocal, provider.Key())
 
 		resp, err := provider.BeginAuthorization(context.Background(), providerpkg.AuthorizationRequest{
 			ClientID:    "manager",
@@ -161,8 +141,8 @@ func Test_opt_001(t *testing.T) {
 		assert := assert.New(t)
 
 		options := new(opt)
-		err := options.apply(WithSchema("custom_auth"), WithOAuthClient("", "https://issuer.example.test/api", "", ""), WithSessionTTL(time.Minute))
-		assert.EqualError(err, "oauth key cannot be empty")
+		err := options.apply(WithSchema("custom_auth"), WithProvider(nil), WithSessionTTL(time.Minute))
+		assert.EqualError(err, "provider is required")
 		assert.Equal("custom_auth", options.schema)
 		assert.Zero(options.sessionttl)
 	})

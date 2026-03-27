@@ -2,6 +2,7 @@ package manager
 
 import (
 	"context"
+	"crypto/rsa"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -10,7 +11,8 @@ import (
 	// Packages
 	authcrypto "github.com/djthorpe/go-auth/pkg/crypto"
 	managerpkg "github.com/djthorpe/go-auth/pkg/manager"
-	schema "github.com/djthorpe/go-auth/schema"
+	providerpkg "github.com/djthorpe/go-auth/pkg/provider"
+	localprovider "github.com/djthorpe/go-auth/pkg/provider/local"
 	test "github.com/mutablelogic/go-pg/pkg/test"
 	httprouter "github.com/mutablelogic/go-server/pkg/httprouter"
 	openapi "github.com/mutablelogic/go-server/pkg/openapi/schema"
@@ -164,7 +166,7 @@ func newHTTPTestManager(t *testing.T) *managerpkg.Manager {
 
 	managerOpts := []managerpkg.Opt{
 		managerpkg.WithPrivateKey(key),
-		managerpkg.WithOAuthClient(schema.OAuthClientKeyLocal, "http://localhost:8084/api", "", ""),
+		managerpkg.WithProvider(mustLocalProvider(t, "http://localhost:8084/api", key)),
 		managerpkg.WithSessionTTL(15 * time.Minute),
 	}
 	mgr, err := managerpkg.New(context.Background(), c, managerOpts...)
@@ -172,4 +174,11 @@ func newHTTPTestManager(t *testing.T) *managerpkg.Manager {
 	require.NoError(t, mgr.Exec(context.Background(), "TRUNCATE auth.user CASCADE"))
 
 	return mgr
+}
+
+func mustLocalProvider(t *testing.T, issuer string, key *rsa.PrivateKey) providerpkg.Provider {
+	t.Helper()
+	provider, err := localprovider.New(issuer, key)
+	require.NoError(t, err)
+	return provider
 }

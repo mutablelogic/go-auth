@@ -7,6 +7,9 @@ import (
 	types "github.com/mutablelogic/go-server/pkg/types"
 )
 
+///////////////////////////////////////////////////////////////////////////////
+// PRIVATE METHODS
+
 func canonicalizeEmail(email string) string {
 	email = strings.TrimSpace(email)
 	if email == "" {

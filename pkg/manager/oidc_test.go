@@ -8,6 +8,7 @@ import (
 	authcrypto "github.com/djthorpe/go-auth/pkg/crypto"
 	manager "github.com/djthorpe/go-auth/pkg/manager"
 	oidc "github.com/djthorpe/go-auth/pkg/oidc"
+	googleprovider "github.com/djthorpe/go-auth/pkg/provider/google"
 	localprovider "github.com/djthorpe/go-auth/pkg/provider/local"
 	schema "github.com/djthorpe/go-auth/schema"
 	jwt "github.com/golang-jwt/jwt/v5"
@@ -23,16 +24,16 @@ func TestOIDCIssuerConfigured(t *testing.T) {
 	assert.Equal(t, "https://issuer.example.test/api", issuer)
 }
 
-func TestOIDCIssuerFallsBackToOAuthConfig(t *testing.T) {
-	mgr := newTestManagerWithOpts(t, manager.WithOAuthClient(schema.OAuthClientKeyLocal, "https://issuer.example.test/api", "", ""))
-
-	issuer, err := mgr.OIDCIssuer()
-	require.NoError(t, err)
-	assert.Equal(t, "https://issuer.example.test/api", issuer)
-}
-
 func TestOIDCIssuerMissing(t *testing.T) {
 	mgr := newTestManager(t)
+
+	_, err := mgr.OIDCIssuer()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "issuer is not configured")
+}
+
+func TestOIDCIssuerMissingWithoutLocalProvider(t *testing.T) {
+	mgr := newTestManagerWithOpts(t, mustGoogleProviderOpt(t, oidc.GoogleIssuer))
 
 	_, err := mgr.OIDCIssuer()
 	require.Error(t, err)
@@ -59,12 +60,12 @@ func TestOIDCConfigUsesConfiguredIssuer(t *testing.T) {
 func TestAuthConfigUsesPublicGoogleConfiguration(t *testing.T) {
 	mgr := newTestManagerWithOpts(t,
 		manager.WithProvider(mustLocalProvider(t, "https://issuer.example.test/api")),
-		manager.WithOAuthClient("google", oidc.GoogleIssuer, "google-client-id", "google-client-secret"),
+		mustGoogleProviderOpt(t, oidc.GoogleIssuer),
 	)
 
 	cfg, err := mgr.AuthConfig()
 	require.NoError(t, err)
-	local, ok := cfg[schema.OAuthClientKeyLocal]
+	local, ok := cfg[schema.ProviderKeyLocal]
 	require.True(t, ok)
 	assert.Equal(t, "https://issuer.example.test/api", local.Issuer)
 	assert.Equal(t, "", local.ClientID)
@@ -81,28 +82,6 @@ func TestAuthConfigRequiresConfiguredClients(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "providers")
 }
-
-func TestAuthConfigPrefersProviderRegistry(t *testing.T) {
-	mgr := newTestManagerWithOpts(t,
-		manager.WithProvider(mustLocalProvider(t, "https://issuer.from.provider.test/api")),
-		manager.WithOAuthClient(schema.OAuthClientKeyLocal, "https://issuer.from.oauth.test/api", "", ""),
-	)
-
-	cfg, err := mgr.AuthConfig()
-	require.NoError(t, err)
-	local, ok := cfg[schema.OAuthClientKeyLocal]
-	require.True(t, ok)
-	assert.Equal(t, "https://issuer.from.provider.test/api", local.Issuer)
-}
-
-func TestAuthConfigSkipsFallbackLocalOAuthConfig(t *testing.T) {
-	mgr := newTestManagerWithOpts(t, manager.WithOAuthClient(schema.OAuthClientKeyLocal, "https://issuer.example.test/api", "", ""))
-
-	_, err := mgr.AuthConfig()
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "providers")
-}
-
 func TestManagerOIDCVerifySuccessAndIssuerMismatch(t *testing.T) {
 	key := mustRSAKey(t)
 	mgr := newTestManagerWithOpts(t, manager.WithPrivateKey(key))
@@ -162,4 +141,11 @@ func mustLocalProvider(t *testing.T, issuer string) *localprovider.Provider {
 	provider, err := localprovider.New(issuer, mustRSAKey(t))
 	require.NoError(t, err)
 	return provider
+}
+
+func mustGoogleProviderOpt(t *testing.T, issuer string) manager.Opt {
+	t.Helper()
+	provider, err := googleprovider.NewWithIssuer("google-client-id", "google-client-secret", issuer)
+	require.NoError(t, err)
+	return manager.WithProvider(provider)
 }

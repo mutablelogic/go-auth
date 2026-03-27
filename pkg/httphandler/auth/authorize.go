@@ -8,14 +8,11 @@ import (
 	"strings"
 
 	// Packages
-	coreoidc "github.com/coreos/go-oidc/v3/oidc"
 	manager "github.com/djthorpe/go-auth/pkg/manager"
 	oidc "github.com/djthorpe/go-auth/pkg/oidc"
 	providerpkg "github.com/djthorpe/go-auth/pkg/provider"
-	schema "github.com/djthorpe/go-auth/schema"
 	httpresponse "github.com/mutablelogic/go-server/pkg/httpresponse"
 	openapi "github.com/mutablelogic/go-server/pkg/openapi/schema"
-	oauth2 "golang.org/x/oauth2"
 )
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -65,59 +62,26 @@ func authorize(ctx context.Context, manager *manager.Manager, w http.ResponseWri
 	if state == "" {
 		return httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest).With("state is required"))
 	}
-	if providerName == "" {
-		if provider, err := manager.Provider(schema.OAuthClientKeyLocal); err == nil {
-			return authorizeRegisteredProvider(ctx, manager, provider, w, r, clientID, redirectURL, state)
-		}
-	} else if provider, err := manager.Provider(providerName); err == nil {
-		return authorizeRegisteredProvider(ctx, manager, provider, w, r, clientID, redirectURL, state)
-	} else if providerName == schema.OAuthClientKeyLocal {
-		return httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest).Withf("provider %q is not configured", providerName))
-	}
-
-	// Get the provider configuration
-	_, config, err := authorizeProviderConfig(manager, providerName)
+	provider, err := authorizationProvider(manager, providerName)
 	if err != nil {
 		return httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest).With(err))
 	}
-
-	// Construct the provider's authorization URL
-	provider, err := coreoidc.NewProvider(ctx, config.Issuer)
-	if err != nil {
-		return httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest).With(err))
-	}
-
-	// Create the OAuth2 config for this provider for the authorization code flow
-	oauthConfig := &oauth2.Config{ClientID: config.ClientID, ClientSecret: config.ClientSecret, RedirectURL: redirectURL, Endpoint: provider.Endpoint(), Scopes: authorizeScopes(r)}
-	options := make([]oauth2.AuthCodeOption, 0, 3)
-	if nonce := strings.TrimSpace(params.Get("nonce")); nonce != "" {
-		options = append(options, oauth2.SetAuthURLParam("nonce", nonce))
-	}
-	if challenge := strings.TrimSpace(params.Get("code_challenge")); challenge != "" {
-		options = append(options, oauth2.SetAuthURLParam("code_challenge", challenge))
-	}
-	if method := strings.TrimSpace(params.Get("code_challenge_method")); method != "" {
-		options = append(options, oauth2.SetAuthURLParam("code_challenge_method", method))
-	}
-
-	// Redirect to the upstream provider's authorization URL
-	http.Redirect(w, r, oauthConfig.AuthCodeURL(state, options...), http.StatusFound)
-	return nil
+	return authorizeRegisteredProvider(ctx, manager, provider, w, r, clientID, redirectURL, state)
 }
 
 func authorizeRegisteredProvider(ctx context.Context, manager *manager.Manager, provider providerpkg.Provider, w http.ResponseWriter, r *http.Request, clientID, redirectURL, state string) error {
 	if provider == nil {
 		return httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest).With("provider is required"))
 	}
-	handler, _ := provider.HTTPHandler()
-	if handler == nil {
-		return httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest).Withf("provider %q has no browser authorization handler", provider.Key()))
+	providerURL := ""
+	if handler, _ := provider.HTTPHandler(); handler != nil {
+		var err error
+		providerURL, err = manager.ProviderPath(provider.Key())
+		if err != nil {
+			return httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest).With(err))
+		}
+		providerURL = providerAuthorizationPath(r, providerURL)
 	}
-	providerURL, err := manager.ProviderPath(provider.Key())
-	if err != nil {
-		return httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest).With(err))
-	}
-	providerURL = providerAuthorizationPath(r, providerURL)
 	response, err := provider.BeginAuthorization(ctx, providerpkg.AuthorizationRequest{
 		ClientID:            clientID,
 		RedirectURL:         redirectURL,
@@ -155,38 +119,22 @@ func providerAuthorizationPath(r *http.Request, providerPath string) string {
 	return uri
 }
 
-func authorizeProviderConfig(manager *manager.Manager, provider string) (string, schema.ClientConfiguration, error) {
-	provider = strings.TrimSpace(provider)
-	if provider != "" {
-		config, err := manager.OAuthClientConfig(provider)
-		if err != nil {
-			return "", schema.ClientConfiguration{}, err
-		}
-		if strings.TrimSpace(config.ClientID) == "" {
-			return "", schema.ClientConfiguration{}, fmt.Errorf("provider %q has no client_id", provider)
-		}
-		return provider, config, nil
+func authorizationProvider(manager *manager.Manager, requested string) (providerpkg.Provider, error) {
+	requested = strings.TrimSpace(requested)
+	if requested != "" {
+		return manager.Provider(requested)
 	}
 	public, err := manager.AuthConfig()
 	if err != nil {
-		return "", schema.ClientConfiguration{}, err
+		return nil, err
 	}
-	selected := ""
-	for key, cfg := range public {
-		if key == schema.OAuthClientKeyLocal || strings.TrimSpace(cfg.ClientID) == "" {
-			continue
+	if len(public) == 1 {
+		for key := range public {
+			return manager.Provider(key)
 		}
-		if selected != "" {
-			return "", schema.ClientConfiguration{}, fmt.Errorf("provider is required when multiple upstream providers are configured")
-		}
-		selected = key
 	}
-	if selected == "" {
-		return "", schema.ClientConfiguration{}, fmt.Errorf("no upstream provider is available for authorization")
+	if len(public) == 0 {
+		return nil, fmt.Errorf("no provider is available for authorization")
 	}
-	config, err := manager.OAuthClientConfig(selected)
-	if err != nil {
-		return "", schema.ClientConfiguration{}, err
-	}
-	return selected, config, nil
+	return nil, fmt.Errorf("provider is required when multiple providers are configured")
 }

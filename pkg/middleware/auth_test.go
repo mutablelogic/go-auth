@@ -10,6 +10,7 @@ import (
 	// Packages
 	authcrypto "github.com/djthorpe/go-auth/pkg/crypto"
 	manager "github.com/djthorpe/go-auth/pkg/manager"
+	localprovider "github.com/djthorpe/go-auth/pkg/provider/local"
 	schema "github.com/djthorpe/go-auth/schema"
 	jwt "github.com/golang-jwt/jwt/v5"
 	uuid "github.com/google/uuid"
@@ -382,7 +383,9 @@ func newMiddlewareTestManager(t *testing.T) (*manager.Manager, string) {
 	require.NoError(t, err)
 
 	issuer := "http://localhost:8084/api"
-	mgr, err := manager.New(context.Background(), c, manager.WithPrivateKey(key), manager.WithOAuthClient(schema.OAuthClientKeyLocal, issuer, "", ""))
+	localProvider, err := localprovider.New(issuer, key)
+	require.NoError(t, err)
+	mgr, err := manager.New(context.Background(), c, manager.WithPrivateKey(key), manager.WithProvider(localProvider))
 	require.NoError(t, err)
 	return mgr, issuer
 }

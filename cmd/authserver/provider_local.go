@@ -21,7 +21,7 @@ type LocalProviderFlags struct {
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-// PUBLIC METHODS
+// LIFECYCLE
 
 func (flags LocalProviderFlags) NewProvider(privateKey *rsa.PrivateKey, issuer string) (providerpkg.Provider, error) {
 	if !flags.Enabled {

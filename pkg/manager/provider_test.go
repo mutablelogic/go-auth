@@ -12,9 +12,9 @@ import (
 func TestProviderAccessors(t *testing.T) {
 	mgr := newTestManagerWithOpts(t, manager.WithProvider(mustLocalProvider(t, "https://issuer.example.test/api")))
 
-	provider, err := mgr.Provider(schema.OAuthClientKeyLocal)
+	provider, err := mgr.Provider(schema.ProviderKeyLocal)
 	require.NoError(t, err)
-	assert.Equal(t, schema.OAuthClientKeyLocal, provider.Key())
+	assert.Equal(t, schema.ProviderKeyLocal, provider.Key())
 
 	handlers := mgr.HTTPHandlers()
 	require.Len(t, handlers, 1)
@@ -22,7 +22,7 @@ func TestProviderAccessors(t *testing.T) {
 	assert.NotNil(t, handlers[0].Handler)
 	assert.NotNil(t, handlers[0].Spec)
 
-	path, err := mgr.ProviderPath(schema.OAuthClientKeyLocal)
+	path, err := mgr.ProviderPath(schema.ProviderKeyLocal)
 	require.NoError(t, err)
 	assert.Equal(t, "auth/provider/local", path)
 }
@@ -30,7 +30,7 @@ func TestProviderAccessors(t *testing.T) {
 func TestProviderMissing(t *testing.T) {
 	mgr := newTestManager(t)
 
-	_, err := mgr.Provider(schema.OAuthClientKeyLocal)
+	_, err := mgr.Provider(schema.ProviderKeyLocal)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), `unsupported provider "local"`)
 }

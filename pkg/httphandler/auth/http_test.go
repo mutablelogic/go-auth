@@ -22,6 +22,7 @@ import (
 	managerpkg "github.com/djthorpe/go-auth/pkg/manager"
 	middleware "github.com/djthorpe/go-auth/pkg/middleware"
 	oidc "github.com/djthorpe/go-auth/pkg/oidc"
+	googleprovider "github.com/djthorpe/go-auth/pkg/provider/google"
 	localprovider "github.com/djthorpe/go-auth/pkg/provider/local"
 	schema "github.com/djthorpe/go-auth/schema"
 	jwt "github.com/golang-jwt/jwt/v5"
@@ -232,7 +233,7 @@ func Test_http_001(t *testing.T) {
 		require.Equal(http.StatusFound, authorizeRes.Code)
 		providerURL, err := url.Parse(authorizeRes.Header().Get("Location"))
 		require.NoError(err)
-		registeredProvider, err := mgr.Provider(schema.OAuthClientKeyLocal)
+		registeredProvider, err := mgr.Provider(schema.ProviderKeyLocal)
 		require.NoError(err)
 		providerHandler, spec := registeredProvider.HTTPHandler()
 		require.NotNil(providerHandler)
@@ -251,6 +252,7 @@ func Test_http_001(t *testing.T) {
 		res := httptest.NewRecorder()
 		form := url.Values{
 			"grant_type":    {"authorization_code"},
+			"provider":      {"local"},
 			"code":          {code},
 			"client_id":     {"local-client"},
 			"redirect_uri":  {"http://127.0.0.1:8085/callback"},
@@ -284,7 +286,9 @@ func Test_http_001(t *testing.T) {
 		provider := newTestOIDCProvider(t, "google-client-id", "google-client-secret", "nonce-123")
 		defer provider.Close()
 
-		mgr, issuer := newHTTPTestManagerWithOpts(t, managerpkg.WithOAuthClient("google", provider.Issuer(), "google-client-id", "google-client-secret"))
+		google, err := googleprovider.NewWithIssuer("google-client-id", "google-client-secret", provider.Issuer())
+		require.NoError(err)
+		mgr, issuer := newHTTPTestManagerWithOpts(t, managerpkg.WithProvider(google))
 		_, handler, _ := AuthCodeHandler(mgr)
 		res := httptest.NewRecorder()
 		req := httptest.NewRequest(http.MethodPost, "/auth/code", mustJSONBody(t, schema.AuthorizationCodeRequest{
@@ -317,7 +321,9 @@ func Test_http_001(t *testing.T) {
 		provider := newTestOIDCProvider(t, "google-client-id", "google-client-secret", "nonce-123")
 		defer provider.Close()
 
-		mgr, issuer := newHTTPTestManagerWithOpts(t, managerpkg.WithOAuthClient("google", provider.Issuer(), "google-client-id", "google-client-secret"))
+		google, err := googleprovider.NewWithIssuer("google-client-id", "google-client-secret", provider.Issuer())
+		require.NoError(err)
+		mgr, issuer := newHTTPTestManagerWithOpts(t, managerpkg.WithProvider(google))
 		_, handler, _ := AuthCodeHandler(mgr)
 		res := httptest.NewRecorder()
 		form := url.Values{
@@ -353,7 +359,9 @@ func Test_http_001(t *testing.T) {
 		provider := newTestOIDCProvider(t, "google-client-id", "google-client-secret", "wrong-nonce")
 		defer provider.Close()
 
-		mgr, _ := newHTTPTestManagerWithOpts(t, managerpkg.WithOAuthClient("google", provider.Issuer(), "google-client-id", "google-client-secret"))
+		google, err := googleprovider.NewWithIssuer("google-client-id", "google-client-secret", provider.Issuer())
+		require.NoError(err)
+		mgr, _ := newHTTPTestManagerWithOpts(t, managerpkg.WithProvider(google))
 		_, handler, _ := AuthCodeHandler(mgr)
 		res := httptest.NewRecorder()
 		req := httptest.NewRequest(http.MethodPost, "/auth/code", mustJSONBody(t, schema.AuthorizationCodeRequest{
@@ -454,7 +462,9 @@ func Test_http_001(t *testing.T) {
 		providerURL = provider.URL
 		defer provider.Close()
 
-		mgr, _ := newHTTPTestManagerWithOpts(t, managerpkg.WithOAuthClient("google", provider.URL, "google-client-id", "google-client-secret"))
+		google, err := googleprovider.NewWithIssuer("google-client-id", "google-client-secret", provider.URL)
+		require.NoError(err)
+		mgr, _ := newHTTPTestManagerWithOpts(t, managerpkg.WithProvider(google))
 		_, handler, _ := AuthorizationHandler(mgr)
 		res := httptest.NewRecorder()
 		req := httptest.NewRequest(http.MethodGet, "/auth/authorize?provider=google&client_id=local-client&redirect_uri=http%3A%2F%2F127.0.0.1%3A8085%2Fcallback&response_type=code&state=state-123&code_challenge=challenge-123&code_challenge_method=S256", nil)
@@ -488,7 +498,6 @@ func Test_http_001(t *testing.T) {
 		require.NoError(err)
 		mgr, err := managerpkg.New(context.Background(), c,
 			managerpkg.WithPrivateKey(key),
-			managerpkg.WithOAuthClient(schema.OAuthClientKeyLocal, "http://localhost:8084/api", "", ""),
 			managerpkg.WithSessionTTL(15*time.Minute),
 		)
 		require.NoError(err)
@@ -503,7 +512,7 @@ func Test_http_001(t *testing.T) {
 		var response map[string]any
 		require.NoError(json.Unmarshal(res.Body.Bytes(), &response))
 		reason, _ := response["reason"].(string)
-		assert.Contains(reason, `provider "local" is not configured`)
+		assert.Contains(reason, `unsupported provider "local"`)
 	})
 
 	t.Run("AuthorizationHandlerMethodNotAllowed", func(t *testing.T) {
@@ -1214,7 +1223,6 @@ func newHTTPTestManagerWithOpts(t *testing.T, opts ...managerpkg.Opt) (*managerp
 	require.NoError(t, err)
 	managerOpts := append([]managerpkg.Opt{
 		managerpkg.WithPrivateKey(key),
-		managerpkg.WithOAuthClient(schema.OAuthClientKeyLocal, issuer, "", ""),
 		managerpkg.WithProvider(localProvider),
 		managerpkg.WithSessionTTL(15 * time.Minute),
 	}, opts...)

@@ -87,15 +87,6 @@ func (m *Manager) AuthConfig() (schema.PublicClientConfigurations, error) {
 		}
 		config[key] = provider.PublicConfig()
 	}
-	for key, value := range m.oauth.Public() {
-		if _, exists := config[key]; exists {
-			continue
-		}
-		if key == schema.OAuthClientKeyLocal {
-			continue
-		}
-		config[key] = value
-	}
 	if len(config) == 0 {
 		return nil, auth.ErrNotFound.With("providers are not configured")
 	}

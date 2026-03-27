@@ -19,7 +19,7 @@ import (
 ///////////////////////////////////////////////////////////////////////////////
 // TYPES
 
-const defaultRedirectURL = "http://127.0.0.1:8085/callback"
+const defaultRedirectURL = "http://localhost:8085/callback"
 
 type LoginCommand struct {
 	Provider string `arg:"" optional:"" name:"provider" help:"Provider to login to. If not specified, the provider will be selected automatically if only one provider is configured."`
