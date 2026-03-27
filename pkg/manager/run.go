@@ -11,7 +11,7 @@ func (m *Manager) Run(ctx context.Context) error {
 	if interval <= 0 {
 		interval = DefaultCleanupInterval
 	}
-	ticker := time.NewTimer(interval)
+	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 	for {
 		select {
@@ -24,8 +24,6 @@ func (m *Manager) Run(ctx context.Context) error {
 				}
 				return err
 			}
-			// Reset ticker
-			ticker.Reset(m.cleanupint)
 		}
 	}
 }

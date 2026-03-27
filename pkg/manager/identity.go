@@ -113,7 +113,6 @@ func (m *Manager) LoginWithIdentity(ctx context.Context, meta schema.IdentityIns
 	if err = m.PoolConn.Tx(ctx, func(conn pg.Conn) error {
 		// Find an existing identity row with the same (provider, sub) key.
 		var identity schema.Identity
-		createdUser := false
 		updateIdentity := false
 		if err := conn.Get(ctx, &identity, schema.IdentityKey{Provider: meta.Provider, Sub: meta.Sub}); err != nil {
 			if !errors.Is(dbErr(err), auth.ErrNotFound) {
@@ -173,7 +172,6 @@ func (m *Manager) LoginWithIdentity(ctx context.Context, meta schema.IdentityIns
 					return err
 				}
 				user = created.ID
-				createdUser = true
 			}
 		} else {
 			user = identity.User
@@ -181,7 +179,7 @@ func (m *Manager) LoginWithIdentity(ctx context.Context, meta schema.IdentityIns
 		}
 
 		// Successful login, update identity with new email/claims and modified_at timestamp.
-		if updateIdentity && !createdUser {
+		if updateIdentity {
 			if err := conn.Update(ctx, &identity, identity.IdentityKey, meta.IdentityMeta); err != nil {
 				return err
 			}

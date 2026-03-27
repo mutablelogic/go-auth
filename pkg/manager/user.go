@@ -80,14 +80,13 @@ func (m *Manager) UpdateUser(ctx context.Context, user schema.UserID, meta schem
 			return auth.ErrBadParameter.With("no fields to update")
 		}
 
+		var userRow schema.User
 		if hasRowPatch {
-			var updated schema.User
-			if err := conn.Update(ctx, &updated, user, rowMeta); err != nil {
+			if err := conn.Update(ctx, &userRow, user, rowMeta); err != nil {
 				return err
 			}
 		} else {
-			var existing schema.User
-			if err := conn.Get(ctx, &existing, user); err != nil {
+			if err := conn.Get(ctx, &userRow, user); err != nil {
 				return err
 			}
 		}

@@ -1,6 +1,7 @@
 package manager
 
 import (
+	"context"
 	"net/http"
 
 	// Packages
@@ -13,18 +14,24 @@ import (
 ///////////////////////////////////////////////////////////////////////////////
 // PUBLIC METHODS
 
-func ConfigHandler(manager *manager.Manager) (string, http.HandlerFunc, *openapi.PathItem) {
+func ConfigHandler(mgr *manager.Manager) (string, http.HandlerFunc, *openapi.PathItem) {
 	return "config", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
-			config, err := manager.AuthConfig()
-			if err != nil {
-				httpresponse.Error(w, httpErr(err))
-			} else {
-				httpresponse.JSON(w, http.StatusOK, httprequest.Indent(r), config)
-			}
+			_ = getAuthConfig(r.Context(), mgr, w, r)
 		default:
 			_ = httpresponse.Error(w, httpresponse.Err(http.StatusMethodNotAllowed), r.Method)
 		}
 	}, &openapi.PathItem{Summary: "Public configuration", Description: "Returns the upstream authentication provider details that are safe to expose to clients."}
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// PRIVATE METHODS
+
+func getAuthConfig(_ context.Context, mgr *manager.Manager, w http.ResponseWriter, r *http.Request) error {
+	config, err := mgr.AuthConfig()
+	if err != nil {
+		return httpresponse.Error(w, httpErr(err))
+	}
+	return httpresponse.JSON(w, http.StatusOK, httprequest.Indent(r), config)
 }
