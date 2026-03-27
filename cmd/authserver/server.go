@@ -47,7 +47,7 @@ type ServerCommands struct {
 
 type RunServer struct {
 	cmd.RunServer
-	PostgresFlags       `embed:"" prefix:"pg."`
+	PostgresFlags `embed:"" prefix:"pg."`
 	LocalProviderFlags
 	GoogleProviderFlags `embed:"" prefix:"google."`
 	CleanupFlags        `embed:"" prefix:"cleanup."`
@@ -197,7 +197,7 @@ func (server *RunServer) WithManager(ctx server.Cmd, fn func(*manager.Manager, s
 	defer manager.Close()
 
 	// Invoke the function with the manager and version string
-	return fn(manager, "v1")
+	return fn(manager, ctx.Version())
 }
 
 func (server *RunServer) issuer(ctx server.Cmd) string {
