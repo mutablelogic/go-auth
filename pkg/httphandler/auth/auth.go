@@ -173,7 +173,7 @@ func authorizeScopes(r *http.Request) []string {
 
 func loginTokenClaims(issuer string, user *schema.User, session *schema.Session) jwt.MapClaims {
 	now := time.Now().UTC()
-	claims := jwt.MapClaims{"iss": issuer, "sub": uuid.UUID(user.ID).String(), "sid": uuid.UUID(session.ID).String(), "iat": now.Unix(), "nbf": now.Unix(), "exp": session.ExpiresAt.UTC().Unix(), "user": user, "session": session}
+	claims := jwt.MapClaims{"iss": issuer, "aud": issuer, "sub": uuid.UUID(user.ID).String(), "sid": uuid.UUID(session.ID).String(), "iat": now.Unix(), "nbf": now.Unix(), "exp": session.ExpiresAt.UTC().Unix(), "user": user, "session": session}
 	if user.Email != "" {
 		claims["email"] = user.Email
 	}

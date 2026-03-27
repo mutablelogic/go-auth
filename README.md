@@ -1,34 +1,187 @@
 # go-auth
 
-Client and server authentication with local JWT sessions backed by PostgreSQL.
+A self-hosted authorization server written in Go, implementing the OAuth 2.0 authorization code flow with PKCE and OIDC-compatible discovery, JWKS, and userinfo endpoints. It issues self-contained, locally signed JWTs, supports multiple upstream identity providers, and ships with a WebAssembly admin UI for managing users, groups, and scopes.
 
-## Current model
+> **Not production ready.** This project is under active development and has known gaps (see below). Do not use it to protect production systems.
 
-- Authorization codes are exchanged for a locally signed JWT.
-- The local JWT contains embedded `user` and `session` claims.
-- Access tokens are short-lived and currently validated without a database lookup on normal protected requests.
-- Session refresh and revoke operate on the backing PostgreSQL session row.
+## Motivation
 
-## Endpoints
+`go-auth` is designed to be embedded directly into a larger Go service or run as a standalone server, depending on what a deployment needs. It gives you full control over user data, token policy, and provider configuration within the same operational footprint as the rest of your stack.
 
-- `POST /auth/code`: exchange an authorization code or refresh token for a local token.
-- `POST /auth/revoke`: revoke a local session token.
-- `GET /changes`: stream protected change notifications as server-sent events.
-- `GET /user`: list users.
-- `POST /user`: create a user.
-- `GET /user/{user}`: fetch a user.
-- `PATCH /user/{user}`: update a user.
-- `DELETE /user/{user}`: delete a user.
+Key design goals:
 
-## Token semantics
+- **Self-contained tokens.** Access tokens are RS256-signed JWTs with user and session claims embedded. Protected services validate tokens locally against the public key — no round-trip to the auth server on every request.
+- **Provider abstraction.** Two identity providers are implemented: Google OAuth 2.0 and a built-in local browser flow (intended for development and debugging). The `Provider` interface makes it straightforward to add others (LDAP, SAML, certificate-based auth).
+- **Single binary.** The server binary embeds the admin UI (WebAssembly + IBM Carbon) and bootstraps its own database schema on first run.
+- **PostgreSQL-backed.** Sessions, users, groups, and identities live in PostgreSQL. `LISTEN/NOTIFY` streams table changes in real time.
 
-- Local access tokens are self-contained JWTs signed by the server.
-- Protected routes verify the JWT signature, issuer, and embedded user/session claims.
-- Revoking a session prevents refresh and future issuance, but does not immediately invalidate an already-issued access token.
-- Changes to user status or expiry also take effect when a new token is issued or when the current token expires.
-- The intended consistency model is short-lived access tokens, currently 15 minutes.
+Current known gaps:
 
-## OpenAPI
+- **Refresh tokens** are currently identical to access tokens; proper token separation is on the roadmap.
+- **The admin UI** is incomplete — user and group management works but some views are not yet finished.
+- **Scopes** are embedded in issued tokens but are not enforced by the authentication middleware; per-endpoint scope checks are not yet implemented.
 
-- Auth and user routes publish OpenAPI path items from the HTTP handler layer.
-- UUID-backed identifiers use explicit OpenAPI schema overrides because `uuid.UUID`-backed Go types do not naturally render as `string` with `format: uuid`.
+## Quick Start
+
+### Prerequisites
+
+- Go 1.25+
+- Node.js + npm (for the frontend, if rebuilding)
+- PostgreSQL 14+
+
+### Build
+
+```bash
+# Build the server binary (includes the embedded WASM frontend)
+make wasm
+make cmd
+
+# Or build everything from scratch including npm bundles
+make clean && make wasm && make cmd
+```
+
+The binary is written to `build/authserver`.
+
+### Run
+
+```bash
+build/authserver run \
+  --pg.url="postgres://user:password@localhost/authdb" \
+  --http.addr=":8080" \
+  --local-provider \
+  --no-auth
+```
+
+`--no-auth` disables the authentication middleware on the management API, which is necessary on first run before any users exist. Remove it once an admin user has been created.
+
+With Google OAuth:
+
+```bash
+build/authserver run \
+  --pg.url="postgres://user:password@localhost/authdb" \
+  --http.addr=":8080" \
+  --google.client-id=YOUR_CLIENT_ID \
+  --google.client-secret=YOUR_CLIENT_SECRET
+```
+
+All flags can also be set via environment variables:
+
+| Flag | Environment variable | Description |
+|---|---|---|
+| `--pg.url` | `PG_URL` | PostgreSQL connection URL |
+| `--pg.password` | `PG_PASSWORD` | PostgreSQL password (overrides URL) |
+| `--google.client-id` | `GOOGLE_CLIENT_ID` | Google OAuth client ID |
+| `--google.client-secret` | `GOOGLE_CLIENT_SECRET` | Google OAuth client secret |
+
+### Discovery
+
+Once running, the OIDC discovery document is available at:
+
+```
+GET /.well-known/openid-configuration
+```
+
+The OpenAPI specification for all endpoints can be browsed at `http://<addr>/api/openapi.html`.
+
+The admin UI is served at the root path when `--ui` is enabled (default).
+
+## Architecture
+
+### Directory structure
+
+| Path | Description |
+|---|---|
+| `cmd/authserver/` | Server binary — CLI flags, provider wiring, HTTP server setup |
+| `pkg/manager/` | Core domain logic — users, groups, scopes, sessions, identities, token signing |
+| `pkg/httphandler/auth/` | OIDC/OAuth endpoints — authorize, token exchange, revoke, userinfo, JWKS |
+| `pkg/httphandler/manager/` | REST management API — CRUD for users, groups, scopes |
+| `pkg/middleware/` | JWT authentication middleware — validates tokens and injects user/session into context |
+| `pkg/provider/` | Identity provider interface and implementations (Google, local browser flow) |
+| `pkg/oidc/` | OIDC/OAuth primitives — token signing, PKCE, authorization code flow helpers |
+| `pkg/crypto/` | RSA key generation, PEM encoding/decoding |
+| `schema/` | Database types, query builders, and JSON serialization |
+| `wasm/frontend/` | WebAssembly admin UI (Go compiled to WASM, IBM Carbon design system) |
+| `npm/carbon/` | esbuild bundle for Carbon web components |
+
+### Component diagram
+
+```mermaid
+flowchart TD
+    Browser["<b>Browser / Client</b>"]
+    AdminUI["<b>Admin UI</b> (WASM + Carbon)"]
+    AuthEP["<b>Auth Endpoints</b> (pkg/httphandler/auth)"]
+    MgrEP["<b>Manager Endpoints</b> (pkg/httphandler/manager)"]
+    Middleware["<b>Auth Middleware</b> (pkg/middleware)"]
+    Manager["<b>Manager</b> (pkg/manager)"]
+    OIDC["<b>OIDC Primitives</b> (pkg/oidc)"]
+    Crypto["<b>Crypto</b> (pkg/crypto)"]
+    Providers["<b>Providers</b> (pkg/provider)"]
+    Google["<b>Google Provider</b>"]
+    Local["<b>Local Provider</b>"]
+    Schema["<b>Schema</b> (schema/)"]
+    PG[("<b>PostgreSQL</b>")]
+
+    Browser -->|"OAuth flow"| AuthEP
+    Browser -->|"Admin API (Bearer token)"| Middleware
+    AdminUI -->|"served by"| Browser
+    Middleware --> MgrEP
+    AuthEP --> Manager
+    MgrEP --> Manager
+    Manager --> OIDC
+    Manager --> Crypto
+    Manager --> Providers
+    Manager --> Schema
+    Providers --> Google
+    Providers --> Local
+    Schema --> PG
+    OIDC --> Crypto
+```
+
+### Token flow
+
+```mermaid
+sequenceDiagram
+    participant C as Client
+    participant S as go-auth
+    participant P as Identity Provider
+    participant R as Resource Server
+
+    C->>S: GET /auth/authorize?code_challenge=...
+    S->>P: Redirect to provider login
+    P->>S: Callback with auth code
+    S->>C: Authorization code
+    C->>S: POST /auth/code (code + code_verifier)
+    S->>S: Verify PKCE, exchange with provider
+    S->>S: Upsert user + session in PostgreSQL
+    S->>C: Signed JWT (access_token)
+    C->>R: API request (Bearer token)
+    R->>R: Validate JWT locally (RS256 + JWKS)
+    R->>C: Response
+```
+
+## Development
+
+Contributions are welcome. Please open an issue before submitting a pull request for anything beyond a small bug fix, so the approach can be agreed upfront.
+
+### Makefile targets
+
+| Target | Description |
+|---|---|
+| `make` | Build the WASM frontend and npm bundles |
+| `make cmd` | Build the `authserver` binary |
+| `make wasm` | Build the WebAssembly frontend only |
+| `make npm` | Bundle Carbon web components via esbuild |
+| `make tidy` | Run `go mod tidy` |
+| `make clean` | Remove all build artefacts and tidy dependencies |
+
+### Tests
+
+```bash
+go test ./...
+```
+
+Tests that require PostgreSQL use [testcontainers-go](https://github.com/testcontainers/testcontainers-go) and spin up a real database — Docker must be running.
+
+## License
+
+Copyright 2026 David Thorpe. Licensed under the [Apache License, Version 2.0](LICENSE).
