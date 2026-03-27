@@ -80,10 +80,6 @@ func (p *Provider) HTTPHandler() (http.HandlerFunc, *openapi.PathItem) {
 }
 
 func (p *Provider) BeginAuthorization(_ context.Context, req provider.AuthorizationRequest) (*provider.AuthorizationResponse, error) {
-	clientID := strings.TrimSpace(req.ClientID)
-	if clientID == "" {
-		return nil, fmt.Errorf("client_id is required")
-	}
 	providerURL := strings.TrimSpace(req.ProviderURL)
 	if providerURL == "" {
 		return nil, fmt.Errorf("provider_url is required")
@@ -97,7 +93,6 @@ func (p *Provider) BeginAuthorization(_ context.Context, req provider.Authorizat
 		return nil, fmt.Errorf("state is required")
 	}
 	values := url.Values{}
-	values.Set("client_id", clientID)
 	values.Set("redirect_uri", redirectURL)
 	values.Set("state", state)
 	if nonce := strings.TrimSpace(req.Nonce); nonce != "" {
@@ -137,11 +132,7 @@ func (p *Provider) ExchangeAuthorizationCode(_ context.Context, req provider.Exc
 	if err != nil {
 		return nil, err
 	}
-	clientID, _ := claims["aud"].(string)
-	if strings.TrimSpace(clientID) == "" {
-		return nil, fmt.Errorf("authorization code missing client_id")
-	}
-	if err := validateAuthorizationCodeClaims(claims, clientID, req.RedirectURL, req.CodeVerifier, req.Nonce); err != nil {
+	if err := validateAuthorizationCodeClaims(claims, req.RedirectURL, req.CodeVerifier, req.Nonce); err != nil {
 		return nil, err
 	}
 	email, err := emailFromClaims(claims)
@@ -202,12 +193,9 @@ func nameFromEmail(email string) string {
 	return "Local User"
 }
 
-func validateAuthorizationCodeClaims(claims map[string]any, clientID, redirectURL, codeVerifier, expectedNonce string) error {
+func validateAuthorizationCodeClaims(claims map[string]any, redirectURL, codeVerifier, expectedNonce string) error {
 	if value, _ := claims["typ"].(string); strings.TrimSpace(value) != localAuthorizationCodeType {
 		return fmt.Errorf("invalid local authorization code")
-	}
-	if audience, _ := claims["aud"].(string); strings.TrimSpace(audience) != strings.TrimSpace(clientID) {
-		return fmt.Errorf("authorization code client_id mismatch")
 	}
 	if value, _ := claims["redirect_uri"].(string); strings.TrimSpace(value) != strings.TrimSpace(redirectURL) {
 		return fmt.Errorf("authorization code redirect_uri mismatch")

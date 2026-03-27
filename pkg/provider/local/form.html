@@ -85,7 +85,6 @@
         {{if .Error}}<div class="error">{{.Error}}</div>{{end}}
         <form method="post" action="{{.Action}}">
             <input type="hidden" name="provider" value="{{.Provider}}">
-            <input type="hidden" name="client_id" value="{{.ClientID}}">
             <input type="hidden" name="redirect_uri" value="{{.RedirectURL}}">
             <input type="hidden" name="state" value="{{.State}}">
             <input type="hidden" name="nonce" value="{{.Nonce}}">

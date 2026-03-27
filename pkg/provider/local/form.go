@@ -21,7 +21,6 @@ type formData struct {
 	Error               string
 	Action              string
 	Provider            string
-	ClientID            string
 	RedirectURL         string
 	State               string
 	Nonce               string
@@ -63,7 +62,6 @@ func (p *Provider) serveForm(w http.ResponseWriter, r *http.Request, formError s
 		Error:               formError,
 		Action:              r.URL.Path,
 		Provider:            p.key,
-		ClientID:            strings.TrimSpace(query.Get("client_id")),
 		RedirectURL:         strings.TrimSpace(query.Get("redirect_uri")),
 		State:               strings.TrimSpace(query.Get("state")),
 		Nonce:               strings.TrimSpace(query.Get("nonce")),
@@ -81,11 +79,10 @@ func (p *Provider) submitForm(w http.ResponseWriter, r *http.Request) error {
 	if err := r.ParseForm(); err != nil {
 		return httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest), err.Error())
 	}
-	clientID := strings.TrimSpace(r.PostForm.Get("client_id"))
 	redirectURL := strings.TrimSpace(r.PostForm.Get("redirect_uri"))
 	state := strings.TrimSpace(r.PostForm.Get("state"))
-	if clientID == "" || redirectURL == "" || state == "" {
-		return p.serveForm(w, requestWithFormAsQuery(r), "client_id, redirect_uri and state are required")
+	if redirectURL == "" || state == "" {
+		return p.serveForm(w, requestWithFormAsQuery(r), "redirect_uri and state are required")
 	}
 	email, err := normalizeEmail(r.PostForm.Get("login_hint"))
 	if err != nil {
@@ -100,7 +97,6 @@ func (p *Provider) submitForm(w http.ResponseWriter, r *http.Request) error {
 	claims := jwt.MapClaims{
 		"iss":          issuer,
 		"sub":          email,
-		"aud":          clientID,
 		"email":        email,
 		"typ":          localAuthorizationCodeType,
 		"redirect_uri": redirectURL,

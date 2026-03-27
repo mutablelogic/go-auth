@@ -181,7 +181,7 @@ func Test_http_001(t *testing.T) {
 		_, handler, _ := AuthorizationHandler(mgr)
 		challenge := codeChallengeForVerifier("verifier-123")
 		res := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodGet, "/auth/authorize?client_id=local-client&redirect_uri=http%3A%2F%2F127.0.0.1%3A8085%2Fcallback&response_type=code&state=state-123&code_challenge="+url.QueryEscape(challenge)+"&code_challenge_method=S256&login_hint=local.success%40example.com", nil)
+		req := httptest.NewRequest(http.MethodGet, "/auth/authorize?redirect_uri=http%3A%2F%2F127.0.0.1%3A8085%2Fcallback&response_type=code&state=state-123&code_challenge="+url.QueryEscape(challenge)+"&code_challenge_method=S256&login_hint=local.success%40example.com", nil)
 		req.Host = "localhost:8084"
 
 		handler(res, req)
@@ -192,7 +192,6 @@ func Test_http_001(t *testing.T) {
 		uri, err := url.Parse(location)
 		require.NoError(err)
 		assert.Equal("/auth/provider/local", uri.Path)
-		assert.Equal("local-client", uri.Query().Get("client_id"))
 		assert.Equal("http://127.0.0.1:8085/callback", uri.Query().Get("redirect_uri"))
 		assert.Equal("state-123", uri.Query().Get("state"))
 		assert.Equal(challenge, uri.Query().Get("code_challenge"))
@@ -207,7 +206,7 @@ func Test_http_001(t *testing.T) {
 		mgr, _ := newHTTPTestManager(t)
 		_, handler, _ := AuthorizationHandler(mgr)
 		res := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodGet, "/api/auth/authorize?client_id=local-client&redirect_uri=http%3A%2F%2F127.0.0.1%3A8085%2Fcallback&response_type=code&state=state-123", nil)
+		req := httptest.NewRequest(http.MethodGet, "/api/auth/authorize?redirect_uri=http%3A%2F%2F127.0.0.1%3A8085%2Fcallback&response_type=code&state=state-123", nil)
 
 		handler(res, req)
 
@@ -227,7 +226,7 @@ func Test_http_001(t *testing.T) {
 		_, authorizeHandler, _ := AuthorizationHandler(mgr)
 		challenge := codeChallengeForVerifier("verifier-123")
 		authorizeRes := httptest.NewRecorder()
-		authorizeReq := httptest.NewRequest(http.MethodGet, "/auth/authorize?client_id=local-client&redirect_uri=http%3A%2F%2F127.0.0.1%3A8085%2Fcallback&response_type=code&state=state-123&code_challenge="+url.QueryEscape(challenge)+"&code_challenge_method=S256&login_hint=local.success%40example.com", nil)
+		authorizeReq := httptest.NewRequest(http.MethodGet, "/auth/authorize?redirect_uri=http%3A%2F%2F127.0.0.1%3A8085%2Fcallback&response_type=code&state=state-123&code_challenge="+url.QueryEscape(challenge)+"&code_challenge_method=S256&login_hint=local.success%40example.com", nil)
 		authorizeReq.Host = "localhost:8084"
 		authorizeHandler(authorizeRes, authorizeReq)
 		require.Equal(http.StatusFound, authorizeRes.Code)
@@ -254,7 +253,6 @@ func Test_http_001(t *testing.T) {
 			"grant_type":    {"authorization_code"},
 			"provider":      {"local"},
 			"code":          {code},
-			"client_id":     {"local-client"},
 			"redirect_uri":  {"http://127.0.0.1:8085/callback"},
 			"code_verifier": {"verifier-123"},
 		}
@@ -329,7 +327,6 @@ func Test_http_001(t *testing.T) {
 		form := url.Values{
 			"grant_type":    {"authorization_code"},
 			"provider":      {"google"},
-			"client_id":     {"local-client"},
 			"code":          {"auth-code"},
 			"redirect_uri":  {"http://127.0.0.1:8085/callback"},
 			"code_verifier": {"verifier-123"},
@@ -467,7 +464,7 @@ func Test_http_001(t *testing.T) {
 		mgr, _ := newHTTPTestManagerWithOpts(t, managerpkg.WithProvider(google))
 		_, handler, _ := AuthorizationHandler(mgr)
 		res := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodGet, "/auth/authorize?provider=google&client_id=local-client&redirect_uri=http%3A%2F%2F127.0.0.1%3A8085%2Fcallback&response_type=code&state=state-123&code_challenge=challenge-123&code_challenge_method=S256", nil)
+		req := httptest.NewRequest(http.MethodGet, "/auth/authorize?provider=google&redirect_uri=http%3A%2F%2F127.0.0.1%3A8085%2Fcallback&response_type=code&state=state-123&code_challenge=challenge-123&code_challenge_method=S256", nil)
 
 		handler(res, req)
 
@@ -504,7 +501,7 @@ func Test_http_001(t *testing.T) {
 
 		_, handler, _ := AuthorizationHandler(mgr)
 		res := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodGet, "/auth/authorize?provider=local&client_id=local-client&redirect_uri=http%3A%2F%2F127.0.0.1%3A8085%2Fcallback&response_type=code&state=state-123", nil)
+		req := httptest.NewRequest(http.MethodGet, "/auth/authorize?provider=local&redirect_uri=http%3A%2F%2F127.0.0.1%3A8085%2Fcallback&response_type=code&state=state-123", nil)
 
 		handler(res, req)
 

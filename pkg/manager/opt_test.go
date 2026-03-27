@@ -44,7 +44,6 @@ func Test_opt_001(t *testing.T) {
 		assert.Equal(schema.ProviderKeyLocal, provider.Key())
 
 		resp, err := provider.BeginAuthorization(context.Background(), providerpkg.AuthorizationRequest{
-			ClientID:    "manager",
 			RedirectURL: "http://127.0.0.1:8085/callback",
 			ProviderURL: "/auth/provider/local",
 			State:       "state-123",

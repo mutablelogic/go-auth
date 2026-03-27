@@ -42,12 +42,6 @@ func authorize(ctx context.Context, manager *manager.Manager, w http.ResponseWri
 		return httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest).With("redirect_uri is required"))
 	}
 
-	// ClientID
-	clientID := strings.TrimSpace(params.Get("client_id"))
-	if clientID == "" {
-		return httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest).With("client_id is required"))
-	}
-
 	// ResponseType
 	responseType := strings.TrimSpace(params.Get("response_type"))
 	if responseType == "" {
@@ -66,10 +60,10 @@ func authorize(ctx context.Context, manager *manager.Manager, w http.ResponseWri
 	if err != nil {
 		return httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest).With(err))
 	}
-	return authorizeRegisteredProvider(ctx, manager, provider, w, r, clientID, redirectURL, state)
+	return authorizeRegisteredProvider(ctx, manager, provider, w, r, redirectURL, state)
 }
 
-func authorizeRegisteredProvider(ctx context.Context, manager *manager.Manager, provider providerpkg.Provider, w http.ResponseWriter, r *http.Request, clientID, redirectURL, state string) error {
+func authorizeRegisteredProvider(ctx context.Context, manager *manager.Manager, provider providerpkg.Provider, w http.ResponseWriter, r *http.Request, redirectURL, state string) error {
 	if provider == nil {
 		return httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest).With("provider is required"))
 	}
@@ -83,7 +77,6 @@ func authorizeRegisteredProvider(ctx context.Context, manager *manager.Manager, 
 		providerURL = providerAuthorizationPath(r, providerURL)
 	}
 	response, err := provider.BeginAuthorization(ctx, providerpkg.AuthorizationRequest{
-		ClientID:            clientID,
 		RedirectURL:         redirectURL,
 		ProviderURL:         providerURL,
 		State:               state,

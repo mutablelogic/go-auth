@@ -67,7 +67,6 @@ func TestProviderBeginAuthorization(t *testing.T) {
 	require.NoError(err)
 
 	resp, err := localProvider.BeginAuthorization(context.Background(), providerpkg.AuthorizationRequest{
-		ClientID:    "manager",
 		RedirectURL: "http://127.0.0.1:8085/callback",
 		ProviderURL: "/auth/provider/local",
 		State:       "state-123",
@@ -77,7 +76,6 @@ func TestProviderBeginAuthorization(t *testing.T) {
 	uri, err := url.Parse(resp.RedirectURL)
 	require.NoError(err)
 	assert.Equal("/auth/provider/local", uri.Path)
-	assert.Equal("manager", uri.Query().Get("client_id"))
 	assert.Equal("state-123", uri.Query().Get("state"))
 	assert.Equal("local@example.com", uri.Query().Get("login_hint"))
 }
@@ -106,10 +104,9 @@ func TestProviderBeginAuthorizationValidation(t *testing.T) {
 		req  providerpkg.AuthorizationRequest
 		err  string
 	}{
-		{name: "missing client id", req: providerpkg.AuthorizationRequest{ProviderURL: "/auth/provider/local", RedirectURL: "http://127.0.0.1/callback", State: "state"}, err: "client_id is required"},
-		{name: "missing provider url", req: providerpkg.AuthorizationRequest{ClientID: "manager", RedirectURL: "http://127.0.0.1/callback", State: "state"}, err: "provider_url is required"},
-		{name: "missing redirect url", req: providerpkg.AuthorizationRequest{ClientID: "manager", ProviderURL: "/auth/provider/local", State: "state"}, err: "redirect_url is required"},
-		{name: "missing state", req: providerpkg.AuthorizationRequest{ClientID: "manager", ProviderURL: "/auth/provider/local", RedirectURL: "http://127.0.0.1/callback"}, err: "state is required"},
+		{name: "missing provider url", req: providerpkg.AuthorizationRequest{RedirectURL: "http://127.0.0.1/callback", State: "state"}, err: "provider_url is required"},
+		{name: "missing redirect url", req: providerpkg.AuthorizationRequest{ProviderURL: "/auth/provider/local", State: "state"}, err: "redirect_url is required"},
+		{name: "missing state", req: providerpkg.AuthorizationRequest{ProviderURL: "/auth/provider/local", RedirectURL: "http://127.0.0.1/callback"}, err: "state is required"},
 	}
 
 	for _, tt := range tests {
@@ -126,7 +123,6 @@ func TestProviderBeginAuthorizationIncludesOptionalValues(t *testing.T) {
 	require.NoError(t, err)
 
 	resp, err := provider.BeginAuthorization(context.Background(), providerpkg.AuthorizationRequest{
-		ClientID:            "manager",
 		RedirectURL:         "http://127.0.0.1:8085/callback",
 		ProviderURL:         "/auth/provider/local?foo=bar",
 		State:               "state-123",
@@ -174,20 +170,14 @@ func TestExchangeAuthorizationCodeErrors(t *testing.T) {
 			err:      "verify failure",
 		},
 		{
-			name:     "missing client id",
-			provider: &Provider{key: "local", codec: stubCodec{issuer: "issuer", claims: map[string]any{"typ": localAuthorizationCodeType, "redirect_uri": "http://127.0.0.1/callback"}}},
-			req:      providerpkg.ExchangeRequest{Code: "code", RedirectURL: "http://127.0.0.1/callback"},
-			err:      "authorization code missing client_id",
-		},
-		{
 			name:     "nonce mismatch",
-			provider: &Provider{key: "local", codec: stubCodec{issuer: "issuer", claims: map[string]any{"typ": localAuthorizationCodeType, "aud": "manager", "redirect_uri": "http://127.0.0.1/callback", "email": "local@example.com", "nonce": "actual"}}},
+			provider: &Provider{key: "local", codec: stubCodec{issuer: "issuer", claims: map[string]any{"typ": localAuthorizationCodeType, "redirect_uri": "http://127.0.0.1/callback", "email": "local@example.com", "nonce": "actual"}}},
 			req:      providerpkg.ExchangeRequest{Code: "code", RedirectURL: "http://127.0.0.1/callback", Nonce: "expected"},
 			err:      "token nonce mismatch",
 		},
 		{
 			name:     "missing email",
-			provider: &Provider{key: "local", codec: stubCodec{issuer: "issuer", claims: map[string]any{"typ": localAuthorizationCodeType, "aud": "manager", "redirect_uri": "http://127.0.0.1/callback"}}},
+			provider: &Provider{key: "local", codec: stubCodec{issuer: "issuer", claims: map[string]any{"typ": localAuthorizationCodeType, "redirect_uri": "http://127.0.0.1/callback"}}},
 			req:      providerpkg.ExchangeRequest{Code: "code", RedirectURL: "http://127.0.0.1/callback"},
 			err:      "authorization code missing email",
 		},
@@ -205,81 +195,65 @@ func TestValidateAuthorizationCodeClaimsPKCE(t *testing.T) {
 	t.Run("invalid type", func(t *testing.T) {
 		err := validateAuthorizationCodeClaims(map[string]any{
 			"typ":          "wrong",
-			"aud":          "manager",
 			"redirect_uri": "http://127.0.0.1/callback",
-		}, "manager", "http://127.0.0.1/callback", "", "")
+		}, "http://127.0.0.1/callback", "", "")
 		require.EqualError(t, err, "invalid local authorization code")
-	})
-
-	t.Run("client id mismatch", func(t *testing.T) {
-		err := validateAuthorizationCodeClaims(map[string]any{
-			"typ":          localAuthorizationCodeType,
-			"aud":          "other",
-			"redirect_uri": "http://127.0.0.1/callback",
-		}, "manager", "http://127.0.0.1/callback", "", "")
-		require.EqualError(t, err, "authorization code client_id mismatch")
 	})
 
 	t.Run("redirect uri mismatch", func(t *testing.T) {
 		err := validateAuthorizationCodeClaims(map[string]any{
 			"typ":          localAuthorizationCodeType,
-			"aud":          "manager",
 			"redirect_uri": "http://127.0.0.1/other",
-		}, "manager", "http://127.0.0.1/callback", "", "")
+		}, "http://127.0.0.1/callback", "", "")
 		require.EqualError(t, err, "authorization code redirect_uri mismatch")
 	})
 
 	t.Run("missing verifier", func(t *testing.T) {
 		err := validateAuthorizationCodeClaims(map[string]any{
 			"typ":            localAuthorizationCodeType,
-			"aud":            "manager",
 			"redirect_uri":   "http://127.0.0.1/callback",
 			"code_challenge": "expected",
-		}, "manager", "http://127.0.0.1/callback", "", "")
+		}, "http://127.0.0.1/callback", "", "")
 		require.EqualError(t, err, "code_verifier is required")
 	})
 
 	t.Run("plain success", func(t *testing.T) {
 		err := validateAuthorizationCodeClaims(map[string]any{
 			"typ":                   localAuthorizationCodeType,
-			"aud":                   "manager",
 			"redirect_uri":          "http://127.0.0.1/callback",
 			"code_challenge":        "expected",
 			"code_challenge_method": "plain",
-		}, "manager", "http://127.0.0.1/callback", "expected", "")
+		}, "http://127.0.0.1/callback", "expected", "")
 		require.NoError(t, err)
 	})
 
 	t.Run("s256 success", func(t *testing.T) {
 		err := validateAuthorizationCodeClaims(map[string]any{
 			"typ":                   localAuthorizationCodeType,
-			"aud":                   "manager",
 			"redirect_uri":          "http://127.0.0.1/callback",
 			"code_challenge":        "iMnq5o6zALKXGivsnlom_0F5_WYda32GHkxlV7mq7hQ",
 			"code_challenge_method": "S256",
-		}, "manager", "http://127.0.0.1/callback", "verifier", "")
+		}, "http://127.0.0.1/callback", "verifier", "")
 		require.NoError(t, err)
 	})
 
 	t.Run("plain mismatch", func(t *testing.T) {
 		err := validateAuthorizationCodeClaims(map[string]any{
 			"typ":                   localAuthorizationCodeType,
-			"aud":                   "manager",
 			"redirect_uri":          "http://127.0.0.1/callback",
 			"code_challenge":        "expected",
 			"code_challenge_method": "plain",
-		}, "manager", "http://127.0.0.1/callback", "actual", "")
+		}, "http://127.0.0.1/callback", "actual", "")
 		require.EqualError(t, err, "authorization code verifier mismatch")
 	})
 
 	t.Run("unsupported method", func(t *testing.T) {
 		err := validateAuthorizationCodeClaims(map[string]any{
 			"typ":                   localAuthorizationCodeType,
-			"aud":                   "manager",
 			"redirect_uri":          "http://127.0.0.1/callback",
 			"code_challenge":        "expected",
 			"code_challenge_method": "custom",
-		}, "manager", "http://127.0.0.1/callback", "expected", "")
+		}, "http://127.0.0.1/callback", "expected", "")
 		require.EqualError(t, err, `unsupported code_challenge_method "custom"`)
 	})
 }

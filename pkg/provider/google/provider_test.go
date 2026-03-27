@@ -39,7 +39,6 @@ func TestBeginAuthorizationAndExchange(t *testing.T) {
 	require.NoError(t, err)
 
 	resp, err := provider.BeginAuthorization(context.Background(), providerpkg.AuthorizationRequest{
-		ClientID:            "ignored-local-client",
 		RedirectURL:         "http://127.0.0.1:8085/callback",
 		State:               "state-123",
 		Scopes:              []string{oidc.ScopeOpenID, oidc.ScopeEmail, oidc.ScopeProfile},

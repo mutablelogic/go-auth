@@ -224,6 +224,27 @@ func TestAuthorizationCodeFlowWithoutNonce(t *testing.T) {
 	assert.Equal(t, "projects:read", query.Get("scope"))
 }
 
+func TestAuthorizationCodeFlowWithoutClientID(t *testing.T) {
+	flow, err := oidc.NewAuthorizationCodeFlow(oidc.BaseConfiguration{
+		Issuer:                "https://auth.example.test",
+		AuthorizationEndpoint: "https://auth.example.test/authorize",
+		TokenEndpoint:         "https://auth.example.test/token",
+		CodeChallengeMethods:  []string{oidc.CodeChallengeMethodS256},
+	}, "", "http://127.0.0.1:8085/callback", oidc.DefaultOIDCAuthorizationScopes...)
+	require.NoError(t, err)
+	require.NotNil(t, flow)
+	assert.Empty(t, flow.ClientID)
+
+	uri, err := url.Parse(flow.AuthorizationURL)
+	require.NoError(t, err)
+	query := uri.Query()
+	assert.Empty(t, query.Get("client_id"))
+	assert.Equal(t, "http://127.0.0.1:8085/callback", query.Get("redirect_uri"))
+	assert.Equal(t, oidc.ResponseTypeCode, query.Get("response_type"))
+	assert.Equal(t, "openid email profile", query.Get("scope"))
+	assert.NotEmpty(t, query.Get("state"))
+}
+
 func TestAuthorizationScopes(t *testing.T) {
 	assert.Equal(t,
 		[]string{oidc.ScopeOpenID, oidc.ScopeEmail, oidc.ScopeProfile},

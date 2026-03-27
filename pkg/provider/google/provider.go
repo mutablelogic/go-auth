@@ -80,9 +80,6 @@ func (p *Provider) BeginAuthorization(ctx context.Context, req providerpkg.Autho
 	if p == nil {
 		return nil, fmt.Errorf("provider is required")
 	}
-	if strings.TrimSpace(req.ClientID) == "" {
-		return nil, fmt.Errorf("client_id is required")
-	}
 	if strings.TrimSpace(req.RedirectURL) == "" {
 		return nil, fmt.Errorf("redirect_url is required")
 	}

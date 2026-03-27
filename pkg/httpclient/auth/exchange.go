@@ -48,12 +48,11 @@ func (c *Client) ExchangeCode(ctx context.Context, flow *oidc.AuthorizationCodeF
 }
 
 // OAuth2ConfigForFlow returns an oauth2.Config derived from the authorization flow.
+// Some server-side provider exchanges do not require a client_id because the
+// authorization server resolves the provider from other request fields.
 func OAuth2ConfigForFlow(flow *oidc.AuthorizationCodeFlow, clientSecret string) (*oauth2.Config, error) {
 	if flow == nil {
 		return nil, fmt.Errorf("authorization flow is required")
-	}
-	if strings.TrimSpace(flow.ClientID) == "" {
-		return nil, fmt.Errorf("client ID is required")
 	}
 	if strings.TrimSpace(flow.RedirectURL) == "" {
 		return nil, fmt.Errorf("redirect URL is required")

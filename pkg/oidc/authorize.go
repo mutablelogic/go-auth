@@ -48,15 +48,14 @@ var DefaultOIDCAuthorizationScopes = []string{ScopeOpenID, ScopeEmail, ScopeProf
 
 // NewAuthorizationCodeFlow generates state and PKCE data needed to begin an
 // interactive OAuth2/OIDC authorization code flow using the supplied discovery
-// document. A nonce is added only for OIDC-capable configurations.
+// document. A nonce is added only for OIDC-capable configurations. clientID may
+// be empty for provider-routed server-side exchanges where the server holds the
+// upstream client credentials.
 func NewAuthorizationCodeFlow(config BaseConfiguration, clientID, redirectURL string, scopes ...string) (*AuthorizationCodeFlow, error) {
 	clientID = strings.TrimSpace(clientID)
 	redirectURL = strings.TrimSpace(redirectURL)
 	if strings.TrimSpace(config.AuthorizationEndpoint) == "" {
 		return nil, fmt.Errorf("authorization endpoint is required")
-	}
-	if clientID == "" {
-		return nil, fmt.Errorf("client ID is required")
 	}
 	if redirectURL == "" {
 		return nil, fmt.Errorf("redirect URL is required")
@@ -163,7 +162,9 @@ func OAuthAuthorizationScopes(config OAuthConfiguration, scopes ...string) []str
 // URL returns the authorization URL for the flow.
 func (flow AuthorizationCodeFlow) URL() (string, error) {
 	values := url.Values{}
-	values.Set("client_id", flow.ClientID)
+	if clientID := strings.TrimSpace(flow.ClientID); clientID != "" {
+		values.Set("client_id", clientID)
+	}
 	values.Set("redirect_uri", flow.RedirectURL)
 	values.Set("response_type", flow.ResponseType)
 	values.Set("state", flow.State)

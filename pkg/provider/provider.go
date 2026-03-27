@@ -36,7 +36,6 @@ type Provider interface {
 // TYPES
 
 type AuthorizationRequest struct {
-	ClientID            string
 	RedirectURL         string
 	ProviderURL         string
 	State               string

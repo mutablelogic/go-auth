@@ -57,7 +57,7 @@ func (cmd *LoginCommand) Run(ctx server.Cmd) error {
 		if err != nil {
 			return err
 		}
-		flow, err := oidc.NewAuthorizationCodeFlow(flowConfig, "xxx", defaultRedirectURL, oidc.DefaultOIDCAuthorizationScopes...)
+		flow, err := oidc.NewAuthorizationCodeFlow(flowConfig, strings.TrimSpace(config[cmd.Provider].ClientID), defaultRedirectURL, oidc.DefaultOIDCAuthorizationScopes...)
 		if err != nil {
 			return err
 		}
