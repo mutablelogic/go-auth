@@ -46,7 +46,6 @@ type TokenResponse struct {
 type PublicClientConfiguration struct {
 	Issuer   string `json:"issuer"`
 	ClientID string `json:"client_id,omitempty"`
-	Provider string `json:"provider"`
 }
 
 // PublicClientConfigurations contains shareable client configuration keyed by
@@ -68,7 +67,6 @@ type ClientConfigurations map[string]ClientConfiguration
 // GLOBALS
 
 const (
-	ProviderOAuth       = "oauth"
 	OAuthClientKeyLocal = "local"
 )
 

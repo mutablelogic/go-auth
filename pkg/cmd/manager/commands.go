@@ -4,7 +4,8 @@ package manager
 // TYPES
 
 type ManagerCommands struct {
-	Login LoginCommand `cmd:"" help:"Login to a provider and save the resulting token for future use." group:"USER MANAGER"`
+	Providers ProvidersCommand `cmd:"" help:"Print the configured identity providers." group:"USER MANAGER"`
+	Login     LoginCommand     `cmd:"" help:"Login to a provider." group:"USER MANAGER"`
 	UserCommands
 	UserGroupCommands
 	GroupCommands

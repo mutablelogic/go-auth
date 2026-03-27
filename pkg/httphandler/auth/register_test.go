@@ -50,7 +50,7 @@ func TestRegisterAuthHandlers(t *testing.T) {
 
 		err := RegisterAuthHandlers(mgr, router)
 		require.NoError(err)
-		require.Len(router.routes, 7)
+		require.Len(router.routes, 8)
 
 		paths := make([]string, 0, len(router.routes))
 		for _, route := range router.routes {
@@ -67,6 +67,7 @@ func TestRegisterAuthHandlers(t *testing.T) {
 		assert.Contains(paths, oidc.ConfigPath)
 		assert.Contains(paths, oidc.ProtectedResourcePath)
 		assert.Contains(paths, oidc.JWKSPath)
+		assert.Contains(paths, "auth/provider/local")
 	})
 
 	t.Run("ProtectsUserInfoAlways", func(t *testing.T) {

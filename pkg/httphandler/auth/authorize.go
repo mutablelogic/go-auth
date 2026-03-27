@@ -6,17 +6,15 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
-	"time"
 
 	// Packages
 	coreoidc "github.com/coreos/go-oidc/v3/oidc"
 	manager "github.com/djthorpe/go-auth/pkg/manager"
 	oidc "github.com/djthorpe/go-auth/pkg/oidc"
+	providerpkg "github.com/djthorpe/go-auth/pkg/provider"
 	schema "github.com/djthorpe/go-auth/schema"
-	jwt "github.com/golang-jwt/jwt/v5"
 	httpresponse "github.com/mutablelogic/go-server/pkg/httpresponse"
 	openapi "github.com/mutablelogic/go-server/pkg/openapi/schema"
-	types "github.com/mutablelogic/go-server/pkg/types"
 	oauth2 "golang.org/x/oauth2"
 )
 
@@ -67,8 +65,14 @@ func authorize(ctx context.Context, manager *manager.Manager, w http.ResponseWri
 	if state == "" {
 		return httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest).With("state is required"))
 	}
-	if providerName == "" || providerName == schema.OAuthClientKeyLocal {
-		return authorizeLocal(manager, w, r, clientID, redirectURL, state)
+	if providerName == "" {
+		if provider, err := manager.Provider(schema.OAuthClientKeyLocal); err == nil {
+			return authorizeRegisteredProvider(ctx, manager, provider, w, r, clientID, redirectURL, state)
+		}
+	} else if provider, err := manager.Provider(providerName); err == nil {
+		return authorizeRegisteredProvider(ctx, manager, provider, w, r, clientID, redirectURL, state)
+	} else if providerName == schema.OAuthClientKeyLocal {
+		return httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest).Withf("provider %q is not configured", providerName))
 	}
 
 	// Get the provider configuration
@@ -101,75 +105,54 @@ func authorize(ctx context.Context, manager *manager.Manager, w http.ResponseWri
 	return nil
 }
 
-func authorizeLocal(manager *manager.Manager, w http.ResponseWriter, r *http.Request, clientID, redirectURL, state string) error {
-	code, err := issueLocalAuthorizationCode(manager, r, clientID, redirectURL)
+func authorizeRegisteredProvider(ctx context.Context, manager *manager.Manager, provider providerpkg.Provider, w http.ResponseWriter, r *http.Request, clientID, redirectURL, state string) error {
+	if provider == nil {
+		return httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest).With("provider is required"))
+	}
+	handler, _ := provider.HTTPHandler()
+	if handler == nil {
+		return httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest).Withf("provider %q has no browser authorization handler", provider.Key()))
+	}
+	providerURL, err := manager.ProviderPath(provider.Key())
 	if err != nil {
 		return httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest).With(err))
 	}
-	uri, err := url.Parse(redirectURL)
+	providerURL = providerAuthorizationPath(r, providerURL)
+	response, err := provider.BeginAuthorization(ctx, providerpkg.AuthorizationRequest{
+		ClientID:            clientID,
+		RedirectURL:         redirectURL,
+		ProviderURL:         providerURL,
+		State:               state,
+		Scopes:              authorizeScopes(r),
+		Nonce:               strings.TrimSpace(r.URL.Query().Get("nonce")),
+		CodeChallenge:       strings.TrimSpace(r.URL.Query().Get("code_challenge")),
+		CodeChallengeMethod: strings.TrimSpace(r.URL.Query().Get("code_challenge_method")),
+		LoginHint:           strings.TrimSpace(r.URL.Query().Get("login_hint")),
+	})
 	if err != nil {
 		return httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest).With(err))
 	}
-	query := uri.Query()
-	query.Set("code", code)
-	query.Set("state", state)
-	if scope := strings.TrimSpace(r.URL.Query().Get("scope")); scope != "" {
-		query.Set("scope", scope)
-	}
-	uri.RawQuery = query.Encode()
-	http.Redirect(w, r, uri.String(), http.StatusFound)
+	http.Redirect(w, r, response.RedirectURL, http.StatusFound)
 	return nil
 }
 
-func issueLocalAuthorizationCode(manager *manager.Manager, r *http.Request, clientID, redirectURL string) (string, error) {
-	if manager == nil {
-		return "", fmt.Errorf("manager is required")
+func providerAuthorizationPath(r *http.Request, providerPath string) string {
+	providerPath = strings.TrimSpace(providerPath)
+	if providerPath == "" {
+		return "/"
 	}
-	issuer, err := manager.OIDCIssuer()
+	basePath := "/"
+	if r != nil && r.URL != nil {
+		currentPath := strings.TrimSpace(r.URL.Path)
+		if strings.HasSuffix(currentPath, oidc.AuthorizationPath) {
+			basePath = strings.TrimSuffix(currentPath, oidc.AuthorizationPath)
+		}
+	}
+	uri, err := url.JoinPath(basePath, providerPath)
 	if err != nil {
-		return "", err
+		return "/" + strings.TrimLeft(providerPath, "/")
 	}
-	email, err := localAuthorizationEmail(r)
-	if err != nil {
-		return "", err
-	}
-	claims := jwt.MapClaims{
-		"iss":          issuer,
-		"sub":          email,
-		"aud":          clientID,
-		"email":        email,
-		"typ":          localAuthorizationCodeType,
-		"redirect_uri": redirectURL,
-		"iat":          time.Now().UTC().Unix(),
-		"nbf":          time.Now().UTC().Unix(),
-		"exp":          time.Now().UTC().Add(5 * time.Minute).Unix(),
-	}
-	if nonce := strings.TrimSpace(r.URL.Query().Get("nonce")); nonce != "" {
-		claims["nonce"] = nonce
-	}
-	if challenge := strings.TrimSpace(r.URL.Query().Get("code_challenge")); challenge != "" {
-		claims["code_challenge"] = challenge
-		claims["code_challenge_method"] = strings.TrimSpace(r.URL.Query().Get("code_challenge_method"))
-	}
-	return manager.OIDCSign(claims)
-}
-
-func localAuthorizationEmail(r *http.Request) (string, error) {
-	if r == nil {
-		return localAuthorizationCodeEmail, nil
-	}
-	candidate := strings.TrimSpace(r.URL.Query().Get("login_hint"))
-	if candidate == "" {
-		candidate = strings.TrimSpace(r.URL.Query().Get("email"))
-	}
-	if candidate == "" {
-		return localAuthorizationCodeEmail, nil
-	}
-	var normalized string
-	if !types.IsEmail(candidate, nil, &normalized) {
-		return "", fmt.Errorf("login_hint must be a valid email address")
-	}
-	return strings.ToLower(strings.TrimSpace(normalized)), nil
+	return uri
 }
 
 func authorizeProviderConfig(manager *manager.Manager, provider string) (string, schema.ClientConfiguration, error) {

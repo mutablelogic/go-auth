@@ -66,6 +66,10 @@ func NewAuthN(mgr *manager.Manager) func(http.HandlerFunc) http.HandlerFunc {
 				writeUnauthorized(w, r, mgr, "invalid_token", "user is expired")
 				return
 			}
+			if user.Status != nil && *user.Status != schema.UserStatusActive {
+				writeUnauthorized(w, r, mgr, "invalid_token", "user is not active")
+				return
+			}
 			next(w, r.WithContext(withAuthContext(r.Context(), claims, user, session)))
 		}
 	}

@@ -40,6 +40,11 @@ func (m *Manager) OIDCVerify(token, issuer string) (map[string]any, error) {
 
 // OIDCIssuer returns the canonical issuer for locally signed tokens.
 func (m *Manager) OIDCIssuer() (string, error) {
+	if provider, ok := m.providers[schema.OAuthClientKeyLocal]; ok && provider != nil {
+		if issuer := strings.TrimSpace(provider.PublicConfig().Issuer); issuer != "" {
+			return issuer, nil
+		}
+	}
 	if config, ok := m.oauth[schema.OAuthClientKeyLocal]; ok {
 		if issuer := strings.TrimSpace(config.Issuer); issuer != "" {
 			return issuer, nil

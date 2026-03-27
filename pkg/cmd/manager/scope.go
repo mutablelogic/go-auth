@@ -13,7 +13,7 @@ import (
 // TYPES
 
 type ScopeCommands struct {
-	Scopes ListScopesCommand `cmd:"" name:"scopes" help:"Get Scopes." group:"USERS & GROUPS"`
+	Scopes ListScopesCommand `cmd:"" name:"scopes" help:"Get Scopes." group:"USER MANAGER"`
 }
 
 type ListScopesCommand struct {

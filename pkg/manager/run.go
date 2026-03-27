@@ -7,7 +7,11 @@ import (
 
 // Run periodically prunes stale sessions until the context is cancelled.
 func (m *Manager) Run(ctx context.Context) error {
-	ticker := time.NewTimer(time.Second)
+	interval := m.cleanupint
+	if interval <= 0 {
+		interval = DefaultCleanupInterval
+	}
+	ticker := time.NewTimer(interval)
 	defer ticker.Stop()
 	for {
 		select {

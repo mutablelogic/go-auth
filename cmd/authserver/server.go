@@ -25,6 +25,9 @@ import (
 	errgroup "golang.org/x/sync/errgroup"
 )
 
+///////////////////////////////////////////////////////////////////////////////
+// TYPES
+
 type ServerCommands struct {
 	RunServer RunServer `cmd:"" name:"run" help:"Run server." group:"SERVER"`
 }
@@ -32,8 +35,9 @@ type ServerCommands struct {
 type RunServer struct {
 	cmd.RunServer
 	PostgresFlags
-	CleanupFlags  `embed:"" prefix:"cleanup."`
+	LocalProviderFlags
 	GoogleFlags   `embed:"" prefix:"google."`
+	CleanupFlags  `embed:"" prefix:"cleanup."`
 	NotifyChannel string `name:"notify-channel" help:"PostgreSQL LISTEN/NOTIFY channel for table change streaming. Empty disables change notifications." default:"backend.table_change"`
 	Auth          bool   `name:"auth" help:"Whether to enable authentication for protected endpoints." default:"true" negatable:""`
 	UI            bool   `name:"ui" help:"Whether to serve the embedded web user interface" default:"true" negatable:""`
@@ -159,6 +163,11 @@ func (server *RunServer) WithManager(ctx server.Cmd, fn func(*manager.Manager, s
 		return fmt.Errorf("issuer could not be determined from server configuration")
 	}
 	opts = append(opts, manager.WithOAuthClient(schema.OAuthClientKeyLocal, issuer, "", ""))
+	if provider, err := server.LocalProviderFlags.NewProvider(key, issuer); err != nil {
+		return fmt.Errorf("local provider: %w", err)
+	} else if provider != nil {
+		opts = append(opts, manager.WithProvider(provider))
+	}
 	if clientID, clientSecret := strings.TrimSpace(server.GoogleFlags.ClientID), strings.TrimSpace(server.GoogleFlags.ClientSecret); clientID != "" || clientSecret != "" {
 		opts = append(opts, manager.WithOAuthClient("google", oidc.GoogleIssuer, clientID, clientSecret))
 	}

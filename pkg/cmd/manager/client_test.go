@@ -14,6 +14,7 @@ import (
 
 	// Packages
 	auth "github.com/djthorpe/go-auth/pkg/httpclient/auth"
+	managerclient "github.com/djthorpe/go-auth/pkg/httpclient/manager"
 	clientpkg "github.com/mutablelogic/go-client"
 	assert "github.com/stretchr/testify/assert"
 	require "github.com/stretchr/testify/require"
@@ -259,4 +260,45 @@ func TestAuthTransportRefreshesAfterUnauthorized(t *testing.T) {
 	assert.Equal(server.URL, issuer)
 	assert.Equal("fresh-token", stored.AccessToken)
 	assert.Equal("fresh-refresh", stored.RefreshToken)
+}
+
+func TestWithUnauthenticatedClientSkipsStoredTokenRefresh(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+
+	var refreshCalls int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/config":
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]any{"local": map[string]any{}})
+		case "/auth/code":
+			refreshCalls++
+			w.WriteHeader(http.StatusBadRequest)
+			_ = json.NewEncoder(w).Encode(map[string]any{"code": 400, "reason": "expired"})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	cmd := newFakeCmd(server.URL)
+	store := NewCmdTokenStore(cmd)
+	require.NoError(store.StoreToken(server.URL, server.URL, &oauth2.Token{
+		AccessToken:  "expired-token",
+		RefreshToken: "expired-refresh-token",
+		Expiry:       time.Now().Add(-time.Hour),
+	}))
+
+	err := withUnauthenticatedClient(cmd, func(manager *managerclient.Client, endpoint string) error {
+		config, err := manager.Config(context.Background())
+		if err != nil {
+			return err
+		}
+		assert.Contains(config, "local")
+		assert.Equal(server.URL, endpoint)
+		return nil
+	})
+	require.NoError(err)
+	assert.Equal(0, refreshCalls)
 }

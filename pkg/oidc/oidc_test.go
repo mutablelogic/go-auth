@@ -8,6 +8,7 @@ import (
 	// Packages
 	authcrypto "github.com/djthorpe/go-auth/pkg/crypto"
 	oidc "github.com/djthorpe/go-auth/pkg/oidc"
+	schema "github.com/djthorpe/go-auth/schema"
 	jwt "github.com/golang-jwt/jwt/v5"
 	jwk "github.com/lestrrat-go/jwx/v2/jwk"
 	assert "github.com/stretchr/testify/assert"
@@ -109,11 +110,10 @@ func TestPublicJWKSet(t *testing.T) {
 func TestClientConfigurationPublic(t *testing.T) {
 	assert := assert.New(t)
 
-	config := oidc.ClientConfiguration{
-		PublicClientConfiguration: oidc.PublicClientConfiguration{
+	config := schema.ClientConfiguration{
+		PublicClientConfiguration: schema.PublicClientConfiguration{
 			Issuer:   oidc.GoogleIssuer,
 			ClientID: "google-client-id",
-			Provider: "oauth",
 		},
 		ClientSecret: "google-client-secret",
 	}
@@ -121,7 +121,6 @@ func TestClientConfigurationPublic(t *testing.T) {
 	public := config.Public()
 	assert.Equal(oidc.GoogleIssuer, public.Issuer)
 	assert.Equal("google-client-id", public.ClientID)
-	assert.Equal("oauth", public.Provider)
 }
 
 func TestConfigURL(t *testing.T) {

@@ -80,10 +80,26 @@ func New(ctx context.Context, pool pg.PoolConn, opts ...Opt) (*Manager, error) {
 // AuthConfig returns the shareable upstream provider configuration exposed by
 // /auth/config. The client secret remains server-side.
 func (m *Manager) AuthConfig() (schema.PublicClientConfigurations, error) {
-	if len(m.oauth) == 0 {
-		return nil, auth.ErrNotFound.With("oauth clients are not configured")
+	config := make(schema.PublicClientConfigurations)
+	for key, provider := range m.providers {
+		if provider == nil {
+			continue
+		}
+		config[key] = provider.PublicConfig()
 	}
-	return m.oauth.Public(), nil
+	for key, value := range m.oauth.Public() {
+		if _, exists := config[key]; exists {
+			continue
+		}
+		if key == schema.OAuthClientKeyLocal {
+			continue
+		}
+		config[key] = value
+	}
+	if len(config) == 0 {
+		return nil, auth.ErrNotFound.With("providers are not configured")
+	}
+	return config, nil
 }
 
 ///////////////////////////////////////////////////////////////////////////////

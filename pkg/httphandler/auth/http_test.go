@@ -22,6 +22,7 @@ import (
 	managerpkg "github.com/djthorpe/go-auth/pkg/manager"
 	middleware "github.com/djthorpe/go-auth/pkg/middleware"
 	oidc "github.com/djthorpe/go-auth/pkg/oidc"
+	localprovider "github.com/djthorpe/go-auth/pkg/provider/local"
 	schema "github.com/djthorpe/go-auth/schema"
 	jwt "github.com/golang-jwt/jwt/v5"
 	uuid "github.com/google/uuid"
@@ -175,7 +176,7 @@ func Test_http_001(t *testing.T) {
 		assert := assert.New(t)
 		require := require.New(t)
 
-		mgr, issuer := newHTTPTestManager(t)
+		mgr, _ := newHTTPTestManager(t)
 		_, handler, _ := AuthorizationHandler(mgr)
 		challenge := codeChallengeForVerifier("verifier-123")
 		res := httptest.NewRecorder()
@@ -189,17 +190,32 @@ func Test_http_001(t *testing.T) {
 		require.NotEmpty(location)
 		uri, err := url.Parse(location)
 		require.NoError(err)
-		assert.Equal("127.0.0.1:8085", uri.Host)
-		assert.Equal("/callback", uri.Path)
+		assert.Equal("/auth/provider/local", uri.Path)
+		assert.Equal("local-client", uri.Query().Get("client_id"))
+		assert.Equal("http://127.0.0.1:8085/callback", uri.Query().Get("redirect_uri"))
 		assert.Equal("state-123", uri.Query().Get("state"))
-		code := uri.Query().Get("code")
-		require.NotEmpty(code)
+		assert.Equal(challenge, uri.Query().Get("code_challenge"))
+		assert.Equal("S256", uri.Query().Get("code_challenge_method"))
+		assert.Equal("local.success@example.com", uri.Query().Get("login_hint"))
+	})
 
-		claims, err := mgr.OIDCVerify(code, issuer)
+	t.Run("AuthorizationHandlerPreservesPrefixForLocalProviderRoute", func(t *testing.T) {
+		assert := assert.New(t)
+		require := require.New(t)
+
+		mgr, _ := newHTTPTestManager(t)
+		_, handler, _ := AuthorizationHandler(mgr)
+		res := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "/api/auth/authorize?client_id=local-client&redirect_uri=http%3A%2F%2F127.0.0.1%3A8085%2Fcallback&response_type=code&state=state-123", nil)
+
+		handler(res, req)
+
+		require.Equal(http.StatusFound, res.Code)
+		location := res.Header().Get("Location")
+		require.NotEmpty(location)
+		uri, err := url.Parse(location)
 		require.NoError(err)
-		assert.Equal("local.success@example.com", claims["email"])
-		assert.Equal("local-client", claims["aud"])
-		assert.Equal("http://127.0.0.1:8085/callback", claims["redirect_uri"])
+		assert.Equal("/api/auth/provider/local", uri.Path)
 	})
 
 	t.Run("AuthCodeHandlerLocalAuthorizationCodeGrantSuccess", func(t *testing.T) {
@@ -214,7 +230,19 @@ func Test_http_001(t *testing.T) {
 		authorizeReq.Host = "localhost:8084"
 		authorizeHandler(authorizeRes, authorizeReq)
 		require.Equal(http.StatusFound, authorizeRes.Code)
-		callbackURL, err := url.Parse(authorizeRes.Header().Get("Location"))
+		providerURL, err := url.Parse(authorizeRes.Header().Get("Location"))
+		require.NoError(err)
+		registeredProvider, err := mgr.Provider(schema.OAuthClientKeyLocal)
+		require.NoError(err)
+		providerHandler, spec := registeredProvider.HTTPHandler()
+		require.NotNil(providerHandler)
+		require.NotNil(spec)
+		providerRes := httptest.NewRecorder()
+		providerReq := httptest.NewRequest(http.MethodPost, providerURL.Path, strings.NewReader(providerURL.Query().Encode()))
+		providerReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		providerHandler(providerRes, providerReq)
+		require.Equal(http.StatusFound, providerRes.Code)
+		callbackURL, err := url.Parse(providerRes.Header().Get("Location"))
 		require.NoError(err)
 		code := callbackURL.Query().Get("code")
 		require.NotEmpty(code)
@@ -447,6 +475,35 @@ func Test_http_001(t *testing.T) {
 		assert.Equal("challenge-123", query.Get("code_challenge"))
 		assert.Equal("S256", query.Get("code_challenge_method"))
 		assert.Equal("openid email profile", query.Get("scope"))
+	})
+
+	t.Run("AuthorizationHandlerRejectsLocalWhenProviderNotRegistered", func(t *testing.T) {
+		assert := assert.New(t)
+		require := require.New(t)
+
+		c := conn.Begin(t)
+		defer c.Close()
+
+		key, err := authcrypto.GeneratePrivateKey()
+		require.NoError(err)
+		mgr, err := managerpkg.New(context.Background(), c,
+			managerpkg.WithPrivateKey(key),
+			managerpkg.WithOAuthClient(schema.OAuthClientKeyLocal, "http://localhost:8084/api", "", ""),
+			managerpkg.WithSessionTTL(15*time.Minute),
+		)
+		require.NoError(err)
+
+		_, handler, _ := AuthorizationHandler(mgr)
+		res := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "/auth/authorize?provider=local&client_id=local-client&redirect_uri=http%3A%2F%2F127.0.0.1%3A8085%2Fcallback&response_type=code&state=state-123", nil)
+
+		handler(res, req)
+
+		require.Equal(http.StatusBadRequest, res.Code)
+		var response map[string]any
+		require.NoError(json.Unmarshal(res.Body.Bytes(), &response))
+		reason, _ := response["reason"].(string)
+		assert.Contains(reason, `provider "local" is not configured`)
 	})
 
 	t.Run("AuthorizationHandlerMethodNotAllowed", func(t *testing.T) {
@@ -1153,9 +1210,12 @@ func newHTTPTestManagerWithOpts(t *testing.T, opts ...managerpkg.Opt) (*managerp
 	require.NoError(t, err)
 
 	issuer := "http://localhost:8084/api"
+	localProvider, err := localprovider.New(issuer, key)
+	require.NoError(t, err)
 	managerOpts := append([]managerpkg.Opt{
 		managerpkg.WithPrivateKey(key),
 		managerpkg.WithOAuthClient(schema.OAuthClientKeyLocal, issuer, "", ""),
+		managerpkg.WithProvider(localProvider),
 		managerpkg.WithSessionTTL(15 * time.Minute),
 	}, opts...)
 	mgr, err := managerpkg.New(context.Background(), c, managerOpts...)

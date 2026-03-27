@@ -7,7 +7,7 @@ import (
 	"time"
 
 	// Packages
-
+	providerpkg "github.com/djthorpe/go-auth/pkg/provider"
 	schema "github.com/djthorpe/go-auth/schema"
 )
 
@@ -43,6 +43,7 @@ type opt struct {
 	cleanupint   time.Duration
 	cleanuplimit int
 	oauth        schema.ClientConfigurations
+	providers    map[string]providerpkg.Provider
 	hooks        any
 }
 
@@ -103,10 +104,24 @@ func WithOAuthClient(key, issuer, clientID, clientSecret string) Opt {
 			PublicClientConfiguration: schema.PublicClientConfiguration{
 				Issuer:   issuer,
 				ClientID: clientID,
-				Provider: schema.ProviderOAuth,
 			},
 			ClientSecret: clientSecret,
 		}
+		return nil
+	}
+}
+
+func WithProvider(provider providerpkg.Provider) Opt {
+	return func(o *opt) error {
+		if provider == nil {
+			return fmt.Errorf("provider is required")
+		}
+		if o.providers == nil {
+			o.providers = make(map[string]providerpkg.Provider)
+		} else if _, exists := o.providers[provider.Key()]; exists {
+			return fmt.Errorf("provider key %q already configured", provider.Key())
+		}
+		o.providers[provider.Key()] = provider
 		return nil
 	}
 }

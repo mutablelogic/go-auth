@@ -44,17 +44,17 @@ func TestOIDCMetadataCandidates(t *testing.T) {
 
 	t.Run("PathIssuer", func(t *testing.T) {
 		assert.Equal(t, []string{
+			"https://issuer.example.com/auth/.well-known/openid-configuration",
 			"https://issuer.example.com/.well-known/openid-configuration/auth",
 			"https://issuer.example.com/.well-known/openid-configuration",
-			"https://issuer.example.com/auth/.well-known/openid-configuration",
 		}, oidcMetadataCandidates("https://issuer.example.com/auth/"))
 	})
 
 	t.Run("PathResource", func(t *testing.T) {
 		assert.Equal(t, []string{
+			"https://mcp.atlassian.com/v1/sse/.well-known/openid-configuration",
 			"https://mcp.atlassian.com/.well-known/openid-configuration/v1/sse",
 			"https://mcp.atlassian.com/.well-known/openid-configuration",
-			"https://mcp.atlassian.com/v1/sse/.well-known/openid-configuration",
 		}, oidcMetadataCandidates("https://mcp.atlassian.com/v1/sse"))
 	})
 
@@ -72,17 +72,17 @@ func TestOAuthMetadataCandidates(t *testing.T) {
 
 	t.Run("PathIssuer", func(t *testing.T) {
 		assert.Equal(t, []string{
+			"https://issuer.example.com/auth/.well-known/oauth-authorization-server",
 			"https://issuer.example.com/.well-known/oauth-authorization-server/auth",
 			"https://issuer.example.com/.well-known/oauth-authorization-server",
-			"https://issuer.example.com/auth/.well-known/oauth-authorization-server",
 		}, oauthMetadataCandidates("https://issuer.example.com/auth/"))
 	})
 
 	t.Run("PathResource", func(t *testing.T) {
 		assert.Equal(t, []string{
+			"https://mcp.atlassian.com/v1/sse/.well-known/oauth-authorization-server",
 			"https://mcp.atlassian.com/.well-known/oauth-authorization-server/v1/sse",
 			"https://mcp.atlassian.com/.well-known/oauth-authorization-server",
-			"https://mcp.atlassian.com/v1/sse/.well-known/oauth-authorization-server",
 		}, oauthMetadataCandidates("https://mcp.atlassian.com/v1/sse"))
 	})
 

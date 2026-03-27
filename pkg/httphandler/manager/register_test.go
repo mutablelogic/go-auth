@@ -10,7 +10,7 @@ import (
 	// Packages
 	authcrypto "github.com/djthorpe/go-auth/pkg/crypto"
 	managerpkg "github.com/djthorpe/go-auth/pkg/manager"
-	oidc "github.com/djthorpe/go-auth/pkg/oidc"
+	schema "github.com/djthorpe/go-auth/schema"
 	test "github.com/mutablelogic/go-pg/pkg/test"
 	httprouter "github.com/mutablelogic/go-server/pkg/httprouter"
 	openapi "github.com/mutablelogic/go-server/pkg/openapi/schema"
@@ -68,7 +68,7 @@ func TestRegisterManagerHandlers(t *testing.T) {
 
 		err := RegisterManagerHandlers(mgr, router, false)
 		require.NoError(err)
-		require.Len(router.routes, 7)
+		require.Len(router.routes, 8)
 
 		paths := make([]string, 0, len(router.routes))
 		for _, route := range router.routes {
@@ -78,6 +78,7 @@ func TestRegisterManagerHandlers(t *testing.T) {
 			assert.True(route.middleware)
 		}
 
+		assert.Contains(paths, "config")
 		assert.Contains(paths, "changes")
 		assert.Contains(paths, "group")
 		assert.Contains(paths, "group/{group}")
@@ -163,7 +164,7 @@ func newHTTPTestManager(t *testing.T) *managerpkg.Manager {
 
 	managerOpts := []managerpkg.Opt{
 		managerpkg.WithPrivateKey(key),
-		managerpkg.WithOAuthClient(oidc.OAuthClientKeyLocal, "http://localhost:8084/api", "", ""),
+		managerpkg.WithOAuthClient(schema.OAuthClientKeyLocal, "http://localhost:8084/api", "", ""),
 		managerpkg.WithSessionTTL(15 * time.Minute),
 	}
 	mgr, err := managerpkg.New(context.Background(), c, managerOpts...)

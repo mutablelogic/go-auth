@@ -16,8 +16,10 @@ import (
 
 type authTransport struct {
 	http.RoundTripper
-	tokens *TokenSource
+	tokens *auth.TokenSource
 }
+
+const managerRefreshClientID = "manager"
 
 ///////////////////////////////////////////////////////////////////////////////
 // LIFECYCLE
@@ -28,7 +30,7 @@ func newAuthTransport(parent http.RoundTripper, ctx server.Cmd, endpoint string,
 	}
 	return &authTransport{
 		RoundTripper: parent,
-		tokens:       NewTokenSource(NewCmdTokenStore(ctx), endpoint, authClient),
+		tokens:       authClient.NewTokenSource(NewCmdTokenStore(ctx), managerRefreshClientID),
 	}
 }
 

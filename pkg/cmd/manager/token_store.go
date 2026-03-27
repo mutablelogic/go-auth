@@ -7,17 +7,10 @@ import (
 	"strings"
 
 	// Packages
+	auth "github.com/djthorpe/go-auth/pkg/httpclient/auth"
 	server "github.com/mutablelogic/go-server"
 	oauth2 "golang.org/x/oauth2"
 )
-
-///////////////////////////////////////////////////////////////////////////////
-// INTERFACES
-
-type TokenStore interface {
-	StoreToken(endpoint, issuer string, token *oauth2.Token) error
-	Token(endpoint string) (*oauth2.Token, string, error)
-}
 
 ///////////////////////////////////////////////////////////////////////////////
 // TYPES
@@ -25,6 +18,8 @@ type TokenStore interface {
 type CmdTokenStore struct {
 	ctx server.Cmd
 }
+
+var _ auth.TokenStore = (*CmdTokenStore)(nil)
 
 ///////////////////////////////////////////////////////////////////////////////
 // GLOBALS

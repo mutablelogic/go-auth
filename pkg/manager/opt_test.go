@@ -1,15 +1,27 @@
 package manager
 
 import (
+	"context"
 	"testing"
 	"time"
 
 	// Packages
 	authcrypto "github.com/djthorpe/go-auth/pkg/crypto"
+	providerpkg "github.com/djthorpe/go-auth/pkg/provider"
+	localprovider "github.com/djthorpe/go-auth/pkg/provider/local"
 	schema "github.com/djthorpe/go-auth/schema"
 	assert "github.com/stretchr/testify/assert"
 	require "github.com/stretchr/testify/require"
 )
+
+func testLocalProvider(t *testing.T) providerpkg.Provider {
+	t.Helper()
+	key, err := authcrypto.GeneratePrivateKey()
+	require.NoError(t, err)
+	provider, err := localprovider.New("https://issuer.example.test/api", key)
+	require.NoError(t, err)
+	return provider
+}
 
 func Test_opt_001(t *testing.T) {
 	t.Run("ApplySkipsNil", func(t *testing.T) {
@@ -29,7 +41,6 @@ func Test_opt_001(t *testing.T) {
 		assert.Equal("google-client-id", config.ClientID)
 		assert.Equal("google-client-secret", config.ClientSecret)
 		assert.Equal("https://accounts.google.com", config.Issuer)
-		assert.Equal(schema.ProviderOAuth, config.Provider)
 		assert.EqualError(WithOAuthClient("", "https://accounts.google.com", "google-client-id", "google-client-secret")(options), "oauth key cannot be empty")
 		assert.EqualError(WithOAuthClient("google", "", "google-client-id", "google-client-secret")(options), "oauth issuer cannot be empty")
 		assert.EqualError(WithOAuthClient("google", "https://accounts.google.com", "other-client-id", "other-client-secret")(options), "oauth key \"google\" already configured")
@@ -38,6 +49,31 @@ func Test_opt_001(t *testing.T) {
 		assert.True(ok)
 		assert.Empty(local.ClientID)
 		assert.Empty(local.ClientSecret)
+	})
+
+	t.Run("WithProvider", func(t *testing.T) {
+		assert := assert.New(t)
+		require := require.New(t)
+
+		options := new(opt)
+		provider := testLocalProvider(t)
+		require.NoError(WithProvider(provider)(options))
+
+		provider, ok := options.providers[schema.OAuthClientKeyLocal]
+		require.True(ok)
+		assert.Equal(schema.OAuthClientKeyLocal, provider.Key())
+
+		resp, err := provider.BeginAuthorization(context.Background(), providerpkg.AuthorizationRequest{
+			ClientID:    "manager",
+			RedirectURL: "http://127.0.0.1:8085/callback",
+			ProviderURL: "/auth/provider/local",
+			State:       "state-123",
+		})
+		require.NoError(err)
+		assert.Contains(resp.RedirectURL, "/auth/provider/local")
+
+		assert.EqualError(WithProvider(provider)(options), `provider key "local" already configured`)
+		assert.EqualError(WithProvider(nil)(options), "provider is required")
 	})
 
 	t.Run("WithSessionTTL", func(t *testing.T) {

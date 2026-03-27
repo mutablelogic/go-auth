@@ -29,7 +29,7 @@ type LoginCommand struct {
 // COMMANDS
 
 func (cmd *LoginCommand) Run(ctx server.Cmd) error {
-	return WithClient(ctx, func(manager *manager.Client, endpoint string) error {
+	return withUnauthenticatedClient(ctx, func(manager *manager.Client, endpoint string) error {
 		// Get the provider configuration to determine which provider to login to
 		config, err := manager.Config(ctx.Context())
 		if err != nil {

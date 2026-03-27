@@ -40,6 +40,9 @@ func RegisterAuthHandlers(manager *managerpkg.Manager, router server.HTTPRouter)
 	register(ConfigHandler(manager))
 	register(ProtectedResourceHandler(manager))
 	register(JWKSHandler(manager))
+	for _, route := range manager.HTTPHandlers() {
+		register(route.Path, route.Handler, route.Spec)
+	}
 
 	return result
 }

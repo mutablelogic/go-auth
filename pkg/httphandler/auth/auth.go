@@ -2,8 +2,6 @@ package auth
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/base64"
 	"fmt"
 	"net/http"
 	"strings"
@@ -13,22 +11,17 @@ import (
 	coreoidc "github.com/coreos/go-oidc/v3/oidc"
 	managerpkg "github.com/djthorpe/go-auth/pkg/manager"
 	oidc "github.com/djthorpe/go-auth/pkg/oidc"
+	providerpkg "github.com/djthorpe/go-auth/pkg/provider"
 	schema "github.com/djthorpe/go-auth/schema"
 	jwt "github.com/golang-jwt/jwt/v5"
 	uuid "github.com/google/uuid"
 	httprequest "github.com/mutablelogic/go-server/pkg/httprequest"
 	httpresponse "github.com/mutablelogic/go-server/pkg/httpresponse"
-	types "github.com/mutablelogic/go-server/pkg/types"
 	oauth2 "golang.org/x/oauth2"
 )
 
 ///////////////////////////////////////////////////////////////////////////////
 // PUBLIC METHODS
-
-const (
-	localAuthorizationCodeType  = "authorization_code"
-	localAuthorizationCodeEmail = "local@example.com"
-)
 
 ///////////////////////////////////////////////////////////////////////////////
 // PRIVATE METHODS
@@ -124,8 +117,10 @@ func exchangeLocalOAuthToken(ctx context.Context, mgr *managerpkg.Manager, w htt
 		if err := req.Validate(); err != nil {
 			return httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest).With(err))
 		}
-		if req.Provider == schema.OAuthClientKeyLocal {
-			return exchangeLocalAuthorizationCodeGrant(ctx, mgr, w, r, &req)
+		if provider, err := mgr.Provider(req.Provider); err == nil {
+			return exchangeRegisteredAuthorizationCodeGrant(ctx, mgr, provider, w, r, &req)
+		} else if req.Provider == schema.OAuthClientKeyLocal {
+			return httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest).Withf("provider %q is not configured", req.Provider))
 		}
 		return exchangeProviderAuthorizationCodeGrant(ctx, mgr, w, r, &req)
 	case "refresh_token":
@@ -135,45 +130,30 @@ func exchangeLocalOAuthToken(ctx context.Context, mgr *managerpkg.Manager, w htt
 	}
 }
 
-func exchangeLocalAuthorizationCodeGrant(ctx context.Context, mgr *managerpkg.Manager, w http.ResponseWriter, r *http.Request, req *schema.AuthorizationCodeRequest) error {
-	config, err := mgr.OIDCConfig(r)
-	if err != nil {
-		return httpresponse.Error(w, httpresponse.Err(http.StatusInternalServerError).With(err))
-	}
-	clientID := strings.TrimSpace(r.PostForm.Get("client_id"))
-	if clientID == "" {
-		return httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest).With("client_id is required"))
-	}
+func exchangeRegisteredAuthorizationCodeGrant(ctx context.Context, mgr *managerpkg.Manager, provider providerpkg.Provider, w http.ResponseWriter, r *http.Request, req *schema.AuthorizationCodeRequest) error {
 	if req == nil {
 		parsed := authorizationCodeRequestFromForm(r.PostForm)
-		parsed.Provider = schema.OAuthClientKeyLocal
 		req = &parsed
 	}
 	if err := req.Validate(); err != nil {
 		return httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest).With(err))
 	}
-	claims, err := mgr.OIDCVerify(req.Code, config.Issuer)
+	if provider == nil {
+		return httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest).With("provider is required"))
+	}
+	identity, err := provider.ExchangeAuthorizationCode(ctx, providerpkg.ExchangeRequest{
+		Code:         req.Code,
+		RedirectURL:  req.RedirectURL,
+		CodeVerifier: req.CodeVerifier,
+		Nonce:        req.Nonce,
+	})
 	if err != nil {
 		return httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest).With(err))
 	}
-	if err := validateLocalAuthorizationCodeClaims(claims, clientID, req.RedirectURL, req.CodeVerifier); err != nil {
-		return httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest).With(err))
+	if identity == nil {
+		return httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest).Withf("provider %q returned no identity", req.Provider))
 	}
-	email, err := localAuthorizationEmailFromClaims(claims)
-	if err != nil {
-		return httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest).With(err))
-	}
-	identity := schema.IdentityInsert{
-		IdentityKey: schema.IdentityKey{Provider: schema.OAuthClientKeyLocal, Sub: email},
-		IdentityMeta: schema.IdentityMeta{
-			Email: email,
-			Claims: map[string]any{
-				"email": email,
-				"name":  localAuthorizationName(email),
-			},
-		},
-	}
-	return issueOAuthIdentityResponse(ctx, mgr, w, r, identity, req.Meta)
+	return issueOAuthIdentityResponse(ctx, mgr, w, r, *identity, req.Meta)
 }
 
 func exchangeProviderAuthorizationCodeGrant(ctx context.Context, mgr *managerpkg.Manager, w http.ResponseWriter, r *http.Request, req *schema.AuthorizationCodeRequest) error {
@@ -243,69 +223,6 @@ func firstFormValue(values map[string][]string, key string) string {
 		return ""
 	}
 	return values[key][0]
-}
-
-func validateLocalAuthorizationCodeClaims(claims map[string]any, clientID, redirectURL, codeVerifier string) error {
-	if value, _ := claims["typ"].(string); strings.TrimSpace(value) != localAuthorizationCodeType {
-		return fmt.Errorf("invalid local authorization code")
-	}
-	if audience, _ := claims["aud"].(string); strings.TrimSpace(audience) != clientID {
-		return fmt.Errorf("authorization code client_id mismatch")
-	}
-	if value, _ := claims["redirect_uri"].(string); strings.TrimSpace(value) != redirectURL {
-		return fmt.Errorf("authorization code redirect_uri mismatch")
-	}
-	challenge, _ := claims["code_challenge"].(string)
-	challenge = strings.TrimSpace(challenge)
-	if challenge == "" {
-		return nil
-	}
-	if codeVerifier == "" {
-		return fmt.Errorf("code_verifier is required")
-	}
-	method, _ := claims["code_challenge_method"].(string)
-	switch strings.TrimSpace(method) {
-	case "", oidc.CodeChallengeMethodPlain:
-		if codeVerifier != challenge {
-			return fmt.Errorf("authorization code verifier mismatch")
-		}
-	case oidc.CodeChallengeMethodS256:
-		sum := sha256.Sum256([]byte(codeVerifier))
-		if base64.RawURLEncoding.EncodeToString(sum[:]) != challenge {
-			return fmt.Errorf("authorization code verifier mismatch")
-		}
-	default:
-		return fmt.Errorf("unsupported code_challenge_method %q", method)
-	}
-	return nil
-}
-
-func localAuthorizationEmailFromClaims(claims map[string]any) (string, error) {
-	email, _ := claims["email"].(string)
-	email = strings.TrimSpace(email)
-	if email == "" {
-		email, _ = claims["sub"].(string)
-		email = strings.TrimSpace(email)
-	}
-	if email == "" {
-		return "", fmt.Errorf("authorization code missing email")
-	}
-	var normalized string
-	if !types.IsEmail(email, nil, &normalized) {
-		return "", fmt.Errorf("authorization code email is invalid")
-	}
-	return strings.ToLower(strings.TrimSpace(normalized)), nil
-}
-
-func localAuthorizationName(email string) string {
-	email = strings.TrimSpace(email)
-	if email == "" {
-		return "Local User"
-	}
-	if local, _, ok := strings.Cut(email, "@"); ok && strings.TrimSpace(local) != "" {
-		return local
-	}
-	return "Local User"
 }
 
 func localOAuthTokenResponse(token string, expiresAt time.Time) map[string]any {
