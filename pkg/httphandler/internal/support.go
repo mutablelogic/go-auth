@@ -42,6 +42,8 @@ func HTTPError(err error) error {
 		return httpresponse.ErrInternalError.With(err)
 	case rootauth.ErrInvalidProvider:
 		return httpresponse.ErrNotAuthorized.With(err)
+	case rootauth.ErrForbidden:
+		return httpresponse.ErrForbidden.With(err)
 	default:
 		return httpresponse.ErrInternalError.With(err)
 	}

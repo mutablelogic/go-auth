@@ -38,8 +38,8 @@ type Register interface {
 // RegisterAuthHandlers registers auth handlers with the provided router.
 func RegisterAuthHandlers(manager *managerpkg.Manager, router server.HTTPRouter) error {
 	var result error
-	authenticated := middleware.NewMiddleware(manager)
 
+	authenticated := middleware.AuthN(manager)
 	register := func(path string, handler http.HandlerFunc, spec *openapi.PathItem) {
 		result = errors.Join(result, router.(Register).RegisterFunc(path, handler, true, spec))
 	}
