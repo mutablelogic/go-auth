@@ -54,6 +54,15 @@ CREATE TABLE IF NOT EXISTS ${"schema"}.group (
 -- auth.group.constraint
 DO $$ BEGIN
     ALTER TABLE ${"schema"}."group" DROP CONSTRAINT IF EXISTS groups_name_identifier;
+    INSERT INTO ${"schema"}."group" (id, description, enabled, scopes, meta)
+    VALUES (
+        ${'system_group'},
+        'Server-managed group. Members have full access to the management API and CLI.',
+        true,
+        '{}'::text[],
+        '{}'::jsonb
+    )
+    ON CONFLICT (id) DO NOTHING;
     ALTER TABLE ${"schema"}."group" ADD CONSTRAINT groups_name_identifier
         CHECK (id ~ '^([a-zA-Z][a-zA-Z0-9_-]{0,63}|\$[a-zA-Z][a-zA-Z0-9_]*\$)$');
 END $$;
@@ -64,17 +73,6 @@ CREATE TABLE IF NOT EXISTS ${"schema"}.user_group (
     "group" TEXT   NOT NULL REFERENCES ${"schema"}.group (id) ON DELETE CASCADE,
     CONSTRAINT user_group_pkey PRIMARY KEY ("user", "group")
 );
-
--- auth.group.seed
-INSERT INTO ${"schema"}."group" (id, description, enabled, scopes, meta)
-VALUES (
-    '$admin$',
-    'Server-managed group. Members have full access to the management API and CLI.',
-    true,
-    '{}'::text[],
-    '{}'::jsonb
-)
-ON CONFLICT (id) DO NOTHING;
 
 -- auth.notify.function
 CREATE OR REPLACE FUNCTION ${"schema"}.notify_table()

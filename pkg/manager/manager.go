@@ -76,7 +76,7 @@ func New(ctx context.Context, pool pg.PoolConn, opts ...Opt) (*Manager, error) {
 		attribute.String("schema", self.schema),
 		attribute.Bool("notifications", self.channel != ""),
 	)
-	if err := bootstrap(bootstrapCtx, pool, self.schema, self.channel != ""); err != nil {
+	if err := bootstrap(bootstrapCtx, pool.With("system_group", schema.GroupSysAdmin), self.schema, self.channel != ""); err != nil {
 		endBootstrapSpan(err)
 		return nil, err
 	} else {
