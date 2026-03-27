@@ -32,7 +32,7 @@ import (
 // TYPES
 
 type OpenAPICommands struct {
-	OpenAPI OpenAPICommand `cmd:"" name:"openapi" help:"Show OpenAPI documentation in a browser, or output the spec as JSON or YAML." group:"USER MANAGER"`
+	OpenAPI OpenAPICommand `cmd:"" name:"openapi" help:"Show OpenAPI documentation in a browser, or output the spec as JSON or YAML." group:"SERVER"`
 }
 
 type OpenAPICommand struct {

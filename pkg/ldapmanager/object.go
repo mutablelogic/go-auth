@@ -19,6 +19,7 @@ import (
 	"errors"
 	"io"
 	"net/url"
+	"strings"
 
 	// Packages
 	schema "github.com/djthorpe/go-auth/schema/ldap"
@@ -170,6 +171,10 @@ func (manager *Manager) Create(ctx context.Context, dn string, attr url.Values) 
 	if manager.conn == nil {
 		return nil, httpresponse.ErrGatewayError.With("Not connected")
 	}
+	attrs, err := (schema.ObjectPutRequest{Attrs: attr}).ValidateCreate()
+	if err != nil {
+		return nil, err
+	}
 
 	// Make absolute DN
 	absdn, err := manager.absdn(dn, manager.dn)
@@ -179,7 +184,7 @@ func (manager *Manager) Create(ctx context.Context, dn string, attr url.Values) 
 
 	// Create the request
 	addReq := ldap.NewAddRequest(absdn.String(), []ldap.Control{})
-	for key, values := range attr {
+	for key, values := range attrs {
 		if len(values) > 0 {
 			addReq.Attribute(key, values)
 		}
@@ -257,41 +262,47 @@ func (manager *Manager) Bind(ctx context.Context, dn, password string) (*schema.
 }
 
 // Change a password for a user. If the new password is empty, then the password is reset
-// to a new random password and returned. The old password is required for the change if
-// the ldap connection is not bound to the admin user.
-func (manager *Manager) ChangePassword(ctx context.Context, dn, old string, new *string) (*schema.Object, error) {
+// to a new random password and returned. The old password may be omitted when the
+// directory permits administrative password resets.
+func (manager *Manager) ChangePassword(ctx context.Context, dn, old string, new *string) (*schema.Object, *string, error) {
 	manager.Lock()
 	defer manager.Unlock()
 
 	// Check connection
 	if manager.conn == nil {
-		return nil, httpresponse.ErrGatewayError.With("Not connected")
+		return nil, nil, httpresponse.ErrGatewayError.With("Not connected")
 	}
-
-	// New password is required
-	if new == nil {
-		return nil, httpresponse.ErrBadRequest.With("New password parameter is required")
-	}
+	old = strings.TrimSpace(old)
 
 	// Make absolute DN
 	absdn, err := manager.absdn(dn, manager.dn)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
+	}
+	requestedNew := ""
+	if new != nil {
+		requestedNew = strings.TrimSpace(*new)
 	}
 
 	// Modify the password
-	if result, err := manager.conn.PasswordModify(ldap.NewPasswordModifyRequest(absdn.String(), old, types.PtrString(new))); err != nil {
-		return nil, ldaperr(err)
-	} else if new != nil {
-		*new = result.GeneratedPassword
+	var generated *string
+	if result, err := manager.conn.PasswordModify(ldap.NewPasswordModifyRequest(absdn.String(), old, requestedNew)); err != nil {
+		return nil, nil, ldaperr(err)
+	} else if requestedNew == "" && strings.TrimSpace(result.GeneratedPassword) != "" {
+		generated = types.Ptr(result.GeneratedPassword)
 	}
 
 	// Return the user
-	return manager.get(ctx, ldap.ScopeBaseObject, absdn.String(), "(objectclass=*)")
+	object, err := manager.get(ctx, ldap.ScopeBaseObject, absdn.String(), "(objectclass=*)")
+	if err != nil {
+		return nil, nil, err
+	}
+	return object, generated, nil
 }
 
 // Update attributes for an object. It will replace the attributes where the values is not empty,
-// and delete the attributes where the values is empty. The object is returned after the update.
+// and delete the attributes where the values is empty. If the request changes an RDN attribute,
+// the entry is renamed first and then modified. The object is returned after the update.
 func (manager *Manager) Update(ctx context.Context, dn string, attr url.Values) (*schema.Object, error) {
 	manager.Lock()
 	defer manager.Unlock()
@@ -300,17 +311,34 @@ func (manager *Manager) Update(ctx context.Context, dn string, attr url.Values) 
 	if manager.conn == nil {
 		return nil, httpresponse.ErrGatewayError.With("Not connected")
 	}
+	attrs, err := (schema.ObjectPutRequest{Attrs: attr}).ValidateUpdate()
+	if err != nil {
+		return nil, err
+	}
 
 	// Make absolute DN
 	absdn, err := manager.absdn(dn, manager.dn)
 	if err != nil {
 		return nil, err
 	}
+	currentDN, targetDN, newRDN, rename, err := updateTargetDN(absdn, attrs)
+	if err != nil {
+		return nil, err
+	}
+	if rename {
+		if err := manager.conn.ModifyDN(ldap.NewModifyDNRequest(currentDN, newRDN, true, "")); err != nil {
+			return nil, ldaperr(err)
+		}
+	}
 
 	// Create the request
-	modifyReq := ldap.NewModifyRequest(absdn.String(), []ldap.Control{})
-	for key, values := range attr {
-		modifyReq.Replace(key, values)
+	modifyReq := ldap.NewModifyRequest(targetDN, []ldap.Control{})
+	for key, values := range attrs {
+		if len(values) == 0 {
+			modifyReq.Delete(key, nil)
+		} else {
+			modifyReq.Replace(key, values)
+		}
 	}
 
 	// Make the request
@@ -319,5 +347,56 @@ func (manager *Manager) Update(ctx context.Context, dn string, attr url.Values) 
 	}
 
 	// Return the new object
-	return manager.get(ctx, ldap.ScopeBaseObject, absdn.String(), "(objectclass=*)")
+	return manager.get(ctx, ldap.ScopeBaseObject, targetDN, "(objectclass=*)")
+}
+
+func updateTargetDN(dn *schema.DN, attrs url.Values) (string, string, string, bool, error) {
+	if dn == nil || len(dn.RDNs) == 0 || dn.RDNs[0] == nil || len(dn.RDNs[0].Attributes) == 0 {
+		return "", "", "", false, httpresponse.ErrBadRequest.With("dn is required")
+	}
+
+	currentDN := dn.String()
+	currentRDN := dn.RDNs[0]
+	updatedRDN := &ldap.RelativeDN{Attributes: make([]*ldap.AttributeTypeAndValue, 0, len(currentRDN.Attributes))}
+	rename := false
+
+	for _, attribute := range currentRDN.Attributes {
+		if attribute == nil {
+			continue
+		}
+		value := attribute.Value
+		if values, ok := updateAttributeValues(attrs, attribute.Type); ok {
+			if len(values) == 0 {
+				return "", "", "", false, httpresponse.ErrBadRequest.Withf("naming attribute %q cannot be deleted; use rename", attribute.Type)
+			}
+			value = values[0]
+		}
+		updatedRDN.Attributes = append(updatedRDN.Attributes, &ldap.AttributeTypeAndValue{
+			Type:  attribute.Type,
+			Value: value,
+		})
+		if value != attribute.Value {
+			rename = true
+		}
+	}
+
+	if !rename {
+		return currentDN, currentDN, "", false, nil
+	}
+
+	newRDN := updatedRDN.String()
+	if len(dn.RDNs) == 1 {
+		return currentDN, newRDN, newRDN, true, nil
+	}
+	parent := (&schema.DN{RDNs: append([]*ldap.RelativeDN(nil), dn.RDNs[1:]...)}).String()
+	return currentDN, newRDN + "," + parent, newRDN, true, nil
+}
+
+func updateAttributeValues(attrs url.Values, name string) ([]string, bool) {
+	for key, values := range attrs {
+		if strings.EqualFold(key, name) {
+			return values, true
+		}
+	}
+	return nil, false
 }

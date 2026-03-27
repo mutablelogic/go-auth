@@ -40,6 +40,11 @@ func RegisterHandlers(manager *ldap.Manager, router server.HTTPRouter, authEnabl
 	register := func(path string, handler http.HandlerFunc, spec *openapi.PathItem) {
 		result = errors.Join(result, router.(Register).RegisterFunc(path, handler, true, spec))
 	}
+	register(ClassHandler(manager))
+	register(AttrHandler(manager))
 	register(ObjectHandler(manager))
+	register(ObjectResourceHandler(manager))
+	register(ObjectBindHandler(manager))
+	register(ObjectPasswordHandler(manager))
 	return result
 }

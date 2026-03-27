@@ -236,11 +236,11 @@ func ldapBind(conn *ldap.Conn, user, password string) error {
 
 // Return the LDAP error code
 func ldapErrorCode(err error) uint16 {
-	if err, ok := err.(*ldap.Error); ok {
-		return uint16(err.ResultCode)
-	} else {
-		return 0
+	var ldapErr *ldap.Error
+	if errors.As(err, &ldapErr) {
+		return uint16(ldapErr.ResultCode)
 	}
+	return 0
 }
 
 // Translate LDAP error to HTTP error
@@ -255,6 +255,8 @@ func ldaperr(err error) error {
 	switch code {
 	case ldap.LDAPResultInvalidCredentials:
 		return httpresponse.ErrNotAuthorized.With("Invalid credentials")
+	case ldap.ErrorFilterCompile, ldap.ErrorFilterDecompile, ldap.LDAPResultFilterError, ldap.LDAPResultParamError, ldap.LDAPResultInvalidAttributeSyntax, ldap.LDAPResultObjectClassViolation, ldap.LDAPResultNamingViolation, ldap.LDAPResultUnwillingToPerform:
+		return httpresponse.ErrBadRequest.With(err.Error())
 	case ldap.LDAPResultNoSuchObject:
 		return httpresponse.ErrNotFound.With("No such object")
 	case ldap.LDAPResultEntryAlreadyExists:
@@ -281,100 +283,6 @@ func (manager *Manager) absdn(dn string, base *schema.DN) (*schema.DN, error) {
 }
 
 /*
-
-///////////////////////////////////////////////////////////////////////////////
-// PUBLIC METHODS - OBEJCT CLASSES AND ATTRIBUTES
-
-// Returns object classes
-func (manager *Manager) ListObjectClasses(ctx context.Context) ([]*schema.ObjectClass, error) {
-	manager.Lock()
-	defer manager.Unlock()
-
-	// Check connection
-	if manager.conn == nil {
-		return nil, httpresponse.ErrGatewayError.With("Not connected")
-	}
-
-	// Get the subschema dn from rootDSE
-	root, err := manager.get(ctx, ldap.ScopeBaseObject, "", "(objectclass=*)", schema.AttrSubSchemaDN)
-	if err != nil {
-		return nil, err
-	}
-
-	// Get the subschema dn attribute
-	subschemadn := root.Get(schema.AttrSubSchemaDN)
-	if subschemadn == nil {
-		return nil, httpresponse.ErrNotFound.With(schema.AttrSubSchemaDN, " not found")
-	}
-
-	// List the object classes
-	var result []*schema.ObjectClass
-	if err := manager.list(ctx, ldap.ScopeBaseObject, types.PtrString(subschemadn), "(objectclass=subschema)", 1, func(entry *schema.Object) error {
-		objectClasses := entry.GetAll(schema.AttrObjectClasses)
-		if objectClasses == nil {
-			return httpresponse.ErrInternalError.With(schema.AttrObjectClasses, " not found")
-		}
-
-		// Parse the object classes
-		for _, objectClass := range objectClasses {
-			if objectClass, err := schema.ParseObjectClass(objectClass); err == nil && objectClass != nil {
-				result = append(result, objectClass)
-			}
-		}
-		return nil
-	}, schema.AttrObjectClasses); err != nil {
-		return nil, err
-	}
-
-	// Return success
-	return result, nil
-}
-
-// Returns attribute types
-func (manager *Manager) ListAttributeTypes(ctx context.Context) ([]*schema.AttributeType, error) {
-	manager.Lock()
-	defer manager.Unlock()
-
-	// Check connection
-	if manager.conn == nil {
-		return nil, httpresponse.ErrGatewayError.With("Not connected")
-	}
-
-	// Get the subschema dn from rootDSE
-	root, err := manager.get(ctx, ldap.ScopeBaseObject, "", "(objectclass=*)", schema.AttrSubSchemaDN)
-	if err != nil {
-		return nil, err
-	}
-
-	// Get the subschema dn attribute
-	subschemadn := root.Get(schema.AttrSubSchemaDN)
-	if subschemadn == nil {
-		return nil, httpresponse.ErrNotFound.With(schema.AttrSubSchemaDN, " not found")
-	}
-
-	// List the attribute types
-	var result []*schema.AttributeType
-	if err := manager.list(ctx, ldap.ScopeBaseObject, types.PtrString(subschemadn), "(objectclass=subschema)", 1, func(entry *schema.Object) error {
-		attributeTypes := entry.GetAll(schema.AttrAttributeTypes)
-		if attributeTypes == nil {
-			return httpresponse.ErrInternalError.With(schema.AttrAttributeTypes, " not found")
-		}
-
-		// Parse the object classes
-		for _, attributeType := range attributeTypes {
-			if attributeType, err := schema.ParseAttributeType(attributeType); err == nil && attributeType != nil {
-				result = append(result, attributeType)
-			}
-		}
-		return nil
-	}, schema.AttrAttributeTypes); err != nil {
-		return nil, err
-	}
-
-	// Return success
-	return result, nil
-}
-
 ///////////////////////////////////////////////////////////////////////////////
 // PUBLIC METHODS - USERS AND GROUPS
 

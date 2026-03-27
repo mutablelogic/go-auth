@@ -12,14 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package manager
+package ldap
 
 import (
 	"net/http"
 
 	// Packages
 	auth "github.com/djthorpe/go-auth/pkg/httpclient/auth"
-	manager "github.com/djthorpe/go-auth/pkg/httpclient/manager"
+	ldap "github.com/djthorpe/go-auth/pkg/httpclient/ldap"
 	client "github.com/mutablelogic/go-client"
 	server "github.com/mutablelogic/go-server"
 )
@@ -28,18 +28,18 @@ import (
 // PUBLIC FUNCTIONS
 
 // WithClient returns auth client configured from the global HTTP flags.
-func WithClient(ctx server.Cmd, fn func(*manager.Client, string) error) error {
+func WithClient(ctx server.Cmd, fn func(*ldap.Client, string) error) error {
 	return withClient(ctx, true, fn)
 }
 
-func withUnauthenticatedClient(ctx server.Cmd, fn func(*manager.Client, string) error) error {
+func withUnauthenticatedClient(ctx server.Cmd, fn func(*ldap.Client, string) error) error {
 	return withClient(ctx, false, fn)
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 // PRIVATE FUNCTIONS
 
-func withClient(ctx server.Cmd, authenticated bool, fn func(*manager.Client, string) error) error {
+func withClient(ctx server.Cmd, authenticated bool, fn func(*ldap.Client, string) error) error {
 	endpoint, opts, err := ctx.ClientEndpoint()
 	if err != nil {
 		return err
@@ -53,7 +53,7 @@ func withClient(ctx server.Cmd, authenticated bool, fn func(*manager.Client, str
 			return newAuthTransport(parent, ctx, authClient)
 		}))
 	}
-	client, err := manager.New(endpoint, opts...)
+	client, err := ldap.New(endpoint, opts...)
 	if err != nil {
 		return err
 	}

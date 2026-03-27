@@ -12,36 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package main
-
-import (
-	"fmt"
-	"os"
-
-	// Packages
-	auth "github.com/djthorpe/go-auth/pkg/cmd/auth"
-	ldap "github.com/djthorpe/go-auth/pkg/cmd/ldap"
-	openapi "github.com/djthorpe/go-auth/pkg/cmd/openapi"
-	cmd "github.com/mutablelogic/go-server/pkg/cmd"
-	version "github.com/mutablelogic/go-server/pkg/version"
-)
+package ldap
 
 ///////////////////////////////////////////////////////////////////////////////
 // TYPES
 
-type CLI struct {
-	ldap.LDAPCommands
-	ServerCommands
-	auth.AuthCommands
-	openapi.OpenAPICommands
-}
-
-///////////////////////////////////////////////////////////////////////////////
-// LIFECYCLE
-
-func main() {
-	if err := cmd.Main(CLI{}, "LDAP management", version.Version()); err != nil {
-		fmt.Fprintln(os.Stderr, "Error:", err)
-		os.Exit(-1)
-	}
+type LDAPCommands struct {
+	ClassCommands
+	AttrCommands
+	ObjectCommands
 }

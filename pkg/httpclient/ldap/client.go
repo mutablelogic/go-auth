@@ -12,36 +12,32 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package main
+package ldap
 
 import (
-	"fmt"
-	"os"
-
 	// Packages
-	auth "github.com/djthorpe/go-auth/pkg/cmd/auth"
-	ldap "github.com/djthorpe/go-auth/pkg/cmd/ldap"
-	openapi "github.com/djthorpe/go-auth/pkg/cmd/openapi"
-	cmd "github.com/mutablelogic/go-server/pkg/cmd"
-	version "github.com/mutablelogic/go-server/pkg/version"
+	auth "github.com/djthorpe/go-auth/pkg/httpclient/auth"
+	client "github.com/mutablelogic/go-client"
 )
 
 ///////////////////////////////////////////////////////////////////////////////
 // TYPES
 
-type CLI struct {
-	ldap.LDAPCommands
-	ServerCommands
-	auth.AuthCommands
-	openapi.OpenAPICommands
+// Client is a LDAP HTTP client that wraps the base HTTP client.
+type Client struct {
+	*auth.Client
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 // LIFECYCLE
 
-func main() {
-	if err := cmd.Main(CLI{}, "LDAP management", version.Version()); err != nil {
-		fmt.Fprintln(os.Stderr, "Error:", err)
-		os.Exit(-1)
+// New creates a new LDAP HTTP client with the given base URL and options.
+func New(url string, opts ...client.ClientOpt) (*Client, error) {
+	c := new(Client)
+	if client, err := auth.New(url, opts...); err != nil {
+		return nil, err
+	} else {
+		c.Client = client
 	}
+	return c, nil
 }
