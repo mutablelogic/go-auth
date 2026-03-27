@@ -18,6 +18,7 @@ import (
 	"net/url"
 	"testing"
 
+	// Packages
 	auth "github.com/djthorpe/go-auth"
 	assert "github.com/stretchr/testify/assert"
 	require "github.com/stretchr/testify/require"
