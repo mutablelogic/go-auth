@@ -10,7 +10,7 @@ import (
 	// Packages
 	authcrypto "github.com/djthorpe/go-auth/pkg/crypto"
 	manager "github.com/djthorpe/go-auth/pkg/manager"
-	oidc "github.com/djthorpe/go-auth/pkg/oidc"
+	localprovider "github.com/djthorpe/go-auth/pkg/provider/local"
 	schema "github.com/djthorpe/go-auth/schema"
 	jwt "github.com/golang-jwt/jwt/v5"
 	uuid "github.com/google/uuid"
@@ -142,6 +142,27 @@ func Test_auth_001(t *testing.T) {
 
 		require.Equal(http.StatusInternalServerError, res.Code)
 		assert.Contains(res.Body.String(), "issuer is not configured")
+		assert.Empty(res.Header().Get("WWW-Authenticate"))
+	})
+
+	t.Run("NewMiddlewareSetsAuthenticateHeaderWhenBearerMissing", func(t *testing.T) {
+		assert := assert.New(t)
+		require := require.New(t)
+
+		mgr, issuer := newMiddlewareTestManager(t)
+		handler := NewMiddleware(mgr)(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusNoContent)
+		})
+
+		req := httptest.NewRequest(http.MethodGet, "/", nil)
+		res := httptest.NewRecorder()
+
+		handler(res, req)
+
+		require.Equal(http.StatusUnauthorized, res.Code)
+		assert.Contains(res.Header().Get("WWW-Authenticate"), `Bearer error="invalid_request"`)
+		assert.Contains(res.Header().Get("WWW-Authenticate"), `error_description="missing bearer token"`)
+		assert.Contains(res.Header().Get("WWW-Authenticate"), `resource_metadata="`+issuer+`/.well-known/oauth-protected-resource"`)
 	})
 
 	t.Run("NewMiddlewareAllowsValidTokenAndSetsContext", func(t *testing.T) {
@@ -179,7 +200,7 @@ func Test_auth_001(t *testing.T) {
 		assert := assert.New(t)
 		require := require.New(t)
 
-		mgr, _ := newMiddlewareTestManager(t)
+		mgr, issuer := newMiddlewareTestManager(t)
 		user := &schema.User{ID: schema.UserID(uuid.New()), UserMeta: schema.UserMeta{Name: "Test User", Email: "test@example.com", Status: ptr(schema.UserStatusActive)}}
 		session := &schema.Session{ID: schema.SessionID(uuid.New()), User: user.ID, ExpiresAt: time.Now().Add(15 * time.Minute), CreatedAt: time.Now()}
 		token := mustSignToken(t, mgr, "https://wrong.example.test/api", user, session)
@@ -196,6 +217,9 @@ func Test_auth_001(t *testing.T) {
 
 		require.Equal(http.StatusUnauthorized, res.Code)
 		assert.Contains(res.Body.String(), "issuer")
+		assert.Contains(res.Header().Get("WWW-Authenticate"), `Bearer error="invalid_token"`)
+		assert.Contains(res.Header().Get("WWW-Authenticate"), `error_description=`)
+		assert.Contains(res.Header().Get("WWW-Authenticate"), `resource_metadata="`+issuer+`/.well-known/oauth-protected-resource"`)
 	})
 
 	t.Run("NewMiddlewareRejectsExpiredSession", func(t *testing.T) {
@@ -359,7 +383,9 @@ func newMiddlewareTestManager(t *testing.T) (*manager.Manager, string) {
 	require.NoError(t, err)
 
 	issuer := "http://localhost:8084/api"
-	mgr, err := manager.New(context.Background(), c, manager.WithPrivateKey(key), manager.WithOAuthClient(oidc.OAuthClientKeyLocal, issuer, "", ""))
+	localProvider, err := localprovider.New(issuer, key)
+	require.NoError(t, err)
+	mgr, err := manager.New(context.Background(), c, manager.WithPrivateKey(key), manager.WithProvider(localProvider))
 	require.NoError(t, err)
 	return mgr, issuer
 }

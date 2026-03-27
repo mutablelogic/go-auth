@@ -18,38 +18,60 @@ import (
 ///////////////////////////////////////////////////////////////////////////////
 // TYPES
 
-// Configuration represents the OpenID Connect discovery document.
-type Configuration struct {
+// BaseConfiguration contains the fields shared by OIDC and
+// OAuth authorization server metadata documents.
+type BaseConfiguration struct {
 	Issuer                string   `json:"issuer"`
 	AuthorizationEndpoint string   `json:"authorization_endpoint,omitempty"`
 	TokenEndpoint         string   `json:"token_endpoint,omitempty"`
-	UserInfoEndpoint      string   `json:"userinfo_endpoint,omitempty"`
-	JwksURI               string   `json:"jwks_uri"`
-	SigningAlgorithms     []string `json:"id_token_signing_alg_values_supported"`
-	SubjectTypes          []string `json:"subject_types_supported"`
-	ResponseTypes         []string `json:"response_types_supported"`
+	RegistrationEndpoint  string   `json:"registration_endpoint,omitempty"`
+	RevocationEndpoint    string   `json:"revocation_endpoint,omitempty"`
+	ResponseTypes         []string `json:"response_types_supported,omitempty"`
 	GrantTypesSupported   []string `json:"grant_types_supported,omitempty"`
 	ScopesSupported       []string `json:"scopes_supported,omitempty"`
 	CodeChallengeMethods  []string `json:"code_challenge_methods_supported,omitempty"`
-	ClaimsSupported       []string `json:"claims_supported"`
+	NonceSupported        bool     `json:"-"`
 }
 
-const (
-	ScopeOpenID  = "openid"
-	ScopeEmail   = "email"
-	ScopeProfile = "profile"
-)
+// OIDCConfiguration represents the OpenID Connect discovery document.
+type OIDCConfiguration struct {
+	BaseConfiguration
+	UserInfoEndpoint                  string   `json:"userinfo_endpoint,omitempty"`
+	JwksURI                           string   `json:"jwks_uri"`
+	SigningAlgorithms                 []string `json:"id_token_signing_alg_values_supported"`
+	SubjectTypes                      []string `json:"subject_types_supported"`
+	ClaimsSupported                   []string `json:"claims_supported"`
+	TokenEndpointAuthMethodsSupported []string `json:"token_endpoint_auth_methods_supported,omitempty"`
+}
+
+// OAuthConfiguration represents OAuth 2.0 Authorization Server Metadata.
+type OAuthConfiguration struct {
+	BaseConfiguration
+	ResponseModesSupported            []string `json:"response_modes_supported,omitempty"`
+	TokenEndpointAuthMethodsSupported []string `json:"token_endpoint_auth_methods_supported,omitempty"`
+}
 
 ///////////////////////////////////////////////////////////////////////////////
 // GLOBALS
 
 const (
-	GoogleIssuer     = "https://accounts.google.com"
-	ConfigPath       = ".well-known/openid-configuration"
-	JWKSPath         = ".well-known/jwks.json"
-	UserInfoPath     = "auth/userinfo"
-	SigningAlgorithm = "RS256"
-	KeyID            = "dev-main-2026-03"
+	GoogleIssuer          = "https://accounts.google.com"
+	ConfigPath            = ".well-known/openid-configuration"
+	OAuthConfigPath       = ".well-known/oauth-authorization-server"
+	ProtectedResourcePath = ".well-known/oauth-protected-resource"
+	JWKSPath              = ".well-known/jwks.json"
+	AuthorizationPath     = "auth/authorize"
+	AuthCodePath          = "auth/code"
+	AuthRevokePath        = "auth/revoke"
+	UserInfoPath          = "auth/userinfo"
+	SigningAlgorithm      = "RS256"
+	KeyID                 = "dev-main-2026-03"
+)
+
+const (
+	ScopeOpenID  = "openid"
+	ScopeEmail   = "email"
+	ScopeProfile = "profile"
 )
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -90,9 +112,45 @@ func ConfigURL(issuer string) string {
 	return uri
 }
 
+// OAuthConfigURL returns the OAuth authorization server metadata URL for an issuer.
+func OAuthConfigURL(issuer string) string {
+	uri, err := url.JoinPath(issuer, OAuthConfigPath)
+	if err != nil {
+		return issuer
+	}
+	return uri
+}
+
 // JWKSURL returns the JWKS document URL for an issuer.
 func JWKSURL(issuer string) string {
 	uri, err := url.JoinPath(issuer, JWKSPath)
+	if err != nil {
+		return issuer
+	}
+	return uri
+}
+
+// AuthorizationURL returns the authorization endpoint URL for an issuer.
+func AuthorizationURL(issuer string) string {
+	uri, err := url.JoinPath(issuer, AuthorizationPath)
+	if err != nil {
+		return issuer
+	}
+	return uri
+}
+
+// AuthCodeURL returns the local authorization-code exchange URL for an issuer.
+func AuthCodeURL(issuer string) string {
+	uri, err := url.JoinPath(issuer, AuthCodePath)
+	if err != nil {
+		return issuer
+	}
+	return uri
+}
+
+// AuthRevokeURL returns the local token revocation URL for an issuer.
+func AuthRevokeURL(issuer string) string {
+	uri, err := url.JoinPath(issuer, AuthRevokePath)
 	if err != nil {
 		return issuer
 	}

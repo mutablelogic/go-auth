@@ -7,28 +7,38 @@ import (
 	auth "github.com/djthorpe/go-auth"
 	schema "github.com/djthorpe/go-auth/schema"
 	uuid "github.com/google/uuid"
+	otel "github.com/mutablelogic/go-client/pkg/otel"
 	pg "github.com/mutablelogic/go-pg"
 	types "github.com/mutablelogic/go-server/pkg/types"
+	attribute "go.opentelemetry.io/otel/attribute"
 )
 
 ///////////////////////////////////////////////////////////////////////////////
 // PUBLIC METHODS
 
 // GetSession returns a session by ID.
-func (m *Manager) GetSession(ctx context.Context, id schema.SessionID) (*schema.Session, error) {
+func (m *Manager) GetSession(ctx context.Context, id schema.SessionID) (_ *schema.Session, err error) {
+	ctx, endSpan := otel.StartSpan(m.tracer, ctx, "manager.GetSession", attribute.String("session", id.String()))
+	defer func() { endSpan(err) }()
+
 	var session schema.Session
-	if err := m.PoolConn.Get(ctx, &session, id); err != nil {
-		return nil, dbErr(err)
+	if err = m.PoolConn.Get(ctx, &session, id); err != nil {
+		err = dbErr(err)
+		return nil, err
 	}
 	return types.Ptr(session), nil
 }
 
 // RevokeSession marks a session as revoked and returns the updated session
 // record.
-func (m *Manager) RevokeSession(ctx context.Context, id schema.SessionID) (*schema.Session, error) {
+func (m *Manager) RevokeSession(ctx context.Context, id schema.SessionID) (_ *schema.Session, err error) {
+	ctx, endSpan := otel.StartSpan(m.tracer, ctx, "manager.RevokeSession", attribute.String("session", id.String()))
+	defer func() { endSpan(err) }()
+
 	var session schema.Session
-	if err := m.PoolConn.Update(ctx, &session, revokeSessionSelector(id), nil); err != nil {
-		return nil, dbErr(err)
+	if err = m.PoolConn.Update(ctx, &session, revokeSessionSelector(id), nil); err != nil {
+		err = dbErr(err)
+		return nil, err
 	}
 	return types.Ptr(session), nil
 }
@@ -36,12 +46,16 @@ func (m *Manager) RevokeSession(ctx context.Context, id schema.SessionID) (*sche
 // RefreshSession validates an existing session, extends its expiry according
 // to the manager refresh policy, and returns the owning user together with the
 // refreshed session record.
-func (m *Manager) RefreshSession(ctx context.Context, id schema.SessionID) (*schema.User, *schema.Session, error) {
+func (m *Manager) RefreshSession(ctx context.Context, id schema.SessionID) (_ *schema.User, _ *schema.Session, err error) {
+	ctx, endSpan := otel.StartSpan(m.tracer, ctx, "manager.RefreshSession", attribute.String("session", id.String()))
+	defer func() { endSpan(err) }()
+
 	var session schema.Session
 
 	// Update the session expiry
-	if err := m.PoolConn.With("expires_in", types.Ptr(m.sessionttl)).Get(ctx, &session, refreshSessionSelector(id)); err != nil {
-		return nil, nil, dbErr(err)
+	if err = m.PoolConn.With("expires_in", types.Ptr(m.sessionttl)).Get(ctx, &session, refreshSessionSelector(id)); err != nil {
+		err = dbErr(err)
+		return nil, nil, err
 	}
 
 	// Return the user associated with the session
@@ -56,10 +70,14 @@ func (m *Manager) RefreshSession(ctx context.Context, id schema.SessionID) (*sch
 
 // CleanupSessions deletes revoked or expired sessions and returns the deleted
 // session rows.
-func (m *Manager) CleanupSessions(ctx context.Context) ([]schema.Session, error) {
+func (m *Manager) CleanupSessions(ctx context.Context) (_ []schema.Session, err error) {
+	ctx, endSpan := otel.StartSpan(m.tracer, ctx, "manager.CleanupSessions", attribute.Int("cleanup_limit", m.cleanuplimit))
+	defer func() { endSpan(err) }()
+
 	var result cleanupSessionList
-	if err := m.PoolConn.List(ctx, &result, cleanupSessionSelector(m.cleanuplimit)); err != nil {
-		return nil, dbErr(err)
+	if err = m.PoolConn.List(ctx, &result, cleanupSessionSelector(m.cleanuplimit)); err != nil {
+		err = dbErr(err)
+		return nil, err
 	}
 	return []schema.Session(result), nil
 }

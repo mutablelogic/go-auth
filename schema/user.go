@@ -38,13 +38,13 @@ type UserMeta struct {
 // User represents a user account in the system. It contains both
 // immutable and mutable fields.
 type User struct {
-	ID         UserID         `json:"id" format:"uuid" readonly:""`
-	CreatedAt  time.Time      `json:"created_at" format:"date-time" readonly:""`
-	ModifiedAt *time.Time     `json:"modified_at,omitempty" format:"date-time" readonly:""`
-	Claims     map[string]any `json:"claims,omitempty" readonly:""`
-	EffectiveMeta MetaMap     `json:"effective_meta,omitempty" readonly:""`
-	DisabledGroups []string   `json:"disabled_groups,omitempty" readonly:""`
-	Scopes     []string       `json:"scopes,omitempty" readonly:""`
+	ID             UserID         `json:"id" format:"uuid" readonly:""`
+	CreatedAt      time.Time      `json:"created_at" format:"date-time" readonly:""`
+	ModifiedAt     *time.Time     `json:"modified_at,omitempty" format:"date-time" readonly:""`
+	Claims         map[string]any `json:"claims,omitempty" readonly:""`
+	EffectiveMeta  MetaMap        `json:"effective_meta,omitempty" readonly:""`
+	DisabledGroups []string       `json:"disabled_groups,omitempty" readonly:""`
+	Scopes         []string       `json:"scopes,omitempty" readonly:""`
 	UserMeta
 }
 
@@ -111,6 +111,14 @@ func (id UserID) MarshalText() ([]byte, error) {
 }
 
 func (u UserList) String() string {
+	return types.Stringify(u)
+}
+
+func (u UserListRequest) String() string {
+	return types.Stringify(u)
+}
+
+func (u UserMeta) String() string {
 	return types.Stringify(u)
 }
 

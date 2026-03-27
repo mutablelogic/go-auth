@@ -63,6 +63,10 @@ func (g GroupInsert) String() string {
 	return types.Stringify(g)
 }
 
+func (req GroupListRequest) String() string {
+	return types.Stringify(req)
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 // PUBLIC METHODS - QUERY
 

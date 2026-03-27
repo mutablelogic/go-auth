@@ -7,8 +7,9 @@ import (
 	"time"
 
 	// Packages
-	oidc "github.com/djthorpe/go-auth/pkg/oidc"
+	providerpkg "github.com/djthorpe/go-auth/pkg/provider"
 	schema "github.com/djthorpe/go-auth/schema"
+	trace "go.opentelemetry.io/otel/trace"
 )
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -42,8 +43,9 @@ type opt struct {
 	sessionttl   time.Duration
 	cleanupint   time.Duration
 	cleanuplimit int
-	oauth        oidc.ClientConfigurations
+	providers    map[string]providerpkg.Provider
 	hooks        any
+	tracer       trace.Tracer
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -63,7 +65,6 @@ func (o *opt) apply(opts ...Opt) error {
 
 func (o *opt) defaults() {
 	o.schema = schema.DefaultSchema
-	o.channel = ""
 	o.sessionttl = schema.DefaultSessionTTL
 	o.cleanupint = DefaultCleanupInterval
 	o.cleanuplimit = DefaultCleanupLimit
@@ -83,30 +84,17 @@ func WithPrivateKey(key *rsa.PrivateKey) Opt {
 	}
 }
 
-// WithOAuthClient stores the upstream OAuth client configuration. The client
-// ID and issuer are exposed via /auth/config, while the client secret remains
-// server-side.
-func WithOAuthClient(key, issuer, clientID, clientSecret string) Opt {
+func WithProvider(provider providerpkg.Provider) Opt {
 	return func(o *opt) error {
-		if key == "" {
-			return fmt.Errorf("oauth key cannot be empty")
+		if provider == nil {
+			return fmt.Errorf("provider is required")
 		}
-		if issuer == "" {
-			return fmt.Errorf("oauth issuer cannot be empty")
+		if o.providers == nil {
+			o.providers = make(map[string]providerpkg.Provider)
+		} else if _, exists := o.providers[provider.Key()]; exists {
+			return fmt.Errorf("provider key %q already configured", provider.Key())
 		}
-		if o.oauth == nil {
-			o.oauth = make(oidc.ClientConfigurations)
-		} else if _, exists := o.oauth[key]; exists {
-			return fmt.Errorf("oauth key %q already configured", key)
-		}
-		o.oauth[key] = oidc.ClientConfiguration{
-			PublicClientConfiguration: oidc.PublicClientConfiguration{
-				Issuer:   issuer,
-				ClientID: clientID,
-				Provider: schema.ProviderOAuth,
-			},
-			ClientSecret: clientSecret,
-		}
+		o.providers[provider.Key()] = provider
 		return nil
 	}
 }
@@ -180,6 +168,17 @@ func WithHooks(hooks any) Opt {
 			return fmt.Errorf("hooks are required")
 		}
 		o.hooks = hooks
+		return nil
+	}
+}
+
+// WithTracer sets the OpenTelemetry tracer used for manager spans.
+func WithTracer(tracer trace.Tracer) Opt {
+	return func(o *opt) error {
+		if tracer == nil {
+			return fmt.Errorf("tracer is required")
+		}
+		o.tracer = tracer
 		return nil
 	}
 }

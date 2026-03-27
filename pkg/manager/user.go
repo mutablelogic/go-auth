@@ -7,8 +7,10 @@ import (
 	// Packages
 	auth "github.com/djthorpe/go-auth"
 	schema "github.com/djthorpe/go-auth/schema"
+	otel "github.com/mutablelogic/go-client/pkg/otel"
 	pg "github.com/mutablelogic/go-pg"
 	types "github.com/mutablelogic/go-server/pkg/types"
+	attribute "go.opentelemetry.io/otel/attribute"
 )
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -17,9 +19,16 @@ import (
 // CreateUser inserts a new user row. If identity is non-nil it is inserted in
 // the same transaction and the returned User is re-fetched so that Email and
 // Claims reflect the new identity row.
-func (m *Manager) CreateUser(ctx context.Context, meta schema.UserMeta, identity *schema.IdentityInsert) (*schema.User, error) {
+func (m *Manager) CreateUser(ctx context.Context, meta schema.UserMeta, identity *schema.IdentityInsert) (_ *schema.User, err error) {
+	attrs := []attribute.KeyValue{attribute.String("meta", meta.String())}
+	if identity != nil {
+		attrs = append(attrs, attribute.String("identity", identity.String()))
+	}
+	ctx, endSpan := otel.StartSpan(m.tracer, ctx, "manager.CreateUser", attrs...)
+	defer func() { endSpan(err) }()
+
 	var user schema.User
-	if err := m.PoolConn.Tx(ctx, func(conn pg.Conn) error {
+	if err = m.PoolConn.Tx(ctx, func(conn pg.Conn) error {
 		rowMeta := meta
 		rowMeta.Groups = nil
 
@@ -34,23 +43,34 @@ func (m *Manager) CreateUser(ctx context.Context, meta schema.UserMeta, identity
 		}
 		return nil
 	}); err != nil {
-		return nil, dbErr(err)
+		err = dbErr(err)
+		return nil, err
 	}
 
 	// Re-fetch so that Email/Claims/Groups/Scopes reflect any transactional work.
 	return m.GetUser(ctx, user.ID)
 }
 
-func (m *Manager) GetUser(ctx context.Context, user schema.UserID) (*schema.User, error) {
+func (m *Manager) GetUser(ctx context.Context, user schema.UserID) (_ *schema.User, err error) {
+	ctx, endSpan := otel.StartSpan(m.tracer, ctx, "manager.GetUser", attribute.String("user", user.String()))
+	defer func() { endSpan(err) }()
+
 	var result schema.User
-	if err := m.PoolConn.Get(ctx, &result, user); err != nil {
-		return nil, dbErr(err)
+	if err = m.PoolConn.Get(ctx, &result, user); err != nil {
+		err = dbErr(err)
+		return nil, err
 	}
 	return types.Ptr(result), nil
 }
 
-func (m *Manager) UpdateUser(ctx context.Context, user schema.UserID, meta schema.UserMeta) (*schema.User, error) {
-	if err := m.PoolConn.Tx(ctx, func(conn pg.Conn) error {
+func (m *Manager) UpdateUser(ctx context.Context, user schema.UserID, meta schema.UserMeta) (_ *schema.User, err error) {
+	ctx, endSpan := otel.StartSpan(m.tracer, ctx, "manager.UpdateUser",
+		attribute.String("user", user.String()),
+		attribute.String("meta", meta.String()),
+	)
+	defer func() { endSpan(err) }()
+
+	if err = m.PoolConn.Tx(ctx, func(conn pg.Conn) error {
 		rowMeta := meta
 		rowMeta.Groups = nil
 
@@ -60,14 +80,13 @@ func (m *Manager) UpdateUser(ctx context.Context, user schema.UserID, meta schem
 			return auth.ErrBadParameter.With("no fields to update")
 		}
 
+		var userRow schema.User
 		if hasRowPatch {
-			var updated schema.User
-			if err := conn.Update(ctx, &updated, user, rowMeta); err != nil {
+			if err := conn.Update(ctx, &userRow, user, rowMeta); err != nil {
 				return err
 			}
 		} else {
-			var existing schema.User
-			if err := conn.Get(ctx, &existing, user); err != nil {
+			if err := conn.Get(ctx, &userRow, user); err != nil {
 				return err
 			}
 		}
@@ -80,13 +99,20 @@ func (m *Manager) UpdateUser(ctx context.Context, user schema.UserID, meta schem
 
 		return nil
 	}); err != nil {
-		return nil, dbErr(err)
+		err = dbErr(err)
+		return nil, err
 	}
 	return m.GetUser(ctx, user)
 }
 
-func (m *Manager) AddUserGroups(ctx context.Context, user schema.UserID, groups []string) (*schema.User, error) {
-	if err := m.PoolConn.Tx(ctx, func(conn pg.Conn) error {
+func (m *Manager) AddUserGroups(ctx context.Context, user schema.UserID, groups []string) (_ *schema.User, err error) {
+	ctx, endSpan := otel.StartSpan(m.tracer, ctx, "manager.AddUserGroups",
+		attribute.String("user", user.String()),
+		attribute.String("groups", types.Stringify(groups)),
+	)
+	defer func() { endSpan(err) }()
+
+	if err = m.PoolConn.Tx(ctx, func(conn pg.Conn) error {
 		var existing schema.User
 		if err := conn.Get(ctx, &existing, user); err != nil {
 			return err
@@ -116,13 +142,20 @@ func (m *Manager) AddUserGroups(ctx context.Context, user schema.UserID, groups 
 
 		return replaceUserGroups(ctx, conn, user, merged)
 	}); err != nil {
-		return nil, dbErr(err)
+		err = dbErr(err)
+		return nil, err
 	}
 	return m.GetUser(ctx, user)
 }
 
-func (m *Manager) RemoveUserGroups(ctx context.Context, user schema.UserID, groups []string) (*schema.User, error) {
-	if err := m.PoolConn.Tx(ctx, func(conn pg.Conn) error {
+func (m *Manager) RemoveUserGroups(ctx context.Context, user schema.UserID, groups []string) (_ *schema.User, err error) {
+	ctx, endSpan := otel.StartSpan(m.tracer, ctx, "manager.RemoveUserGroups",
+		attribute.String("user", user.String()),
+		attribute.String("groups", types.Stringify(groups)),
+	)
+	defer func() { endSpan(err) }()
+
+	if err = m.PoolConn.Tx(ctx, func(conn pg.Conn) error {
 		var existing schema.User
 		if err := conn.Get(ctx, &existing, user); err != nil {
 			return err
@@ -152,22 +185,30 @@ func (m *Manager) RemoveUserGroups(ctx context.Context, user schema.UserID, grou
 
 		return replaceUserGroups(ctx, conn, user, filtered)
 	}); err != nil {
-		return nil, dbErr(err)
+		err = dbErr(err)
+		return nil, err
 	}
 	return m.GetUser(ctx, user)
 }
 
-func (m *Manager) DeleteUser(ctx context.Context, user schema.UserID) (*schema.User, error) {
+func (m *Manager) DeleteUser(ctx context.Context, user schema.UserID) (_ *schema.User, err error) {
+	ctx, endSpan := otel.StartSpan(m.tracer, ctx, "manager.DeleteUser", attribute.String("user", user.String()))
+	defer func() { endSpan(err) }()
+
 	var result schema.User
-	if err := m.PoolConn.Delete(ctx, &result, user); err != nil {
-		return nil, dbErr(err)
+	if err = m.PoolConn.Delete(ctx, &result, user); err != nil {
+		err = dbErr(err)
+		return nil, err
 	}
 	return types.Ptr(result), nil
 }
 
-func (m *Manager) ListUsers(ctx context.Context, req schema.UserListRequest) (*schema.UserList, error) {
+func (m *Manager) ListUsers(ctx context.Context, req schema.UserListRequest) (_ *schema.UserList, err error) {
+	ctx, endSpan := otel.StartSpan(m.tracer, ctx, "manager.ListUsers", attribute.String("request", req.String()))
+	defer func() { endSpan(err) }()
+
 	result := schema.UserList{OffsetLimit: req.OffsetLimit}
-	if err := m.PoolConn.List(ctx, &result, req); err != nil {
+	if err = m.PoolConn.List(ctx, &result, req); err != nil {
 		return nil, dbErr(err)
 	}
 	return types.Ptr(result), nil

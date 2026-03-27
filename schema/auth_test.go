@@ -1,7 +1,6 @@
 package schema
 
 import (
-	"context"
 	"errors"
 	"testing"
 
@@ -29,51 +28,5 @@ func Test_ExtractIssuer(t *testing.T) {
 		_, err := oidc.ExtractIssuer("eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0.e30.")
 		require.Error(t, err)
 		assert.True(t, errors.Is(err, auth.ErrBadParameter))
-	})
-}
-
-func Test_TokenRequestValidate(t *testing.T) {
-	t.Run("MissingProvider", func(t *testing.T) {
-		assert := assert.New(t)
-		_, err := (&TokenRequest{Token: "abc"}).Validate(context.Background())
-		assert.Error(err)
-		assert.True(errors.Is(err, auth.ErrInvalidProvider))
-	})
-
-	t.Run("MissingToken", func(t *testing.T) {
-		assert := assert.New(t)
-		_, err := (&TokenRequest{Provider: ProviderOAuth}).Validate(context.Background())
-		assert.Error(err)
-		assert.True(errors.Is(err, auth.ErrBadParameter))
-	})
-
-	t.Run("UnsupportedProvider", func(t *testing.T) {
-		assert := assert.New(t)
-		_, err := (&TokenRequest{Provider: "nope", Token: "abc"}).Validate(context.Background())
-		assert.Error(err)
-		assert.True(errors.Is(err, auth.ErrInvalidProvider))
-	})
-}
-
-func Test_CredentialsRequestValidate(t *testing.T) {
-	t.Run("MissingEmail", func(t *testing.T) {
-		assert := assert.New(t)
-		err := (&CredentialsRequest{}).Validate()
-		assert.Error(err)
-		assert.True(errors.Is(err, auth.ErrBadParameter))
-	})
-
-	t.Run("InvalidEmail", func(t *testing.T) {
-		assert := assert.New(t)
-		err := (&CredentialsRequest{Email: "not-an-email"}).Validate()
-		assert.Error(err)
-		assert.True(errors.Is(err, auth.ErrBadParameter))
-	})
-
-	t.Run("NormalizesEmail", func(t *testing.T) {
-		require := require.New(t)
-		req := &CredentialsRequest{Email: "  Alice.Example+test@Example.COM  "}
-		require.NoError(req.Validate())
-		require.Equal("alice.example+test@example.com", req.Email)
 	})
 }

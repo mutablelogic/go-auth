@@ -90,6 +90,30 @@ func NewIdentityFromClaims(claims map[string]any) (IdentityInsert, error) {
 ///////////////////////////////////////////////////////////////////////////////
 // PUBLIC METHODS
 
+func (key IdentityKey) String() string {
+	return types.Stringify(key)
+}
+
+func (meta IdentityMeta) String() string {
+	return types.Stringify(meta)
+}
+
+func (i IdentityInsert) String() string {
+	return types.Stringify(i)
+}
+
+func (i Identity) String() string {
+	return types.Stringify(i)
+}
+
+func (req IdentityListRequest) String() string {
+	return types.Stringify(req)
+}
+
+func (list IdentityList) String() string {
+	return types.Stringify(list)
+}
+
 func (i IdentityInsert) Name() string {
 	for _, key := range []string{"name", "username", "preferred_username", "given_name"} {
 		if name, ok := i.Claims[key].(string); ok {

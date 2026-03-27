@@ -6,9 +6,13 @@ import (
 	"strings"
 
 	// Packages
+	auth "github.com/djthorpe/go-auth"
 	schema "github.com/djthorpe/go-auth/schema"
+	otel "github.com/mutablelogic/go-client/pkg/otel"
 	pg "github.com/mutablelogic/go-pg"
 	broadcaster "github.com/mutablelogic/go-pg/pkg/broadcaster"
+	attribute "go.opentelemetry.io/otel/attribute"
+	trace "go.opentelemetry.io/otel/trace"
 )
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -22,7 +26,7 @@ type Manager struct {
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-// PUBLIC METHODS
+// LIFECYCLE
 
 // New creates a Manager, ensures the schema exists, and bootstraps all
 // database objects from the embedded objects.sql. If schemaName is empty
@@ -54,9 +58,15 @@ func New(ctx context.Context, pool pg.PoolConn, opts ...Opt) (*Manager, error) {
 	}
 
 	// Create objects in the database schema. This is not done in a transaction
-	if err := bootstrap(ctx, pool, self.schema, self.channel != ""); err != nil {
+	bootstrapCtx, endBootstrapSpan := otel.StartSpan(self.tracer, ctx, "manager.bootstrap",
+		attribute.String("schema", self.schema),
+		attribute.Bool("notifications", self.channel != ""),
+	)
+	if err := bootstrap(bootstrapCtx, pool, self.schema, self.channel != ""); err != nil {
+		endBootstrapSpan(err)
 		return nil, err
 	} else {
+		endBootstrapSpan(nil)
 		self.PoolConn = pool
 	}
 
@@ -71,6 +81,30 @@ func New(ctx context.Context, pool pg.PoolConn, opts ...Opt) (*Manager, error) {
 
 	// Return the manager
 	return self, nil
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// LIFECYCLE
+
+// AuthConfig returns the shareable upstream provider configuration exposed by
+// /auth/config. The client secret remains server-side.
+func (m *Manager) AuthConfig() (_ schema.PublicClientConfigurations, err error) {
+	ctx, endSpan := otel.StartSpan(m.tracer, context.Background(), "manager.AuthConfig")
+	defer func() { endSpan(err) }()
+
+	config := make(schema.PublicClientConfigurations)
+	for key, provider := range m.providers {
+		if provider == nil {
+			continue
+		}
+		config[key] = provider.PublicConfig()
+	}
+	if len(config) == 0 {
+		err = auth.ErrNotFound.With("providers are not configured")
+		return nil, err
+	}
+	trace.SpanFromContext(ctx).SetAttributes(attribute.Int("provider_count", len(config)))
+	return config, nil
 }
 
 ///////////////////////////////////////////////////////////////////////////////

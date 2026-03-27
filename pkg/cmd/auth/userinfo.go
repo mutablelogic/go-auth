@@ -1,0 +1,83 @@
+package auth
+
+import (
+	"encoding/json"
+	"fmt"
+	"strings"
+
+	// Packages
+	auth "github.com/djthorpe/go-auth/pkg/httpclient/auth"
+	authschema "github.com/djthorpe/go-auth/schema"
+	server "github.com/mutablelogic/go-server"
+	oauth2 "golang.org/x/oauth2"
+)
+
+///////////////////////////////////////////////////////////////////////////////
+// TYPES
+
+type UserInfoCommand struct {
+	Endpoint     string `arg:"" optional:"" name:"endpoint" help:"Protected resource endpoint. Defaults to the stored endpoint or the global HTTP client endpoint."`
+	ClientID     string `name:"client-id" help:"OAuth client ID. Defaults to the stored client ID for the issuer when a refresh is needed."`
+	ClientSecret string `name:"client-secret" help:"OAuth client secret. Defaults to the stored client secret for the issuer when a refresh is needed."`
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// COMMANDS
+
+func (cmd *UserInfoCommand) Run(ctx server.Cmd) error {
+	authClient, endpoint, err := clientFor(ctx)
+	if err != nil {
+		return err
+	} else if cmd.Endpoint == "" {
+		cmd.Endpoint = endpoint
+	}
+
+	token, err := storedToken(ctx, cmd.Endpoint)
+	if err != nil {
+		return err
+	}
+	if token == nil {
+		return fmt.Errorf("no stored token for endpoint %q", cmd.Endpoint)
+	}
+	if !token.Valid() {
+		if token, err = refreshStoredToken(ctx, authClient, cmd.Endpoint, cmd.ClientID, cmd.ClientSecret); err != nil {
+			return err
+		}
+	}
+
+	userinfo, err := userInfoForEndpoint(ctx, authClient, cmd.Endpoint, token)
+	if err != nil {
+		return err
+	}
+
+	data, err := json.MarshalIndent(userinfo, "", "  ")
+	if err != nil {
+		return fmt.Errorf("marshal userinfo: %w", err)
+	}
+	fmt.Println(string(data))
+	return nil
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// PRIVATE FUNCTIONS
+
+func userInfoForEndpoint(ctx server.Cmd, authClient *auth.Client, endpoint string, token *oauth2.Token) (*authschema.UserInfo, error) {
+	endpoint = strings.TrimSpace(endpoint)
+	if token == nil {
+		return nil, fmt.Errorf("token is required")
+	}
+
+	meta, err := discoverAuthMetadata(ctx, authClient, endpoint)
+	if err != nil {
+		return nil, err
+	}
+	serverMeta, err := meta.AuthorizationServerForUserInfo()
+	if err != nil {
+		return nil, err
+	}
+	userinfo, err := authClient.UserInfo(ctx.Context(), serverMeta.Oidc.UserInfoEndpoint, token)
+	if err != nil {
+		return nil, err
+	}
+	return userinfo, nil
+}

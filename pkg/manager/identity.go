@@ -8,80 +8,111 @@ import (
 	auth "github.com/djthorpe/go-auth"
 	schema "github.com/djthorpe/go-auth/schema"
 	uuid "github.com/google/uuid"
+	otel "github.com/mutablelogic/go-client/pkg/otel"
 	pg "github.com/mutablelogic/go-pg"
 	types "github.com/mutablelogic/go-server/pkg/types"
+	attribute "go.opentelemetry.io/otel/attribute"
 )
 
 ///////////////////////////////////////////////////////////////////////////////
 // PUBLIC METHODS
 
 // CreateIdentity inserts a new identity row for an existing user.
-func (m *Manager) CreateIdentity(ctx context.Context, user uuid.UUID, identity schema.IdentityInsert) (*schema.Identity, error) {
+func (m *Manager) CreateIdentity(ctx context.Context, user uuid.UUID, identity schema.IdentityInsert) (_ *schema.Identity, err error) {
+	ctx, endSpan := otel.StartSpan(m.tracer, ctx, "manager.CreateIdentity",
+		attribute.String("user", schema.UserID(user).String()),
+		attribute.String("identity", identity.String()),
+	)
+	defer func() { endSpan(err) }()
+
 	var result schema.Identity
-	if err := m.PoolConn.With(
+	if err = m.PoolConn.With(
 		"user", schema.UserID(user),
 	).Insert(ctx, &result, types.Value(&identity)); err != nil {
-		return nil, dbErr(err)
+		err = dbErr(err)
+		return nil, err
 	}
 	return types.Ptr(result), nil
 }
 
 // GetIdentity retrieves a single identity by its (provider, sub) primary key.
-func (m *Manager) GetIdentity(ctx context.Context, provider, sub string) (*schema.Identity, error) {
+func (m *Manager) GetIdentity(ctx context.Context, key schema.IdentityKey) (_ *schema.Identity, err error) {
+	ctx, endSpan := otel.StartSpan(m.tracer, ctx, "manager.GetIdentity", attribute.String("key", key.String()))
+	defer func() { endSpan(err) }()
+
 	var identity schema.Identity
-	if err := m.PoolConn.Get(ctx, &identity, schema.IdentityKey{Provider: provider, Sub: sub}); err != nil {
-		return nil, dbErr(err)
+	if err = m.PoolConn.Get(ctx, &identity, key); err != nil {
+		err = dbErr(err)
+		return nil, err
 	}
 	return types.Ptr(identity), nil
 }
 
 // UpdateIdentity refreshes the mutable fields (email, claims) on an existing
 // identity row identified by (provider, sub). modified_at is always updated.
-func (m *Manager) UpdateIdentity(ctx context.Context, provider, sub string, meta schema.IdentityMeta) (*schema.Identity, error) {
+func (m *Manager) UpdateIdentity(ctx context.Context, key schema.IdentityKey, meta schema.IdentityMeta) (_ *schema.Identity, err error) {
+	ctx, endSpan := otel.StartSpan(m.tracer, ctx, "manager.UpdateIdentity",
+		attribute.String("key", key.String()),
+		attribute.String("meta", meta.String()),
+	)
+	defer func() { endSpan(err) }()
+
 	var identity schema.Identity
-	if err := m.PoolConn.Update(ctx, &identity, schema.IdentityKey{Provider: provider, Sub: sub}, meta); err != nil {
-		return nil, dbErr(err)
+	if err = m.PoolConn.Update(ctx, &identity, key, meta); err != nil {
+		err = dbErr(err)
+		return nil, err
 	}
 	return types.Ptr(identity), nil
 }
 
 // DeleteIdentity removes an identity row identified by its (provider, sub)
 // primary key and returns the deleted row.
-func (m *Manager) DeleteIdentity(ctx context.Context, provider, sub string) (*schema.Identity, error) {
+func (m *Manager) DeleteIdentity(ctx context.Context, key schema.IdentityKey) (_ *schema.Identity, err error) {
+	ctx, endSpan := otel.StartSpan(m.tracer, ctx, "manager.DeleteIdentity", attribute.String("key", key.String()))
+	defer func() { endSpan(err) }()
+
 	var identity schema.Identity
-	if err := m.PoolConn.Delete(ctx, &identity, schema.IdentityKey{Provider: provider, Sub: sub}); err != nil {
-		return nil, dbErr(err)
+	if err = m.PoolConn.Delete(ctx, &identity, key); err != nil {
+		err = dbErr(err)
+		return nil, err
 	}
 	return types.Ptr(identity), nil
 }
 
-func (m *Manager) ListIdentities(ctx context.Context, req schema.IdentityListRequest) (*schema.IdentityList, error) {
+func (m *Manager) ListIdentities(ctx context.Context, req schema.IdentityListRequest) (_ *schema.IdentityList, err error) {
+	ctx, endSpan := otel.StartSpan(m.tracer, ctx, "manager.ListIdentities", attribute.String("request", req.String()))
+	defer func() { endSpan(err) }()
+
 	result := schema.IdentityList{OffsetLimit: req.OffsetLimit}
-	if err := m.PoolConn.List(ctx, &result, req); err != nil {
-		return nil, dbErr(err)
+	if err = m.PoolConn.List(ctx, &result, req); err != nil {
+		err = dbErr(err)
+		return nil, err
 	}
 	return types.Ptr(result), nil
 }
 
-func (m *Manager) LoginWithIdentity(ctx context.Context, meta schema.IdentityInsert, createMeta ...map[string]any) (*schema.User, *schema.Session, error) {
+func (m *Manager) LoginWithIdentity(ctx context.Context, meta schema.IdentityInsert, createMeta map[string]any) (_ *schema.User, _ *schema.Session, err error) {
+	attrs := []attribute.KeyValue{attribute.String("meta", meta.String())}
+	if createMeta != nil {
+		attrs = append(attrs, attribute.String("create_meta", types.Stringify(createMeta)))
+	}
+	ctx, endSpan := otel.StartSpan(m.tracer, ctx, "manager.LoginWithIdentity", attrs...)
+	defer func() { endSpan(err) }()
+
 	if meta.Provider == "" {
-		return nil, nil, auth.ErrBadParameter.With("issuer is required")
+		err = auth.ErrBadParameter.With("issuer is required")
+		return nil, nil, err
 	}
 	if meta.Sub == "" {
-		return nil, nil, auth.ErrBadParameter.With("sub is required")
-	}
-
-	var userCreateMeta map[string]any
-	if len(createMeta) > 0 {
-		userCreateMeta = createMeta[0]
+		err = auth.ErrBadParameter.With("sub is required")
+		return nil, nil, err
 	}
 
 	var user schema.UserID
 	var session schema.Session
-	if err := m.PoolConn.Tx(ctx, func(conn pg.Conn) error {
+	if err = m.PoolConn.Tx(ctx, func(conn pg.Conn) error {
 		// Find an existing identity row with the same (provider, sub) key.
 		var identity schema.Identity
-		createdUser := false
 		updateIdentity := false
 		if err := conn.Get(ctx, &identity, schema.IdentityKey{Provider: meta.Provider, Sub: meta.Sub}); err != nil {
 			if !errors.Is(dbErr(err), auth.ErrNotFound) {
@@ -117,7 +148,7 @@ func (m *Manager) LoginWithIdentity(ctx context.Context, meta schema.IdentityIns
 				usermeta := schema.UserMeta{
 					Name:  meta.Name(),
 					Email: meta.Email,
-					Meta:  userCreateMeta,
+					Meta:  createMeta,
 				}
 
 				if hook, ok := m.hooks.(UserCreationHook); ok {
@@ -141,7 +172,6 @@ func (m *Manager) LoginWithIdentity(ctx context.Context, meta schema.IdentityIns
 					return err
 				}
 				user = created.ID
-				createdUser = true
 			}
 		} else {
 			user = identity.User
@@ -149,7 +179,7 @@ func (m *Manager) LoginWithIdentity(ctx context.Context, meta schema.IdentityIns
 		}
 
 		// Successful login, update identity with new email/claims and modified_at timestamp.
-		if updateIdentity && !createdUser {
+		if updateIdentity {
 			if err := conn.Update(ctx, &identity, identity.IdentityKey, meta.IdentityMeta); err != nil {
 				return err
 			}
@@ -168,7 +198,8 @@ func (m *Manager) LoginWithIdentity(ctx context.Context, meta schema.IdentityIns
 		// Return success
 		return nil
 	}); err != nil {
-		return nil, nil, dbErr(err)
+		err = dbErr(err)
+		return nil, nil, err
 	}
 
 	// Return the user associated with the identity, which may have been updated by the transaction.

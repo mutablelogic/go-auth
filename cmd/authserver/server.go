@@ -13,9 +13,9 @@ import (
 
 	// Packages
 	authcrypto "github.com/djthorpe/go-auth/pkg/crypto"
-	httphandler "github.com/djthorpe/go-auth/pkg/httphandler"
+	authhandler "github.com/djthorpe/go-auth/pkg/httphandler/auth"
+	managerhandler "github.com/djthorpe/go-auth/pkg/httphandler/manager"
 	manager "github.com/djthorpe/go-auth/pkg/manager"
-	oidc "github.com/djthorpe/go-auth/pkg/oidc"
 	schema "github.com/djthorpe/go-auth/schema"
 	server "github.com/mutablelogic/go-server"
 	cmd "github.com/mutablelogic/go-server/pkg/cmd"
@@ -24,6 +24,9 @@ import (
 	errgroup "golang.org/x/sync/errgroup"
 )
 
+///////////////////////////////////////////////////////////////////////////////
+// TYPES
+
 type ServerCommands struct {
 	RunServer RunServer `cmd:"" name:"run" help:"Run server." group:"SERVER"`
 }
@@ -31,21 +34,17 @@ type ServerCommands struct {
 type RunServer struct {
 	cmd.RunServer
 	PostgresFlags
-	CleanupFlags  `embed:"" prefix:"cleanup."`
-	GoogleFlags   `embed:"" prefix:"google."`
-	NotifyChannel string `name:"notify-channel" help:"PostgreSQL LISTEN/NOTIFY channel for table change streaming. Empty disables change notifications." default:"backend.table_change"`
-	Auth          bool   `name:"auth" help:"Whether to enable authentication for protected endpoints." default:"true" negatable:""`
-	UI            bool   `name:"ui" help:"Whether to serve the embedded web user interface" default:"true" negatable:""`
+	LocalProviderFlags
+	GoogleProviderFlags `embed:"" prefix:"google."`
+	CleanupFlags        `embed:"" prefix:"cleanup."`
+	NotifyChannel       string `name:"notify-channel" help:"PostgreSQL LISTEN/NOTIFY channel for table change streaming. Empty disables change notifications." default:"backend.table_change"`
+	Auth                bool   `name:"auth" help:"Whether to enable authentication for protected endpoints." default:"true" negatable:""`
+	UI                  bool   `name:"ui" help:"Whether to serve the embedded web user interface" default:"true" negatable:""`
 }
 
 type CleanupFlags struct {
 	Interval time.Duration `name:"interval" help:"How often to prune stale sessions. Defaults to the manager default when unset."`
 	Limit    int           `name:"limit" help:"Maximum stale sessions to prune in one pass. Defaults to the manager default when unset."`
-}
-
-type GoogleFlags struct {
-	ClientID     string `name:"client-id" env:"GOOGLE_CLIENT_ID" help:"Google OAuth client ID exposed via /auth/config."`
-	ClientSecret string `name:"client-secret" env:"GOOGLE_CLIENT_SECRET" help:"Google OAuth client secret kept server-side."`
 }
 
 type contextCmd struct {
@@ -93,7 +92,8 @@ func (server *RunServer) Run(ctx server.Cmd) error {
 		// Register HTTP handlers
 		server.RunServer.Register(func(router *httprouter.Router) error {
 			var result error
-			result = errors.Join(result, httphandler.RegisterHandlers(manager, router, server.Auth))
+			result = errors.Join(result, managerhandler.RegisterManagerHandlers(manager, router, server.Auth))
+			result = errors.Join(result, authhandler.RegisterAuthHandlers(manager, router))
 			if server.UI {
 				result = errors.Join(result, registerUIHandlers(router))
 			}
@@ -151,14 +151,21 @@ func (server *RunServer) WithManager(ctx server.Cmd, fn func(*manager.Manager, s
 	// Auth manager options
 	opts := []manager.Opt{
 		manager.WithPrivateKey(key),
+		manager.WithTracer(ctx.Tracer()),
 	}
 	issuer := server.issuer(ctx)
 	if issuer == "" {
 		return fmt.Errorf("issuer could not be determined from server configuration")
 	}
-	opts = append(opts, manager.WithOAuthClient(oidc.OAuthClientKeyLocal, issuer, "", ""))
-	if clientID, clientSecret := strings.TrimSpace(server.GoogleFlags.ClientID), strings.TrimSpace(server.GoogleFlags.ClientSecret); clientID != "" || clientSecret != "" {
-		opts = append(opts, manager.WithOAuthClient("google", oidc.GoogleIssuer, clientID, clientSecret))
+	if provider, err := server.LocalProviderFlags.NewProvider(key, issuer); err != nil {
+		return fmt.Errorf("local provider: %w", err)
+	} else if provider != nil {
+		opts = append(opts, manager.WithProvider(provider))
+	}
+	if provider, err := server.GoogleProviderFlags.NewProvider(); err != nil {
+		return fmt.Errorf("google provider: %w", err)
+	} else if provider != nil {
+		opts = append(opts, manager.WithProvider(provider))
 	}
 	if channel := strings.TrimSpace(server.NotifyChannel); channel != "" {
 		opts = append(opts, manager.WithNotificationChannel(channel))

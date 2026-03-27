@@ -1,72 +1,104 @@
 (function () {
     class AuthAPI {
-        constructor(basePath) {
-            this.basePath = basePath;
+        constructor(prefixes) {
+            this.prefixes = Array.isArray(prefixes) ? prefixes : [""];
+            this.resolvedPrefix = null;
         }
 
-        async request(path, options) {
-            const response = await fetch(this.basePath + path, {
-                credentials: "same-origin",
-                ...options,
-            });
-
-            const text = await response.text();
-            let data = null;
-
-            if (text) {
-                try {
-                    data = JSON.parse(text);
-                } catch {
-                    data = text;
+        orderedPrefixes() {
+            const unique = [];
+            const seen = new Set();
+            const prefixes = this.resolvedPrefix === null ? this.prefixes : [this.resolvedPrefix, ...this.prefixes];
+            for (const prefix of prefixes) {
+                const normalized = prefix || "";
+                if (seen.has(normalized)) {
+                    continue;
                 }
+                seen.add(normalized);
+                unique.push(normalized);
             }
 
-            if (!response.ok) {
+            return unique;
+        }
+
+        endpoint(prefix, scope, path) {
+            const normalizedPrefix = prefix || "";
+            if (scope === "config") {
+                return `${normalizedPrefix}/config`;
+            }
+
+            return `${normalizedPrefix}/auth${path}`;
+        }
+
+        async parseResponse(response) {
+            const text = await response.text();
+            if (!text) {
+                return null;
+            }
+            try {
+                return JSON.parse(text);
+            } catch {
+                return text;
+            }
+        }
+
+        async request(scope, path, options) {
+            let lastError = null;
+            for (const prefix of this.orderedPrefixes()) {
+                const endpoint = this.endpoint(prefix, scope, path);
+                const response = await fetch(endpoint, {
+                    credentials: "same-origin",
+                    ...options,
+                });
+                const data = await this.parseResponse(response);
+
+                if (response.ok) {
+                    this.resolvedPrefix = prefix;
+                    return data;
+                }
+                if (response.status === 404) {
+                    lastError = new Error(`404 Not Found: ${endpoint}`);
+                    continue;
+                }
+
                 const detail = typeof data === "string" ? data : JSON.stringify(data);
                 throw new Error(detail || response.status + " " + response.statusText);
             }
 
-            return data;
+            throw lastError || new Error("request failed");
         }
 
         async fetchConfig() {
-            return this.request("/config");
-        }
-
-        async fetchProviders() {
-            return this.fetchConfig();
-        }
-
-        async loginWithOAuthToken(provider, token) {
-            return this.request("/login", {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json"
-                },
-                body: JSON.stringify({
-                    provider,
-                    token,
-                })
+            return this.request("config", "", {
+                method: "GET",
             });
         }
 
-        async loginWithCredentials(email, meta) {
-            const body = { email };
-            if (meta && Object.keys(meta).length > 0) {
-                body.meta = meta;
+        authorizationURL(params) {
+            const prefix = this.resolvedPrefix === null ? this.prefixes[0] || "" : this.resolvedPrefix;
+            const endpoint = this.endpoint(prefix, "auth", "/authorize");
+            const uri = new URL(endpoint, window.location.origin);
+            for (const [key, value] of Object.entries(params || {})) {
+                if (value !== undefined && value !== null && value !== "") {
+                    uri.searchParams.set(key, value);
+                }
             }
 
-            return this.request("/credentials", {
+            return uri.toString();
+        }
+
+        async exchangeAuthorizationCode(request) {
+            return this.request("auth", "/code", {
                 method: "POST",
                 headers: {
                     "Content-Type": "application/json"
                 },
-                body: JSON.stringify(body)
+                body: JSON.stringify(request),
             });
         }
 
         async fetchUserInfo(token) {
-            return this.request("/userinfo", {
+            return this.request("auth", "/userinfo", {
                 method: "GET",
                 headers: {
                     Authorization: "Bearer " + token
@@ -75,19 +107,22 @@
         }
 
         async refreshToken(token) {
-            return this.request("/refresh", {
+            const body = new URLSearchParams({
+                grant_type: "refresh_token",
+                refresh_token: token,
+            });
+
+            return this.request("auth", "/code", {
                 method: "POST",
                 headers: {
-                    "Content-Type": "application/json"
+                    "Content-Type": "application/x-www-form-urlencoded"
                 },
-                body: JSON.stringify({
-                    token,
-                })
+                body,
             });
         }
 
         async revokeToken(token) {
-            await this.request("/revoke", {
+            await this.request("auth", "/revoke", {
                 method: "POST",
                 headers: {
                     "Content-Type": "application/json"
@@ -106,5 +141,5 @@
         }
     }
 
-    window.AuthAPI = new AuthAPI("/auth");
+    window.AuthAPI = new AuthAPI(["/api", ""]);
 })();

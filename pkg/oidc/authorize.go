@@ -9,18 +9,13 @@ import (
 	"strings"
 )
 
-const (
-	ResponseTypeCode         = "code"
-	CodeChallengeMethodPlain = "plain"
-	CodeChallengeMethodS256  = "S256"
-	randomTokenBytes         = 32
-)
-
-var defaultAuthorizationScopes = []string{ScopeOpenID, ScopeEmail, ScopeProfile}
+///////////////////////////////////////////////////////////////////////////////
+// TYPES
 
 // AuthorizationCodeFlow contains the generated state required to start an
 // interactive OAuth2/OIDC authorization code flow with optional PKCE.
 type AuthorizationCodeFlow struct {
+	Provider              string   `json:"provider,omitempty"`
 	Issuer                string   `json:"issuer,omitempty"`
 	AuthorizationEndpoint string   `json:"authorization_endpoint"`
 	AuthorizationURL      string   `json:"authorization_url"`
@@ -36,26 +31,36 @@ type AuthorizationCodeFlow struct {
 	CodeVerifier          string   `json:"code_verifier,omitempty"`
 }
 
-// NewAuthorizationCodeFlow generates state, nonce, and PKCE data needed to
-// begin an OIDC authorization code flow using the supplied discovery document.
-func NewAuthorizationCodeFlow(config Configuration, clientID, redirectURL string, scopes ...string) (*AuthorizationCodeFlow, error) {
+///////////////////////////////////////////////////////////////////////////////
+// GLOBALS
+
+const (
+	ResponseTypeCode         = "code"
+	CodeChallengeMethodPlain = "plain"
+	CodeChallengeMethodS256  = "S256"
+	randomTokenBytes         = 32
+)
+
+var DefaultOIDCAuthorizationScopes = []string{ScopeOpenID, ScopeEmail, ScopeProfile}
+
+///////////////////////////////////////////////////////////////////////////////
+// LIFECYCLE
+
+// NewAuthorizationCodeFlow generates state and PKCE data needed to begin an
+// interactive OAuth2/OIDC authorization code flow using the supplied discovery
+// document. A nonce is added only for OIDC-capable configurations. clientID may
+// be empty for provider-routed server-side exchanges where the server holds the
+// upstream client credentials.
+func NewAuthorizationCodeFlow(config BaseConfiguration, clientID, redirectURL string, scopes ...string) (*AuthorizationCodeFlow, error) {
 	clientID = strings.TrimSpace(clientID)
 	redirectURL = strings.TrimSpace(redirectURL)
 	if strings.TrimSpace(config.AuthorizationEndpoint) == "" {
 		return nil, fmt.Errorf("authorization endpoint is required")
 	}
-	if clientID == "" {
-		return nil, fmt.Errorf("client ID is required")
-	}
 	if redirectURL == "" {
 		return nil, fmt.Errorf("redirect URL is required")
 	}
-	scopes = AuthorizationScopes(config, scopes...)
 	state, err := randomToken(randomTokenBytes)
-	if err != nil {
-		return nil, err
-	}
-	nonce, err := randomToken(randomTokenBytes)
 	if err != nil {
 		return nil, err
 	}
@@ -68,7 +73,13 @@ func NewAuthorizationCodeFlow(config Configuration, clientID, redirectURL string
 		ResponseType:          ResponseTypeCode,
 		Scopes:                scopes,
 		State:                 state,
-		Nonce:                 nonce,
+	}
+	if config.NonceSupported {
+		nonce, err := randomToken(randomTokenBytes)
+		if err != nil {
+			return nil, err
+		}
+		flow.Nonce = nonce
 	}
 	if method := PreferredCodeChallengeMethod(config.CodeChallengeMethods); method != "" {
 		verifier, challenge, err := NewCodeChallenge(method)
@@ -87,14 +98,34 @@ func NewAuthorizationCodeFlow(config Configuration, clientID, redirectURL string
 	return flow, nil
 }
 
-// AuthorizationScopes returns the caller-supplied scopes, or the preferred
-// default OIDC scopes filtered to those advertised by discovery when present.
-func AuthorizationScopes(config Configuration, scopes ...string) []string {
+// ValidateCallback validates the authorization callback code and state
+// against the flow state and returns the authorization code.
+func (flow *AuthorizationCodeFlow) ValidateCallback(code, state string) (string, error) {
+	if flow == nil {
+		return "", fmt.Errorf("authorization flow is required")
+	}
+	code = strings.TrimSpace(code)
+	state = strings.TrimSpace(state)
+	if expected := strings.TrimSpace(flow.State); expected != "" && state != expected {
+		if state == "" {
+			return "", fmt.Errorf("authorization callback missing state")
+		}
+		return "", fmt.Errorf("authorization callback state mismatch")
+	}
+	if code == "" {
+		return "", fmt.Errorf("authorization callback missing code")
+	}
+	return code, nil
+}
+
+// AuthorizationScopes returns caller-supplied scopes, or preferred default
+// OIDC scopes filtered to those advertised by discovery when present.
+func AuthorizationScopes(config OIDCConfiguration, scopes ...string) []string {
 	if len(scopes) > 0 {
 		return append([]string(nil), scopes...)
 	}
 	if len(config.ScopesSupported) == 0 {
-		return append([]string(nil), defaultAuthorizationScopes...)
+		return append([]string(nil), DefaultOIDCAuthorizationScopes...)
 	}
 	supported := make(map[string]struct{}, len(config.ScopesSupported))
 	for _, scope := range config.ScopesSupported {
@@ -103,8 +134,8 @@ func AuthorizationScopes(config Configuration, scopes ...string) []string {
 			supported[scope] = struct{}{}
 		}
 	}
-	selected := make([]string, 0, len(defaultAuthorizationScopes))
-	for _, scope := range defaultAuthorizationScopes {
+	selected := make([]string, 0, len(DefaultOIDCAuthorizationScopes))
+	for _, scope := range DefaultOIDCAuthorizationScopes {
 		if _, ok := supported[scope]; ok {
 			selected = append(selected, scope)
 		}
@@ -112,32 +143,30 @@ func AuthorizationScopes(config Configuration, scopes ...string) []string {
 	if len(selected) > 0 {
 		return selected
 	}
-	return append([]string(nil), defaultAuthorizationScopes...)
+	return append([]string(nil), DefaultOIDCAuthorizationScopes...)
+}
+
+// OAuthAuthorizationScopes returns caller-supplied scopes, or advertised
+// OAuth scopes when present. OAuth metadata has no implicit openid/profile default.
+func OAuthAuthorizationScopes(config OAuthConfiguration, scopes ...string) []string {
+	if len(scopes) > 0 {
+		return append([]string(nil), scopes...)
+	}
+	selected := compactValues(config.ScopesSupported)
+	if len(selected) == 0 {
+		return nil
+	}
+	return selected
 }
 
 // URL returns the authorization URL for the flow.
 func (flow AuthorizationCodeFlow) URL() (string, error) {
-	endpoint := strings.TrimSpace(flow.AuthorizationEndpoint)
-	if endpoint == "" {
-		return "", fmt.Errorf("authorization endpoint is required")
-	}
-	if strings.TrimSpace(flow.ClientID) == "" {
-		return "", fmt.Errorf("client ID is required")
-	}
-	if strings.TrimSpace(flow.RedirectURL) == "" {
-		return "", fmt.Errorf("redirect URL is required")
-	}
-	if strings.TrimSpace(flow.State) == "" {
-		return "", fmt.Errorf("state is required")
-	}
-	responseType := strings.TrimSpace(flow.ResponseType)
-	if responseType == "" {
-		responseType = ResponseTypeCode
-	}
 	values := url.Values{}
-	values.Set("client_id", flow.ClientID)
+	if clientID := strings.TrimSpace(flow.ClientID); clientID != "" {
+		values.Set("client_id", clientID)
+	}
 	values.Set("redirect_uri", flow.RedirectURL)
-	values.Set("response_type", responseType)
+	values.Set("response_type", flow.ResponseType)
 	values.Set("state", flow.State)
 	if len(flow.Scopes) > 0 {
 		values.Set("scope", strings.Join(flow.Scopes, " "))
@@ -151,7 +180,7 @@ func (flow AuthorizationCodeFlow) URL() (string, error) {
 	if method := strings.TrimSpace(flow.CodeChallengeMethod); method != "" {
 		values.Set("code_challenge_method", method)
 	}
-	uri, err := url.Parse(endpoint)
+	uri, err := url.Parse(flow.AuthorizationEndpoint)
 	if err != nil {
 		return "", err
 	}
@@ -207,4 +236,15 @@ func randomToken(size int) (string, error) {
 		return "", err
 	}
 	return base64.RawURLEncoding.EncodeToString(buf), nil
+}
+
+func compactValues(values []string) []string {
+	result := make([]string, 0, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value != "" {
+			result = append(result, value)
+		}
+	}
+	return result
 }

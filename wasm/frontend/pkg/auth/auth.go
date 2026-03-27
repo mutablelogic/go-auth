@@ -58,9 +58,9 @@ func (a *Auth) Refresh(onSuccess func(string), onError func(error)) {
 			return
 		}
 
-		refreshed := strings.TrimSpace(value.Get("token").String())
+		refreshed := strings.TrimSpace(value.Get("access_token").String())
 		if refreshed == "" {
-			callError(onError, fmt.Errorf("refresh response missing token"))
+			callError(onError, fmt.Errorf("refresh response missing access_token"))
 			return
 		}
 
@@ -252,9 +252,9 @@ func (a *Auth) refreshTokenValue(done func(js.Value, error)) {
 			return
 		}
 
-		refreshed := strings.TrimSpace(value.Get("token").String())
+		refreshed := strings.TrimSpace(value.Get("access_token").String())
 		if refreshed == "" {
-			done(js.Undefined(), fmt.Errorf("refresh response missing token"))
+			done(js.Undefined(), fmt.Errorf("refresh response missing access_token"))
 			return
 		}
 

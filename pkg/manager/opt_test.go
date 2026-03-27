@@ -1,15 +1,28 @@
 package manager
 
 import (
+	"context"
 	"testing"
 	"time"
 
 	// Packages
 	authcrypto "github.com/djthorpe/go-auth/pkg/crypto"
+	providerpkg "github.com/djthorpe/go-auth/pkg/provider"
+	localprovider "github.com/djthorpe/go-auth/pkg/provider/local"
 	schema "github.com/djthorpe/go-auth/schema"
 	assert "github.com/stretchr/testify/assert"
 	require "github.com/stretchr/testify/require"
+	nooptrace "go.opentelemetry.io/otel/trace/noop"
 )
+
+func testLocalProvider(t *testing.T) providerpkg.Provider {
+	t.Helper()
+	key, err := authcrypto.GeneratePrivateKey()
+	require.NoError(t, err)
+	provider, err := localprovider.New("https://issuer.example.test/api", key)
+	require.NoError(t, err)
+	return provider
+}
 
 func Test_opt_001(t *testing.T) {
 	t.Run("ApplySkipsNil", func(t *testing.T) {
@@ -19,25 +32,28 @@ func Test_opt_001(t *testing.T) {
 		assert.NoError(options.apply(nil))
 	})
 
-	t.Run("WithOAuthClient", func(t *testing.T) {
+	t.Run("WithProvider", func(t *testing.T) {
 		assert := assert.New(t)
+		require := require.New(t)
 
 		options := new(opt)
-		assert.NoError(WithOAuthClient("google", "https://accounts.google.com", "google-client-id", "google-client-secret")(options))
-		config, ok := options.oauth["google"]
-		assert.True(ok)
-		assert.Equal("google-client-id", config.ClientID)
-		assert.Equal("google-client-secret", config.ClientSecret)
-		assert.Equal("https://accounts.google.com", config.Issuer)
-		assert.Equal(schema.ProviderOAuth, config.Provider)
-		assert.EqualError(WithOAuthClient("", "https://accounts.google.com", "google-client-id", "google-client-secret")(options), "oauth key cannot be empty")
-		assert.EqualError(WithOAuthClient("google", "", "google-client-id", "google-client-secret")(options), "oauth issuer cannot be empty")
-		assert.EqualError(WithOAuthClient("google", "https://accounts.google.com", "other-client-id", "other-client-secret")(options), "oauth key \"google\" already configured")
-		assert.NoError(WithOAuthClient("local", "https://issuer.example.test/api", "", "")(options))
-		local, ok := options.oauth["local"]
-		assert.True(ok)
-		assert.Empty(local.ClientID)
-		assert.Empty(local.ClientSecret)
+		provider := testLocalProvider(t)
+		require.NoError(WithProvider(provider)(options))
+
+		provider, ok := options.providers[schema.ProviderKeyLocal]
+		require.True(ok)
+		assert.Equal(schema.ProviderKeyLocal, provider.Key())
+
+		resp, err := provider.BeginAuthorization(context.Background(), providerpkg.AuthorizationRequest{
+			RedirectURL: "http://127.0.0.1:8085/callback",
+			ProviderURL: "/auth/provider/local",
+			State:       "state-123",
+		})
+		require.NoError(err)
+		assert.Contains(resp.RedirectURL, "/auth/provider/local")
+
+		assert.EqualError(WithProvider(provider)(options), `provider key "local" already configured`)
+		assert.EqualError(WithProvider(nil)(options), "provider is required")
 	})
 
 	t.Run("WithSessionTTL", func(t *testing.T) {
@@ -121,12 +137,22 @@ func Test_opt_001(t *testing.T) {
 		assert.EqualError(WithHooks(nil)(options), "hooks are required")
 	})
 
+	t.Run("WithTracer", func(t *testing.T) {
+		assert := assert.New(t)
+
+		options := new(opt)
+		tracer := nooptrace.NewTracerProvider().Tracer("manager-test")
+		assert.NoError(WithTracer(tracer)(options))
+		assert.Equal(tracer, options.tracer)
+		assert.EqualError(WithTracer(nil)(options), "tracer is required")
+	})
+
 	t.Run("ApplyStopsOnError", func(t *testing.T) {
 		assert := assert.New(t)
 
 		options := new(opt)
-		err := options.apply(WithSchema("custom_auth"), WithOAuthClient("", "https://issuer.example.test/api", "", ""), WithSessionTTL(time.Minute))
-		assert.EqualError(err, "oauth key cannot be empty")
+		err := options.apply(WithSchema("custom_auth"), WithProvider(nil), WithSessionTTL(time.Minute))
+		assert.EqualError(err, "provider is required")
 		assert.Equal("custom_auth", options.schema)
 		assert.Zero(options.sessionttl)
 	})
