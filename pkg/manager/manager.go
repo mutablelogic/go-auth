@@ -84,6 +84,14 @@ func New(ctx context.Context, pool pg.PoolConn, opts ...Opt) (*Manager, error) {
 		self.PoolConn = pool
 	}
 
+	// Seed scopes into system groups. AddGroupScope is idempotent so safe to
+	// run on every startup.
+	for _, scope := range schema.GroupSysAdminScopes {
+		if _, err := self.AddGroupScope(ctx, schema.GroupSysAdmin, scope); err != nil {
+			return nil, fmt.Errorf("seed %s scope %q: %w", schema.GroupSysAdmin, scope, err)
+		}
+	}
+
 	// Set up notifications of table change if requested
 	if self.channel != "" {
 		if notifications, err := broadcaster.NewBroadcaster(pool, self.channel); err != nil {

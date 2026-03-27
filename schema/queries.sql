@@ -372,6 +372,21 @@ DELETE FROM ${"schema"}."group"
 WHERE id = @id
 RETURNING id, description, enabled, scopes, meta;
 
+-- group.add_scope
+UPDATE ${"schema"}."group"
+SET scopes = (
+    SELECT array_agg(DISTINCT s ORDER BY s)
+    FROM unnest(array_append(scopes, @scope)) AS s
+)
+WHERE id = @id
+RETURNING id, description, enabled, scopes, meta;
+
+-- group.remove_scope
+UPDATE ${"schema"}."group"
+SET scopes = array_remove(scopes, @scope)
+WHERE id = @id
+RETURNING id, description, enabled, scopes, meta;
+
 -- group.list
 SELECT
     group_row.id,

@@ -29,6 +29,7 @@ const (
 	ErrConflict
 	ErrInternalServerError
 	ErrInvalidProvider
+	ErrForbidden
 )
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -56,6 +57,8 @@ func (e Err) Error() string {
 		return "internal server error"
 	case ErrInvalidProvider:
 		return "invalid auth provider"
+	case ErrForbidden:
+		return "forbidden"
 	}
 	return fmt.Sprintf("error code %d", int(e))
 }
