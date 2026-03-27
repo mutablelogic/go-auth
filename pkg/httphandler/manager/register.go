@@ -38,14 +38,12 @@ type Register interface {
 // RegisterManagerHandlers registers manager resource handlers with the provided router.
 func RegisterManagerHandlers(manager *managerpkg.Manager, router server.HTTPRouter, authEnabled bool) error {
 	var result error
-	authenticated := middleware.NewMiddleware(manager)
-
 	register := func(path string, handler http.HandlerFunc, spec *openapi.PathItem) {
 		result = errors.Join(result, router.(Register).RegisterFunc(path, handler, true, spec))
 	}
 	registerProtected := func(path string, handler http.HandlerFunc, spec *openapi.PathItem) {
 		if authEnabled {
-			handler = authenticated(handler)
+			handler = middleware.AuthN(manager)(handler)
 		}
 		register(path, handler, spec)
 	}

@@ -32,10 +32,11 @@ import (
 ///////////////////////////////////////////////////////////////////////////////
 // PUBLIC METHODS
 
-// NewAuth returns an HTTP middleware that verifies a locally issued JWT,
+// AuthN returns an HTTP middleware that verifies a locally issued JWT,
 // extracts the embedded session and user claims, and rejects revoked or expired
-// sessions or users.
-func NewAuthN(mgr *manager.Manager) func(http.HandlerFunc) http.HandlerFunc {
+// sessions or users. If any check fails, a 401 Unauthorized
+// response is returned with a WWW-Authenticate header containing the error details.
+func AuthN(mgr *manager.Manager) func(http.HandlerFunc) http.HandlerFunc {
 	return func(next http.HandlerFunc) http.HandlerFunc {
 		return func(w http.ResponseWriter, r *http.Request) {
 			token, ok := bearerToken(r)
@@ -50,21 +51,21 @@ func NewAuthN(mgr *manager.Manager) func(http.HandlerFunc) http.HandlerFunc {
 			}
 			claims, err := mgr.OIDCVerify(token, issuer)
 			if err != nil {
-				writeUnauthorized(w, r, mgr, "invalid_token", err)
+				writeUnauthorized(w, r, mgr, "invalid_token", err.Error())
 				return
 			}
 			session, err := sessionFromClaims(claims)
 			if err != nil {
-				writeUnauthorized(w, r, mgr, "invalid_token", err)
+				writeUnauthorized(w, r, mgr, "invalid_token", err.Error())
 				return
 			}
 			user, err := userFromClaims(claims)
 			if err != nil {
-				writeUnauthorized(w, r, mgr, "invalid_token", err)
+				writeUnauthorized(w, r, mgr, "invalid_token", err.Error())
 				return
 			}
 			if err := validateClaimBindings(claims, user, session); err != nil {
-				writeUnauthorized(w, r, mgr, "invalid_token", err)
+				writeUnauthorized(w, r, mgr, "invalid_token", err.Error())
 				return
 			}
 			if session.RevokedAt != nil {
@@ -84,15 +85,11 @@ func NewAuthN(mgr *manager.Manager) func(http.HandlerFunc) http.HandlerFunc {
 				writeUnauthorized(w, r, mgr, "invalid_token", "user is not active")
 				return
 			}
+
+			// Add auth context and call next handler
 			next(w, r.WithContext(withAuthContext(r.Context(), claims, user, session)))
 		}
 	}
-}
-
-// NewMiddleware preserves the older constructor name used by tests and
-// callers while delegating to NewAuthN.
-func NewMiddleware(mgr *manager.Manager) func(http.HandlerFunc) http.HandlerFunc {
-	return NewAuthN(mgr)
 }
 
 ///////////////////////////////////////////////////////////////////////////////
