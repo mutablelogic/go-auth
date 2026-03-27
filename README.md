@@ -171,6 +171,7 @@ Contributions are welcome. Please open an issue before submitting a pull request
 | `make cmd` | Build the `authserver` binary |
 | `make wasm` | Build the WebAssembly frontend only |
 | `make npm` | Bundle Carbon web components via esbuild |
+| `make license` | Add Apache 2.0 license headers to all `.go` files |
 | `make tidy` | Run `go mod tidy` |
 | `make clean` | Remove all build artefacts and tidy dependencies |
 

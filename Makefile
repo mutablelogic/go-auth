@@ -87,6 +87,15 @@ gowasm-dep:
 	@command -v ${GOWASM} >/dev/null 2>&1 || { echo 'Missing wasm compiler: ${GOWASM}'; exit 1; }
 	@echo 'Using wasm compiler ${GOWASM}'
 
+## LICENSE ####################################################################
+
+GOFILES_LICENSE=$(shell find . -name '*.go' -not -path './build/*' -not -path './.git/*' -not -path './npm/*')
+
+.PHONY: license
+license: go-dep
+	@${GO} install github.com/google/addlicense@latest
+	@addlicense -c "David Thorpe" -l apache -y 2026 $(GOFILES_LICENSE)
+
 ## TIDY and CLEAN #############################################################
 
 .PHONY: mkdir
