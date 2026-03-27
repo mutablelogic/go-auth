@@ -21,7 +21,7 @@ func TestAuthorizationServerAndClientCredentialsAllowsProviderFlowWithoutClientI
 		}},
 	}}}
 
-	serverMeta, clientID, clientSecret, err := cmd.authorizationServerAndClientCredentials(nil, nil, meta)
+	serverMeta, clientID, clientSecret, err := cmd.authorizationServerAndClientCredentials(nil, nil, meta, "http://localhost:12345/")
 	require.NoError(t, err)
 	require.NotNil(t, serverMeta)
 	require.Equal(t, "http://localhost:8084/api", serverMeta.Issuer)
@@ -33,7 +33,7 @@ func TestAuthorizationServerAndClientCredentialsStillFailsWithoutFlowOrRegistrat
 	cmd := &AuthorizeCommand{}
 	meta := &authclient.Config{AuthorizationServers: []authclient.ServerMetadata{{Issuer: "http://localhost:8084/api"}}}
 
-	serverMeta, clientID, clientSecret, err := cmd.authorizationServerAndClientCredentials(nil, nil, meta)
+	serverMeta, clientID, clientSecret, err := cmd.authorizationServerAndClientCredentials(nil, nil, meta, "http://localhost:12345/")
 	require.Nil(t, serverMeta)
 	require.Empty(t, clientID)
 	require.Empty(t, clientSecret)

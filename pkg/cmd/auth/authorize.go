@@ -26,7 +26,7 @@ type AuthorizeCommand struct {
 	Provider     string   `name:"provider" help:"Provider hint to pass to the authorization endpoint when multiple providers are configured."`
 	ClientID     string   `name:"client-id" help:"OAuth client ID. Defaults to the stored client ID."`
 	ClientSecret string   `name:"client-secret" help:"OAuth client secret. Defaults to the stored client secret when required by the provider."`
-	Redirect     string   `name:"redirect-url" help:"OAuth callback URL for interactive login." default:"http://127.0.0.1:8085/callback"`
+	Redirect     string   `name:"redirect-url" help:"OAuth callback URL for interactive login. When no port is specified, a free loopback port is chosen automatically." default:"http://localhost/"`
 	Scopes       []string `name:"scope" help:"OAuth scopes to request. Repeat the flag to specify multiple scopes. Defaults to advertised OIDC scopes or openid email profile."`
 }
 
@@ -37,7 +37,7 @@ const clientIDStoreKeyPrefix = "auth.client_id."
 const clientSecretStoreKeyPrefix = "auth.client_secret."
 const issuerStoreKeyPrefix = "auth.issuer."
 const tokenStoreKeyPrefix = "auth.token."
-const defaultRedirectURL = "http://127.0.0.1:8085/callback"
+const defaultRedirectURL = "http://localhost/"
 
 ///////////////////////////////////////////////////////////////////////////////
 // COMMANDS
@@ -97,18 +97,26 @@ func (cmd *AuthorizeCommand) Run(ctx server.Cmd) error {
 		}
 	}
 
+	// Create the callback listener first so the resolved loopback URL, including
+	// any auto-selected port, is used consistently for registration and the auth flow.
+	redirectURL := strings.TrimSpace(cmd.Redirect)
+	if redirectURL == "" {
+		redirectURL = defaultRedirectURL
+	}
+	callback, err := webcallback.New(redirectURL)
+	if err != nil {
+		return err
+	}
+	redirectURL = callback.URL()
+
 	// Get the server metadata and client ID for the authorization flow, either from the command line, stored value,
 	// or dynamic registration
-	serverMeta, clientID, clientSecret, err := cmd.authorizationServerAndClientCredentials(ctx, auth_client, meta)
+	serverMeta, clientID, clientSecret, err := cmd.authorizationServerAndClientCredentials(ctx, auth_client, meta, redirectURL)
 	if err != nil {
 		return err
 	}
 
 	// Generate the authorization code flow URL
-	redirectURL := strings.TrimSpace(cmd.Redirect)
-	if redirectURL == "" {
-		redirectURL = defaultRedirectURL
-	}
 	config, err := serverMeta.AuthorizationCodeConfig()
 	if err != nil {
 		return err
@@ -124,17 +132,11 @@ func (cmd *AuthorizeCommand) Run(ctx server.Cmd) error {
 		return err
 	}
 
-	// Initiate the callback server to receive the authorization code response
-	server, err := webcallback.New(redirectURL)
-	if err != nil {
-		return err
-	}
-
 	// In parallel, open the browser to the authorization URL and wait for the callback to be received,
 	// then exchange the code for a token and store it
 	g, groupCtx := errgroup.WithContext(ctx.Context())
 	g.Go(func() error {
-		result, err := server.Run(groupCtx)
+		result, err := callback.Run(groupCtx)
 		if err != nil {
 			return err
 		}
@@ -167,7 +169,7 @@ func (cmd *AuthorizeCommand) Run(ctx server.Cmd) error {
 	return nil
 }
 
-func (cmd *AuthorizeCommand) authorizationServerAndClientCredentials(ctx server.Cmd, authClient *auth.Client, meta *auth.Config) (*auth.ServerMetadata, string, string, error) {
+func (cmd *AuthorizeCommand) authorizationServerAndClientCredentials(ctx server.Cmd, authClient *auth.Client, meta *auth.Config, redirectURL string) (*auth.ServerMetadata, string, string, error) {
 	// Retrieve client credentials from command line, stored values, or dynamic registration
 	clientID := strings.TrimSpace(cmd.ClientID)
 	if clientID == "" {
@@ -197,7 +199,7 @@ func (cmd *AuthorizeCommand) authorizationServerAndClientCredentials(ctx server.
 		}
 		return serverMeta, "", clientSecret, nil
 	}
-	redirectURL := strings.TrimSpace(cmd.Redirect)
+	redirectURL = strings.TrimSpace(redirectURL)
 	if redirectURL == "" {
 		redirectURL = defaultRedirectURL
 	}

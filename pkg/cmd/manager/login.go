@@ -19,7 +19,7 @@ import (
 ///////////////////////////////////////////////////////////////////////////////
 // TYPES
 
-const defaultRedirectURL = "http://localhost:8085/callback"
+const defaultRedirectURL = "http://localhost/"
 
 type LoginCommand struct {
 	Provider string `arg:"" optional:"" name:"provider" help:"Provider to login to. If not specified, the provider will be selected automatically if only one provider is configured."`
@@ -53,11 +53,16 @@ func (cmd *LoginCommand) Run(ctx server.Cmd) error {
 			return err
 		}
 
+		callback, err := webcallback.New(defaultRedirectURL)
+		if err != nil {
+			return err
+		}
+
 		flowConfig, err := authconfig.AuthorizationCodeConfig()
 		if err != nil {
 			return err
 		}
-		flow, err := oidc.NewAuthorizationCodeFlow(flowConfig, strings.TrimSpace(config[cmd.Provider].ClientID), defaultRedirectURL, oidc.DefaultOIDCAuthorizationScopes...)
+		flow, err := oidc.NewAuthorizationCodeFlow(flowConfig, strings.TrimSpace(config[cmd.Provider].ClientID), callback.URL(), oidc.DefaultOIDCAuthorizationScopes...)
 		if err != nil {
 			return err
 		}
@@ -67,17 +72,11 @@ func (cmd *LoginCommand) Run(ctx server.Cmd) error {
 			return err
 		}
 
-		// Initiate the callback server to receive the authorization code response
-		server, err := webcallback.New(defaultRedirectURL)
-		if err != nil {
-			return err
-		}
-
 		// In parallel, open the browser to the authorization URL and wait for the callback to be received,
 		// then exchange the code for a token and store it
 		g, groupCtx := errgroup.WithContext(ctx.Context())
 		g.Go(func() error {
-			result, err := server.Run(groupCtx)
+			result, err := callback.Run(groupCtx)
 			if err != nil {
 				return err
 			}

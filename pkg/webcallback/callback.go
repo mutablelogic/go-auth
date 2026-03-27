@@ -46,7 +46,7 @@ const (
 // New validates the supplied loopback callback URL, opens the
 // listener immediately, and stores the resolved callback URL. The URL must use
 // the http scheme and a loopback hostname such as 127.0.0.1, localhost, or
-// ::1. The port may be set to 0 to allocate a free port.
+// ::1. The port may be omitted or set to 0 to allocate a free port.
 func New(url string) (*webCallback, error) {
 	callbackURL, err := parseCallbackURL(url)
 	if err != nil {
@@ -142,7 +142,7 @@ func parseCallbackURL(rawURL string) (*url.URL, error) {
 		return nil, fmt.Errorf("callback URL host %q must be loopback", hostname)
 	}
 	if uri.Port() == "" {
-		return nil, fmt.Errorf("callback URL port is required")
+		uri.Host = joinHostPort(hostname, "0")
 	}
 	if uri.Path == "" {
 		uri.Path = "/"
@@ -150,6 +150,13 @@ func parseCallbackURL(rawURL string) (*url.URL, error) {
 	uri.RawQuery = ""
 	uri.Fragment = ""
 	return uri, nil
+}
+
+func joinHostPort(host, port string) string {
+	if strings.Contains(host, ":") && !strings.HasPrefix(host, "[") {
+		host = "[" + host + "]"
+	}
+	return net.JoinHostPort(host, port)
 }
 
 func isLoopbackHost(host string) bool {
@@ -164,10 +171,7 @@ func resolvedCallbackURL(base *url.URL, addr net.Addr) *url.URL {
 	resolved := *base
 	if tcp, ok := addr.(*net.TCPAddr); ok {
 		hostname := base.Hostname()
-		if strings.Contains(hostname, ":") && !strings.HasPrefix(hostname, "[") {
-			hostname = "[" + hostname + "]"
-		}
-		resolved.Host = net.JoinHostPort(hostname, fmt.Sprint(tcp.Port))
+		resolved.Host = joinHostPort(hostname, fmt.Sprint(tcp.Port))
 	}
 	return &resolved
 }

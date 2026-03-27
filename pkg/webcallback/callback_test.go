@@ -26,6 +26,13 @@ func TestListenRequiresLoopbackHTTPURL(t *testing.T) {
 	require.EqualError(t, err, `callback URL host "example.com" must be loopback`)
 }
 
+func TestListenAllocatesPortWhenMissing(t *testing.T) {
+	listener, err := webcallback.New("http://localhost/")
+	require.NoError(t, err)
+	assert.True(t, strings.HasPrefix(listener.URL(), "http://localhost:"))
+	assert.True(t, strings.HasSuffix(listener.URL(), "/"))
+}
+
 func TestResultAccessors(t *testing.T) {
 	result := webcallback.Result{Query: url.Values{
 		"code":  {"abc123"},
