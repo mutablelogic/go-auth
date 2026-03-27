@@ -75,9 +75,6 @@ func OAuth2ConfigForFlow(flow *oidc.AuthorizationCodeFlow, clientSecret string) 
 // OAuth2Config returns an oauth2.Config derived from auth server metadata and client ID.
 func OAuth2Config(config oidc.BaseConfiguration, clientID, clientSecret string, scopes ...string) (*oauth2.Config, error) {
 	clientID = strings.TrimSpace(clientID)
-	if clientID == "" {
-		return nil, fmt.Errorf("client ID is required")
-	}
 	if strings.TrimSpace(config.TokenEndpoint) == "" {
 		return nil, fmt.Errorf("token endpoint is required")
 	}

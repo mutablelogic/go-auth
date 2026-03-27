@@ -103,9 +103,6 @@ func refreshStoredToken(store TokenStore, endpoint, clientID string, authClient 
 	if authClient == nil {
 		return nil, fmt.Errorf("auth client is required")
 	}
-	if clientID == "" {
-		return nil, fmt.Errorf("client ID is required")
-	}
 	issuer = strings.TrimSpace(issuer)
 	if issuer == "" {
 		issuer = endpoint

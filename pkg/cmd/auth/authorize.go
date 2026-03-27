@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"strings"
 
 	// Packages
@@ -22,6 +23,7 @@ import (
 
 type AuthorizeCommand struct {
 	Endpoint     string   `arg:"" optional:"" name:"endpoint" help:"Protected resource endpoint. Defaults to the stored endpoint or the global HTTP client endpoint."`
+	Provider     string   `name:"provider" help:"Provider hint to pass to the authorization endpoint when multiple providers are configured."`
 	ClientID     string   `name:"client-id" help:"OAuth client ID. Defaults to the stored client ID."`
 	ClientSecret string   `name:"client-secret" help:"OAuth client secret. Defaults to the stored client secret when required by the provider."`
 	Redirect     string   `name:"redirect-url" help:"OAuth callback URL for interactive login." default:"http://127.0.0.1:8085/callback"`
@@ -116,6 +118,11 @@ func (cmd *AuthorizeCommand) Run(ctx server.Cmd) error {
 	if err != nil {
 		return err
 	}
+	flow.Provider = strings.TrimSpace(cmd.Provider)
+	flow.AuthorizationURL, err = authorizationURLWithHints(flow.AuthorizationURL, flow.Provider)
+	if err != nil {
+		return err
+	}
 
 	// Initiate the callback server to receive the authorization code response
 	server, err := webcallback.New(redirectURL)
@@ -184,7 +191,11 @@ func (cmd *AuthorizeCommand) authorizationServerAndClientCredentials(ctx server.
 	// Register client dynamically if client ID is not provided or stored
 	serverMeta, err := meta.AuthorizationServerForRegistration()
 	if err != nil {
-		return nil, "", "", fmt.Errorf("client ID is required or dynamic registration must succeed: %w", err)
+		serverMeta, flowErr := meta.AuthorizationServerForFlow()
+		if flowErr != nil {
+			return nil, "", "", fmt.Errorf("client ID is required or dynamic registration must succeed: %w", err)
+		}
+		return serverMeta, "", clientSecret, nil
 	}
 	redirectURL := strings.TrimSpace(cmd.Redirect)
 	if redirectURL == "" {
@@ -230,6 +241,20 @@ func compactScopes(scopes []string) []string {
 		}
 	}
 	return result
+}
+
+func authorizationURLWithHints(rawURL, provider string) (string, error) {
+	uri, err := url.Parse(strings.TrimSpace(rawURL))
+	if err != nil {
+		return "", err
+	}
+	provider = strings.TrimSpace(provider)
+	if provider != "" {
+		query := uri.Query()
+		query.Set("provider", provider)
+		uri.RawQuery = query.Encode()
+	}
+	return uri.String(), nil
 }
 
 func storeToken(ctx server.Cmd, endpoint, issuer string, token *oauth2.Token) error {

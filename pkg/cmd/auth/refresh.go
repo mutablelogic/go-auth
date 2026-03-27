@@ -82,9 +82,6 @@ func refreshStoredToken(ctx server.Cmd, authClient *auth.Client, endpoint, clien
 	if clientSecret == "" {
 		clientSecret = strings.TrimSpace(ctx.GetString(clientSecretStoreKey(nil, issuer)))
 	}
-	if clientID == "" {
-		return nil, fmt.Errorf("no stored client ID for issuer %q", issuer)
-	}
 
 	oauthConfig, err := auth.OAuth2Config(config, clientID, clientSecret)
 	if err != nil {
