@@ -48,6 +48,23 @@ func (meta *MetaMap) UnmarshalText(text []byte) error {
 	return nil
 }
 
+func (meta MetaMap) String() string {
+	return types.Stringify(meta)
+}
+
+func (meta MetaMap) RedactedString() string {
+	r := make(MetaMap, len(meta))
+	for k, v := range meta {
+		r[k] = v
+	}
+	for _, key := range []string{"name", "email"} {
+		if _, ok := r[key]; ok {
+			r[key] = "[redacted]"
+		}
+	}
+	return types.Stringify(r)
+}
+
 func (meta MetaMap) Map() map[string]any {
 	if len(meta) == 0 {
 		return nil

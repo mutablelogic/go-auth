@@ -121,13 +121,9 @@ func (i IdentityInsert) String() string {
 
 func (i IdentityInsert) RedactedString() string {
 	r := i
-	if r.Sub != "" {
-		r.Sub = "[redacted]"
-	}
 	if r.Email != "" {
 		r.Email = "[redacted]"
 	}
-	r.Claims = nil
 	return types.Stringify(r)
 }
 

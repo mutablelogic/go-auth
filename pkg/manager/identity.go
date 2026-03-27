@@ -93,6 +93,9 @@ func (m *Manager) ListIdentities(ctx context.Context, req schema.IdentityListReq
 
 func (m *Manager) LoginWithIdentity(ctx context.Context, meta schema.IdentityInsert, createMeta map[string]any) (_ *schema.User, _ *schema.Session, err error) {
 	attrs := []attribute.KeyValue{attribute.String("meta", meta.RedactedString())}
+	if createMeta != nil {
+		attrs = append(attrs, attribute.String("create_meta", schema.MetaMap(createMeta).RedactedString()))
+	}
 	ctx, endSpan := otel.StartSpan(m.tracer, ctx, "manager.LoginWithIdentity", attrs...)
 	defer func() { endSpan(err) }()
 
