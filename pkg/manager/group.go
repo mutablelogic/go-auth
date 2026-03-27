@@ -53,7 +53,7 @@ func (m *Manager) CreateGroup(ctx context.Context, insert schema.GroupInsert) (_
 	defer func() { endSpan(err) }()
 
 	if schema.IsSystemGroup(insert.ID) {
-		err = auth.ErrForbidden.Withf("group %q is is server-managed and cannot be created via the API", insert.ID)
+		err = auth.ErrForbidden.Withf("group %q is server-managed and cannot be created via the API", insert.ID)
 		return nil, err
 	}
 	var result schema.Group

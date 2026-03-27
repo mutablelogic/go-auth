@@ -46,6 +46,9 @@ func MatchScopes(required ...string) Policy {
 // PUBLIC METHODS
 
 func (p *scopePolicy) MatchUser(user *schema.User) error {
+	if user == nil {
+		return fmt.Errorf("user is required")
+	}
 	for _, required := range p.scopes {
 		if !user.HasScope(required) {
 			return fmt.Errorf("missing required scope: %q", required)

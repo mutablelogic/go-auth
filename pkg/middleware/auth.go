@@ -92,6 +92,11 @@ func AuthN(mgr *manager.Manager) func(http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
+// NewMiddleware is kept as a compatibility wrapper for existing callers.
+func NewMiddleware(mgr *manager.Manager) func(http.HandlerFunc) http.HandlerFunc {
+	return AuthN(mgr)
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 // PRIVATE METHODS
 
