@@ -114,6 +114,14 @@ func (u UserList) String() string {
 	return types.Stringify(u)
 }
 
+func (u UserListRequest) String() string {
+	return types.Stringify(u)
+}
+
+func (u UserMeta) String() string {
+	return types.Stringify(u)
+}
+
 func (u User) String() string {
 	return types.Stringify(u)
 }

@@ -8,12 +8,16 @@ import (
 
 	// Packages
 	auth "github.com/djthorpe/go-auth"
+	manager "github.com/djthorpe/go-auth/pkg/manager"
 	schema "github.com/djthorpe/go-auth/schema"
 	uuid "github.com/google/uuid"
 	pg "github.com/mutablelogic/go-pg"
 	types "github.com/mutablelogic/go-server/pkg/types"
 	assert "github.com/stretchr/testify/assert"
 	require "github.com/stretchr/testify/require"
+	attribute "go.opentelemetry.io/otel/attribute"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	tracetest "go.opentelemetry.io/otel/sdk/trace/tracetest"
 )
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -128,7 +132,7 @@ func Test_user_001(t *testing.T) {
 		assert.Empty(created.Groups)
 		assert.Empty(created.Scopes)
 
-		identity, err := m.GetIdentity(context.Background(), "github", "alice-identity")
+		identity, err := m.GetIdentity(context.Background(), schema.IdentityKey{Provider: "github", Sub: "alice-identity"})
 		require.NoError(err)
 		require.NotNil(identity)
 		assert.Equal(created.ID, identity.User)
@@ -591,6 +595,54 @@ func Test_user_001(t *testing.T) {
 		require.NotNil(clamped.Limit)
 		assert.Equal(uint64(4), *clamped.Limit)
 		require.Len(clamped.Body, 4)
+	})
+
+	t.Run("ListUsersTracing", func(t *testing.T) {
+		assert := assert.New(t)
+		require := require.New(t)
+		active := schema.UserStatusActive
+
+		exporter := tracetest.NewInMemoryExporter()
+		provider := sdktrace.NewTracerProvider(sdktrace.WithSyncer(exporter))
+		defer func() {
+			require.NoError(provider.Shutdown(context.Background()))
+		}()
+
+		m := newTestManagerWithOpts(t, manager.WithTracer(provider.Tracer("manager-test")))
+		created, err := m.CreateUser(context.Background(), schema.UserMeta{
+			Name:   "Trace User",
+			Email:  "trace@example.com",
+			Status: &active,
+		}, nil)
+		require.NoError(err)
+		require.NotNil(created)
+
+		limit := uint64(5)
+		req := schema.UserListRequest{
+			Email: "trace@example.com",
+			Status: []schema.UserStatus{
+				schema.UserStatusActive,
+			},
+			OffsetLimit: pg.OffsetLimit{Offset: 0, Limit: &limit},
+		}
+		expectedRequest := req.String()
+
+		listed, err := m.ListUsers(context.Background(), req)
+		require.NoError(err)
+		require.NotNil(listed)
+
+		require.NoError(provider.ForceFlush(context.Background()))
+		spans := exporter.GetSpans()
+
+		var listUsersSpan *tracetest.SpanStub
+		for i := range spans {
+			if spans[i].Name == "manager.ListUsers" {
+				listUsersSpan = &spans[i]
+				break
+			}
+		}
+		require.NotNil(listUsersSpan)
+		assert.Contains(listUsersSpan.Attributes, attribute.String("request", expectedRequest))
 	})
 
 	t.Run("CreateInvalidEmail", func(t *testing.T) {

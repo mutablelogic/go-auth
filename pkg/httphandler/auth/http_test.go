@@ -1245,7 +1245,7 @@ func mustLoginSession(t *testing.T, mgr *managerpkg.Manager) (*schema.User, *sch
 				"email": "http-test@example.com",
 			},
 		},
-	})
+	}, nil)
 	require.NoError(t, err)
 	return user, session
 }

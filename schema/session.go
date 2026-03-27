@@ -9,6 +9,7 @@ import (
 	auth "github.com/djthorpe/go-auth"
 	uuid "github.com/google/uuid"
 	pg "github.com/mutablelogic/go-pg"
+	types "github.com/mutablelogic/go-server/pkg/types"
 )
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -56,8 +57,12 @@ func (id SessionID) MarshalJSON() ([]byte, error) {
 	return json.Marshal(uuid.UUID(id))
 }
 
+func (id SessionID) String() string {
+	return uuid.UUID(id).String()
+}
+
 func (id SessionID) MarshalText() ([]byte, error) {
-	return []byte(uuid.UUID(id).String()), nil
+	return []byte(id.String()), nil
 }
 
 func (id *SessionID) UnmarshalText(text []byte) error {
@@ -116,6 +121,10 @@ func (s *Session) Scan(row pg.Row) error {
 		&s.CreatedAt,
 		&s.RevokedAt,
 	)
+}
+
+func (s Session) String() string {
+	return types.Stringify(s)
 }
 
 ///////////////////////////////////////////////////////////////////////////////

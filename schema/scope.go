@@ -46,6 +46,10 @@ func (list ScopeList) String() string {
 	return types.Stringify(list)
 }
 
+func (req ScopeListRequest) String() string {
+	return types.Stringify(req)
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 // PUBLIC METHODS - SELECTOR
 

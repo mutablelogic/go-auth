@@ -12,6 +12,9 @@ import (
 	schema "github.com/djthorpe/go-auth/schema"
 	assert "github.com/stretchr/testify/assert"
 	require "github.com/stretchr/testify/require"
+	attribute "go.opentelemetry.io/otel/attribute"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	tracetest "go.opentelemetry.io/otel/sdk/trace/tracetest"
 )
 
 func Test_session_001(t *testing.T) {
@@ -155,6 +158,37 @@ func Test_session_001(t *testing.T) {
 		assert.True(refreshedSession.ExpiresAt.After(session.ExpiresAt))
 	})
 
+	t.Run("GetSessionTracing", func(t *testing.T) {
+		assert := assert.New(t)
+		require := require.New(t)
+
+		exporter := tracetest.NewInMemoryExporter()
+		provider := sdktrace.NewTracerProvider(sdktrace.WithSyncer(exporter))
+		defer func() {
+			require.NoError(provider.Shutdown(context.Background()))
+		}()
+
+		m := newSessionTestManagerWithOpts(t, 30*time.Minute, manager.WithTracer(provider.Tracer("manager-session-test")))
+		_, session := mustLoginSession(t, m)
+
+		loaded, err := m.GetSession(context.Background(), session.ID)
+		require.NoError(err)
+		require.NotNil(loaded)
+
+		require.NoError(provider.ForceFlush(context.Background()))
+		spans := exporter.GetSpans()
+
+		var getSessionSpan *tracetest.SpanStub
+		for i := range spans {
+			if spans[i].Name == "manager.GetSession" {
+				getSessionSpan = &spans[i]
+				break
+			}
+		}
+		require.NotNil(getSessionSpan)
+		assert.Contains(getSessionSpan.Attributes, attribute.String("session", session.ID.String()))
+	})
+
 	t.Run("RunPrunesRevokedSessions", func(t *testing.T) {
 		assert := assert.New(t)
 		require := require.New(t)
@@ -291,7 +325,7 @@ func mustLoginSessionWithSub(t *testing.T, m *manager.Manager, sub string) (*sch
 				"email": sub + "@example.com",
 			},
 		},
-	})
+	}, nil)
 	require.NoError(t, err)
 	require.NotNil(t, user)
 	require.NotNil(t, session)

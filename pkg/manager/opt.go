@@ -9,6 +9,7 @@ import (
 	// Packages
 	providerpkg "github.com/djthorpe/go-auth/pkg/provider"
 	schema "github.com/djthorpe/go-auth/schema"
+	trace "go.opentelemetry.io/otel/trace"
 )
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -44,6 +45,7 @@ type opt struct {
 	cleanuplimit int
 	providers    map[string]providerpkg.Provider
 	hooks        any
+	tracer       trace.Tracer
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -63,7 +65,6 @@ func (o *opt) apply(opts ...Opt) error {
 
 func (o *opt) defaults() {
 	o.schema = schema.DefaultSchema
-	o.channel = ""
 	o.sessionttl = schema.DefaultSessionTTL
 	o.cleanupint = DefaultCleanupInterval
 	o.cleanuplimit = DefaultCleanupLimit
@@ -167,6 +168,17 @@ func WithHooks(hooks any) Opt {
 			return fmt.Errorf("hooks are required")
 		}
 		o.hooks = hooks
+		return nil
+	}
+}
+
+// WithTracer sets the OpenTelemetry tracer used for manager spans.
+func WithTracer(tracer trace.Tracer) Opt {
+	return func(o *opt) error {
+		if tracer == nil {
+			return fmt.Errorf("tracer is required")
+		}
+		o.tracer = tracer
 		return nil
 	}
 }

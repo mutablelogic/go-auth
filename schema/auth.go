@@ -3,6 +3,7 @@ package schema
 import (
 	// Packages
 	auth "github.com/djthorpe/go-auth"
+	types "github.com/mutablelogic/go-server/pkg/types"
 )
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -50,6 +51,10 @@ type PublicClientConfiguration struct {
 // PublicClientConfigurations contains shareable client configuration keyed by
 // provider or role name.
 type PublicClientConfigurations map[string]PublicClientConfiguration
+
+func (cfg PublicClientConfigurations) String() string {
+	return types.Stringify(cfg)
+}
 
 ///////////////////////////////////////////////////////////////////////////////
 // GLOBALS

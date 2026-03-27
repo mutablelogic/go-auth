@@ -1,6 +1,7 @@
 package manager_test
 
 import (
+	"context"
 	"crypto/rsa"
 	"fmt"
 	"testing"
@@ -14,6 +15,9 @@ import (
 	jwt "github.com/golang-jwt/jwt/v5"
 	assert "github.com/stretchr/testify/assert"
 	require "github.com/stretchr/testify/require"
+	attribute "go.opentelemetry.io/otel/attribute"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	tracetest "go.opentelemetry.io/otel/sdk/trace/tracetest"
 )
 
 func TestOIDCIssuerConfigured(t *testing.T) {
@@ -73,6 +77,36 @@ func TestAuthConfigUsesPublicGoogleConfiguration(t *testing.T) {
 	require.True(t, ok)
 	assert.Equal(t, oidc.GoogleIssuer, google.Issuer)
 	assert.Equal(t, "google-client-id", google.ClientID)
+}
+
+func TestAuthConfigTracing(t *testing.T) {
+	exporter := tracetest.NewInMemoryExporter()
+	provider := sdktrace.NewTracerProvider(sdktrace.WithSyncer(exporter))
+	defer func() {
+		require.NoError(t, provider.Shutdown(context.Background()))
+	}()
+
+	mgr := newTestManagerWithOpts(t,
+		manager.WithTracer(provider.Tracer("manager-authconfig-test")),
+		manager.WithProvider(mustLocalProvider(t, "https://issuer.example.test/api")),
+		mustGoogleProviderOpt(t, oidc.GoogleIssuer),
+	)
+
+	config, err := mgr.AuthConfig()
+	require.NoError(t, err)
+	require.Len(t, config, 2)
+	require.NoError(t, provider.ForceFlush(context.Background()))
+
+	spans := exporter.GetSpans()
+	var authConfigSpan *tracetest.SpanStub
+	for i := range spans {
+		if spans[i].Name == "manager.AuthConfig" {
+			authConfigSpan = &spans[i]
+			break
+		}
+	}
+	require.NotNil(t, authConfigSpan)
+	assert.Contains(t, authConfigSpan.Attributes, attribute.Int("provider_count", 2))
 }
 
 func TestAuthConfigRequiresConfiguredClients(t *testing.T) {

@@ -12,6 +12,7 @@ import (
 	schema "github.com/djthorpe/go-auth/schema"
 	assert "github.com/stretchr/testify/assert"
 	require "github.com/stretchr/testify/require"
+	nooptrace "go.opentelemetry.io/otel/trace/noop"
 )
 
 func testLocalProvider(t *testing.T) providerpkg.Provider {
@@ -134,6 +135,16 @@ func Test_opt_001(t *testing.T) {
 		assert.NoError(WithHooks(hooks)(options))
 		assert.Equal(hooks, options.hooks)
 		assert.EqualError(WithHooks(nil)(options), "hooks are required")
+	})
+
+	t.Run("WithTracer", func(t *testing.T) {
+		assert := assert.New(t)
+
+		options := new(opt)
+		tracer := nooptrace.NewTracerProvider().Tracer("manager-test")
+		assert.NoError(WithTracer(tracer)(options))
+		assert.Equal(tracer, options.tracer)
+		assert.EqualError(WithTracer(nil)(options), "tracer is required")
 	})
 
 	t.Run("ApplyStopsOnError", func(t *testing.T) {

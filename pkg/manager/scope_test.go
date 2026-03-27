@@ -5,11 +5,15 @@ import (
 	"testing"
 
 	// Packages
+	manager "github.com/djthorpe/go-auth/pkg/manager"
 	schema "github.com/djthorpe/go-auth/schema"
 	pg "github.com/mutablelogic/go-pg"
 	types "github.com/mutablelogic/go-server/pkg/types"
 	assert "github.com/stretchr/testify/assert"
 	require "github.com/stretchr/testify/require"
+	attribute "go.opentelemetry.io/otel/attribute"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	tracetest "go.opentelemetry.io/otel/sdk/trace/tracetest"
 )
 
 func Test_scope_001(t *testing.T) {
@@ -88,5 +92,52 @@ func Test_scope_001(t *testing.T) {
 		require.NotNil(clamped.Limit)
 		assert.Equal(uint64(5), *clamped.Limit)
 		assert.Equal([]string{"admin.all", "profile.read", "team.manage", "user.read", "user.write"}, clamped.Body)
+	})
+
+	t.Run("ListScopesTracing", func(t *testing.T) {
+		assert := assert.New(t)
+		require := require.New(t)
+
+		exporter := tracetest.NewInMemoryExporter()
+		provider := sdktrace.NewTracerProvider(sdktrace.WithSyncer(exporter))
+		defer func() {
+			require.NoError(provider.Shutdown(context.Background()))
+		}()
+
+		m := newTestManagerWithOpts(t, manager.WithTracer(provider.Tracer("manager-scope-test")))
+		enabled := true
+		created, err := m.CreateGroup(context.Background(), schema.GroupInsert{
+			ID: "scope_trace",
+			GroupMeta: schema.GroupMeta{
+				Enabled: &enabled,
+				Scopes:  []string{"scope.trace"},
+			},
+		})
+		require.NoError(err)
+		require.NotNil(created)
+
+		limit := uint64(5)
+		req := schema.ScopeListRequest{
+			Q:           "trace",
+			OffsetLimit: pg.OffsetLimit{Offset: 0, Limit: &limit},
+		}
+		expectedRequest := req.String()
+
+		listed, err := m.ListScopes(context.Background(), req)
+		require.NoError(err)
+		require.NotNil(listed)
+
+		require.NoError(provider.ForceFlush(context.Background()))
+		spans := exporter.GetSpans()
+
+		var listScopesSpan *tracetest.SpanStub
+		for i := range spans {
+			if spans[i].Name == "manager.ListScopes" {
+				listScopesSpan = &spans[i]
+				break
+			}
+		}
+		require.NotNil(listScopesSpan)
+		assert.Contains(listScopesSpan.Attributes, attribute.String("request", expectedRequest))
 	})
 }

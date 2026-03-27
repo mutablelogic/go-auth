@@ -151,6 +151,7 @@ func (server *RunServer) WithManager(ctx server.Cmd, fn func(*manager.Manager, s
 	// Auth manager options
 	opts := []manager.Opt{
 		manager.WithPrivateKey(key),
+		manager.WithTracer(ctx.Tracer()),
 	}
 	issuer := server.issuer(ctx)
 	if issuer == "" {

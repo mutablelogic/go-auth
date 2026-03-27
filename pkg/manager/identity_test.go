@@ -14,6 +14,9 @@ import (
 	pg "github.com/mutablelogic/go-pg"
 	assert "github.com/stretchr/testify/assert"
 	require "github.com/stretchr/testify/require"
+	attribute "go.opentelemetry.io/otel/attribute"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	tracetest "go.opentelemetry.io/otel/sdk/trace/tracetest"
 )
 
 type testCreateHook struct{}
@@ -127,6 +130,54 @@ func Test_identity_001(t *testing.T) {
 		require.Len(clamped.Body, 3)
 	})
 
+	t.Run("ListIdentitiesTracing", func(t *testing.T) {
+		assert := assert.New(t)
+		require := require.New(t)
+
+		exporter := tracetest.NewInMemoryExporter()
+		provider := sdktrace.NewTracerProvider(sdktrace.WithSyncer(exporter))
+		defer func() {
+			require.NoError(provider.Shutdown(context.Background()))
+		}()
+
+		m := newTestManagerWithOpts(t, manager.WithTracer(provider.Tracer("manager-identity-test")))
+
+		user, err := m.CreateUser(context.Background(), schema.UserMeta{
+			Name:  "Trace Identity User",
+			Email: "trace.identity@example.com",
+		}, nil)
+		require.NoError(err)
+		require.NotNil(user)
+
+		created, err := m.CreateIdentity(context.Background(), uuid.UUID(user.ID), schema.IdentityInsert{
+			IdentityKey:  schema.IdentityKey{Provider: "github", Sub: "trace-identity"},
+			IdentityMeta: schema.IdentityMeta{Email: "trace@github.example.com"},
+		})
+		require.NoError(err)
+		require.NotNil(created)
+
+		userID := uuid.UUID(user.ID)
+		req := schema.IdentityListRequest{User: &userID}
+		expectedRequest := req.String()
+
+		listed, err := m.ListIdentities(context.Background(), req)
+		require.NoError(err)
+		require.NotNil(listed)
+
+		require.NoError(provider.ForceFlush(context.Background()))
+		spans := exporter.GetSpans()
+
+		var listIdentitiesSpan *tracetest.SpanStub
+		for i := range spans {
+			if spans[i].Name == "manager.ListIdentities" {
+				listIdentitiesSpan = &spans[i]
+				break
+			}
+		}
+		require.NotNil(listIdentitiesSpan)
+		assert.Contains(listIdentitiesSpan.Attributes, attribute.String("request", expectedRequest))
+	})
+
 	t.Run("CreateGetUpdateDelete", func(t *testing.T) {
 		assert := assert.New(t)
 		require := require.New(t)
@@ -170,7 +221,7 @@ func Test_identity_001(t *testing.T) {
 		assert.False(created.CreatedAt.Before(beforeCreate.Add(-2 * time.Second)))
 		assert.False(created.ModifiedAt.Before(created.CreatedAt))
 
-		fetched, err := m.GetIdentity(context.Background(), "github", "alice-123")
+		fetched, err := m.GetIdentity(context.Background(), schema.IdentityKey{Provider: "github", Sub: "alice-123"})
 		require.NoError(err)
 		require.NotNil(fetched)
 		assert.Equal(created.User, fetched.User)
@@ -189,7 +240,7 @@ func Test_identity_001(t *testing.T) {
 
 		time.Sleep(10 * time.Millisecond)
 		beforeUpdate := time.Now()
-		updated, err := m.UpdateIdentity(context.Background(), "github", "alice-123", schema.IdentityMeta{
+		updated, err := m.UpdateIdentity(context.Background(), schema.IdentityKey{Provider: "github", Sub: "alice-123"}, schema.IdentityMeta{
 			Email: "alice.updated@users.noreply.github.com",
 			Claims: map[string]any{
 				"login":  "alice-updated",
@@ -221,7 +272,7 @@ func Test_identity_001(t *testing.T) {
 		_, hasRegion = updatedUser.Claims["region"]
 		assert.False(hasRegion)
 
-		deleted, err := m.DeleteIdentity(context.Background(), "github", "alice-123")
+		deleted, err := m.DeleteIdentity(context.Background(), schema.IdentityKey{Provider: "github", Sub: "alice-123"})
 		require.NoError(err)
 		require.NotNil(deleted)
 		assert.Equal(updated.User, deleted.User)
@@ -232,7 +283,7 @@ func Test_identity_001(t *testing.T) {
 		assert.Equal(updated.CreatedAt, deleted.CreatedAt)
 		assert.Equal(updated.ModifiedAt, deleted.ModifiedAt)
 
-		_, err = m.GetIdentity(context.Background(), "github", "alice-123")
+		_, err = m.GetIdentity(context.Background(), schema.IdentityKey{Provider: "github", Sub: "alice-123"})
 		require.Error(err)
 		assert.True(errors.Is(err, auth.ErrNotFound))
 
@@ -287,7 +338,7 @@ func Test_identity_001(t *testing.T) {
 		require.Error(err)
 		assert.Nil(created)
 
-		_, err = m.GetIdentity(context.Background(), "github", "missing-user")
+		_, err = m.GetIdentity(context.Background(), schema.IdentityKey{Provider: "github", Sub: "missing-user"})
 		require.Error(err)
 		assert.True(errors.Is(err, auth.ErrNotFound))
 	})
@@ -298,7 +349,7 @@ func Test_identity_001(t *testing.T) {
 
 		m := newTestManager(t)
 
-		identity, err := m.GetIdentity(context.Background(), "github", "does-not-exist")
+		identity, err := m.GetIdentity(context.Background(), schema.IdentityKey{Provider: "github", Sub: "does-not-exist"})
 		require.Error(err)
 		assert.Nil(identity)
 		assert.True(errors.Is(err, auth.ErrNotFound))
@@ -342,7 +393,7 @@ func Test_identity_001(t *testing.T) {
 					"email": "new@example.com",
 				},
 			},
-		})
+		}, nil)
 		require.NoError(err)
 		require.NotNil(loggedIn)
 		require.NotNil(session)
@@ -352,7 +403,7 @@ func Test_identity_001(t *testing.T) {
 		assert.Equal("New Name", loggedIn.Claims["name"])
 		assert.Equal("new@example.com", loggedIn.Claims["email"])
 
-		identity, err := m.GetIdentity(context.Background(), "https://accounts.google.com", "google-sub-123")
+		identity, err := m.GetIdentity(context.Background(), schema.IdentityKey{Provider: "https://accounts.google.com", Sub: "google-sub-123"})
 		require.NoError(err)
 		require.NotNil(identity)
 		assert.Equal("new@example.com", identity.Email)
@@ -370,7 +421,7 @@ func Test_identity_001(t *testing.T) {
 				Provider: "https://accounts.google.com",
 				Sub:      "missing-sub",
 			},
-		})
+		}, nil)
 		require.Error(err)
 		assert.Nil(loggedIn)
 		assert.Nil(session)
@@ -394,7 +445,7 @@ func Test_identity_001(t *testing.T) {
 					"name": "New User",
 				},
 			},
-		})
+		}, nil)
 		require.NoError(err)
 		require.NotNil(loggedIn)
 		require.NotNil(session)
@@ -403,7 +454,7 @@ func Test_identity_001(t *testing.T) {
 		assert.Equal("New User", loggedIn.Claims["name"])
 		assert.Equal(loggedIn.ID, session.User)
 
-		identity, err := m.GetIdentity(context.Background(), "https://accounts.google.com", "new-subject")
+		identity, err := m.GetIdentity(context.Background(), schema.IdentityKey{Provider: "https://accounts.google.com", Sub: "new-subject"})
 		require.NoError(err)
 		require.NotNil(identity)
 		assert.Equal(loggedIn.ID, identity.User)
@@ -427,7 +478,7 @@ func Test_identity_001(t *testing.T) {
 					"name": "Hooked User",
 				},
 			},
-		})
+		}, nil)
 		require.NoError(err)
 		require.NotNil(loggedIn)
 		require.NotNil(session)
@@ -452,13 +503,13 @@ func Test_identity_001(t *testing.T) {
 			IdentityMeta: schema.IdentityMeta{
 				Email: "blocked.user@example.com",
 			},
-		})
+		}, nil)
 		require.Error(err)
 		assert.Nil(loggedIn)
 		assert.Nil(session)
 		assert.ErrorIs(err, expected)
 
-		identity, err := m.GetIdentity(context.Background(), "https://accounts.google.com", "blocked-subject")
+		identity, err := m.GetIdentity(context.Background(), schema.IdentityKey{Provider: "https://accounts.google.com", Sub: "blocked-subject"})
 		require.Error(err)
 		assert.Nil(identity)
 		assert.True(errors.Is(err, auth.ErrNotFound))
@@ -497,7 +548,7 @@ func Test_identity_001(t *testing.T) {
 			IdentityMeta: schema.IdentityMeta{
 				Email: "updated.identity@example.com",
 			},
-		})
+		}, nil)
 		require.NoError(err)
 		require.NotNil(loggedIn)
 		require.NotNil(session)
@@ -526,14 +577,14 @@ func Test_identity_001(t *testing.T) {
 				Email:  "linked.user@example.com",
 				Claims: map[string]any{"name": "Linked User"},
 			},
-		})
+		}, nil)
 		require.NoError(err)
 		require.NotNil(loggedIn)
 		require.NotNil(session)
 		assert.True(called)
 		assert.Equal(user.ID, loggedIn.ID)
 
-		identity, err := m.GetIdentity(context.Background(), "https://login.microsoftonline.com/example", "linked-subject")
+		identity, err := m.GetIdentity(context.Background(), schema.IdentityKey{Provider: "https://login.microsoftonline.com/example", Sub: "linked-subject"})
 		require.NoError(err)
 		assert.Equal(user.ID, identity.User)
 	})
@@ -555,7 +606,7 @@ func Test_identity_001(t *testing.T) {
 					"preferred_username": "preferred-user",
 				},
 			},
-		})
+		}, nil)
 		require.NoError(err)
 		require.NotNil(loggedIn)
 		require.NotNil(session)
@@ -581,7 +632,7 @@ func Test_identity_001(t *testing.T) {
 					"family_name": "Ignored",
 				},
 			},
-		})
+		}, nil)
 		require.NoError(err)
 		require.NotNil(loggedIn)
 		require.NotNil(session)
@@ -609,13 +660,13 @@ func Test_identity_001(t *testing.T) {
 			IdentityMeta: schema.IdentityMeta{
 				Email: "existing.user@example.com",
 			},
-		})
+		}, nil)
 		require.Error(err)
 		assert.Nil(loggedIn)
 		assert.Nil(session)
 		assert.True(errors.Is(err, auth.ErrConflict))
 
-		identity, err := m.GetIdentity(context.Background(), "https://accounts.google.com", "unlinked-subject")
+		identity, err := m.GetIdentity(context.Background(), schema.IdentityKey{Provider: "https://accounts.google.com", Sub: "unlinked-subject"})
 		require.Error(err)
 		assert.Nil(identity)
 		assert.True(errors.Is(err, auth.ErrNotFound))
@@ -637,7 +688,7 @@ func Test_identity_001(t *testing.T) {
 					"name": "No Email",
 				},
 			},
-		})
+		}, nil)
 		require.Error(err)
 		assert.Nil(loggedIn)
 		assert.Nil(session)
