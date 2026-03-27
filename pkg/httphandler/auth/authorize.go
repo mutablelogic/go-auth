@@ -56,6 +56,17 @@ func authorize(ctx context.Context, manager *manager.Manager, w http.ResponseWri
 	if state == "" {
 		return httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest).With("state is required"))
 	}
+
+	// PKCE — S256 is required; plain is not accepted
+	codeChallenge := strings.TrimSpace(params.Get("code_challenge"))
+	if codeChallenge == "" {
+		return httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest).With("code_challenge is required"))
+	}
+	codeChallengeMethod := strings.TrimSpace(params.Get("code_challenge_method"))
+	if codeChallengeMethod != oidc.CodeChallengeMethodS256 {
+		return httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest).Withf("code_challenge_method must be %q", oidc.CodeChallengeMethodS256))
+	}
+
 	provider, err := authorizationProvider(manager, providerName)
 	if err != nil {
 		return httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest).With(err))

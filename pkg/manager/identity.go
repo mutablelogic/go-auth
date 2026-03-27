@@ -21,7 +21,7 @@ import (
 func (m *Manager) CreateIdentity(ctx context.Context, user uuid.UUID, identity schema.IdentityInsert) (_ *schema.Identity, err error) {
 	ctx, endSpan := otel.StartSpan(m.tracer, ctx, "manager.CreateIdentity",
 		attribute.String("user", schema.UserID(user).String()),
-		attribute.String("identity", identity.String()),
+		attribute.String("identity", identity.RedactedString()),
 	)
 	defer func() { endSpan(err) }()
 
@@ -37,7 +37,7 @@ func (m *Manager) CreateIdentity(ctx context.Context, user uuid.UUID, identity s
 
 // GetIdentity retrieves a single identity by its (provider, sub) primary key.
 func (m *Manager) GetIdentity(ctx context.Context, key schema.IdentityKey) (_ *schema.Identity, err error) {
-	ctx, endSpan := otel.StartSpan(m.tracer, ctx, "manager.GetIdentity", attribute.String("key", key.String()))
+	ctx, endSpan := otel.StartSpan(m.tracer, ctx, "manager.GetIdentity", attribute.String("key", key.RedactedString()))
 	defer func() { endSpan(err) }()
 
 	var identity schema.Identity
@@ -52,8 +52,8 @@ func (m *Manager) GetIdentity(ctx context.Context, key schema.IdentityKey) (_ *s
 // identity row identified by (provider, sub). modified_at is always updated.
 func (m *Manager) UpdateIdentity(ctx context.Context, key schema.IdentityKey, meta schema.IdentityMeta) (_ *schema.Identity, err error) {
 	ctx, endSpan := otel.StartSpan(m.tracer, ctx, "manager.UpdateIdentity",
-		attribute.String("key", key.String()),
-		attribute.String("meta", meta.String()),
+		attribute.String("key", key.RedactedString()),
+		attribute.String("meta", meta.RedactedString()),
 	)
 	defer func() { endSpan(err) }()
 
@@ -68,7 +68,7 @@ func (m *Manager) UpdateIdentity(ctx context.Context, key schema.IdentityKey, me
 // DeleteIdentity removes an identity row identified by its (provider, sub)
 // primary key and returns the deleted row.
 func (m *Manager) DeleteIdentity(ctx context.Context, key schema.IdentityKey) (_ *schema.Identity, err error) {
-	ctx, endSpan := otel.StartSpan(m.tracer, ctx, "manager.DeleteIdentity", attribute.String("key", key.String()))
+	ctx, endSpan := otel.StartSpan(m.tracer, ctx, "manager.DeleteIdentity", attribute.String("key", key.RedactedString()))
 	defer func() { endSpan(err) }()
 
 	var identity schema.Identity
@@ -92,10 +92,7 @@ func (m *Manager) ListIdentities(ctx context.Context, req schema.IdentityListReq
 }
 
 func (m *Manager) LoginWithIdentity(ctx context.Context, meta schema.IdentityInsert, createMeta map[string]any) (_ *schema.User, _ *schema.Session, err error) {
-	attrs := []attribute.KeyValue{attribute.String("meta", meta.String())}
-	if createMeta != nil {
-		attrs = append(attrs, attribute.String("create_meta", types.Stringify(createMeta)))
-	}
+	attrs := []attribute.KeyValue{attribute.String("meta", meta.RedactedString())}
 	ctx, endSpan := otel.StartSpan(m.tracer, ctx, "manager.LoginWithIdentity", attrs...)
 	defer func() { endSpan(err) }()
 

@@ -94,16 +94,57 @@ func (key IdentityKey) String() string {
 	return types.Stringify(key)
 }
 
+func (key IdentityKey) RedactedString() string {
+	r := key
+	if r.Sub != "" {
+		r.Sub = "[redacted]"
+	}
+	return types.Stringify(r)
+}
+
 func (meta IdentityMeta) String() string {
 	return types.Stringify(meta)
+}
+
+func (meta IdentityMeta) RedactedString() string {
+	r := meta
+	if r.Email != "" {
+		r.Email = "[redacted]"
+	}
+	r.Claims = nil
+	return types.Stringify(r)
 }
 
 func (i IdentityInsert) String() string {
 	return types.Stringify(i)
 }
 
+func (i IdentityInsert) RedactedString() string {
+	r := i
+	if r.Sub != "" {
+		r.Sub = "[redacted]"
+	}
+	if r.Email != "" {
+		r.Email = "[redacted]"
+	}
+	r.Claims = nil
+	return types.Stringify(r)
+}
+
 func (i Identity) String() string {
 	return types.Stringify(i)
+}
+
+func (i Identity) RedactedString() string {
+	r := i
+	if r.Sub != "" {
+		r.Sub = "[redacted]"
+	}
+	if r.Email != "" {
+		r.Email = "[redacted]"
+	}
+	r.Claims = nil
+	return types.Stringify(r)
 }
 
 func (req IdentityListRequest) String() string {

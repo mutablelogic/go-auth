@@ -118,12 +118,42 @@ func (u UserListRequest) String() string {
 	return types.Stringify(u)
 }
 
+func (u UserListRequest) RedactedString() string {
+	r := u
+	if r.Email != "" {
+		r.Email = "[redacted]"
+	}
+	return types.Stringify(r)
+}
+
 func (u UserMeta) String() string {
 	return types.Stringify(u)
 }
 
+func (u UserMeta) RedactedString() string {
+	r := u
+	if r.Name != "" {
+		r.Name = "[redacted]"
+	}
+	if r.Email != "" {
+		r.Email = "[redacted]"
+	}
+	return types.Stringify(r)
+}
+
 func (u User) String() string {
 	return types.Stringify(u)
+}
+
+func (u User) RedactedString() string {
+	r := u
+	if r.Name != "" {
+		r.Name = "[redacted]"
+	}
+	if r.Email != "" {
+		r.Email = "[redacted]"
+	}
+	return types.Stringify(r)
 }
 
 ///////////////////////////////////////////////////////////////////////////////

@@ -20,9 +20,9 @@ import (
 // the same transaction and the returned User is re-fetched so that Email and
 // Claims reflect the new identity row.
 func (m *Manager) CreateUser(ctx context.Context, meta schema.UserMeta, identity *schema.IdentityInsert) (_ *schema.User, err error) {
-	attrs := []attribute.KeyValue{attribute.String("meta", meta.String())}
+	attrs := []attribute.KeyValue{attribute.String("meta", meta.RedactedString())}
 	if identity != nil {
-		attrs = append(attrs, attribute.String("identity", identity.String()))
+		attrs = append(attrs, attribute.String("identity", identity.RedactedString()))
 	}
 	ctx, endSpan := otel.StartSpan(m.tracer, ctx, "manager.CreateUser", attrs...)
 	defer func() { endSpan(err) }()
@@ -66,7 +66,7 @@ func (m *Manager) GetUser(ctx context.Context, user schema.UserID) (_ *schema.Us
 func (m *Manager) UpdateUser(ctx context.Context, user schema.UserID, meta schema.UserMeta) (_ *schema.User, err error) {
 	ctx, endSpan := otel.StartSpan(m.tracer, ctx, "manager.UpdateUser",
 		attribute.String("user", user.String()),
-		attribute.String("meta", meta.String()),
+		attribute.String("meta", meta.RedactedString()),
 	)
 	defer func() { endSpan(err) }()
 
@@ -204,7 +204,7 @@ func (m *Manager) DeleteUser(ctx context.Context, user schema.UserID) (_ *schema
 }
 
 func (m *Manager) ListUsers(ctx context.Context, req schema.UserListRequest) (_ *schema.UserList, err error) {
-	ctx, endSpan := otel.StartSpan(m.tracer, ctx, "manager.ListUsers", attribute.String("request", req.String()))
+	ctx, endSpan := otel.StartSpan(m.tracer, ctx, "manager.ListUsers", attribute.String("request", req.RedactedString()))
 	defer func() { endSpan(err) }()
 
 	result := schema.UserList{OffsetLimit: req.OffsetLimit}

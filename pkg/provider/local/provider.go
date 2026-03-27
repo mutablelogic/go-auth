@@ -209,17 +209,13 @@ func validateAuthorizationCodeClaims(claims map[string]any, redirectURL, codeVer
 	challenge, _ := claims["code_challenge"].(string)
 	challenge = strings.TrimSpace(challenge)
 	if challenge == "" {
-		return nil
+		return fmt.Errorf("code_challenge is required")
 	}
 	if codeVerifier == "" {
 		return fmt.Errorf("code_verifier is required")
 	}
 	method, _ := claims["code_challenge_method"].(string)
 	switch strings.TrimSpace(method) {
-	case "", oidc.CodeChallengeMethodPlain:
-		if codeVerifier != challenge {
-			return fmt.Errorf("authorization code verifier mismatch")
-		}
 	case oidc.CodeChallengeMethodS256:
 		sum := sha256.Sum256([]byte(codeVerifier))
 		if base64.RawURLEncoding.EncodeToString(sum[:]) != challenge {
