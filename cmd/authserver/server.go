@@ -47,7 +47,7 @@ type ServerCommands struct {
 
 type RunServer struct {
 	cmd.RunServer
-	PostgresFlags
+	PostgresFlags       `embed:"" prefix:"pg."`
 	LocalProviderFlags
 	GoogleProviderFlags `embed:"" prefix:"google."`
 	CleanupFlags        `embed:"" prefix:"cleanup."`

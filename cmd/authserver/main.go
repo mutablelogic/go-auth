@@ -21,6 +21,7 @@ import (
 	// Packages
 	auth "github.com/djthorpe/go-auth/pkg/cmd/auth"
 	manager "github.com/djthorpe/go-auth/pkg/cmd/manager"
+	openapi "github.com/djthorpe/go-auth/pkg/cmd/openapi"
 	cmd "github.com/mutablelogic/go-server/pkg/cmd"
 	version "github.com/mutablelogic/go-server/pkg/version"
 )
@@ -32,6 +33,7 @@ type CLI struct {
 	ServerCommands
 	auth.AuthCommands
 	manager.ManagerCommands
+	openapi.OpenAPICommands
 }
 
 ///////////////////////////////////////////////////////////////////////////////

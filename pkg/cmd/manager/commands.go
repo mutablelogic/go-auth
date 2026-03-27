@@ -20,6 +20,7 @@ package manager
 type ManagerCommands struct {
 	Providers ProvidersCommand `cmd:"" help:"Print the configured identity providers." group:"USER MANAGER"`
 	Login     LoginCommand     `cmd:"" help:"Login to a provider." group:"USER MANAGER"`
+	UI        UICommand        `cmd:"" help:"Open the admin UI in a browser." group:"USER MANAGER"`
 	UserCommands
 	UserGroupCommands
 	GroupCommands

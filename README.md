@@ -20,6 +20,14 @@ Current known gaps:
 - **Refresh tokens** are currently identical to access tokens; proper token separation is on the roadmap.
 - **The admin UI** is incomplete — user and group management works but some views are not yet finished.
 - **Scopes** are embedded in issued tokens but are not enforced by the authentication middleware; per-endpoint scope checks are not yet implemented.
+- **Revoked tokens** are not cached. The auth middleware checks the session state embedded in the JWT at issuance, so a revoked token continues to be accepted until it expires. A revocation cache (populated via `LISTEN/NOTIFY`) is on the roadmap.
+
+Roadmap:
+
+- **Additional identity providers** — GitHub, Meta, Apple, and Amazon OAuth/OIDC flows, plus LDAP for corporate directory integration
+- **TLS certificate management** — automatic certificate provisioning and renewal via ACME/Let's Encrypt and locally-generated authorities/certificates
+- **Private key rotation** — scheduled RSA key rotation with a JWKS rollover period so existing tokens remain valid during the transition
+- **Token revocation cache** — in-memory set of revoked session IDs kept in sync via PostgreSQL `LISTEN/NOTIFY`, checked by the auth middleware on every request
 
 ## Quick Start
 
@@ -52,6 +60,8 @@ build/authserver run \
   --no-auth
 ```
 
+`--local-provider` enables the built-in local identity provider, which is intended for testing only — it accepts any email address without a password, and requires no client ID. Do not use it in production.
+
 `--no-auth` disables the authentication middleware on the management API, which is necessary on first run before any users exist. Remove it once an admin user has been created.
 
 With Google OAuth:
@@ -64,26 +74,68 @@ build/authserver run \
   --google.client-secret=YOUR_CLIENT_SECRET
 ```
 
-All flags can also be set via environment variables:
+#### Getting a Google OAuth client ID
+
+1. Go to the [Google Cloud Console](https://console.cloud.google.com/) and create or select a project.
+2. Navigate to **APIs & Services → Credentials** and click **Create Credentials → OAuth client ID**.
+3. If prompted, configure the OAuth consent screen first. Choose **Internal** if this is for users within your Google Workspace organisation, or **External** for any Google account. Fill in the app name and support email.
+4. For application type, choose **Desktop app**.
+5. Click **Create**. Copy the **Client ID** and **Client Secret** into `--google.client-id` and `--google.client-secret` (or the equivalent environment variables).
+
+#### Server flags
 
 | Flag | Environment variable | Description |
 |---|---|---|
 | `--pg.url` | `PG_URL` | PostgreSQL connection URL |
 | `--pg.password` | `PG_PASSWORD` | PostgreSQL password (overrides URL) |
+| `--http.addr` | `AUTHSERVER_ADDR`, `ADDR` | Listen address (default `localhost:8084`) |
+| `--http.prefix` | | HTTP path prefix (default `/api`) |
+| `--http.timeout` | | Server read/write timeout (default `15m`) |
+| `--http.origin` | | CORS origin — empty for same-origin, `*` for all |
+| `--tls.cert` | | TLS certificate file |
+| `--tls.key` | | TLS key file |
 | `--google.client-id` | `GOOGLE_CLIENT_ID` | Google OAuth client ID |
 | `--google.client-secret` | `GOOGLE_CLIENT_SECRET` | Google OAuth client secret |
+| `--otel.endpoint` | `OTEL_EXPORTER_OTLP_ENDPOINT` | OTLP collector endpoint |
+| `--otel.header` | `OTEL_EXPORTER_OTLP_HEADERS` | OTLP collector headers |
+| `--otel.name` | `OTEL_SERVICE_NAME` | Service name in traces (default `authserver`) |
+| `--[no-]local-provider` | | Enable the local browser-flow identity provider |
+| `--[no-]auth` | | Enable authentication on management endpoints (default on) |
+| `--[no-]ui` | | Serve the embedded admin UI (default on) |
+| `--[no-]openapi` | | Serve OpenAPI spec at `{prefix}/openapi.{json,yaml,html}` (default on) |
 
-### Discovery
+### CLI usage
 
-Once running, the OIDC discovery document is available at:
+The `authserver` binary doubles as a CLI client. Set `AUTHSERVER_ADDR` to the host and port of the running server so you don't need to repeat it on every command:
 
+```bash
+export AUTHSERVER_ADDR=localhost:8080
 ```
-GET /.well-known/openid-configuration
+
+```bash
+# Open the admin UI in a browser
+authserver ui
+
+# Browse the OpenAPI documentation
+authserver openapi
+
+# Output the OpenAPI spec
+authserver openapi --json
+authserver openapi --yaml
+
+# List configured identity providers
+authserver providers
+
+# Log in via a provider (opens a browser window to complete the OAuth flow)
+authserver login
+authserver login google
+
+# See all available commands and flags
+authserver --help
 ```
 
-The OpenAPI specification for all endpoints can be browsed at `http://<addr>/api/openapi.html`.
+After a successful `login`, the resulting token is stored locally and used automatically by subsequent commands that require authentication.
 
-The admin UI is served at the root path when `--ui` is enabled (default).
 
 ## Architecture
 
@@ -161,7 +213,7 @@ sequenceDiagram
 
 ## Development
 
-Contributions are welcome. Please open an issue before submitting a pull request for anything beyond a small bug fix, so the approach can be agreed upfront.
+Contributions are welcome.
 
 ### Makefile targets
 
