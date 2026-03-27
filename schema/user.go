@@ -203,6 +203,13 @@ func (id *UserID) UnmarshalJSON(data []byte) error {
 }
 
 ///////////////////////////////////////////////////////////////////////////////
+// PUBLIC METHODS - USER
+
+func (u User) HasScope(scope string) bool {
+	return slices.Contains(u.Scopes, strings.TrimSpace(scope))
+}
+
+///////////////////////////////////////////////////////////////////////////////
 // PUBLIC METHODS - QUERY
 
 func (req UserListRequest) Query() url.Values {

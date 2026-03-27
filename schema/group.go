@@ -27,6 +27,35 @@ import (
 )
 
 ///////////////////////////////////////////////////////////////////////////////
+// CONSTANTS
+
+const (
+	// GroupSysAdmin is the built-in administrative group seeded at startup.
+	// Its name follows the $name$ convention that marks server-managed groups.
+	// Members are granted full access to the management API and CLI.
+	GroupSysAdmin = "$admin$"
+
+	// ScopeAuthUserRead grants permission to list and get users.
+	ScopeAuthUserRead = "auth:user:read"
+
+	// ScopeAuthUserWrite grants permission to create, update, and delete users.
+	ScopeAuthUserWrite = "auth:user:write"
+
+	// ScopeAuthGroupRead grants permission to list and get groups.
+	ScopeAuthGroupRead = "auth:group:read"
+
+	// ScopeAuthGroupWrite grants permission to create, update, and delete groups.
+	ScopeAuthGroupWrite = "auth:group:write"
+)
+
+var (
+	// GroupSysAdminScopes is the fixed set of scopes assigned to GroupSysAdmin at startup.
+	GroupSysAdminScopes = []string{
+		ScopeAuthUserRead, ScopeAuthUserWrite, ScopeAuthGroupRead, ScopeAuthGroupWrite,
+	}
+)
+
+///////////////////////////////////////////////////////////////////////////////
 // TYPES
 
 type GroupMeta struct {
@@ -261,6 +290,13 @@ func (group GroupMeta) Update(bind *pg.Bind) error {
 
 ///////////////////////////////////////////////////////////////////////////////
 // PRIVATE METHODS
+
+// IsSystemGroup reports whether id is a server-managed group.
+// System groups are identified by the $name$ naming convention and are
+// seeded at startup; they cannot be created, updated, or deleted via the API.
+func IsSystemGroup(id string) bool {
+	return len(id) > 2 && id[0] == '$' && id[len(id)-1] == '$'
+}
 
 func normalizeGroupID(id string) (string, error) {
 	if id = strings.TrimSpace(id); id == "" {
