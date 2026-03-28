@@ -148,12 +148,15 @@ github.com/mutablelogic/go-pg v1.1.8 h1:z26TTp/OOIrRjAYr5kG66lCVNY4wfeJN5wGC3C/j
 github.com/mutablelogic/go-pg v1.1.8/go.mod h1:PRhOvQB8ImKSvyHyEtEosf1JZxAqzBfGdavPpu5wRYc=
 github.com/mutablelogic/go-pg v1.1.9 h1:PaeH4vI/zRYd/aeg+PQlT44Sb4/0PgfeLabGxnxycpQ=
 github.com/mutablelogic/go-pg v1.1.9/go.mod h1:PRhOvQB8ImKSvyHyEtEosf1JZxAqzBfGdavPpu5wRYc=
+github.com/mutablelogic/go-pg v1.1.10/go.mod h1:PRhOvQB8ImKSvyHyEtEosf1JZxAqzBfGdavPpu5wRYc=
 github.com/mutablelogic/go-server v1.6.18 h1:t+rLcl1wuImxYgzKCB7/laNLa9adY2oUktPtSL4pyug=
 github.com/mutablelogic/go-server v1.6.18/go.mod h1:4kpT+CFI+ioq2O59Sk5snHgFgMFbzpwka2SZ0Q+1ZcA=
 github.com/mutablelogic/go-tokenizer v0.0.1 h1:3gSF+zoMq4tLpH+XYawkVUb7qmWuYNCez1CTs/iX3mU=
 github.com/mutablelogic/go-tokenizer v0.0.1/go.mod h1:zdAyIhfqUKxFXb8MwChbXNwMOZt/5NlUylmx6Qjr4v8=
 github.com/mutablelogic/go-tokenizer v0.0.2 h1:muEUw9mBlC09QLzyMZOktYHOLCW6w4vrztj1fXmJjaE=
 github.com/mutablelogic/go-tokenizer v0.0.2/go.mod h1:zdAyIhfqUKxFXb8MwChbXNwMOZt/5NlUylmx6Qjr4v8=
+github.com/mutablelogic/go-tokenizer v0.0.3 h1:6oaa80TaAl+nVpd+M9QhlJPbP7y5/thq4d0dKjreiLs=
+github.com/mutablelogic/go-tokenizer v0.0.3/go.mod h1:zdAyIhfqUKxFXb8MwChbXNwMOZt/5NlUylmx6Qjr4v8=
 github.com/opencontainers/go-digest v1.0.0 h1:apOUWs51W5PlhuyGyz9FCeeBIOUDA/6nW8Oi/yOhh5U=
 github.com/opencontainers/go-digest v1.0.0/go.mod h1:0JzlMkj0TRzQZfJkVvzbP0HBR3IKzErnv2BNG4W4MAM=
 github.com/opencontainers/image-spec v1.1.1 h1:y0fUlFfIZhPF1W537XOLg0/fcx6zcHCJwooC2xJA040=
@@ -190,8 +193,6 @@ github.com/tklauser/go-sysconf v0.3.16 h1:frioLaCQSsF5Cy1jgRBrzr6t502KIIwQ0MArYI
 github.com/tklauser/go-sysconf v0.3.16/go.mod h1:/qNL9xxDhc7tx3HSRsLWNnuzbVfh3e7gh/BmM179nYI=
 github.com/tklauser/numcpus v0.11.0 h1:nSTwhKH5e1dMNsCdVBukSZrURJRoHbSEQjdEbY+9RXw=
 github.com/tklauser/numcpus v0.11.0/go.mod h1:z+LwcLq54uWZTX0u/bGobaV34u6V7KNlTZejzM6/3MQ=
-github.com/yinyin/go-ldap-schema-parser v0.0.0-20190716182935-542aadd3dcb5 h1:siJ/5leB7JENBScgD/qG8JAGiS/2Q76qxCPK81icczU=
-github.com/yinyin/go-ldap-schema-parser v0.0.0-20190716182935-542aadd3dcb5/go.mod h1:Hb9db5nLRb/cT+dBKUrukgT3Z9mbtrpF3o2g8+sw7ic=
 github.com/yusufpapurcu/wmi v1.2.4 h1:zFUKzehAFReQwLys1b/iSMl+JQGSCSjtVqQn9bBrPo0=
 github.com/yusufpapurcu/wmi v1.2.4/go.mod h1:SBZ9tNy3G9/m5Oi98Zks0QjeHVDvuK0qfxQmPyzfmi0=
 go.opentelemetry.io/auto/sdk v1.2.1 h1:jXsnJ4Lmnqd11kwkBV2LgLoFMZKizbCi5fNZ/ipaZ64=

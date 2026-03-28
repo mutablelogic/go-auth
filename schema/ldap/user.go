@@ -14,6 +14,9 @@
 
 package schema
 
+////////////////////////////////////////////////////////////////////////////////
+// GLOBALS
+
 // DefaultUserObjectClasses is used when no user object classes are configured.
 var DefaultUserObjectClasses = []string{"inetOrgPerson"}
 

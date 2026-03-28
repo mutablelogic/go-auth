@@ -22,6 +22,9 @@ type Group struct {
 	ObjectClass []string `json:"objectclass,omitempty"`
 }
 
+////////////////////////////////////////////////////////////////////////////////
+// GLOBALS
+
 // DefaultGroupObjectClasses is used when no group object classes are configured.
 var DefaultGroupObjectClasses = []string{"groupOfNames"}
 

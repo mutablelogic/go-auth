@@ -21,10 +21,10 @@ import (
 	"testing"
 
 	// Packages
+	schemadef "github.com/djthorpe/go-auth/schema/ldapparser"
 	pg "github.com/mutablelogic/go-pg"
 	jsonschema "github.com/mutablelogic/go-server/pkg/jsonschema"
 	assert "github.com/stretchr/testify/assert"
-	parser "github.com/yinyin/go-ldap-schema-parser"
 )
 
 func TestAttributeTypeParseAndHelpers(t *testing.T) {
@@ -59,11 +59,11 @@ func TestAttributeTypeParseAndHelpers(t *testing.T) {
 		singleValue := true
 		collective := true
 		noUserModification := true
-		attributeType := &AttributeType{&parser.AttributeTypeSchema{
+		attributeType := &AttributeType{&schemadef.AttributeTypeSchema{
 			NumericOID:         "2.5.4.3",
 			Name:               []string{"cn"},
 			SuperType:          "name",
-			Usage:              parser.AttributeUsageDirectoryOperation,
+			Usage:              schemadef.AttributeUsageDirectoryOperation,
 			Obsolete:           true,
 			SingleValue:        true,
 			Collective:         true,
@@ -84,7 +84,7 @@ func TestAttributeTypeParseAndHelpers(t *testing.T) {
 	t.Run("IdentifierFallsBackToOID", func(t *testing.T) {
 		assert := assert.New(t)
 
-		attributeType := &AttributeType{&parser.AttributeTypeSchema{NumericOID: "2.5.4.3"}}
+		attributeType := &AttributeType{&schemadef.AttributeTypeSchema{NumericOID: "2.5.4.3"}}
 
 		assert.Equal("2.5.4.3", attributeType.Identifier())
 		assert.Empty(((*AttributeType)(nil)).Identifier())
@@ -105,11 +105,11 @@ func TestAttributeTypeParseAndHelpers(t *testing.T) {
 		singleValue := false
 		collective := true
 		noUserModification := true
-		attributeType := &AttributeType{&parser.AttributeTypeSchema{
+		attributeType := &AttributeType{&schemadef.AttributeTypeSchema{
 			NumericOID:         "2.5.4.3",
 			Name:               []string{"cn"},
 			SuperType:          "name",
-			Usage:              parser.AttributeUsageUserApplications,
+			Usage:              schemadef.AttributeUsageUserApplications,
 			Obsolete:           false,
 			SingleValue:        true,
 			Collective:         false,
@@ -173,7 +173,7 @@ func TestAttributeTypeListRequestAndMatching(t *testing.T) {
 		usage := AttributeUsageUserApplications
 		superior := "name"
 		singleValue := true
-		attributeType := &AttributeType{&parser.AttributeTypeSchema{
+		attributeType := &AttributeType{&schemadef.AttributeTypeSchema{
 			NumericOID:         "2.5.4.3",
 			Name:               []string{"cn"},
 			Description:        "Common Name",
@@ -181,7 +181,7 @@ func TestAttributeTypeListRequestAndMatching(t *testing.T) {
 			SingleValue:        true,
 			Collective:         false,
 			NoUserModification: false,
-			Usage:              parser.AttributeUsageUserApplications,
+			Usage:              schemadef.AttributeUsageUserApplications,
 		}}
 
 		assert.True(attributeType.Matches(AttributeTypeListRequest{
@@ -195,7 +195,7 @@ func TestAttributeTypeListRequestAndMatching(t *testing.T) {
 	t.Run("RejectsPartialFilterMatch", func(t *testing.T) {
 		assert := assert.New(t)
 		filter := "c"
-		attributeType := &AttributeType{&parser.AttributeTypeSchema{
+		attributeType := &AttributeType{&schemadef.AttributeTypeSchema{
 			NumericOID: "2.5.4.3",
 			Name:       []string{"cn"},
 		}}

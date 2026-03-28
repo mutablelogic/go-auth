@@ -21,6 +21,7 @@ import (
 	// Packages
 	ldap "github.com/djthorpe/go-auth/pkg/ldapmanager"
 	schema "github.com/djthorpe/go-auth/schema/ldap"
+	schemadef "github.com/djthorpe/go-auth/schema/ldapparser"
 	httprequest "github.com/mutablelogic/go-server/pkg/httprequest"
 	httpresponse "github.com/mutablelogic/go-server/pkg/httpresponse"
 	jsonschema "github.com/mutablelogic/go-server/pkg/jsonschema"
@@ -56,7 +57,7 @@ func ClassHandler(manager *ldap.Manager) (string, http.HandlerFunc, *openapi.Pat
 					{Name: "limit", In: openapi.ParameterInQuery, Description: "Maximum number of classes to return.", Schema: jsonschema.MustFor[uint64]()},
 				},
 				Responses: map[string]openapi.Response{
-					"200": {Description: "Object class list.", Content: map[string]openapi.MediaType{"application/json": {Schema: jsonschema.MustFor[schema.ObjectClassListResponse]()}}},
+					"200": {Description: "Object class list.", Content: map[string]openapi.MediaType{"application/json": {Schema: objectClassListResponseSchema()}}},
 					"400": {Description: "Invalid filter or pagination parameters."},
 				},
 			},
@@ -90,7 +91,7 @@ func AttrHandler(manager *ldap.Manager) (string, http.HandlerFunc, *openapi.Path
 					{Name: "limit", In: openapi.ParameterInQuery, Description: "Maximum number of attribute types to return.", Schema: jsonschema.MustFor[uint64]()},
 				},
 				Responses: map[string]openapi.Response{
-					"200": {Description: "Attribute type list.", Content: map[string]openapi.MediaType{"application/json": {Schema: jsonschema.MustFor[schema.AttributeTypeListResponse]()}}},
+					"200": {Description: "Attribute type list.", Content: map[string]openapi.MediaType{"application/json": {Schema: attributeTypeListResponseSchema()}}},
 					"400": {Description: "Invalid filter or pagination parameters."},
 				},
 			},
@@ -121,6 +122,22 @@ func attributeUsageParameterSchema() *jsonschema.Schema {
 		schema.AttributeUsageDSAOperation.String(),
 	}
 	return &paramSchema
+}
+
+func objectClassListResponseSchema() *jsonschema.Schema {
+	responseSchema := jsonschema.MustFor[schema.ObjectClassListResponse]()
+	if body := responseSchema.Properties["body"]; body != nil {
+		body.Items = &jsonschema.MustFor[schemadef.ObjectClassSchema]().Schema
+	}
+	return responseSchema
+}
+
+func attributeTypeListResponseSchema() *jsonschema.Schema {
+	responseSchema := jsonschema.MustFor[schema.AttributeTypeListResponse]()
+	if body := responseSchema.Properties["body"]; body != nil {
+		body.Items = &jsonschema.MustFor[schemadef.AttributeTypeSchema]().Schema
+	}
+	return responseSchema
 }
 
 func listClasses(ctx context.Context, manager *ldap.Manager, w http.ResponseWriter, r *http.Request) error {

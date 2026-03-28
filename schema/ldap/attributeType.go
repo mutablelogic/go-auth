@@ -20,26 +20,20 @@ import (
 	"strings"
 
 	// Packages
+	ldapparser "github.com/djthorpe/go-auth/pkg/ldapparser"
+	schemadef "github.com/djthorpe/go-auth/schema/ldapparser"
 	pg "github.com/mutablelogic/go-pg"
 	types "github.com/mutablelogic/go-server/pkg/types"
-	parser "github.com/yinyin/go-ldap-schema-parser"
 )
 
 //////////////////////////////////////////////////////////////////////////////////
 // TYPES
 
 type AttributeType struct {
-	*parser.AttributeTypeSchema
+	*schemadef.AttributeTypeSchema
 }
 
 type AttributeUsage string
-
-const (
-	AttributeUsageUserApplications     AttributeUsage = AttributeUsage(parser.AttributeUsageUserApplications)
-	AttributeUsageDirectoryOperation   AttributeUsage = AttributeUsage(parser.AttributeUsageDirectoryOperation)
-	AttributeUsageDistributedOperation AttributeUsage = AttributeUsage(parser.AttributeUsageDistributedOperation)
-	AttributeUsageDSAOperation         AttributeUsage = AttributeUsage(parser.AttributeUsageDSAOperation)
-)
 
 type AttributeTypeListRequest struct {
 	pg.OffsetLimit
@@ -53,18 +47,25 @@ type AttributeTypeListRequest struct {
 }
 
 type AttributeTypeListResponse struct {
-	Count uint64           `json:"count"`
-	Body  []*AttributeType `json:"body,omitempty"`
+	Count uint64           `json:"count" help:"Total number of matching attribute types before pagination"`
+	Body  []*AttributeType `json:"body,omitempty" help:"Attribute types returned for the current page"`
 }
+
+//////////////////////////////////////////////////////////////////////////////////
+// GLOBALS
+
+const (
+	AttributeUsageUserApplications     AttributeUsage = AttributeUsage(schemadef.AttributeUsageUserApplications)
+	AttributeUsageDirectoryOperation   AttributeUsage = AttributeUsage(schemadef.AttributeUsageDirectoryOperation)
+	AttributeUsageDistributedOperation AttributeUsage = AttributeUsage(schemadef.AttributeUsageDistributedOperation)
+	AttributeUsageDSAOperation         AttributeUsage = AttributeUsage(schemadef.AttributeUsageDSAOperation)
+)
 
 //////////////////////////////////////////////////////////////////////////////////
 // LIFECYCLE
 
 func ParseAttributeType(v string) (*AttributeType, error) {
-	if !hasNumericOIDPrefix(v) {
-		return nil, errUnsupportedSchemaDefinition
-	}
-	schema, err := parser.ParseAttributeTypeSchema(v)
+	schema, err := ldapparser.New(v).ParseAttributeType()
 	if err != nil {
 		return nil, err
 	}
@@ -135,7 +136,7 @@ func (o *AttributeType) Matches(req AttributeTypeListRequest) bool {
 	if req.Filter != nil && !attributeTypeContains(o, *req.Filter) {
 		return false
 	}
-	if req.Usage != nil && !strings.EqualFold(strings.TrimSpace(req.Usage.String()), o.Usage) {
+	if req.Usage != nil && !strings.EqualFold(strings.TrimSpace(req.Usage.String()), string(o.Usage)) {
 		return false
 	}
 	if req.Superior != nil && !strings.EqualFold(strings.TrimSpace(*req.Superior), strings.TrimSpace(o.SuperType)) {

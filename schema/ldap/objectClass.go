@@ -20,25 +20,20 @@ import (
 	"strings"
 
 	// Packages
+	ldapparser "github.com/djthorpe/go-auth/pkg/ldapparser"
+	schemadef "github.com/djthorpe/go-auth/schema/ldapparser"
 	pg "github.com/mutablelogic/go-pg"
 	types "github.com/mutablelogic/go-server/pkg/types"
-	parser "github.com/yinyin/go-ldap-schema-parser"
 )
 
 //////////////////////////////////////////////////////////////////////////////////
 // TYPES
 
 type ObjectClass struct {
-	*parser.ObjectClassSchema
+	*schemadef.ObjectClassSchema
 }
 
 type ObjectClassKind string
-
-const (
-	ObjectClassKindAbstract   ObjectClassKind = ObjectClassKind(parser.ClassKindAbstract)
-	ObjectClassKindStructural ObjectClassKind = ObjectClassKind(parser.ClassKindStructural)
-	ObjectClassKindAuxiliary  ObjectClassKind = ObjectClassKind(parser.ClassKindAuxiliary)
-)
 
 type ObjectClassListRequest struct {
 	pg.OffsetLimit
@@ -51,22 +46,28 @@ type ObjectClassListRequest struct {
 }
 
 type ObjectClassListResponse struct {
-	Count uint64         `json:"count"`
-	Body  []*ObjectClass `json:"body,omitempty"`
+	Count uint64         `json:"count" help:"Total number of matching object classes before pagination"`
+	Body  []*ObjectClass `json:"body,omitempty" help:"Object classes returned for the current page"`
 }
+
+//////////////////////////////////////////////////////////////////////////////////
+// GLOBALS
+
+const (
+	ObjectClassKindAbstract   ObjectClassKind = ObjectClassKind(schemadef.ObjectClassKindAbstract)
+	ObjectClassKindStructural ObjectClassKind = ObjectClassKind(schemadef.ObjectClassKindStructural)
+	ObjectClassKindAuxiliary  ObjectClassKind = ObjectClassKind(schemadef.ObjectClassKindAuxiliary)
+)
 
 //////////////////////////////////////////////////////////////////////////////////
 // LIFECYCLE
 
 func ParseObjectClass(v string) (*ObjectClass, error) {
-	if !hasNumericOIDPrefix(v) {
-		return nil, errUnsupportedSchemaDefinition
-	}
-	schema, err := parser.ParseObjectClassSchema(v)
+	schema, err := ldapparser.New(v).ParseObjectClass()
 	if err != nil {
 		return nil, err
 	}
-	return types.Ptr(ObjectClass{schema}), nil
+	return &ObjectClass{schema}, nil
 }
 
 //////////////////////////////////////////////////////////////////////////////////
@@ -130,7 +131,7 @@ func (o *ObjectClass) Matches(req ObjectClassListRequest) bool {
 	if req.Filter != nil && !objectClassContains(o, *req.Filter) {
 		return false
 	}
-	if req.Kind != nil && !strings.EqualFold(strings.TrimSpace(req.Kind.String()), o.ClassKind) {
+	if req.Kind != nil && !strings.EqualFold(strings.TrimSpace(req.Kind.String()), string(o.ClassKind)) {
 		return false
 	}
 	if req.Obsolete != nil && o.Obsolete != *req.Obsolete {

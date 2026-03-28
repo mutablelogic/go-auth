@@ -35,6 +35,15 @@ func Test_class_001(t *testing.T) {
 				assert.Equal("kind", spec.Get.Parameters[1].Name)
 				assert.Equal([]any{"ABSTRACT", "STRUCTURAL", "AUXILIARY"}, spec.Get.Parameters[1].Schema.Enum)
 			}
+			response := spec.Get.Responses["200"].Content["application/json"].Schema
+			if assert.NotNil(response) {
+				assert.Equal("Total number of matching object classes before pagination", response.Properties["count"].Description)
+				assert.Equal("Object classes returned for the current page", response.Properties["body"].Description)
+				if assert.NotNil(response.Properties["body"]) && assert.NotNil(response.Properties["body"].Items) {
+					assert.Equal("Numeric object identifier for the object class definition", response.Properties["body"].Items.Properties["numericOid"].Description)
+					assert.Equal([]any{"ABSTRACT", "STRUCTURAL", "AUXILIARY"}, response.Properties["body"].Items.Properties["classKind"].Enum)
+				}
+			}
 		}
 	})
 }
@@ -55,6 +64,15 @@ func Test_class_002(t *testing.T) {
 				assert.Equal([]any{"userApplications", "directoryOperation", "distributedOperation", "dSAOperation"}, spec.Get.Parameters[1].Schema.Enum)
 				// Verify the enum on 'usage' did not leak onto the 'filter' schema
 				assert.Nil(spec.Get.Parameters[0].Schema.Enum)
+			}
+			response := spec.Get.Responses["200"].Content["application/json"].Schema
+			if assert.NotNil(response) {
+				assert.Equal("Total number of matching attribute types before pagination", response.Properties["count"].Description)
+				assert.Equal("Attribute types returned for the current page", response.Properties["body"].Description)
+				if assert.NotNil(response.Properties["body"]) && assert.NotNil(response.Properties["body"].Items) {
+					assert.Equal("Numeric object identifier for the attribute type definition", response.Properties["body"].Items.Properties["numericOid"].Description)
+					assert.Equal([]any{"userApplications", "directoryOperation", "distributedOperation", "dSAOperation"}, response.Properties["body"].Items.Properties["usage"].Enum)
+				}
 			}
 		}
 	})

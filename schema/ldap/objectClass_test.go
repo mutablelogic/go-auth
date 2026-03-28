@@ -21,10 +21,10 @@ import (
 	"testing"
 
 	// Packages
+	schemadef "github.com/djthorpe/go-auth/schema/ldapparser"
 	pg "github.com/mutablelogic/go-pg"
 	jsonschema "github.com/mutablelogic/go-server/pkg/jsonschema"
 	assert "github.com/stretchr/testify/assert"
-	parser "github.com/yinyin/go-ldap-schema-parser"
 )
 
 func TestObjectClassParseAndHelpers(t *testing.T) {
@@ -53,7 +53,7 @@ func TestObjectClassParseAndHelpers(t *testing.T) {
 	t.Run("IdentifierFallsBackToOID", func(t *testing.T) {
 		assert := assert.New(t)
 
-		objectClass := &ObjectClass{&parser.ObjectClassSchema{NumericOID: "2.5.6.6"}}
+		objectClass := &ObjectClass{&schemadef.ObjectClassSchema{NumericOID: "2.5.6.6"}}
 
 		assert.Equal("2.5.6.6", objectClass.Identifier())
 		assert.Empty(((*ObjectClass)(nil)).Identifier())
@@ -68,11 +68,11 @@ func TestObjectClassParseAndHelpers(t *testing.T) {
 
 	t.Run("MatchesRejectsMissingSuperiorAndMay", func(t *testing.T) {
 		assert := assert.New(t)
-		objectClass := &ObjectClass{&parser.ObjectClassSchema{
+		objectClass := &ObjectClass{&schemadef.ObjectClassSchema{
 			NumericOID:   "2.16.840.1.113730.3.2.2",
 			Name:         []string{"inetOrgPerson"},
 			SuperClasses: []string{"organizationalPerson", "top"},
-			ClassKind:    parser.ClassKindStructural,
+			ClassKind:    schemadef.ObjectClassKindStructural,
 			May:          []string{"mail"},
 		}}
 
@@ -83,7 +83,7 @@ func TestObjectClassParseAndHelpers(t *testing.T) {
 	t.Run("MatchesRejectsObsoleteMismatch", func(t *testing.T) {
 		assert := assert.New(t)
 		obsolete := true
-		objectClass := &ObjectClass{&parser.ObjectClassSchema{
+		objectClass := &ObjectClass{&schemadef.ObjectClassSchema{
 			NumericOID: "2.5.6.6",
 			Name:       []string{"person"},
 			Obsolete:   false,
@@ -134,12 +134,12 @@ func TestObjectClassListRequestAndMatching(t *testing.T) {
 		filter := "inetorgperson"
 		kind := ObjectClassKindStructural
 		obsolete := false
-		objectClass := &ObjectClass{&parser.ObjectClassSchema{
+		objectClass := &ObjectClass{&schemadef.ObjectClassSchema{
 			NumericOID:   "2.16.840.1.113730.3.2.2",
 			Name:         []string{"inetOrgPerson"},
 			Description:  "Internet organizational person",
 			SuperClasses: []string{"organizationalPerson", "top"},
-			ClassKind:    parser.ClassKindStructural,
+			ClassKind:    schemadef.ObjectClassKindStructural,
 			Must:         []string{"sn", "cn"},
 			May:          []string{"telephoneNumber", "mail"},
 			Obsolete:     false,
@@ -159,7 +159,7 @@ func TestObjectClassListRequestAndMatching(t *testing.T) {
 	t.Run("MatchesExactNumericOID", func(t *testing.T) {
 		assert := assert.New(t)
 		filter := "2.16.840.1.113730.3.2.2"
-		objectClass := &ObjectClass{&parser.ObjectClassSchema{
+		objectClass := &ObjectClass{&schemadef.ObjectClassSchema{
 			NumericOID: "2.16.840.1.113730.3.2.2",
 			Name:       []string{"inetOrgPerson"},
 		}}
@@ -170,7 +170,7 @@ func TestObjectClassListRequestAndMatching(t *testing.T) {
 	t.Run("RejectsPartialFilterMatch", func(t *testing.T) {
 		assert := assert.New(t)
 		filter := "inet"
-		objectClass := &ObjectClass{&parser.ObjectClassSchema{
+		objectClass := &ObjectClass{&schemadef.ObjectClassSchema{
 			NumericOID:   "2.16.840.1.113730.3.2.2",
 			Name:         []string{"inetOrgPerson"},
 			Description:  "Internet organizational person",
@@ -183,10 +183,10 @@ func TestObjectClassListRequestAndMatching(t *testing.T) {
 	t.Run("RejectsMissingMatch", func(t *testing.T) {
 		assert := assert.New(t)
 		kind := ObjectClassKindAuxiliary
-		objectClass := &ObjectClass{&parser.ObjectClassSchema{
+		objectClass := &ObjectClass{&schemadef.ObjectClassSchema{
 			NumericOID: "2.5.6.6",
 			Name:       []string{"person"},
-			ClassKind:  parser.ClassKindStructural,
+			ClassKind:  schemadef.ObjectClassKindStructural,
 			Must:       []string{"sn", "cn"},
 		}}
 

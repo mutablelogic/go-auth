@@ -175,7 +175,7 @@ func selectDiscoveredClasses(classes map[string]*schema.ObjectClass, structural,
 		if oc == nil {
 			continue
 		}
-		if strings.EqualFold(oc.ClassKind, string(schema.ObjectClassKindStructural)) {
+		if strings.EqualFold(string(oc.ClassKind), string(schema.ObjectClassKindStructural)) {
 			result = append(result, known)
 			break
 		}
@@ -183,7 +183,7 @@ func selectDiscoveredClasses(classes map[string]*schema.ObjectClass, structural,
 
 	for _, known := range auxiliary {
 		oc := classes[strings.ToLower(known)]
-		if oc != nil && strings.EqualFold(oc.ClassKind, string(schema.ObjectClassKindAuxiliary)) {
+		if oc != nil && strings.EqualFold(string(oc.ClassKind), string(schema.ObjectClassKindAuxiliary)) {
 			result = append(result, known)
 		}
 	}
