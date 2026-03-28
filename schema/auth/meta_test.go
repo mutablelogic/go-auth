@@ -15,6 +15,7 @@
 package schema
 
 import (
+	"encoding/json"
 	"testing"
 
 	// Packages
@@ -25,6 +26,31 @@ import (
 )
 
 func Test_meta_001(t *testing.T) {
+	t.Run("MetaMapJSONAndStrings", func(t *testing.T) {
+		assert := assert.New(t)
+		require := require.New(t)
+
+		var meta MetaMap
+		require.NoError(meta.UnmarshalJSON([]byte(`{"name":"Alice","email":"alice@example.com","team":"auth"}`)))
+		assert.Equal(MetaMap{"name": "Alice", "email": "alice@example.com", "team": "auth"}, meta)
+
+		assert.NoError(meta.UnmarshalJSON([]byte(`null`)))
+		assert.Nil(meta)
+
+		err := meta.UnmarshalJSON([]byte(`{"bad key":true}`))
+		assert.Error(err)
+		assert.ErrorIs(err, auth.ErrBadParameter)
+
+		text := (MetaMap{"team": "auth"}).String()
+		assert.Contains(text, "team")
+		assert.Contains(text, "auth")
+
+		redacted := (MetaMap{"name": "Alice", "email": "alice@example.com", "team": "auth"}).RedactedString()
+		assert.Contains(redacted, "[redacted]")
+		assert.Contains(redacted, "team")
+		assert.NotContains(redacted, "alice@example.com")
+	})
+
 	t.Run("MetaMapText", func(t *testing.T) {
 		assert := assert.New(t)
 		require := require.New(t)
@@ -50,6 +76,40 @@ func Test_meta_001(t *testing.T) {
 		err := meta.UnmarshalText([]byte("bad key=value"))
 		assert.Error(err)
 		assert.ErrorIs(err, auth.ErrBadParameter)
+	})
+
+	t.Run("MetaMapScanAndValue", func(t *testing.T) {
+		assert := assert.New(t)
+		require := require.New(t)
+
+		var meta MetaMap
+		require.NoError(meta.Scan([]byte(`{"team":"auth"}`)))
+		assert.Equal(MetaMap{"team": "auth"}, meta)
+
+		require.NoError(meta.Scan(`{"count":2}`))
+		assert.Equal(float64(2), meta["count"])
+
+		require.NoError(meta.Scan(map[string]any{"enabled": true}))
+		assert.Equal(MetaMap{"enabled": true}, meta)
+
+		require.NoError(meta.Scan(nil))
+		assert.Nil(meta)
+
+		err := meta.Scan(123)
+		assert.EqualError(err, "scan MetaMap: unsupported type int")
+
+		value, err := (MetaMap{"team": "auth", "count": float64(2)}).Value()
+		require.NoError(err)
+		data, ok := value.([]byte)
+		require.True(ok)
+
+		var roundtrip map[string]any
+		require.NoError(json.Unmarshal(data, &roundtrip))
+		assert.Equal(map[string]any{"team": "auth", "count": float64(2)}, roundtrip)
+
+		value, err = (MetaMap(nil)).Value()
+		require.NoError(err)
+		assert.Nil(value)
 	})
 
 	t.Run("MetaInsertExpr", func(t *testing.T) {

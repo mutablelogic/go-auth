@@ -136,7 +136,6 @@ authserver --help
 
 After a successful `login`, the resulting token is stored locally and used automatically by subsequent commands that require authentication.
 
-
 ## Architecture
 
 ### Directory structure
@@ -144,7 +143,7 @@ After a successful `login`, the resulting token is stored locally and used autom
 | Path | Description |
 |---|---|
 | `cmd/authserver/` | Server binary — CLI flags, provider wiring, HTTP server setup |
-| `pkg/manager/` | Core domain logic — users, groups, scopes, sessions, identities, token signing |
+| `pkg/authmanager/` | Core domain logic — users, groups, scopes, sessions, identities, token signing |
 | `pkg/httphandler/auth/` | OIDC/OAuth endpoints — authorize, token exchange, revoke, userinfo, JWKS |
 | `pkg/httphandler/manager/` | REST management API — CRUD for users, groups, scopes |
 | `pkg/middleware/` | JWT authentication middleware — validates tokens and injects user/session into context |
@@ -164,7 +163,7 @@ flowchart TD
     AuthEP["<b>Auth Endpoints</b> (pkg/httphandler/auth)"]
     MgrEP["<b>Manager Endpoints</b> (pkg/httphandler/manager)"]
     Middleware["<b>Auth Middleware</b> (pkg/middleware)"]
-    Manager["<b>Manager</b> (pkg/manager)"]
+    Manager["<b>Manager</b> (pkg/authmanager)"]
     OIDC["<b>OIDC Primitives</b> (pkg/oidc)"]
     Crypto["<b>Crypto</b> (pkg/crypto)"]
     Providers["<b>Providers</b> (pkg/provider)"]
@@ -213,7 +212,7 @@ sequenceDiagram
 
 ### Login hooks
 
-When embedding `pkg/manager` directly in a larger service, you can supply a hooks object via `manager.WithHooks(...)` to customise login-time behaviour. The object may implement one or both interfaces:
+When embedding `pkg/authmanager` directly in a larger service, you can supply a hooks object via `manager.WithHooks(...)` to customise login-time behaviour. The object may implement one or both interfaces:
 
 ```go
 // UserCreationHook is called the first time a provider identity logs in and
@@ -261,7 +260,7 @@ If no `UserCreationHook` is registered, new users are created with the default s
 
 When `--notify-channel` is set (default `backend.table_change`), the server listens on a PostgreSQL `LISTEN/NOTIFY` channel and streams change events whenever a user, group, identity, session, or scope row is inserted, updated, or deleted.
 
-**Programmatically** — subscribe via `manager.ChangeNotification` when embedding `pkg/manager` directly:
+**Programmatically** — subscribe via `manager.ChangeNotification` when embedding `pkg/authmanager` directly:
 
 ```go
 err := mgr.ChangeNotification(ctx, func(change schema.ChangeNotification) {

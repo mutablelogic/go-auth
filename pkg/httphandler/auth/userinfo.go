@@ -18,7 +18,7 @@ import (
 	"net/http"
 
 	// Packages
-	manager "github.com/djthorpe/go-auth/pkg/manager"
+	manager "github.com/djthorpe/go-auth/pkg/authmanager"
 	middleware "github.com/djthorpe/go-auth/pkg/middleware"
 	"github.com/djthorpe/go-auth/pkg/oidc"
 	schema "github.com/djthorpe/go-auth/schema/auth"

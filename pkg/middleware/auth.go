@@ -22,7 +22,7 @@ import (
 	"time"
 
 	// Packages
-	manager "github.com/djthorpe/go-auth/pkg/manager"
+	manager "github.com/djthorpe/go-auth/pkg/authmanager"
 	oidc "github.com/djthorpe/go-auth/pkg/oidc"
 	schema "github.com/djthorpe/go-auth/schema/auth"
 	uuid "github.com/google/uuid"
@@ -36,53 +36,53 @@ import (
 // extracts the embedded session and user claims, and rejects revoked or expired
 // sessions or users. If any check fails, a 401 Unauthorized
 // response is returned with a WWW-Authenticate header containing the error details.
-func AuthN(mgr *manager.Manager) func(http.HandlerFunc) http.HandlerFunc {
+func AuthN(manager *manager.Manager) func(http.HandlerFunc) http.HandlerFunc {
 	return func(next http.HandlerFunc) http.HandlerFunc {
 		return func(w http.ResponseWriter, r *http.Request) {
 			token, ok := bearerToken(r)
 			if !ok {
-				writeUnauthorized(w, r, mgr, "invalid_request", "missing bearer token")
+				writeUnauthorized(w, r, manager, "invalid_request", "missing bearer token")
 				return
 			}
-			issuer, err := mgr.OIDCIssuer()
+			issuer, err := manager.OIDCIssuer()
 			if err != nil {
 				_ = httpresponse.Error(w, httpresponse.ErrInternalError.With(err))
 				return
 			}
-			claims, err := mgr.OIDCVerify(token, issuer)
+			claims, err := manager.OIDCVerify(token, issuer)
 			if err != nil {
-				writeUnauthorized(w, r, mgr, "invalid_token", err.Error())
+				writeUnauthorized(w, r, manager, "invalid_token", err.Error())
 				return
 			}
 			session, err := sessionFromClaims(claims)
 			if err != nil {
-				writeUnauthorized(w, r, mgr, "invalid_token", err.Error())
+				writeUnauthorized(w, r, manager, "invalid_token", err.Error())
 				return
 			}
 			user, err := userFromClaims(claims)
 			if err != nil {
-				writeUnauthorized(w, r, mgr, "invalid_token", err.Error())
+				writeUnauthorized(w, r, manager, "invalid_token", err.Error())
 				return
 			}
 			if err := validateClaimBindings(claims, user, session); err != nil {
-				writeUnauthorized(w, r, mgr, "invalid_token", err.Error())
+				writeUnauthorized(w, r, manager, "invalid_token", err.Error())
 				return
 			}
 			if session.RevokedAt != nil {
-				writeUnauthorized(w, r, mgr, "invalid_token", "session is revoked")
+				writeUnauthorized(w, r, manager, "invalid_token", "session is revoked")
 				return
 			}
 			now := time.Now().UTC()
 			if !session.ExpiresAt.After(now) {
-				writeUnauthorized(w, r, mgr, "invalid_token", "session is expired")
+				writeUnauthorized(w, r, manager, "invalid_token", "session is expired")
 				return
 			}
 			if user.ExpiresAt != nil && !user.ExpiresAt.After(now) {
-				writeUnauthorized(w, r, mgr, "invalid_token", "user is expired")
+				writeUnauthorized(w, r, manager, "invalid_token", "user is expired")
 				return
 			}
 			if user.Status != nil && *user.Status != schema.UserStatusActive {
-				writeUnauthorized(w, r, mgr, "invalid_token", "user is not active")
+				writeUnauthorized(w, r, manager, "invalid_token", "user is not active")
 				return
 			}
 
@@ -93,8 +93,8 @@ func AuthN(mgr *manager.Manager) func(http.HandlerFunc) http.HandlerFunc {
 }
 
 // NewMiddleware is kept as a compatibility wrapper for existing callers.
-func NewMiddleware(mgr *manager.Manager) func(http.HandlerFunc) http.HandlerFunc {
-	return AuthN(mgr)
+func NewMiddleware(manager *manager.Manager) func(http.HandlerFunc) http.HandlerFunc {
+	return AuthN(manager)
 }
 
 ///////////////////////////////////////////////////////////////////////////////

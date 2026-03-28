@@ -20,8 +20,8 @@ import (
 	"fmt"
 	"testing"
 
+	manager "github.com/djthorpe/go-auth/pkg/authmanager"
 	authcrypto "github.com/djthorpe/go-auth/pkg/crypto"
-	manager "github.com/djthorpe/go-auth/pkg/manager"
 	oidc "github.com/djthorpe/go-auth/pkg/oidc"
 	googleprovider "github.com/djthorpe/go-auth/pkg/provider/google"
 	localprovider "github.com/djthorpe/go-auth/pkg/provider/local"

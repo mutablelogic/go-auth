@@ -16,11 +16,13 @@ package schema
 
 import (
 	"errors"
+	"strings"
 	"testing"
 
 	// Packages
 	auth "github.com/djthorpe/go-auth"
 	oidc "github.com/djthorpe/go-auth/pkg/oidc"
+	uuid "github.com/google/uuid"
 	assert "github.com/stretchr/testify/assert"
 	require "github.com/stretchr/testify/require"
 )
@@ -42,5 +44,66 @@ func Test_ExtractIssuer(t *testing.T) {
 		_, err := oidc.ExtractIssuer("eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0.e30.")
 		require.Error(t, err)
 		assert.True(t, errors.Is(err, auth.ErrBadParameter))
+	})
+}
+
+func Test_auth_001(t *testing.T) {
+	t.Run("PublicClientConfigurationsString", func(t *testing.T) {
+		assert := assert.New(t)
+
+		text := (PublicClientConfigurations{
+			"local":  {Issuer: "https://issuer.example.com"},
+			"google": {Issuer: "https://accounts.google.com", ClientID: "client-123"},
+		}).String()
+
+		assert.Contains(text, "issuer.example.com")
+		assert.Contains(text, "client-123")
+	})
+
+	t.Run("NewUserInfo", func(t *testing.T) {
+		assert := assert.New(t)
+
+		assert.Nil(NewUserInfo(nil))
+
+		id := UserID(uuid.New())
+		userinfo := NewUserInfo(&User{
+			ID:     id,
+			Scopes: []string{"openid", "profile"},
+			UserMeta: UserMeta{
+				Name:   "Alice Example",
+				Email:  "alice@example.com",
+				Groups: []string{"admins"},
+			},
+		})
+
+		if assert.NotNil(userinfo) {
+			assert.Equal(id, userinfo.Sub)
+			assert.Equal("Alice Example", userinfo.Name)
+			assert.Equal("alice@example.com", userinfo.Email)
+			assert.Equal([]string{"admins"}, userinfo.Groups)
+			assert.Equal([]string{"openid", "profile"}, userinfo.Scopes)
+		}
+	})
+
+	t.Run("AuthorizationCodeRequestValidate", func(t *testing.T) {
+		assert := assert.New(t)
+
+		req := AuthorizationCodeRequest{Provider: "local", Code: "code-123", RedirectURL: "https://client.example.com/callback"}
+		assert.NoError(req.Validate())
+
+		err := (&AuthorizationCodeRequest{Code: "code-123", RedirectURL: "https://client.example.com/callback"}).Validate()
+		assert.Error(err)
+		assert.ErrorIs(err, auth.ErrInvalidProvider)
+		assert.True(strings.Contains(err.Error(), "provider is required"))
+
+		err = (&AuthorizationCodeRequest{Provider: "local", RedirectURL: "https://client.example.com/callback"}).Validate()
+		assert.Error(err)
+		assert.ErrorIs(err, auth.ErrBadParameter)
+		assert.True(strings.Contains(err.Error(), "code is required"))
+
+		err = (&AuthorizationCodeRequest{Provider: "local", Code: "code-123"}).Validate()
+		assert.Error(err)
+		assert.ErrorIs(err, auth.ErrBadParameter)
+		assert.True(strings.Contains(err.Error(), "redirect_url is required"))
 	})
 }

@@ -120,6 +120,7 @@ func Test_session_schema_001(t *testing.T) {
 		assert.Equal(createdAt, session.CreatedAt)
 		require.NotNil(session.RevokedAt)
 		assert.Equal(revokedAt, *session.RevokedAt)
+		assert.Contains(session.String(), userID.String())
 	})
 
 	t.Run("SessionInsertInsertAndUpdate", func(t *testing.T) {

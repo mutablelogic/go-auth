@@ -20,7 +20,7 @@ import (
 	"testing"
 
 	// Packages
-	manager "github.com/djthorpe/go-auth/pkg/manager"
+	manager "github.com/djthorpe/go-auth/pkg/authmanager"
 	pg "github.com/mutablelogic/go-pg"
 	test "github.com/mutablelogic/go-pg/pkg/test"
 	assert "github.com/stretchr/testify/assert"

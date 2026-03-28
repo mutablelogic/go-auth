@@ -22,7 +22,7 @@ import (
 
 	// Packages
 	auth "github.com/djthorpe/go-auth"
-	manager "github.com/djthorpe/go-auth/pkg/manager"
+	manager "github.com/djthorpe/go-auth/pkg/authmanager"
 	schema "github.com/djthorpe/go-auth/schema/auth"
 	uuid "github.com/google/uuid"
 	pg "github.com/mutablelogic/go-pg"

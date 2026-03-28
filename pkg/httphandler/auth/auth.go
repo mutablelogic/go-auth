@@ -21,7 +21,7 @@ import (
 	"time"
 
 	// Packages
-	managerpkg "github.com/djthorpe/go-auth/pkg/manager"
+	managerpkg "github.com/djthorpe/go-auth/pkg/authmanager"
 	oidc "github.com/djthorpe/go-auth/pkg/oidc"
 	providerpkg "github.com/djthorpe/go-auth/pkg/provider"
 	schema "github.com/djthorpe/go-auth/schema/auth"

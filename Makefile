@@ -1,6 +1,7 @@
 # Go parameters
 GO=$(shell command -v go)
 BUILDDIR=build
+COVERAGE_PROFILE=coverage.out
 WASM_DIRS=$(patsubst %/wasmbuild.yaml,%,$(wildcard wasm/*/wasmbuild.yaml))
 WASM_PKGS=$(patsubst wasm/%,$(BUILDDIR)/%.wasm,$(WASM_DIRS))
 CMD_DIRS=$(patsubst %/,%,$(wildcard cmd/*/))
@@ -86,6 +87,53 @@ go-dep: mkdir
 gowasm-dep:
 	@command -v ${GOWASM} >/dev/null 2>&1 || { echo 'Missing wasm compiler: ${GOWASM}'; exit 1; }
 	@echo 'Using wasm compiler ${GOWASM}'
+
+## TESTS ######################################################################
+
+.PHONY: unittests
+unittests: go-dep
+	@$(GO) test ./...
+
+.PHONY: integrationtests 
+integrationtests: go-dep
+	@$(GO) test -tags=integration ./...
+
+.PHONY: coveragetests
+coveragetests: go-dep
+	@tmpfile=$$(mktemp); \
+	if $(GO) test -coverprofile=$(COVERAGE_PROFILE) ./... >$$tmpfile 2>&1; then \
+		printf 'Coverage profile: %s\n\n' '$(COVERAGE_PROFILE)'; \
+		printf '%-10s %-50s %s\n' 'Status' 'Package' 'Coverage'; \
+		printf '%-10s %-50s %s\n' '----------' '--------------------------------------------------' '--------'; \
+		awk ' \
+			function trim_prefix(pkg) { \
+				sub(/^github.com\/djthorpe\/go-auth\/?/, "", pkg); \
+				return pkg == "" ? "." : pkg; \
+			} \
+			$$1 == "?" { \
+				printf "%-10s %-50s %s\n", "no-tests", trim_prefix($$2), "-"; \
+				next; \
+			} \
+			$$1 == "ok" { \
+				cov = "-"; \
+				for (i = 3; i <= NF; i++) if ($$i == "coverage:") cov = $$(i + 1); \
+				printf "%-10s %-50s %s\n", "ok", trim_prefix($$2), cov; \
+				next; \
+			} \
+			index($$1, "github.com/djthorpe/go-auth") == 1 { \
+				cov = "-"; \
+				for (i = 2; i <= NF; i++) if ($$i == "coverage:") cov = $$(i + 1); \
+				printf "%-10s %-50s %s\n", "cover", trim_prefix($$1), cov; \
+			} \
+		' $$tmpfile; \
+		printf '\nTotal coverage: '; \
+		$(GO) tool cover -func=$(COVERAGE_PROFILE) | awk '/^total:/ { print $$3 }'; \
+	else \
+		cat $$tmpfile; \
+		rm -f $$tmpfile; \
+		exit 1; \
+	fi; \
+	rm -f $$tmpfile
 
 ## LICENSE ####################################################################
 

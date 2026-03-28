@@ -22,7 +22,7 @@ import (
 
 	// Packages
 	auth "github.com/djthorpe/go-auth"
-	manager "github.com/djthorpe/go-auth/pkg/manager"
+	manager "github.com/djthorpe/go-auth/pkg/authmanager"
 	schema "github.com/djthorpe/go-auth/schema/auth"
 	uuid "github.com/google/uuid"
 	pg "github.com/mutablelogic/go-pg"
@@ -639,7 +639,7 @@ func Test_user_001(t *testing.T) {
 			},
 			OffsetLimit: pg.OffsetLimit{Offset: 0, Limit: &limit},
 		}
-		expectedRequest := req.String()
+		expectedRequest := req.RedactedString()
 
 		listed, err := m.ListUsers(context.Background(), req)
 		require.NoError(err)

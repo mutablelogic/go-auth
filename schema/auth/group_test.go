@@ -76,6 +76,10 @@ func Test_group_schema_001(t *testing.T) {
 		_, err = (GroupInsert{ID: "a" + strings.Repeat("x", 64)}).Insert(pg.NewBind())
 		assert.Error(err)
 		assert.ErrorIs(err, auth.ErrBadParameter)
+
+		_, err = (GroupMeta{}).Insert(pg.NewBind())
+		assert.Error(err)
+		assert.ErrorIs(err, auth.ErrNotImplemented)
 	})
 
 	t.Run("GroupSelect", func(t *testing.T) {
@@ -102,6 +106,10 @@ func Test_group_schema_001(t *testing.T) {
 		assert := assert.New(t)
 		require := require.New(t)
 
+		values := (GroupListRequest{OffsetLimit: pg.OffsetLimit{Offset: 3, Limit: ptrUint64(10)}}).Query()
+		assert.Equal("3", values.Get("offset"))
+		assert.Equal("10", values.Get("limit"))
+
 		limit := uint64(10)
 		bind := pg.NewBind("schema", DefaultSchema)
 		query, err := (GroupListRequest{OffsetLimit: pg.OffsetLimit{Offset: 3, Limit: &limit}}).Select(bind, pg.List)
@@ -109,6 +117,16 @@ func Test_group_schema_001(t *testing.T) {
 		assert.NotEmpty(query)
 		assert.Equal("", bind.Get("where"))
 		assert.Equal("ORDER BY group_row.id ASC", bind.Get("orderby"))
+	})
+
+	t.Run("GroupStringHelpers", func(t *testing.T) {
+		assert := assert.New(t)
+
+		assert.Contains((GroupMeta{Description: ptrString("Admins")}).String(), "Admins")
+		assert.Contains((Group{ID: "admins"}).String(), "admins")
+		assert.Contains((GroupList{Body: []Group{{ID: "admins"}}}).String(), "admins")
+		assert.Contains((GroupInsert{ID: "admins"}).String(), "admins")
+		assert.Contains((GroupListRequest{OffsetLimit: pg.OffsetLimit{Offset: 3}}).String(), "3")
 	})
 
 	t.Run("GroupScan", func(t *testing.T) {
@@ -200,6 +218,26 @@ func Test_group_schema_001(t *testing.T) {
 		assert.True(strings.Contains(patch, " - @meta_key_1"))
 
 		err = (GroupMeta{}).Update(pg.NewBind())
+		assert.Error(err)
+		assert.ErrorIs(err, auth.ErrBadParameter)
+	})
+
+	t.Run("GroupHelpers", func(t *testing.T) {
+		assert := assert.New(t)
+
+		assert.True(IsSystemGroup("$admin$"))
+		assert.False(IsSystemGroup("admins"))
+		assert.False(IsSystemGroup("$broken"))
+
+		id, err := normalizeGroupID(" admins ")
+		assert.NoError(err)
+		assert.Equal("admins", id)
+
+		_, err = normalizeGroupID("")
+		assert.Error(err)
+		assert.ErrorIs(err, auth.ErrBadParameter)
+
+		_, err = normalizeGroupID("1admins")
 		assert.Error(err)
 		assert.ErrorIs(err, auth.ErrBadParameter)
 	})

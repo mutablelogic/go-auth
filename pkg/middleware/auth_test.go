@@ -22,8 +22,8 @@ import (
 	"time"
 
 	// Packages
+	manager "github.com/djthorpe/go-auth/pkg/authmanager"
 	authcrypto "github.com/djthorpe/go-auth/pkg/crypto"
-	manager "github.com/djthorpe/go-auth/pkg/manager"
 	localprovider "github.com/djthorpe/go-auth/pkg/provider/local"
 	schema "github.com/djthorpe/go-auth/schema/auth"
 	jwt "github.com/golang-jwt/jwt/v5"

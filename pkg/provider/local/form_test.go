@@ -43,6 +43,8 @@ func TestProviderHandlerRedirectsToCallback(t *testing.T) {
 	form.Set("redirect_uri", "http://127.0.0.1:8085/callback")
 	form.Set("state", "state-123")
 	form.Set("login_hint", "local@example.com")
+	form.Set("code_challenge", codeChallengeForVerifier("verifier-123"))
+	form.Set("code_challenge_method", "S256")
 	req := httptest.NewRequest(http.MethodPost, "/auth/provider/local", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	res := httptest.NewRecorder()
@@ -59,8 +61,9 @@ func TestProviderHandlerRedirectsToCallback(t *testing.T) {
 	assert.NotEmpty(uri.Query().Get("code"))
 
 	identity, err := localProvider.ExchangeAuthorizationCode(context.Background(), providerpkg.ExchangeRequest{
-		Code:        uri.Query().Get("code"),
-		RedirectURL: "http://127.0.0.1:8085/callback",
+		Code:         uri.Query().Get("code"),
+		RedirectURL:  "http://127.0.0.1:8085/callback",
+		CodeVerifier: "verifier-123",
 	})
 	require.NoError(err)
 	assert.Equal("local", identity.Provider)

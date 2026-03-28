@@ -63,6 +63,35 @@ func Test_identity_schema_001(t *testing.T) {
 		assert.ErrorIs(err, auth.ErrBadParameter)
 	})
 
+	t.Run("IdentityStringHelpers", func(t *testing.T) {
+		assert := assert.New(t)
+
+		key := IdentityKey{Provider: "github", Sub: "alice"}
+		assert.Contains(key.String(), "alice")
+		assert.Contains(key.RedactedString(), "[redacted]")
+		assert.NotContains(key.RedactedString(), "alice")
+
+		meta := IdentityMeta{Email: "alice@example.com", Claims: map[string]any{"role": "admin"}}
+		assert.Contains(meta.String(), "alice@example.com")
+		assert.Contains(meta.RedactedString(), "[redacted]")
+		assert.NotContains(meta.RedactedString(), "alice@example.com")
+		assert.NotContains(meta.RedactedString(), "role")
+
+		insert := IdentityInsert{IdentityKey: key, IdentityMeta: meta}
+		assert.Contains(insert.String(), "github")
+		assert.Contains(insert.RedactedString(), "[redacted]")
+		assert.NotContains(insert.RedactedString(), "alice@example.com")
+
+		identity := Identity{IdentityKey: key, IdentityMeta: meta, User: UserID(uuid.New())}
+		assert.Contains(identity.String(), "alice")
+		assert.Contains(identity.RedactedString(), "[redacted]")
+		assert.NotContains(identity.RedactedString(), "alice@example.com")
+		assert.NotContains(identity.RedactedString(), "role")
+
+		assert.Contains((IdentityListRequest{OffsetLimit: pg.OffsetLimit{Offset: 3}}).String(), "3")
+		assert.Contains((IdentityList{Body: []Identity{{IdentityKey: key}}}).String(), "github")
+	})
+
 	t.Run("IdentityInsertName", func(t *testing.T) {
 		assert := assert.New(t)
 

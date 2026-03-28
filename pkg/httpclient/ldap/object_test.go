@@ -104,18 +104,22 @@ func TestChangeObjectPasswordUsesJSONPost(t *testing.T) {
 	require.Equal(newPassword, response.GeneratedPassword)
 }
 
-func TestDeleteObjectHandlesNoContent(t *testing.T) {
+func TestDeleteObjectReturnsDeletedObject(t *testing.T) {
 	require := require.New(t)
 	dn := "cn=test,ou=users,dc=example,dc=com"
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		require.Equal(http.MethodDelete, r.Method)
 		require.Equal("/object/"+dn, r.URL.Path)
-		w.WriteHeader(http.StatusNoContent)
+		w.Header().Set("Content-Type", "application/json")
+		require.NoError(json.NewEncoder(w).Encode(schema.Object{DN: dn}))
 	}))
 	defer server.Close()
 
 	client, err := New(server.URL)
 	require.NoError(err)
-	require.NoError(client.DeleteObject(context.Background(), dn))
+	object, err := client.DeleteObject(context.Background(), dn)
+	require.NoError(err)
+	require.NotNil(object)
+	require.Equal(dn, object.DN)
 }

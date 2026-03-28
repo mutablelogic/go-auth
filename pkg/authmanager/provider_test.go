@@ -17,7 +17,7 @@ package manager_test
 import (
 	"testing"
 
-	manager "github.com/djthorpe/go-auth/pkg/manager"
+	manager "github.com/djthorpe/go-auth/pkg/authmanager"
 	schema "github.com/djthorpe/go-auth/schema/auth"
 	assert "github.com/stretchr/testify/assert"
 	require "github.com/stretchr/testify/require"

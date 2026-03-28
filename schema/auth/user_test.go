@@ -16,6 +16,7 @@ package schema
 
 import (
 	"encoding/json"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -88,6 +89,51 @@ func Test_user_001(t *testing.T) {
 		err = roundtrip.UnmarshalText([]byte(uuid.Nil.String()))
 		assert.Error(err)
 		assert.ErrorIs(err, auth.ErrBadParameter)
+
+		text, err = UserID(uid).MarshalText()
+		require.NoError(err)
+		assert.Equal(uid.String(), UserID(uid).String())
+		assert.Equal(uid.String(), string(text))
+	})
+
+	t.Run("UserStringHelpers", func(t *testing.T) {
+		assert := assert.New(t)
+
+		status := UserStatusActive
+		meta := UserMeta{Name: "Alice Example", Email: "alice@example.com", Status: &status}
+		assert.Contains(meta.String(), "alice@example.com")
+		assert.Contains(meta.RedactedString(), "[redacted]")
+		assert.NotContains(meta.RedactedString(), "alice@example.com")
+
+		user := User{ID: UserID(uuid.New()), UserMeta: meta, Scopes: []string{"openid", "profile"}}
+		assert.Contains(user.String(), "alice@example.com")
+		assert.Contains(user.RedactedString(), "[redacted]")
+		assert.NotContains(user.RedactedString(), "alice@example.com")
+
+		assert.Contains((UserListRequest{Email: "alice@example.com"}).String(), "alice@example.com")
+		assert.Contains((UserListRequest{Email: "alice@example.com"}).RedactedString(), "[redacted]")
+		assert.NotContains((UserListRequest{Email: "alice@example.com"}).RedactedString(), "alice@example.com")
+		assert.Contains((UserList{Body: []User{{UserMeta: meta}}}).String(), "alice@example.com")
+	})
+
+	t.Run("UserHasScopeAndQuery", func(t *testing.T) {
+		assert := assert.New(t)
+
+		user := User{Scopes: []string{"openid", "profile"}}
+		assert.True(user.HasScope(" profile "))
+		assert.False(user.HasScope("email"))
+
+		values := (UserListRequest{
+			OffsetLimit: pg.OffsetLimit{Offset: 3, Limit: ptrUint64(25)},
+			Email:       "alice@example.com",
+			Status:      []UserStatus{UserStatusActive, UserStatusSuspended},
+		}).Query()
+		assert.Equal(url.Values{
+			"offset": {"3"},
+			"limit":  {"25"},
+			"email":  {"alice@example.com"},
+			"status": {"active", "suspended"},
+		}, values)
 	})
 
 	t.Run("UserIDSelect", func(t *testing.T) {

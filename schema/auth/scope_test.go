@@ -46,6 +46,9 @@ func Test_scope_001(t *testing.T) {
 			"limit":  {"25"},
 			"q":      {"profile"},
 		}, values)
+
+		assert.Contains((ScopeList{Body: []string{"profile"}}).String(), "profile")
+		assert.Contains((ScopeListRequest{Q: "profile"}).String(), "profile")
 	})
 
 	t.Run("ScopeListRequestSelect", func(t *testing.T) {

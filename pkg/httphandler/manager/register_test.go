@@ -23,8 +23,8 @@ import (
 	"time"
 
 	// Packages
+	managerpkg "github.com/djthorpe/go-auth/pkg/authmanager"
 	authcrypto "github.com/djthorpe/go-auth/pkg/crypto"
-	managerpkg "github.com/djthorpe/go-auth/pkg/manager"
 	providerpkg "github.com/djthorpe/go-auth/pkg/provider"
 	localprovider "github.com/djthorpe/go-auth/pkg/provider/local"
 	test "github.com/mutablelogic/go-pg/pkg/test"

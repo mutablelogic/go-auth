@@ -59,6 +59,10 @@ func Test_user_group_schema_001(t *testing.T) {
 		assert.NotEmpty(query)
 		assert.Equal(user, bind.Get("user"))
 		assert.Equal([]string{"admins", "staff"}, bind.Get("groups"))
+
+		err = (UserGroupInsert{}).Update(pg.NewBind())
+		assert.Error(err)
+		assert.ErrorIs(err, auth.ErrNotImplemented)
 	})
 
 	t.Run("UserGroupListScan", func(t *testing.T) {
