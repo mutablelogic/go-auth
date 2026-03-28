@@ -30,6 +30,8 @@ import (
 
 func TestLDAPObjectCRUDAndPasswordIntegration(t *testing.T) {
 	forEachLDAPIntegrationServer(t, func(t *testing.T, ctx context.Context, server ldapIntegrationServer, manager *Manager) {
+		requireLDAPIntegrationCRUD(t, server)
+
 		created, err := manager.Create(ctx, "ou=projects", url.Values{
 			"objectClass": {"top", "organizationalUnit"},
 			"ou":          {"projects"},

@@ -30,7 +30,9 @@ import (
 )
 
 func TestLDAPGroupCRUDIntegration(t *testing.T) {
-	forEachLDAPIntegrationServer(t, func(t *testing.T, ctx context.Context, _ ldapIntegrationServer, manager *Manager) {
+	forEachLDAPIntegrationServer(t, func(t *testing.T, ctx context.Context, server ldapIntegrationServer, manager *Manager) {
+		requireLDAPIntegrationCRUD(t, server)
+
 		group, err := manager.CreateGroup(ctx, "eng", url.Values{
 			"description": {"Engineering"},
 		})

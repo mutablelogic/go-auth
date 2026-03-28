@@ -26,6 +26,17 @@ import (
 )
 
 func Test_manager_001(t *testing.T) {
+	t.Run("ClosedConnectionDisconnectErrorsAreIgnored", func(t *testing.T) {
+		assert := assert.New(t)
+
+		assert.True(isIgnorableLDAPDisconnectError(&ldapv3.Error{
+			ResultCode: ldapv3.ErrorNetwork,
+			Err:        errors.New("ldap: connection closed"),
+		}))
+		assert.True(isIgnorableLDAPDisconnectError(errors.New("ldap: connection closed")))
+		assert.False(isIgnorableLDAPDisconnectError(errors.New("some other error")))
+	})
+
 	t.Run("LDAPFilterCompileErrorMapsToBadRequest", func(t *testing.T) {
 		assert := assert.New(t)
 		require := require.New(t)

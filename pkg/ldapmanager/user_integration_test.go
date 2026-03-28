@@ -31,7 +31,9 @@ import (
 )
 
 func TestLDAPUserCRUDIntegration(t *testing.T) {
-	forEachLDAPIntegrationServer(t, func(t *testing.T, ctx context.Context, _ ldapIntegrationServer, manager *Manager) {
+	forEachLDAPIntegrationServer(t, func(t *testing.T, ctx context.Context, server ldapIntegrationServer, manager *Manager) {
+		requireLDAPIntegrationCRUD(t, server)
+
 		allocateGID := containsFold(manager.users.ObjectClass, "posixAccount")
 		user, err := manager.CreateUser(ctx, "alice", newIntegrationUserAttrs(manager, "alice", "Alice Example", "secret-one"), allocateGID)
 		require.NoError(t, err)
@@ -96,7 +98,9 @@ func TestLDAPUserCRUDIntegration(t *testing.T) {
 }
 
 func TestLDAPUserGroupMembershipIntegration(t *testing.T) {
-	forEachLDAPIntegrationServer(t, func(t *testing.T, ctx context.Context, _ ldapIntegrationServer, manager *Manager) {
+	forEachLDAPIntegrationServer(t, func(t *testing.T, ctx context.Context, server ldapIntegrationServer, manager *Manager) {
+		requireLDAPIntegrationCRUD(t, server)
+
 		group, err := manager.CreateGroup(ctx, "eng", nil)
 		require.NoError(t, err)
 		require.NotNil(t, group)

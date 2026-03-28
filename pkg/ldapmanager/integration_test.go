@@ -41,6 +41,9 @@ const (
 
 type ldapIntegrationServer struct {
 	Name           string
+	Default        bool
+	SchemaCompat   bool
+	CRUDCompat     bool
 	Image          string
 	Port           string
 	BaseDN         string
@@ -59,6 +62,9 @@ type ldapIntegrationServer struct {
 var ldapIntegrationServers = []ldapIntegrationServer{
 	{
 		Name:           "openldap",
+		Default:        true,
+		SchemaCompat:   true,
+		CRUDCompat:     true,
 		Image:          "osixia/openldap:1.5.0",
 		Port:           ldapIntegrationPort,
 		BaseDN:         "dc=example,dc=org",
@@ -77,6 +83,9 @@ var ldapIntegrationServers = []ldapIntegrationServer{
 	},
 	{
 		Name:           "389ds",
+		Default:        true,
+		SchemaCompat:   true,
+		CRUDCompat:     true,
 		Image:          "389ds/dirsrv:3.1",
 		Port:           ldapIntegration389DSPort,
 		BaseDN:         "dc=example,dc=org",
@@ -93,6 +102,29 @@ var ldapIntegrationServers = []ldapIntegrationServer{
 		},
 		ConnectTimeout: 60 * time.Second,
 		Bootstrap:      bootstrap389DS,
+	},
+	{
+		Name:           "smblds",
+		Default:        false,
+		SchemaCompat:   false,
+		CRUDCompat:     false,
+		Image:          "smblds/smblds:latest",
+		Port:           ldapIntegrationPort,
+		BaseDN:         "dc=example,dc=org",
+		BindDN:         "CN=Administrator,CN=Users,DC=example,DC=org",
+		BindPassword:   "Passw0rd!",
+		UserDN:         "ou=users",
+		GroupDN:        "ou=groups",
+		UserContainer:  "users",
+		GroupContainer: "groups",
+		Env: map[string]string{
+			"REALM":                     "EXAMPLE.ORG",
+			"DOMAIN":                    "EXAMPLE",
+			"ADMINPASS":                 "Passw0rd!",
+			"INSECURE_LDAP":             "true",
+			"INSECURE_PASSWORDSETTINGS": "true",
+		},
+		ConnectTimeout: 90 * time.Second,
 	},
 }
 
@@ -117,7 +149,13 @@ func selectedLDAPIntegrationServers(t *testing.T) []ldapIntegrationServer {
 	t.Helper()
 	selected := strings.TrimSpace(os.Getenv("LDAPMANAGER_INTEGRATION_SERVER"))
 	if selected == "" {
-		return ldapIntegrationServers
+		result := make([]ldapIntegrationServer, 0, len(ldapIntegrationServers))
+		for _, server := range ldapIntegrationServers {
+			if server.Default {
+				result = append(result, server)
+			}
+		}
+		return result
 	}
 
 	allowed := make(map[string]ldapIntegrationServer, len(ldapIntegrationServers))
@@ -194,9 +232,11 @@ func newIntegrationManager(t *testing.T, ctx context.Context, server ldapIntegra
 		require.NoError(t, server.Bootstrap(ctx, t, server, container, manager))
 	}
 
-	manager.discoveryOnce.Do(func() {
-		manager.discoverSchemas(ctx, nil)
-	})
+	if server.SchemaCompat {
+		manager.discoveryOnce.Do(func() {
+			manager.discoverSchemas(ctx, nil)
+		})
+	}
 
 	_, err = manager.Create(ctx, server.UserDN, url.Values{
 		"objectClass": {"top", "organizationalUnit"},
@@ -211,6 +251,20 @@ func newIntegrationManager(t *testing.T, ctx context.Context, server ldapIntegra
 	require.NoError(t, err)
 
 	return manager
+}
+
+func requireLDAPIntegrationSchema(t *testing.T, server ldapIntegrationServer) {
+	t.Helper()
+	if !server.SchemaCompat {
+		t.Skipf("%s exposes an Active Directory style subschema that is not RFC4512-compatible with the current parser", server.Name)
+	}
+}
+
+func requireLDAPIntegrationCRUD(t *testing.T, server ldapIntegrationServer) {
+	t.Helper()
+	if !server.CRUDCompat {
+		t.Skipf("%s is currently configured as a connection-only experimental integration target", server.Name)
+	}
 }
 
 func bootstrap389DS(ctx context.Context, t *testing.T, server ldapIntegrationServer, container *test.Container, manager *Manager) error {

@@ -55,6 +55,8 @@ func TestLDAPConnectionLifecycleIntegration(t *testing.T) {
 
 func TestLDAPRunIntegration(t *testing.T) {
 	forEachLDAPIntegrationServer(t, func(t *testing.T, ctx context.Context, server ldapIntegrationServer, manager *Manager) {
+		requireLDAPIntegrationSchema(t, server)
+
 		manager.users.ObjectClass = nil
 		manager.groups.ObjectClass = nil
 		manager.discoveryOnce = sync.Once{}

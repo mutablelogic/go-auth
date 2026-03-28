@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"net/url"
 	"strconv"
+	"strings"
 	"sync"
 
 	// Packages
@@ -223,7 +224,20 @@ func ldapConnect(host string, port int, tls *tls.Config) (*ldap.Conn, error) {
 
 // Disconnect from the LDAP server
 func ldapDisconnect(conn *ldap.Conn) error {
-	return conn.Close()
+	if err := conn.Close(); err != nil && !isIgnorableLDAPDisconnectError(err) {
+		return err
+	}
+	return nil
+}
+
+func isIgnorableLDAPDisconnectError(err error) bool {
+	if err == nil {
+		return true
+	}
+	if ldapErrorCode(err) == ldap.ErrorNetwork {
+		return true
+	}
+	return strings.Contains(strings.ToLower(err.Error()), "connection closed")
 }
 
 // Bind to the LDAP server with a user and password

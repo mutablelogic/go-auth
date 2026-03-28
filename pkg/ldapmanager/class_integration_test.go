@@ -21,13 +21,16 @@ import (
 	"strings"
 	"testing"
 
+	// Packages
 	schema "github.com/djthorpe/go-auth/schema/ldap"
 	assert "github.com/stretchr/testify/assert"
 	require "github.com/stretchr/testify/require"
 )
 
 func TestLDAPSchemaIntegration(t *testing.T) {
-	forEachLDAPIntegrationServer(t, func(t *testing.T, ctx context.Context, _ ldapIntegrationServer, manager *Manager) {
+	forEachLDAPIntegrationServer(t, func(t *testing.T, ctx context.Context, server ldapIntegrationServer, manager *Manager) {
+		requireLDAPIntegrationSchema(t, server)
+
 		classes, err := manager.ListObjectClasses(ctx, schema.ObjectClassListRequest{})
 		require.NoError(t, err)
 		require.NotNil(t, classes)
