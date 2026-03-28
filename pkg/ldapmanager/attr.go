@@ -52,6 +52,21 @@ func attrSet(attrs url.Values, name string, values []string) {
 	}
 }
 
+func attrDelete(attrs url.Values, name string) {
+	if key, ok := attrKey(attrs, name); ok {
+		delete(attrs, key)
+	}
+}
+
+func attrFirst(attrs url.Values, name string) string {
+	for _, value := range attrValues(attrs, name) {
+		if value = strings.TrimSpace(value); value != "" {
+			return value
+		}
+	}
+	return ""
+}
+
 func attrKey(attrs url.Values, name string) (string, bool) {
 	for key := range attrs {
 		if strings.EqualFold(key, name) {

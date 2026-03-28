@@ -19,6 +19,7 @@ package ldap
 import (
 	"context"
 	"net/url"
+	"strings"
 	"testing"
 
 	// Packages
@@ -30,8 +31,6 @@ import (
 
 func TestLDAPObjectCRUDAndPasswordIntegration(t *testing.T) {
 	forEachLDAPIntegrationServer(t, func(t *testing.T, ctx context.Context, server ldapIntegrationServer, manager *Manager) {
-		requireLDAPIntegrationCRUD(t, server)
-
 		created, err := manager.Create(ctx, "ou=projects", url.Values{
 			"objectClass": {"top", "organizationalUnit"},
 			"ou":          {"projects"},
@@ -60,7 +59,7 @@ func TestLDAPObjectCRUDAndPasswordIntegration(t *testing.T) {
 		})
 		require.NoError(t, err)
 		require.NotNil(t, updated)
-		assert.Contains(t, updated.DN, "ou=engineering-projects")
+		assert.Contains(t, strings.ToLower(updated.DN), "ou=engineering-projects")
 
 		_, err = manager.Get(ctx, "ou=projects")
 		require.Error(t, err)
@@ -75,6 +74,11 @@ func TestLDAPObjectCRUDAndPasswordIntegration(t *testing.T) {
 		require.Error(t, err)
 		assert.ErrorIs(t, err, httpresponse.ErrNotFound)
 
+		if !server.PasswordCompat {
+			t.Logf("skipping password checks for %s", server.Name)
+			return
+		}
+
 		password := "secret-one"
 		user, err := manager.CreateUser(ctx, "binduser", newIntegrationUserAttrs(manager, "binduser", "Bind User", password), containsFold(manager.users.ObjectClass, "posixAccount"))
 		require.NoError(t, err)
@@ -88,23 +92,20 @@ func TestLDAPObjectCRUDAndPasswordIntegration(t *testing.T) {
 
 		newPassword := "secret-two"
 		changed, generated, err := manager.ChangePassword(ctx, relativeDN, password, &newPassword)
-		if err != nil {
-			require.Equal(t, "389ds", server.Name)
-			assert.Contains(t, err.Error(), "Confidentiality Required")
-
-			stillBound, bindErr := manager.Bind(ctx, relativeDN, password)
-			require.NoError(t, bindErr)
-			require.NotNil(t, stillBound)
-			assert.Equal(t, user.DN, stillBound.DN)
-			return
-		}
+		require.NoError(t, err)
 		require.NotNil(t, changed)
 		assert.Equal(t, user.DN, changed.DN)
 		assert.Nil(t, generated)
 
-		_, err = manager.Bind(ctx, relativeDN, password)
-		require.Error(t, err)
-		assert.ErrorIs(t, err, httpresponse.ErrNotAuthorized)
+		oldBound, err := manager.Bind(ctx, relativeDN, password)
+		if server.PasswordChangeInvalidatesOld {
+			require.Error(t, err)
+			assert.ErrorIs(t, err, httpresponse.ErrNotAuthorized)
+		} else {
+			require.NoError(t, err)
+			require.NotNil(t, oldBound)
+			assert.Equal(t, user.DN, oldBound.DN)
+		}
 
 		rebound, err := manager.Bind(ctx, relativeDN, newPassword)
 		require.NoError(t, err)

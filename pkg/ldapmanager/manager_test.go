@@ -15,6 +15,7 @@
 package ldap
 
 import (
+	"encoding/base64"
 	"errors"
 	"testing"
 
@@ -119,5 +120,19 @@ func Test_manager_001(t *testing.T) {
 		require.Error(err)
 		assert.Contains(err.Error(), "unwilling to verify old password")
 		assert.ErrorIs(err, httpresponse.ErrBadRequest)
+	})
+
+	t.Run("ActiveDirectoryPasswordSchemaUsesUserClass", func(t *testing.T) {
+		assert := assert.New(t)
+
+		assert.True(activeDirectoryPasswordSchema([]string{"top", "user"}))
+		assert.False(activeDirectoryPasswordSchema([]string{"top", "inetOrgPerson"}))
+	})
+
+	t.Run("ActiveDirectoryPasswordValueEncodesQuotedUTF16LE", func(t *testing.T) {
+		assert := assert.New(t)
+
+		encoded := []byte(activeDirectoryPasswordValue("A"))
+		assert.Equal("IgBBACIA", base64.StdEncoding.EncodeToString(encoded))
 	})
 }

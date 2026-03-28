@@ -29,8 +29,6 @@ import (
 
 func TestLDAPSchemaIntegration(t *testing.T) {
 	forEachLDAPIntegrationServer(t, func(t *testing.T, ctx context.Context, server ldapIntegrationServer, manager *Manager) {
-		requireLDAPIntegrationSchema(t, server)
-
 		classes, err := manager.ListObjectClasses(ctx, schema.ObjectClassListRequest{})
 		require.NoError(t, err)
 		require.NotNil(t, classes)

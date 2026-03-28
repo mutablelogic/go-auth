@@ -284,6 +284,32 @@ func (manager *Manager) ChangePassword(ctx context.Context, dn, old string, new 
 		requestedNew = strings.TrimSpace(*new)
 	}
 
+	object, err := manager.get(ctx, ldap.ScopeBaseObject, absdn.String(), "(objectclass=*)")
+	if err != nil {
+		return nil, nil, err
+	}
+	if object != nil && activeDirectoryPasswordSchema(object.GetAll("objectClass")) {
+		// AD-style directories use unicodePwd modify semantics rather than the
+		// generic RFC 3062 PasswordModify extended operation.
+		var generated *string
+		if requestedNew == "" {
+			password, err := randomPassword()
+			if err != nil {
+				return nil, nil, err
+			}
+			requestedNew = password
+			generated = types.Ptr(password)
+		}
+		if err := manager.setActiveDirectoryPassword(absdn.String(), old, requestedNew); err != nil {
+			return nil, nil, err
+		}
+		object, err = manager.get(ctx, ldap.ScopeBaseObject, absdn.String(), "(objectclass=*)")
+		if err != nil {
+			return nil, nil, err
+		}
+		return object, generated, nil
+	}
+
 	// Modify the password
 	var generated *string
 	if result, err := manager.conn.PasswordModify(ldap.NewPasswordModifyRequest(absdn.String(), old, requestedNew)); err != nil {
@@ -293,7 +319,7 @@ func (manager *Manager) ChangePassword(ctx context.Context, dn, old string, new 
 	}
 
 	// Return the user
-	object, err := manager.get(ctx, ldap.ScopeBaseObject, absdn.String(), "(objectclass=*)")
+	object, err = manager.get(ctx, ldap.ScopeBaseObject, absdn.String(), "(objectclass=*)")
 	if err != nil {
 		return nil, nil, err
 	}
@@ -331,19 +357,11 @@ func (manager *Manager) Update(ctx context.Context, dn string, attr url.Values) 
 		}
 	}
 
-	// Create the request
-	modifyReq := ldap.NewModifyRequest(targetDN, []ldap.Control{})
-	for key, values := range attrs {
-		if len(values) == 0 {
-			modifyReq.Delete(key, nil)
-		} else {
-			modifyReq.Replace(key, values)
+	modifyReq, hasChanges := newModifyRequest(targetDN, attrs, absdn, rename)
+	if hasChanges {
+		if err := manager.conn.Modify(modifyReq); err != nil {
+			return nil, ldaperr(err)
 		}
-	}
-
-	// Make the request
-	if err := manager.conn.Modify(modifyReq); err != nil {
-		return nil, ldaperr(err)
 	}
 
 	// Return the new object
@@ -399,4 +417,31 @@ func updateAttributeValues(attrs url.Values, name string) ([]string, bool) {
 		}
 	}
 	return nil, false
+}
+
+func newModifyRequest(targetDN string, attrs url.Values, dn *schema.DN, rename bool) (*ldap.ModifyRequest, bool) {
+	modifyReq := ldap.NewModifyRequest(targetDN, []ldap.Control{})
+	skip := map[string]struct{}{}
+	if rename && dn != nil && len(dn.RDNs) > 0 && dn.RDNs[0] != nil {
+		for _, attribute := range dn.RDNs[0].Attributes {
+			if attribute != nil {
+				skip[strings.ToLower(attribute.Type)] = struct{}{}
+			}
+		}
+	}
+
+	hasChanges := false
+	for key, values := range attrs {
+		if _, ok := skip[strings.ToLower(key)]; ok {
+			continue
+		}
+		if len(values) == 0 {
+			modifyReq.Delete(key, nil)
+		} else {
+			modifyReq.Replace(key, values)
+		}
+		hasChanges = true
+	}
+
+	return modifyReq, hasChanges
 }

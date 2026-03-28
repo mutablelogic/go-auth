@@ -16,6 +16,7 @@ package ldap
 
 import (
 	"context"
+	"errors"
 	"net/url"
 	"strconv"
 
@@ -133,6 +134,24 @@ func (manager *Manager) CreateUser(ctx context.Context, user string, attrs url.V
 			}
 		}
 
+		password := attrFirst(attrs, "unicodePwd")
+		if password == "" {
+			password = attrFirst(attrs, "userPassword")
+		}
+		usesActiveDirectoryPasswords := activeDirectoryPasswordSchema(classes)
+		if usesActiveDirectoryPasswords {
+			// MS-ADTS password writes use unicodePwd over a protected connection,
+			// so seed the entry first and then apply the password in a follow-up modify.
+			attrDelete(attrs, "userPassword")
+			attrDelete(attrs, "unicodePwd")
+			if !attrHas(attrs, "sAMAccountName") {
+				attrSet(attrs, "sAMAccountName", []string{user})
+			}
+			if !attrHas(attrs, "userAccountControl") {
+				attrSet(attrs, "userAccountControl", []string{"512"})
+			}
+		}
+
 		addReq := ldap.NewAddRequest(userDN.String(), []ldap.Control{})
 		for key, values := range attrs {
 			if len(values) > 0 {
@@ -141,6 +160,14 @@ func (manager *Manager) CreateUser(ctx context.Context, user string, attrs url.V
 		}
 		if err := manager.conn.Add(addReq); err != nil {
 			return ldaperr(err)
+		}
+		if usesActiveDirectoryPasswords && password != "" {
+			if err := manager.setActiveDirectoryPassword(addReq.DN, "", password); err != nil {
+				if delErr := manager.conn.Del(ldap.NewDelRequest(addReq.DN, []ldap.Control{})); delErr != nil {
+					return errors.Join(err, ldaperr(delErr))
+				}
+				return err
+			}
 		}
 		var err error
 		result, err = manager.get(ctx, ldap.ScopeBaseObject, addReq.DN, "(objectClass=*)")
@@ -170,17 +197,11 @@ func (manager *Manager) UpdateUser(ctx context.Context, cn string, attrs url.Val
 			}
 		}
 
-		modifyReq := ldap.NewModifyRequest(targetDN, []ldap.Control{})
-		for key, values := range attrs {
-			if len(values) == 0 {
-				modifyReq.Delete(key, nil)
-			} else {
-				modifyReq.Replace(key, values)
+		modifyReq, hasChanges := newModifyRequest(targetDN, attrs, userDN, rename)
+		if hasChanges {
+			if err := manager.conn.Modify(modifyReq); err != nil {
+				return ldaperr(err)
 			}
-		}
-
-		if err := manager.conn.Modify(modifyReq); err != nil {
-			return ldaperr(err)
 		}
 
 		result, err = manager.get(ctx, ldap.ScopeBaseObject, targetDN, "(objectClass=*)")

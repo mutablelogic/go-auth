@@ -70,4 +70,36 @@ func TestUpdateTargetDN(t *testing.T) {
 		assert.Contains(err.Error(), "naming attribute \"uid\" cannot be deleted")
 		assert.ErrorIs(err, httpresponse.ErrBadRequest)
 	})
+
+	t.Run("ModifyRequestSkipsRDNAttributesAfterRename", func(t *testing.T) {
+		assert := assert.New(t)
+		require := require.New(t)
+
+		dn, err := schema.NewDN("cn=eng,ou=groups,dc=example,dc=com")
+		require.NoError(err)
+
+		modifyReq, hasChanges := newModifyRequest("cn=eng2,ou=groups,dc=example,dc=com", url.Values{
+			"cn":          {"eng2"},
+			"description": {"Engineering"},
+		}, dn, true)
+
+		assert.True(hasChanges)
+		require.Len(modifyReq.Changes, 1)
+		assert.Equal("description", modifyReq.Changes[0].Modification.Type)
+	})
+
+	t.Run("ModifyRequestCanBeEmptyAfterRename", func(t *testing.T) {
+		assert := assert.New(t)
+		require := require.New(t)
+
+		dn, err := schema.NewDN("cn=alice,ou=users,dc=example,dc=com")
+		require.NoError(err)
+
+		modifyReq, hasChanges := newModifyRequest("cn=alice2,ou=users,dc=example,dc=com", url.Values{
+			"cn": {"alice2"},
+		}, dn, true)
+
+		assert.False(hasChanges)
+		assert.Empty(modifyReq.Changes)
+	})
 }

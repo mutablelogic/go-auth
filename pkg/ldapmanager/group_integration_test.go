@@ -20,6 +20,7 @@ import (
 	"context"
 	"net/url"
 	"strconv"
+	"strings"
 	"testing"
 
 	// Packages
@@ -31,8 +32,6 @@ import (
 
 func TestLDAPGroupCRUDIntegration(t *testing.T) {
 	forEachLDAPIntegrationServer(t, func(t *testing.T, ctx context.Context, server ldapIntegrationServer, manager *Manager) {
-		requireLDAPIntegrationCRUD(t, server)
-
 		group, err := manager.CreateGroup(ctx, "eng", url.Values{
 			"description": {"Engineering"},
 		})
@@ -62,7 +61,7 @@ func TestLDAPGroupCRUDIntegration(t *testing.T) {
 		})
 		require.NoError(t, err)
 		require.NotNil(t, updated)
-		assert.Contains(t, updated.DN, "cn=eng2")
+		assert.Contains(t, strings.ToLower(updated.DN), "cn=eng2")
 
 		_, err = manager.GetGroup(ctx, "eng")
 		require.Error(t, err)

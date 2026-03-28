@@ -176,17 +176,11 @@ func (manager *Manager) UpdateGroup(ctx context.Context, cn string, attrs url.Va
 			}
 		}
 
-		modifyReq := ldap.NewModifyRequest(targetDN, []ldap.Control{})
-		for key, values := range attrs {
-			if len(values) == 0 {
-				modifyReq.Delete(key, nil)
-			} else {
-				modifyReq.Replace(key, values)
+		modifyReq, hasChanges := newModifyRequest(targetDN, attrs, groupDN, rename)
+		if hasChanges {
+			if err := manager.conn.Modify(modifyReq); err != nil {
+				return ldaperr(err)
 			}
-		}
-
-		if err := manager.conn.Modify(modifyReq); err != nil {
-			return ldaperr(err)
 		}
 
 		result, err = manager.get(ctx, ldap.ScopeBaseObject, targetDN, "(objectClass=*)")

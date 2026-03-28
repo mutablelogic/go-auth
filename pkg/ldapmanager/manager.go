@@ -15,13 +15,17 @@
 package ldap
 
 import (
+	"crypto/rand"
 	"crypto/tls"
+	"encoding/base64"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"net/url"
 	"strconv"
 	"strings"
 	"sync"
+	"unicode/utf16"
 
 	// Packages
 	schema "github.com/djthorpe/go-auth/schema/ldap"
@@ -38,6 +42,7 @@ type Manager struct {
 	sync.Mutex
 	url           *url.URL
 	tls           *tls.Config
+	skipverify    bool
 	user, pass    string
 	dn            *schema.DN
 	conn          *ldap.Conn
@@ -113,6 +118,9 @@ func New(opt ...Opt) (*Manager, error) {
 	// Set the schemas for users, groups
 	self.users = o.users
 	self.groups = o.groups
+
+	// Set SSL verification
+	self.skipverify = o.skipverify
 
 	// Return success
 	return self, nil
@@ -230,16 +238,6 @@ func ldapDisconnect(conn *ldap.Conn) error {
 	return nil
 }
 
-func isIgnorableLDAPDisconnectError(err error) bool {
-	if err == nil {
-		return true
-	}
-	if ldapErrorCode(err) == ldap.ErrorNetwork {
-		return true
-	}
-	return strings.Contains(strings.ToLower(err.Error()), "connection closed")
-}
-
 // Bind to the LDAP server with a user and password
 func ldapBind(conn *ldap.Conn, user, password string) error {
 	if password == "" {
@@ -256,6 +254,108 @@ func ldapErrorCode(err error) uint16 {
 		return uint16(ldapErr.ResultCode)
 	}
 	return 0
+}
+
+func (manager *Manager) passwordEndpoint() (*url.URL, *tls.Config) {
+	if manager.url.Scheme == schema.MethodSecure {
+		return manager.url, manager.tls
+	}
+	clone := *manager.url
+	clone.Scheme = schema.MethodSecure
+	clone.Host = fmt.Sprintf("%s:%d", manager.url.Hostname(), schema.PortSecure)
+	clone.User = nil
+	return &clone, &tls.Config{InsecureSkipVerify: manager.skipverify}
+}
+
+func (manager *Manager) openPasswordConn() (*ldap.Conn, error) {
+	endpoint, tlsConfig := manager.passwordEndpoint()
+	port, err := strconv.Atoi(endpoint.Port())
+	if err != nil {
+		return nil, err
+	}
+	return ldapConnect(endpoint.Hostname(), port, tlsConfig)
+}
+
+func (manager *Manager) bindPasswordConn() (*ldap.Conn, error) {
+	conn, err := manager.openPasswordConn()
+	if err != nil {
+		return nil, err
+	}
+	if err := ldapBind(conn, manager.User(), manager.pass); err != nil {
+		_ = ldapDisconnect(conn)
+		return nil, ldaperr(err)
+	}
+	return conn, nil
+}
+
+func activeDirectoryPasswordSchema(classes []string) bool {
+	return containsFold(classes, "user")
+}
+
+func activeDirectoryPasswordValue(password string) string {
+	encoded := utf16.Encode([]rune("\"" + password + "\""))
+	buf := make([]byte, len(encoded)*2)
+	for i, value := range encoded {
+		binary.LittleEndian.PutUint16(buf[i*2:], value)
+	}
+	return string(buf)
+}
+
+func randomPassword() (string, error) {
+	buf := make([]byte, 18)
+	if _, err := rand.Read(buf); err != nil {
+		return "", err
+	}
+	return base64.RawURLEncoding.EncodeToString(buf), nil
+}
+
+func (manager *Manager) setActiveDirectoryPassword(dn, old, password string) error {
+	old = strings.TrimSpace(old)
+	var (
+		conn *ldap.Conn
+		err  error
+	)
+	if old == "" {
+		conn, err = manager.bindPasswordConn()
+	} else {
+		conn, err = manager.openPasswordConn()
+		if err == nil {
+			err = ldapBind(conn, dn, old)
+			if err != nil {
+				_ = ldapDisconnect(conn)
+				return ldaperr(err)
+			}
+		}
+	}
+	if err != nil {
+		return err
+	}
+	defer ldapDisconnect(conn)
+
+	req := ldap.NewModifyRequest(dn, []ldap.Control{})
+	if old == "" {
+		// Administrative reset: replace unicodePwd with the new quoted UTF-16LE value.
+		req.Replace("unicodePwd", []string{activeDirectoryPasswordValue(password)})
+	} else {
+		// User-initiated change: delete the old value and add the new one in the
+		// same modify request, per MS-ADTS password change semantics.
+		req.Delete("unicodePwd", []string{activeDirectoryPasswordValue(old)})
+		req.Add("unicodePwd", []string{activeDirectoryPasswordValue(password)})
+	}
+	if err := conn.Modify(req); err != nil {
+		return ldaperr(err)
+	}
+	return nil
+}
+
+func isIgnorableLDAPDisconnectError(err error) bool {
+	if err == nil {
+		return true
+	}
+	if ldapErrorCode(err) == ldap.ErrorNetwork {
+		return true
+	}
+	return strings.Contains(strings.ToLower(err.Error()), "connection closed")
 }
 
 // Translate LDAP error to HTTP error
