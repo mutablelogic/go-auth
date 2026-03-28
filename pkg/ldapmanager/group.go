@@ -16,9 +16,9 @@ package ldap
 
 import (
 	"context"
+	"errors"
 	"net/url"
 	"strconv"
-	"strings"
 
 	// Packages
 	schema "github.com/djthorpe/go-auth/schema/ldap"
@@ -194,22 +194,106 @@ func (manager *Manager) UpdateGroup(ctx context.Context, cn string, attrs url.Va
 	})
 }
 
-// Add a user to a group, and return the group
-func (manager *Manager) AddGroupUser(ctx context.Context, cn, user string) (*schema.Object, error) {
-	// TODO
-	// Use uniqueMember for groupOfUniqueNames,
-	// use memberUid for posixGroup
-	// use member for groupOfNames or if not posix
-	return nil, httpresponse.ErrNotImplemented.With("AddGroupUser not implemented")
+// Add users to a group, and return the updated group. Membership changes are
+// applied with a single LDAP modify request on the group entry.
+func (manager *Manager) AddGroupUsers(ctx context.Context, groupcn string, usercn ...string) (*schema.Object, error) {
+	var result *schema.Object
+	return result, manager.withGroups(groupcn, func(groupDN *schema.DN) error {
+		if len(usercn) == 0 {
+			return httpresponse.ErrBadRequest.With("at least one user is required")
+		}
+
+		group, err := manager.get(ctx, ldap.ScopeBaseObject, groupDN.String(), "(objectClass=*)")
+		if err != nil {
+			if errors.Is(err, httpresponse.ErrNotFound) {
+				return httpresponse.ErrNotFound.Withf("group %q not found", groupcn)
+			}
+			return ldaperr(err)
+		}
+		if group == nil {
+			return httpresponse.ErrNotFound.Withf("group %q not found", groupcn)
+		}
+
+		attrs := groupMembershipAttrs(group.GetAll("objectClass"))
+		if len(attrs) == 0 {
+			return httpresponse.ErrBadRequest.With("group does not support membership attributes")
+		}
+
+		members, err := manager.resolveGroupUsers(ctx, usercn...)
+		if err != nil {
+			return err
+		}
+
+		modifyReq := ldap.NewModifyRequest(group.DN, []ldap.Control{})
+		for _, attr := range attrs {
+			current := group.GetAll(attr)
+			for _, value := range groupMembershipMissing(attr, current, members) {
+				modifyReq.Add(attr, []string{value})
+			}
+		}
+		if len(modifyReq.Changes) == 0 {
+			result = group
+			return nil
+		}
+
+		if err := manager.conn.Modify(modifyReq); err != nil {
+			return ldaperr(err)
+		}
+
+		result, err = manager.get(ctx, ldap.ScopeBaseObject, group.DN, "(objectClass=*)")
+		return err
+	})
 }
 
-// Remove a user from a group, and return the group
-func (manager *Manager) RemoveGroupUser(ctx context.Context, cn, user string) (*schema.Object, error) {
-	// TODO
-	// Use uniqueMember for groupOfUniqueNames,
-	// use memberUid for posixGroup
-	// use member for groupOfNames or if not posix
-	return nil, httpresponse.ErrNotImplemented.With("RemoveGroupUser not implemented")
+// Remove users from a group, and return the updated group. Membership changes
+// are applied with a single LDAP modify request on the group entry.
+func (manager *Manager) RemoveGroupUsers(ctx context.Context, groupcn string, usercn ...string) (*schema.Object, error) {
+	var result *schema.Object
+	return result, manager.withGroups(groupcn, func(groupDN *schema.DN) error {
+		if len(usercn) == 0 {
+			return httpresponse.ErrBadRequest.With("at least one user is required")
+		}
+
+		group, err := manager.get(ctx, ldap.ScopeBaseObject, groupDN.String(), "(objectClass=*)")
+		if err != nil {
+			if errors.Is(err, httpresponse.ErrNotFound) {
+				return httpresponse.ErrNotFound.Withf("group %q not found", groupcn)
+			}
+			return ldaperr(err)
+		}
+		if group == nil {
+			return httpresponse.ErrNotFound.Withf("group %q not found", groupcn)
+		}
+
+		attrs := groupMembershipAttrs(group.GetAll("objectClass"))
+		if len(attrs) == 0 {
+			return httpresponse.ErrBadRequest.With("group does not support membership attributes")
+		}
+
+		members, err := manager.resolveGroupUsers(ctx, usercn...)
+		if err != nil {
+			return err
+		}
+
+		modifyReq := ldap.NewModifyRequest(group.DN, []ldap.Control{})
+		for _, attr := range attrs {
+			current := group.GetAll(attr)
+			for _, value := range groupMembershipPresent(attr, current, members) {
+				modifyReq.Delete(attr, []string{value})
+			}
+		}
+		if len(modifyReq.Changes) == 0 {
+			result = group
+			return nil
+		}
+
+		if err := manager.conn.Modify(modifyReq); err != nil {
+			return ldaperr(err)
+		}
+
+		result, err = manager.get(ctx, ldap.ScopeBaseObject, group.DN, "(objectClass=*)")
+		return err
+	})
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -288,17 +372,6 @@ func (manager *Manager) nextGID(ctx context.Context) (int, error) {
 
 	return next, nil
 }
-
-// containsFold reports whether s appears in values with case-insensitive comparison.
-func containsFold(values []string, s string) bool {
-	for _, v := range values {
-		if strings.EqualFold(v, s) {
-			return true
-		}
-	}
-	return false
-}
-
 func ensureGroupRequiredAttrs(attrs url.Values, groupDN string, classes []string) {
 	if containsFold(classes, "groupOfUniqueNames") {
 		if !attrHas(attrs, "uniqueMember") {
@@ -313,31 +386,105 @@ func ensureGroupRequiredAttrs(attrs url.Values, groupDN string, classes []string
 	}
 }
 
-func attrHas(attrs url.Values, name string) bool {
-	_, ok := attrKey(attrs, name)
-	return ok
-}
-
-func attrValues(attrs url.Values, name string) []string {
-	if key, ok := attrKey(attrs, name); ok {
-		return attrs[key]
+func groupMembershipAttrs(classes []string) []string {
+	attrs := make([]string, 0, 2)
+	if containsFold(classes, "groupOfUniqueNames") {
+		attrs = append(attrs, "uniqueMember")
+	} else if containsFold(classes, "groupOfNames") || containsFold(classes, "groupOfMembers") || containsFold(classes, "group") || !containsFold(classes, "posixGroup") {
+		attrs = append(attrs, "member")
 	}
-	return nil
-}
-
-func attrSet(attrs url.Values, name string, values []string) {
-	if key, ok := attrKey(attrs, name); ok {
-		attrs[key] = values
-	} else {
-		attrs[name] = values
+	if containsFold(classes, "posixGroup") {
+		attrs = append(attrs, "memberUid")
 	}
+	return attrs
 }
 
-func attrKey(attrs url.Values, name string) (string, bool) {
-	for key := range attrs {
-		if strings.EqualFold(key, name) {
-			return key, true
+func groupMembershipValues(attr string, members []*schema.Object) []string {
+	values := make([]string, 0, len(members))
+	seen := make(map[string]struct{}, len(members))
+	for _, member := range members {
+		if member == nil {
+			continue
+		}
+		var value string
+		switch attr {
+		case "memberUid":
+			if uid := member.Get("uid"); uid != nil && *uid != "" {
+				value = *uid
+			} else if cn := member.Get("cn"); cn != nil {
+				value = *cn
+			}
+		case "member", "uniqueMember":
+			value = member.DN
+		}
+		if value == "" {
+			continue
+		}
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		values = append(values, value)
+	}
+	return values
+}
+
+func groupMembershipMissing(attr string, current []string, members []*schema.Object) []string {
+	values := groupMembershipValues(attr, members)
+	missing := make([]string, 0, len(values))
+	for _, value := range values {
+		if !containsFold(current, value) {
+			missing = append(missing, value)
 		}
 	}
-	return "", false
+	return missing
+}
+
+func groupMembershipPresent(attr string, current []string, members []*schema.Object) []string {
+	values := groupMembershipValues(attr, members)
+	present := make([]string, 0, len(values))
+	for _, value := range values {
+		if containsFold(current, value) {
+			present = append(present, value)
+		}
+	}
+	return present
+}
+
+// resolveGroupUsers resolves user names to LDAP objects while the manager lock
+// is already held by the caller.
+func (manager *Manager) resolveGroupUsers(ctx context.Context, usercn ...string) ([]*schema.Object, error) {
+	if manager.users == nil {
+		return nil, httpresponse.ErrNotImplemented.With("user schema not configured")
+	}
+	if manager.conn == nil {
+		return nil, httpresponse.ErrGatewayError.With("Not connected")
+	}
+
+	base := manager.users.DN.Join(manager.dn)
+	rdnAttr := userNamingAttribute(manager.users.ObjectClass)
+	result := make([]*schema.Object, 0, len(usercn))
+	seen := make(map[string]struct{}, len(usercn))
+	for _, name := range usercn {
+		if _, ok := seen[name]; ok {
+			continue
+		}
+		seen[name] = struct{}{}
+		dn, err := schema.NewDN(rdnAttr + "=" + ldap.EscapeDN(name))
+		if err != nil {
+			return nil, httpresponse.ErrBadRequest.Withf("invalid user name: %v", err)
+		}
+		user, err := manager.get(ctx, ldap.ScopeBaseObject, dn.Join(base).String(), "(objectClass=*)")
+		if err != nil {
+			if errors.Is(err, httpresponse.ErrNotFound) {
+				return nil, httpresponse.ErrNotFound.Withf("user %q not found", name)
+			}
+			return nil, ldaperr(err)
+		}
+		if user == nil {
+			return nil, httpresponse.ErrNotFound.Withf("user %q not found", name)
+		}
+		result = append(result, user)
+	}
+	return result, nil
 }

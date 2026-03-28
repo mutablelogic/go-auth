@@ -46,12 +46,24 @@ type GroupUpdateCommand struct {
 	Attrs []string `arg:"" name:"attrs" help:"Attributes as key=value1,value2"`
 }
 
+type GroupAddUsersCommand struct {
+	CN    string   `arg:"" name:"cn" help:"Group common name"`
+	Users []string `arg:"" name:"users" help:"User names to add to the group"`
+}
+
+type GroupRemoveUsersCommand struct {
+	CN    string   `arg:"" name:"cn" help:"Group common name"`
+	Users []string `arg:"" name:"users" help:"User names to remove from the group"`
+}
+
 type GroupCommands struct {
-	Group  GroupListCommand   `cmd:"" name:"groups" help:"List groups." group:"LDAP USERS & GROUPS"`
-	Get    GroupGetCommand    `cmd:"" name:"group" help:"Get group." group:"LDAP USERS & GROUPS"`
-	Delete GroupDeleteCommand `cmd:"" name:"group-delete" help:"Delete group." group:"LDAP USERS & GROUPS"`
-	Create GroupCreateCommand `cmd:"" name:"group-create" help:"Create group." group:"LDAP USERS & GROUPS"`
-	Update GroupUpdateCommand `cmd:"" name:"group-update" help:"Update group." group:"LDAP USERS & GROUPS"`
+	Group       GroupListCommand        `cmd:"" name:"groups" help:"List groups." group:"LDAP USERS & GROUPS"`
+	Get         GroupGetCommand         `cmd:"" name:"group" help:"Get group." group:"LDAP USERS & GROUPS"`
+	Delete      GroupDeleteCommand      `cmd:"" name:"group-delete" help:"Delete group." group:"LDAP USERS & GROUPS"`
+	Create      GroupCreateCommand      `cmd:"" name:"group-create" help:"Create group." group:"LDAP USERS & GROUPS"`
+	Update      GroupUpdateCommand      `cmd:"" name:"group-update" help:"Update group." group:"LDAP USERS & GROUPS"`
+	AddUsers    GroupAddUsersCommand    `cmd:"" name:"group-add-users" help:"Add users to group." group:"LDAP USERS & GROUPS"`
+	RemoveUsers GroupRemoveUsersCommand `cmd:"" name:"group-remove-users" help:"Remove users from group." group:"LDAP USERS & GROUPS"`
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -128,6 +140,36 @@ func (cmd *GroupUpdateCommand) Run(ctx server.Cmd) error {
 			return err
 		}
 		group, err := manager.UpdateGroup(ctx.Context(), cmd.CN, schema.ObjectPutRequest{Attrs: attrs})
+		if err != nil {
+			return err
+		}
+		if ctx.IsDebug() {
+			fmt.Println(group)
+		} else {
+			fmt.Println(group.LDIF())
+		}
+		return nil
+	})
+}
+
+func (cmd *GroupAddUsersCommand) Run(ctx server.Cmd) error {
+	return WithClient(ctx, func(manager *ldap.Client, endpoint string) error {
+		group, err := manager.AddGroupUsers(ctx.Context(), cmd.CN, cmd.Users)
+		if err != nil {
+			return err
+		}
+		if ctx.IsDebug() {
+			fmt.Println(group)
+		} else {
+			fmt.Println(group.LDIF())
+		}
+		return nil
+	})
+}
+
+func (cmd *GroupRemoveUsersCommand) Run(ctx server.Cmd) error {
+	return WithClient(ctx, func(manager *ldap.Client, endpoint string) error {
+		group, err := manager.RemoveGroupUsers(ctx.Context(), cmd.CN, cmd.Users)
 		if err != nil {
 			return err
 		}

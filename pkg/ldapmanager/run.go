@@ -49,6 +49,7 @@ func (manager *Manager) Run(ctx context.Context, logger *slog.Logger) error {
 				logger.Error("LDAP connection error", "error", err.Error())
 				retries = min(retries+1, schema.MaxRetries)
 				ticker.Reset(schema.MinRetryInterval * time.Duration(retries*retries))
+				continue
 			} else {
 				// Connection successful
 				manager.discoveryOnce.Do(func() {

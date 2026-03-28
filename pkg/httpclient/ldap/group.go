@@ -72,6 +72,30 @@ func (c *Client) UpdateGroup(ctx context.Context, cn string, req schema.ObjectPu
 	return types.Ptr(response), nil
 }
 
+func (c *Client) AddGroupUsers(ctx context.Context, cn string, users []string) (*schema.Object, error) {
+	var response schema.Object
+	body, err := client.NewJSONRequestEx(http.MethodPost, users, types.ContentTypeJSON)
+	if err != nil {
+		return nil, err
+	}
+	if err := c.DoWithContext(ctx, body, &response, client.OptPath("group", cn, "user")); err != nil {
+		return nil, err
+	}
+	return types.Ptr(response), nil
+}
+
+func (c *Client) RemoveGroupUsers(ctx context.Context, cn string, users []string) (*schema.Object, error) {
+	var response schema.Object
+	body, err := client.NewJSONRequestEx(http.MethodDelete, users, types.ContentTypeJSON)
+	if err != nil {
+		return nil, err
+	}
+	if err := c.DoWithContext(ctx, body, &response, client.OptPath("group", cn, "user")); err != nil {
+		return nil, err
+	}
+	return types.Ptr(response), nil
+}
+
 func (c *Client) DeleteGroup(ctx context.Context, cn string) (*schema.Object, error) {
 	var response schema.Object
 	if err := c.DoWithContext(ctx, client.MethodDelete, &response, client.OptPath("group", cn)); err != nil {

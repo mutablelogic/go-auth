@@ -142,6 +142,54 @@ func GroupResourceHandler(manager *ldap.Manager) (string, http.HandlerFunc, *ope
 		}
 }
 
+func GroupUserResourceHandler(manager *ldap.Manager) (string, http.HandlerFunc, *openapi.PathItem) {
+	cnSchema := jsonschema.MustFor[string]()
+	userListSchema := jsonschema.MustFor[[]string]()
+
+	return "group/{cn}/user", func(w http.ResponseWriter, r *http.Request) {
+			cn, err := url.PathUnescape(r.PathValue("cn"))
+			if err != nil || cn == "" {
+				_ = httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest), "invalid cn")
+				return
+			}
+			switch r.Method {
+			case http.MethodPost:
+				_ = addGroupUsers(r.Context(), manager, w, r, cn)
+			case http.MethodDelete:
+				_ = removeGroupUsers(r.Context(), manager, w, r, cn)
+			default:
+				_ = httpresponse.Error(w, httpresponse.Err(http.StatusMethodNotAllowed), r.Method)
+			}
+		}, &openapi.PathItem{
+			Summary:     "Group membership operations",
+			Description: "Operations on users belonging to a specific LDAP group",
+			Post: &openapi.Operation{
+				Tags:        []string{"Groups"},
+				Summary:     "Add users to group",
+				Description: "Adds the named users to the LDAP group. Existing members are ignored.",
+				Parameters:  []openapi.Parameter{{Name: "cn", In: openapi.ParameterInPath, Description: "Group common name.", Required: true, Schema: cnSchema}},
+				RequestBody: &openapi.RequestBody{Description: "Array of user names to add.", Required: true, Content: map[string]openapi.MediaType{"application/json": {Schema: userListSchema}}},
+				Responses: map[string]openapi.Response{
+					"200": {Description: "Updated group.", Content: map[string]openapi.MediaType{"application/json": {Schema: jsonschema.MustFor[schema.Object]()}}},
+					"400": {Description: "Invalid group name or request body."},
+					"404": {Description: "Group or user not found."},
+				},
+			},
+			Delete: &openapi.Operation{
+				Tags:        []string{"Groups"},
+				Summary:     "Remove users from group",
+				Description: "Removes the named users from the LDAP group. Users not currently in the group are ignored.",
+				Parameters:  []openapi.Parameter{{Name: "cn", In: openapi.ParameterInPath, Description: "Group common name.", Required: true, Schema: cnSchema}},
+				RequestBody: &openapi.RequestBody{Description: "Array of user names to remove.", Required: true, Content: map[string]openapi.MediaType{"application/json": {Schema: userListSchema}}},
+				Responses: map[string]openapi.Response{
+					"200": {Description: "Updated group.", Content: map[string]openapi.MediaType{"application/json": {Schema: jsonschema.MustFor[schema.Object]()}}},
+					"400": {Description: "Invalid group name or request body."},
+					"404": {Description: "Group or user not found."},
+				},
+			},
+		}
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 // PRIVATE METHODS
 
@@ -199,6 +247,30 @@ func updateGroup(ctx context.Context, manager *ldap.Manager, w http.ResponseWrit
 
 func deleteGroup(ctx context.Context, manager *ldap.Manager, w http.ResponseWriter, r *http.Request, cn string) error {
 	group, err := manager.DeleteGroup(ctx, cn)
+	if err != nil {
+		return httpresponse.Error(w, httpErr(err))
+	}
+	return httpresponse.JSON(w, http.StatusOK, httprequest.Indent(r), group)
+}
+
+func addGroupUsers(ctx context.Context, manager *ldap.Manager, w http.ResponseWriter, r *http.Request, cn string) error {
+	var req []string
+	if err := httprequest.Read(r, &req); err != nil {
+		return httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest), err.Error())
+	}
+	group, err := manager.AddGroupUsers(ctx, cn, req...)
+	if err != nil {
+		return httpresponse.Error(w, httpErr(err))
+	}
+	return httpresponse.JSON(w, http.StatusOK, httprequest.Indent(r), group)
+}
+
+func removeGroupUsers(ctx context.Context, manager *ldap.Manager, w http.ResponseWriter, r *http.Request, cn string) error {
+	var req []string
+	if err := httprequest.Read(r, &req); err != nil {
+		return httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest), err.Error())
+	}
+	group, err := manager.RemoveGroupUsers(ctx, cn, req...)
 	if err != nil {
 		return httpresponse.Error(w, httpErr(err))
 	}
