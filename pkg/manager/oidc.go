@@ -21,7 +21,7 @@ import (
 	// Packages
 	auth "github.com/djthorpe/go-auth"
 	oidc "github.com/djthorpe/go-auth/pkg/oidc"
-	schema "github.com/djthorpe/go-auth/schema"
+	schema "github.com/djthorpe/go-auth/schema/auth"
 	jwt "github.com/golang-jwt/jwt/v5"
 	jwk "github.com/lestrrat-go/jwx/v2/jwk"
 )

@@ -24,7 +24,7 @@ import (
 	coreoidc "github.com/coreos/go-oidc/v3/oidc"
 	oidc "github.com/djthorpe/go-auth/pkg/oidc"
 	providerpkg "github.com/djthorpe/go-auth/pkg/provider"
-	schema "github.com/djthorpe/go-auth/schema"
+	schema "github.com/djthorpe/go-auth/schema/auth"
 	openapi "github.com/mutablelogic/go-server/pkg/openapi/schema"
 	oauth2 "golang.org/x/oauth2"
 )

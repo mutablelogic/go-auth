@@ -20,7 +20,7 @@ import (
 
 	// Packages
 	coremanager "github.com/djthorpe/go-auth/pkg/manager"
-	schema "github.com/djthorpe/go-auth/schema"
+	schema "github.com/djthorpe/go-auth/schema/auth"
 	httprequest "github.com/mutablelogic/go-server/pkg/httprequest"
 	httpresponse "github.com/mutablelogic/go-server/pkg/httpresponse"
 	openapi "github.com/mutablelogic/go-server/pkg/openapi/schema"

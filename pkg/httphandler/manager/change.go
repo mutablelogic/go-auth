@@ -21,7 +21,7 @@ import (
 
 	// Packages
 	coremanager "github.com/djthorpe/go-auth/pkg/manager"
-	schema "github.com/djthorpe/go-auth/schema"
+	schema "github.com/djthorpe/go-auth/schema/auth"
 	pg "github.com/mutablelogic/go-pg"
 	httpresponse "github.com/mutablelogic/go-server/pkg/httpresponse"
 	jsonschema "github.com/mutablelogic/go-server/pkg/jsonschema"

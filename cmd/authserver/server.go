@@ -30,7 +30,7 @@ import (
 	authhandler "github.com/djthorpe/go-auth/pkg/httphandler/auth"
 	managerhandler "github.com/djthorpe/go-auth/pkg/httphandler/manager"
 	manager "github.com/djthorpe/go-auth/pkg/manager"
-	schema "github.com/djthorpe/go-auth/schema"
+	schema "github.com/djthorpe/go-auth/schema/auth"
 	server "github.com/mutablelogic/go-server"
 	cmd "github.com/mutablelogic/go-server/pkg/cmd"
 	httprouter "github.com/mutablelogic/go-server/pkg/httprouter"

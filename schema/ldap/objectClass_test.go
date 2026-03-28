@@ -15,13 +15,89 @@
 package schema
 
 import (
+	"strings"
 	"testing"
 
+	// Packages
 	pg "github.com/mutablelogic/go-pg"
 	jsonschema "github.com/mutablelogic/go-server/pkg/jsonschema"
 	assert "github.com/stretchr/testify/assert"
 	parser "github.com/yinyin/go-ldap-schema-parser"
 )
+
+func TestObjectClassParseAndHelpers(t *testing.T) {
+	t.Run("ParseObjectClass", func(t *testing.T) {
+		assert := assert.New(t)
+
+		objectClass, err := ParseObjectClass("( 2.5.6.6 NAME 'person' SUP top STRUCTURAL MUST ( sn $ cn ) MAY ( userPassword $ telephoneNumber ) )")
+
+		if assert.NoError(err) && assert.NotNil(objectClass) {
+			assert.Equal("2.5.6.6", objectClass.NumericOID)
+			assert.Equal([]string{"person"}, objectClass.Name)
+			assert.Equal("person", objectClass.Identifier())
+			assert.NotEmpty(objectClass.String())
+		}
+	})
+
+	t.Run("ParseObjectClassRejectsInvalidValue", func(t *testing.T) {
+		assert := assert.New(t)
+
+		objectClass, err := ParseObjectClass("not valid")
+
+		assert.Error(err)
+		assert.Nil(objectClass)
+	})
+
+	t.Run("IdentifierFallsBackToOID", func(t *testing.T) {
+		assert := assert.New(t)
+
+		objectClass := &ObjectClass{&parser.ObjectClassSchema{NumericOID: "2.5.6.6"}}
+
+		assert.Equal("2.5.6.6", objectClass.Identifier())
+		assert.Empty(((*ObjectClass)(nil)).Identifier())
+	})
+
+	t.Run("MatchesRejectsNilReceiver", func(t *testing.T) {
+		assert := assert.New(t)
+
+		assert.False(((*ObjectClass)(nil)).Matches(ObjectClassListRequest{}))
+		assert.False((&ObjectClass{}).Matches(ObjectClassListRequest{}))
+	})
+
+	t.Run("MatchesRejectsMissingSuperiorAndMay", func(t *testing.T) {
+		assert := assert.New(t)
+		objectClass := &ObjectClass{&parser.ObjectClassSchema{
+			NumericOID:   "2.16.840.1.113730.3.2.2",
+			Name:         []string{"inetOrgPerson"},
+			SuperClasses: []string{"organizationalPerson", "top"},
+			ClassKind:    parser.ClassKindStructural,
+			May:          []string{"mail"},
+		}}
+
+		assert.False(objectClass.Matches(ObjectClassListRequest{Superior: []string{"person"}}))
+		assert.False(objectClass.Matches(ObjectClassListRequest{May: []string{"telephoneNumber"}}))
+	})
+
+	t.Run("MatchesRejectsObsoleteMismatch", func(t *testing.T) {
+		assert := assert.New(t)
+		obsolete := true
+		objectClass := &ObjectClass{&parser.ObjectClassSchema{
+			NumericOID: "2.5.6.6",
+			Name:       []string{"person"},
+			Obsolete:   false,
+		}}
+
+		assert.False(objectClass.Matches(ObjectClassListRequest{Obsolete: &obsolete}))
+	})
+
+	t.Run("StringMethods", func(t *testing.T) {
+		assert := assert.New(t)
+
+		assert.Equal("STRUCTURAL", ObjectClassKindStructural.String())
+		assert.True(strings.Contains((ObjectClassListRequest{}).String(), "{}"))
+		assert.True(strings.Contains((ObjectClassListResponse{}).String(), "0"))
+	})
+}
 
 func TestObjectClassListRequestAndMatching(t *testing.T) {
 	t.Run("Query", func(t *testing.T) {

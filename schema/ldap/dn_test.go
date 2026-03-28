@@ -50,3 +50,22 @@ func Test_DN_002(t *testing.T) {
 	assert.True(bdn.AncestorOf(dn))
 
 }
+
+func Test_DN_003(t *testing.T) {
+	assert := assert.New(t)
+
+	dn, err := schema.NewDN("not a dn")
+	assert.Error(err)
+	assert.Nil(dn)
+}
+
+func Test_DN_004(t *testing.T) {
+	assert := assert.New(t)
+
+	dn, err := schema.NewDN("ou=users,dc=example,dc=com")
+	assert.NoError(err)
+
+	joined := dn.Join(nil)
+	assert.Same(dn, joined)
+	assert.Equal("ou=users,dc=example,dc=com", joined.String())
+}

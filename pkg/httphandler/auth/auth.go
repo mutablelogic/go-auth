@@ -24,7 +24,7 @@ import (
 	managerpkg "github.com/djthorpe/go-auth/pkg/manager"
 	oidc "github.com/djthorpe/go-auth/pkg/oidc"
 	providerpkg "github.com/djthorpe/go-auth/pkg/provider"
-	schema "github.com/djthorpe/go-auth/schema"
+	schema "github.com/djthorpe/go-auth/schema/auth"
 	jwt "github.com/golang-jwt/jwt/v5"
 	uuid "github.com/google/uuid"
 	httprequest "github.com/mutablelogic/go-server/pkg/httprequest"

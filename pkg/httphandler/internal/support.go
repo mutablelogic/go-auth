@@ -18,7 +18,7 @@ import (
 	"errors"
 
 	rootauth "github.com/djthorpe/go-auth"
-	schema "github.com/djthorpe/go-auth/schema"
+	schema "github.com/djthorpe/go-auth/schema/auth"
 	upstream "github.com/google/jsonschema-go/jsonschema"
 	httpresponse "github.com/mutablelogic/go-server/pkg/httpresponse"
 	jsonschema "github.com/mutablelogic/go-server/pkg/jsonschema"

@@ -18,7 +18,7 @@ import (
 	"strings"
 
 	// Packages
-	schema "github.com/djthorpe/go-auth/schema"
+	schema "github.com/djthorpe/go-auth/schema/auth"
 	dom "github.com/djthorpe/go-wasmbuild"
 	carbon "github.com/djthorpe/go-wasmbuild/pkg/carbon"
 	mvc "github.com/djthorpe/go-wasmbuild/pkg/mvc"

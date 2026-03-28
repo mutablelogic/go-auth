@@ -27,7 +27,7 @@ import (
 	// Packages
 	oidc "github.com/djthorpe/go-auth/pkg/oidc"
 	provider "github.com/djthorpe/go-auth/pkg/provider"
-	schema "github.com/djthorpe/go-auth/schema"
+	schema "github.com/djthorpe/go-auth/schema/auth"
 	openapi "github.com/mutablelogic/go-server/pkg/openapi/schema"
 	types "github.com/mutablelogic/go-server/pkg/types"
 )

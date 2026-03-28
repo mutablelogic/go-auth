@@ -18,7 +18,7 @@ import (
 	"context"
 
 	// Packages
-	schema "github.com/djthorpe/go-auth/schema"
+	schema "github.com/djthorpe/go-auth/schema/auth"
 	otel "github.com/mutablelogic/go-client/pkg/otel"
 	types "github.com/mutablelogic/go-server/pkg/types"
 	attribute "go.opentelemetry.io/otel/attribute"

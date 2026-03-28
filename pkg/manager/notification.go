@@ -18,7 +18,7 @@ import (
 	"context"
 
 	// Packages
-	schema "github.com/djthorpe/go-auth/schema"
+	schema "github.com/djthorpe/go-auth/schema/auth"
 	pg "github.com/mutablelogic/go-pg"
 	broadcaster "github.com/mutablelogic/go-pg/pkg/broadcaster"
 )

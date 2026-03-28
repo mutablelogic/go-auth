@@ -22,7 +22,7 @@ import (
 	"testing"
 
 	// Packages
-	authschema "github.com/djthorpe/go-auth/schema"
+	authschema "github.com/djthorpe/go-auth/schema/auth"
 	pg "github.com/mutablelogic/go-pg"
 	assert "github.com/stretchr/testify/assert"
 	require "github.com/stretchr/testify/require"

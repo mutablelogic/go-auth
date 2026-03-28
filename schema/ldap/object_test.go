@@ -20,6 +20,8 @@ import (
 
 	// Packages
 	auth "github.com/djthorpe/go-auth"
+	ldap "github.com/go-ldap/ldap/v3"
+	pg "github.com/mutablelogic/go-pg"
 	assert "github.com/stretchr/testify/assert"
 	require "github.com/stretchr/testify/require"
 )
@@ -60,6 +62,23 @@ func Test_object_001(t *testing.T) {
 		assert.Equal(
 			"dn: uid=jdoe,ou=people,dc=example,dc=com\n"+
 				"cn:: IEpvaG4gRG9l\n",
+			object.LDIF(),
+		)
+	})
+
+	t.Run("ObjectLDIFWritesEmptyAttributeValue", func(t *testing.T) {
+		assert := assert.New(t)
+
+		object := &Object{
+			DN: "uid=jdoe,ou=people,dc=example,dc=com",
+			Values: url.Values{
+				"description": {},
+			},
+		}
+
+		assert.Equal(
+			"dn: uid=jdoe,ou=people,dc=example,dc=com\n"+
+				"description:\n",
 			object.LDIF(),
 		)
 	})
@@ -162,6 +181,143 @@ func Test_object_001(t *testing.T) {
 			assert.Empty(response.GeneratedPassword)
 			assert.Equal("uid=jdoe,ou=people,dc=example,dc=com", response.DN)
 		}
+	})
+
+	t.Run("NilObjectWithPasswordReturnsEmptyResponse", func(t *testing.T) {
+		assert := assert.New(t)
+		password := "generated-secret"
+
+		response := ((*Object)(nil)).WithPassword(&password)
+
+		if assert.NotNil(response) {
+			assert.Empty(response.GeneratedPassword)
+			assert.Empty(response.DN)
+		}
+	})
+
+	t.Run("NewObjectInitializesValues", func(t *testing.T) {
+		assert := assert.New(t)
+
+		object := NewObject("uid=jdoe", "ou=people", "dc=example", "dc=com")
+
+		if assert.NotNil(object) {
+			assert.Equal("uid=jdoe,ou=people,dc=example,dc=com", object.DN)
+			assert.NotNil(object.Values)
+			assert.Empty(object.Values)
+		}
+	})
+
+	t.Run("NewObjectFromEntryCopiesAttributes", func(t *testing.T) {
+		assert := assert.New(t)
+
+		object := NewObjectFromEntry(&ldap.Entry{
+			DN: "uid=jdoe,ou=people,dc=example,dc=com",
+			Attributes: []*ldap.EntryAttribute{
+				{Name: "cn", Values: []string{"John Doe"}},
+				{Name: "mail", Values: []string{"jdoe@example.com"}},
+			},
+		})
+
+		if assert.NotNil(object) {
+			assert.Equal("uid=jdoe,ou=people,dc=example,dc=com", object.DN)
+			assert.Equal([]string{"John Doe"}, object.Values["cn"])
+			assert.Equal([]string{"jdoe@example.com"}, object.Values["mail"])
+		}
+	})
+
+	t.Run("ObjectGetAndGetAll", func(t *testing.T) {
+		assert := assert.New(t)
+
+		object := &Object{Values: url.Values{
+			"cn":          {"John Doe", "Johnny"},
+			"description": {},
+		}}
+
+		if value := object.Get("CN"); assert.NotNil(value) {
+			assert.Equal("John Doe", *value)
+		}
+		if value := object.Get("description"); assert.NotNil(value) {
+			assert.Equal("", *value)
+		}
+		assert.Nil(object.Get("mail"))
+		assert.Equal([]string{"John Doe", "Johnny"}, object.GetAll("cn"))
+		assert.Equal([]string{"John Doe", "Johnny"}, object.GetAll("CN"))
+		assert.Nil(object.GetAll("mail"))
+	})
+
+	t.Run("ObjectListRequestQuery", func(t *testing.T) {
+		assert := assert.New(t)
+		filter := "(objectClass=inetOrgPerson)"
+		limit := uint64(25)
+		request := ObjectListRequest{
+			OffsetLimit: pg.OffsetLimit{Offset: 10, Limit: &limit},
+			Filter:      &filter,
+			Attr:        []string{"cn", "mail"},
+		}
+
+		values := request.Query()
+
+		assert.Equal("10", values.Get("offset"))
+		assert.Equal("25", values.Get("limit"))
+		assert.Equal("(objectClass=inetOrgPerson)", values.Get("filter"))
+		assert.Equal([]string{"cn", "mail"}, values["attr"])
+	})
+
+	t.Run("StringMethods", func(t *testing.T) {
+		assert := assert.New(t)
+
+		assert.NotEmpty((&Object{DN: "uid=jdoe"}).String())
+		assert.NotEmpty((&PasswordResponse{}).String())
+		assert.NotEmpty((ObjectPutRequest{Attrs: url.Values{"cn": {"John Doe"}}}).String())
+		assert.NotEmpty((ObjectPasswordRequest{Old: "old-password"}).String())
+		assert.NotEmpty((ObjectList{Count: 1}).String())
+		assert.NotEmpty((ObjectListRequest{}).String())
+	})
+
+	t.Run("NeedsBase64Encoding", func(t *testing.T) {
+		assert := assert.New(t)
+
+		assert.False(needsBase64Encoding("plain-text"))
+		assert.False(needsBase64Encoding(""))
+		assert.True(needsBase64Encoding(" trailing"))
+		assert.True(needsBase64Encoding("trailing "))
+		assert.True(needsBase64Encoding(":prefixed"))
+		assert.True(needsBase64Encoding("<prefixed"))
+		assert.True(needsBase64Encoding("line\nbreak"))
+		assert.True(needsBase64Encoding("Jöhn Doe"))
+	})
+
+	t.Run("ObjectPutRequestValidateRejectsEmptyAttrs", func(t *testing.T) {
+		assert := assert.New(t)
+
+		_, err := (ObjectPutRequest{}).ValidateCreate()
+
+		assert.ErrorIs(err, auth.ErrBadParameter)
+		assert.Contains(err.Error(), "attrs is required")
+	})
+
+	t.Run("ObjectPutRequestValidateRejectsBlankAttributeName", func(t *testing.T) {
+		assert := assert.New(t)
+
+		_, err := (ObjectPutRequest{Attrs: url.Values{
+			"   ":         {"value"},
+			"objectClass": {"inetOrgPerson"},
+		}}).ValidateCreate()
+
+		assert.ErrorIs(err, auth.ErrBadParameter)
+		assert.Contains(err.Error(), "attribute name is required")
+	})
+
+	t.Run("ObjectPutRequestValidateRejectsInvalidAttributeOption", func(t *testing.T) {
+		assert := assert.New(t)
+
+		_, err := (ObjectPutRequest{Attrs: url.Values{
+			"objectClass":             {"inetOrgPerson"},
+			"userCertificate;bad opt": {"certificate-data"},
+		}}).ValidateCreate()
+
+		assert.ErrorIs(err, auth.ErrBadParameter)
+		assert.Contains(err.Error(), `invalid attribute name "userCertificate;bad opt"`)
 	})
 
 	t.Run("ObjectPutRequestValidateCreate", func(t *testing.T) {

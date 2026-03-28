@@ -22,7 +22,7 @@ import (
 
 	// Packages
 	providerpkg "github.com/djthorpe/go-auth/pkg/provider"
-	schema "github.com/djthorpe/go-auth/schema"
+	schema "github.com/djthorpe/go-auth/schema/auth"
 	trace "go.opentelemetry.io/otel/trace"
 )
 

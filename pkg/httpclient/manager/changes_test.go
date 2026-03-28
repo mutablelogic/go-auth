@@ -25,7 +25,7 @@ import (
 	"time"
 
 	// Packages
-	authschema "github.com/djthorpe/go-auth/schema"
+	authschema "github.com/djthorpe/go-auth/schema/auth"
 	client "github.com/mutablelogic/go-client"
 	assert "github.com/stretchr/testify/assert"
 	require "github.com/stretchr/testify/require"

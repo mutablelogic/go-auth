@@ -38,7 +38,7 @@ import (
 	oidc "github.com/djthorpe/go-auth/pkg/oidc"
 	googleprovider "github.com/djthorpe/go-auth/pkg/provider/google"
 	localprovider "github.com/djthorpe/go-auth/pkg/provider/local"
-	schema "github.com/djthorpe/go-auth/schema"
+	schema "github.com/djthorpe/go-auth/schema/auth"
 	jwt "github.com/golang-jwt/jwt/v5"
 	uuid "github.com/google/uuid"
 	test "github.com/mutablelogic/go-pg/pkg/test"

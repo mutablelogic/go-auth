@@ -15,13 +15,121 @@
 package schema
 
 import (
+	"strings"
 	"testing"
 
+	// Packages
 	pg "github.com/mutablelogic/go-pg"
 	jsonschema "github.com/mutablelogic/go-server/pkg/jsonschema"
 	assert "github.com/stretchr/testify/assert"
 	parser "github.com/yinyin/go-ldap-schema-parser"
 )
+
+func TestAttributeTypeParseAndHelpers(t *testing.T) {
+	t.Run("ParseAttributeType", func(t *testing.T) {
+		assert := assert.New(t)
+
+		attributeType, err := ParseAttributeType("( 2.5.4.3 NAME 'cn' DESC 'Common Name' EQUALITY caseIgnoreMatch SUBSTR caseIgnoreSubstringsMatch SYNTAX 1.3.6.1.4.1.1466.115.121.1.15{64} )")
+
+		if assert.NoError(err) && assert.NotNil(attributeType) {
+			assert.Equal("2.5.4.3", attributeType.NumericOID)
+			assert.Equal([]string{"cn"}, attributeType.Name)
+			assert.Equal("cn", attributeType.Identifier())
+			assert.NotEmpty(attributeType.String())
+		}
+	})
+
+	t.Run("ParseAttributeTypeRejectsInvalidValue", func(t *testing.T) {
+		assert := assert.New(t)
+
+		attributeType, err := ParseAttributeType("not valid")
+
+		assert.Error(err)
+		assert.Nil(attributeType)
+	})
+
+	t.Run("MatchesAdditionalFlags", func(t *testing.T) {
+		assert := assert.New(t)
+		filter := "2.5.4.3"
+		usage := AttributeUsageDirectoryOperation
+		superior := "name"
+		obsolete := true
+		singleValue := true
+		collective := true
+		noUserModification := true
+		attributeType := &AttributeType{&parser.AttributeTypeSchema{
+			NumericOID:         "2.5.4.3",
+			Name:               []string{"cn"},
+			SuperType:          "name",
+			Usage:              parser.AttributeUsageDirectoryOperation,
+			Obsolete:           true,
+			SingleValue:        true,
+			Collective:         true,
+			NoUserModification: true,
+		}}
+
+		assert.True(attributeType.Matches(AttributeTypeListRequest{
+			Filter:             &filter,
+			Usage:              &usage,
+			Superior:           &superior,
+			Obsolete:           &obsolete,
+			SingleValue:        &singleValue,
+			Collective:         &collective,
+			NoUserModification: &noUserModification,
+		}))
+	})
+
+	t.Run("IdentifierFallsBackToOID", func(t *testing.T) {
+		assert := assert.New(t)
+
+		attributeType := &AttributeType{&parser.AttributeTypeSchema{NumericOID: "2.5.4.3"}}
+
+		assert.Equal("2.5.4.3", attributeType.Identifier())
+		assert.Empty(((*AttributeType)(nil)).Identifier())
+	})
+
+	t.Run("MatchesRejectsNilReceiver", func(t *testing.T) {
+		assert := assert.New(t)
+
+		assert.False(((*AttributeType)(nil)).Matches(AttributeTypeListRequest{}))
+		assert.False((&AttributeType{}).Matches(AttributeTypeListRequest{}))
+	})
+
+	t.Run("MatchesRejectsMismatchedFields", func(t *testing.T) {
+		assert := assert.New(t)
+		usage := AttributeUsageDSAOperation
+		superior := "uid"
+		obsolete := true
+		singleValue := false
+		collective := true
+		noUserModification := true
+		attributeType := &AttributeType{&parser.AttributeTypeSchema{
+			NumericOID:         "2.5.4.3",
+			Name:               []string{"cn"},
+			SuperType:          "name",
+			Usage:              parser.AttributeUsageUserApplications,
+			Obsolete:           false,
+			SingleValue:        true,
+			Collective:         false,
+			NoUserModification: false,
+		}}
+
+		assert.False(attributeType.Matches(AttributeTypeListRequest{Usage: &usage}))
+		assert.False(attributeType.Matches(AttributeTypeListRequest{Superior: &superior}))
+		assert.False(attributeType.Matches(AttributeTypeListRequest{Obsolete: &obsolete}))
+		assert.False(attributeType.Matches(AttributeTypeListRequest{SingleValue: &singleValue}))
+		assert.False(attributeType.Matches(AttributeTypeListRequest{Collective: &collective}))
+		assert.False(attributeType.Matches(AttributeTypeListRequest{NoUserModification: &noUserModification}))
+	})
+
+	t.Run("StringMethods", func(t *testing.T) {
+		assert := assert.New(t)
+
+		assert.Equal("userApplications", AttributeUsageUserApplications.String())
+		assert.True(strings.Contains((AttributeTypeListRequest{}).String(), "{}"))
+		assert.True(strings.Contains((AttributeTypeListResponse{}).String(), "0"))
+	})
+}
 
 func TestAttributeTypeListRequestAndMatching(t *testing.T) {
 	t.Run("Query", func(t *testing.T) {

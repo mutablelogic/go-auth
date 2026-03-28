@@ -23,7 +23,7 @@ import (
 	authcrypto "github.com/djthorpe/go-auth/pkg/crypto"
 	providerpkg "github.com/djthorpe/go-auth/pkg/provider"
 	localprovider "github.com/djthorpe/go-auth/pkg/provider/local"
-	schema "github.com/djthorpe/go-auth/schema"
+	schema "github.com/djthorpe/go-auth/schema/auth"
 	assert "github.com/stretchr/testify/assert"
 	require "github.com/stretchr/testify/require"
 	nooptrace "go.opentelemetry.io/otel/trace/noop"

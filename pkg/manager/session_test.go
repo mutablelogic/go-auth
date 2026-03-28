@@ -23,7 +23,7 @@ import (
 	// Packages
 	auth "github.com/djthorpe/go-auth"
 	manager "github.com/djthorpe/go-auth/pkg/manager"
-	schema "github.com/djthorpe/go-auth/schema"
+	schema "github.com/djthorpe/go-auth/schema/auth"
 	assert "github.com/stretchr/testify/assert"
 	require "github.com/stretchr/testify/require"
 	attribute "go.opentelemetry.io/otel/attribute"
