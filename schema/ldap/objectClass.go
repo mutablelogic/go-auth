@@ -59,6 +59,9 @@ type ObjectClassListResponse struct {
 // LIFECYCLE
 
 func ParseObjectClass(v string) (*ObjectClass, error) {
+	if !hasNumericOIDPrefix(v) {
+		return nil, errUnsupportedSchemaDefinition
+	}
 	schema, err := parser.ParseObjectClassSchema(v)
 	if err != nil {
 		return nil, err

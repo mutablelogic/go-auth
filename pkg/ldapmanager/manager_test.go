@@ -18,6 +18,7 @@ import (
 	"errors"
 	"testing"
 
+	// Packages
 	ldapv3 "github.com/go-ldap/ldap/v3"
 	httpresponse "github.com/mutablelogic/go-server/pkg/httpresponse"
 	assert "github.com/stretchr/testify/assert"

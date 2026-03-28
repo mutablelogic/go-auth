@@ -15,6 +15,8 @@
 package schema
 
 import (
+	"bytes"
+	"log"
 	"strings"
 	"testing"
 
@@ -209,5 +211,20 @@ func TestAttributeTypeListRequestAndMatching(t *testing.T) {
 		if assert.NotNil(prop) {
 			assert.Equal([]any{"userApplications", "directoryOperation", "distributedOperation", "dSAOperation"}, prop.Enum)
 		}
+	})
+
+	t.Run("ParseAttributeTypeRejectsVendorSpecificOIDQuietly", func(t *testing.T) {
+		assert := assert.New(t)
+		var output bytes.Buffer
+		writer := log.Writer()
+
+		log.SetOutput(&output)
+		defer log.SetOutput(writer)
+
+		attributeType, err := ParseAttributeType("( NetscapeLDAPattributeType:198 NAME 'memberURL' EQUALITY caseExactIA5Match SYNTAX 1.3.6.1.4.1.1466.115.121.1.26 X-ORIGIN 'Netscape Directory Server' )")
+
+		assert.Error(err)
+		assert.Nil(attributeType)
+		assert.Empty(strings.TrimSpace(output.String()))
 	})
 }

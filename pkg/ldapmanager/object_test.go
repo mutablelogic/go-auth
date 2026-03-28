@@ -18,6 +18,7 @@ import (
 	"net/url"
 	"testing"
 
+	// Packages
 	schema "github.com/djthorpe/go-auth/schema/ldap"
 	httpresponse "github.com/mutablelogic/go-server/pkg/httpresponse"
 	assert "github.com/stretchr/testify/assert"

@@ -61,6 +61,9 @@ type AttributeTypeListResponse struct {
 // LIFECYCLE
 
 func ParseAttributeType(v string) (*AttributeType, error) {
+	if !hasNumericOIDPrefix(v) {
+		return nil, errUnsupportedSchemaDefinition
+	}
 	schema, err := parser.ParseAttributeTypeSchema(v)
 	if err != nil {
 		return nil, err

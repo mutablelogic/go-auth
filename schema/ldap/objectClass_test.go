@@ -15,6 +15,8 @@
 package schema
 
 import (
+	"bytes"
+	"log"
 	"strings"
 	"testing"
 
@@ -200,5 +202,20 @@ func TestObjectClassListRequestAndMatching(t *testing.T) {
 		if assert.NotNil(prop) {
 			assert.Equal([]any{"ABSTRACT", "STRUCTURAL", "AUXILIARY"}, prop.Enum)
 		}
+	})
+
+	t.Run("ParseObjectClassRejectsVendorSpecificOIDQuietly", func(t *testing.T) {
+		assert := assert.New(t)
+		var output bytes.Buffer
+		writer := log.Writer()
+
+		log.SetOutput(&output)
+		defer log.SetOutput(writer)
+
+		objectClass, err := ParseObjectClass("( NetscapeLDAPobjectClass:33 NAME 'groupOfURLs' SUP top AUXILIARY MAY memberURL X-ORIGIN 'Netscape Directory Server' )")
+
+		assert.Error(err)
+		assert.Nil(objectClass)
+		assert.Empty(strings.TrimSpace(output.String()))
 	})
 }
