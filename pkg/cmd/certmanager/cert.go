@@ -60,7 +60,6 @@ type CreateCertCommand struct {
 	CASerial string        `arg:"" optional:"" name:"serial" help:"Certificate authority serial number. Omit to use the latest CA version."`
 	Expiry   time.Duration `name:"expiry" help:"Certificate lifetime. Zero uses the server default."`
 	SAN      []string      `name:"san" help:"Subject alternative name entry. Repeat to set multiple DNS names, wildcard DNS names, or IP addresses."`
-	Enabled  bool          `name:"enabled" help:"Enable the created certificate." default:"true" negatable:""`
 	Tags     []string      `name:"tag" help:"Tag to apply to the certificate. Repeat to set multiple tags."`
 	certSubjectFlags
 }
@@ -78,8 +77,6 @@ type RenewCertCommand struct {
 	Name      string        `arg:"" name:"name" help:"Certificate name"`
 	Serial    string        `arg:"" optional:"" name:"serial" help:"Certificate serial number. Omit to use the latest certificate version."`
 	Expiry    time.Duration `name:"expiry" help:"Certificate lifetime. Zero preserves the current lifetime, capped by the signer validity."`
-	Enable    bool          `name:"enable" help:"Enable the renewed certificate."`
-	Disable   bool          `name:"disable" help:"Disable the renewed certificate."`
 	Tags      []string      `name:"tag" help:"Replace certificate tags with the provided list. Repeat to set multiple tags."`
 	ClearTags bool          `name:"clear-tags" help:"Clear all certificate tags on the renewed certificate."`
 	certSubjectFlags
@@ -122,7 +119,6 @@ func (cmd *CreateCertCommand) Run(ctx server.Cmd) error {
 			Expiry:  cmd.Expiry,
 			Subject: cmd.subject(),
 			SAN:     append([]string(nil), cmd.SAN...),
-			Enabled: types.Ptr(cmd.Enabled),
 			Tags:    append([]string(nil), cmd.Tags...),
 		}, schema.CertKey{
 			Name:   strings.TrimSpace(cmd.CAName),
@@ -170,7 +166,7 @@ func (cmd *UpdateCertCommand) Run(ctx server.Cmd) error {
 }
 
 func (cmd *RenewCertCommand) Run(ctx server.Cmd) error {
-	req, err := renewRequest(cmd.Expiry, cmd.subject(), cmd.Enable, cmd.Disable, cmd.Tags, cmd.ClearTags)
+	req, err := renewRequest(cmd.Expiry, cmd.subject(), cmd.Tags, cmd.ClearTags)
 	if err != nil {
 		return err
 	}
@@ -191,10 +187,7 @@ func (cmd *RenewCertCommand) Run(ctx server.Cmd) error {
 ///////////////////////////////////////////////////////////////////////////////
 // PRIVATE METHODS
 
-func renewRequest(expiry time.Duration, subject *schema.SubjectMeta, enable bool, disable bool, tags []string, clearTags bool) (schema.RenewCertRequest, error) {
-	if enable && disable {
-		return schema.RenewCertRequest{}, fmt.Errorf("cannot set both enable and disable")
-	}
+func renewRequest(expiry time.Duration, subject *schema.SubjectMeta, tags []string, clearTags bool) (schema.RenewCertRequest, error) {
 	if clearTags && len(tags) > 0 {
 		return schema.RenewCertRequest{}, fmt.Errorf("cannot set tags and clear-tags together")
 	}
@@ -202,11 +195,6 @@ func renewRequest(expiry time.Duration, subject *schema.SubjectMeta, enable bool
 	req := schema.RenewCertRequest{
 		Expiry:  expiry,
 		Subject: subject,
-	}
-	if enable {
-		req.Enabled = types.Ptr(true)
-	} else if disable {
-		req.Enabled = types.Ptr(false)
 	}
 	if clearTags {
 		req.Tags = []string{}

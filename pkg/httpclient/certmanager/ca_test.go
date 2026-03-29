@@ -115,15 +115,16 @@ func TestClientCAMethods(t *testing.T) {
 
 			var req schema.RenewCertRequest
 			require.NoError(json.NewDecoder(r.Body).Decode(&req))
-			require.NotNil(req.Enabled)
-			assert.False(*req.Enabled)
+			assert.Zero(req.Expiry)
+			assert.Nil(req.Subject)
+			assert.Nil(req.Tags)
 
 			w.Header().Set("Content-Type", "application/json")
 			require.NoError(json.NewEncoder(w).Encode(schema.Cert{
 				CertKey: schema.CertKey{Name: "issuer_ca", Serial: "2"},
 				IsCA:    true,
 				CertMeta: schema.CertMeta{
-					Enabled: &[]bool{false}[0],
+					Enabled: &[]bool{true}[0],
 				},
 			}))
 		}))
@@ -132,14 +133,13 @@ func TestClientCAMethods(t *testing.T) {
 		client, err := New(server.URL)
 		require.NoError(err)
 
-		enabled := false
-		response, err := client.RenewCA(context.Background(), schema.CertKey{Name: "issuer_ca", Serial: "1"}, schema.RenewCertRequest{Enabled: &enabled})
+		response, err := client.RenewCA(context.Background(), schema.CertKey{Name: "issuer_ca", Serial: "1"}, schema.RenewCertRequest{})
 		require.NoError(err)
 		require.NotNil(response)
 		assert.Equal("issuer_ca", response.Name)
 		assert.Equal("2", response.Serial)
 		assert.True(response.IsCA)
 		require.NotNil(response.Enabled)
-		assert.False(*response.Enabled)
+		assert.True(*response.Enabled)
 	})
 }

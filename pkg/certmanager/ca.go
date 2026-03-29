@@ -112,9 +112,6 @@ func (m *Manager) CreateCA(ctx context.Context, req schema.CreateCertRequest) (_
 		certValue.SubjectID = types.Ptr(subjectRow.ID)
 		certValue.Signer = &rootRow.CertKey
 		certValue.Tags = req.Tags
-		if req.Enabled != nil {
-			certValue.Enabled = types.Ptr(*req.Enabled)
-		}
 
 		// Encrypt the private key and insert the certificate
 		version, ciphertext, err := m.passphrase.Encrypt(0, certValue.Key)

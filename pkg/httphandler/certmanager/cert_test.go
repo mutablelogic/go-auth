@@ -559,7 +559,7 @@ func Test_cert_001(t *testing.T) {
 		_, handler, _ := CertRenewByNameHandler(manager)
 
 		res := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodPost, "/cert/leaf_cert/renew", strings.NewReader(`{"expiry":1800000000000,"tags":["renewed"],"enabled":true}`))
+		req := httptest.NewRequest(http.MethodPost, "/cert/leaf_cert/renew", strings.NewReader(`{"expiry":1800000000000,"tags":["renewed"]}`))
 		req.Header.Set("Accept", "application/json")
 		req.Header.Set("Content-Type", "application/json")
 		req.SetPathValue("name", leafRow.Name)
@@ -596,7 +596,7 @@ func Test_cert_001(t *testing.T) {
 		_, handler, _ := CertRenewByKeyHandler(manager)
 
 		res := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodPost, "/cert/leaf_cert/"+leafRow.Serial+"/renew", strings.NewReader(`{"enabled":false}`))
+		req := httptest.NewRequest(http.MethodPost, "/cert/leaf_cert/"+leafRow.Serial+"/renew", strings.NewReader(`{}`))
 		req.Header.Set("Accept", "application/json")
 		req.Header.Set("Content-Type", "application/json")
 		req.SetPathValue("name", leafRow.Name)
@@ -612,7 +612,7 @@ func Test_cert_001(t *testing.T) {
 		assert.NotEmpty(result.Serial)
 		assert.NotEqual(leafRow.Serial, result.Serial)
 		require.NotNil(result.Enabled)
-		assert.False(*result.Enabled)
+		assert.True(*result.Enabled)
 	})
 
 	t.Run("CreateCertificateRejectsBadBody", func(t *testing.T) {
@@ -801,7 +801,7 @@ func Test_cert_001(t *testing.T) {
 		_, handler, _ := CAByKeyRenewHandler(manager)
 
 		res := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodPost, "/ca/issuer_ca/"+caRow.Serial+"/renew", strings.NewReader(`{"enabled":false}`))
+		req := httptest.NewRequest(http.MethodPost, "/ca/issuer_ca/"+caRow.Serial+"/renew", strings.NewReader(`{}`))
 		req.Header.Set("Accept", "application/json")
 		req.Header.Set("Content-Type", "application/json")
 		req.SetPathValue("name", caRow.Name)
@@ -818,7 +818,7 @@ func Test_cert_001(t *testing.T) {
 		assert.NotEqual(caRow.Serial, result.Serial)
 		assert.True(result.IsCA)
 		require.NotNil(result.Enabled)
-		assert.False(*result.Enabled)
+		assert.True(*result.Enabled)
 	})
 
 	t.Run("RenewCertificateAuthorityRejectsBadBody", func(t *testing.T) {

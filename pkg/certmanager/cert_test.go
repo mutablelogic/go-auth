@@ -244,13 +244,11 @@ func TestCert_001(t *testing.T) {
 			StreetAddress: types.Ptr("1 Example Way"),
 			PostalCode:    types.Ptr("94105"),
 		}
-		enabled := false
 
 		leafRow, err := m.CreateCert(context.Background(), schema.CreateCertRequest{
 			Name:    "custom_leaf",
 			Expiry:  2 * time.Hour,
 			Subject: &subject,
-			Enabled: &enabled,
 			Tags:    []string{"leaf-tag", " leaf-extra ", "leaf-tag"},
 		}, caRow.CertKey)
 		require.NoError(err)
@@ -260,7 +258,7 @@ func TestCert_001(t *testing.T) {
 		require.NoError(err)
 		assert.Equal("custom_leaf", parsedLeaf.Subject.CommonName)
 		assert.Equal(2*time.Hour, parsedLeaf.NotAfter.Sub(parsedLeaf.NotBefore))
-		assert.False(types.Value(leafRow.Enabled))
+		assert.True(types.Value(leafRow.Enabled))
 		assert.Equal([]string{"leaf-tag", "leaf-extra"}, leafRow.Tags)
 		assert.ElementsMatch([]string{"leaf-extra", "leaf-tag"}, leafRow.EffectiveTags)
 	})
@@ -573,11 +571,9 @@ func TestCert_001(t *testing.T) {
 		leafRow, err := m.CreateCert(context.Background(), schema.CreateCertRequest{Name: "leaf_cert", Expiry: 90 * time.Minute, Tags: []string{"leaf-tag"}}, caRow.CertKey)
 		require.NoError(err)
 
-		enabled := true
 		renewed, err := m.RenewCert(context.Background(), leafRow.CertKey, schema.RenewCertRequest{
-			Expiry:  30 * time.Minute,
-			Enabled: &enabled,
-			Tags:    []string{"renewed-tag"},
+			Expiry: 30 * time.Minute,
+			Tags:   []string{"renewed-tag"},
 		})
 		require.NoError(err)
 		require.NotNil(renewed)

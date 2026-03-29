@@ -276,8 +276,6 @@ func TestCreateCertCommand(t *testing.T) {
 			assert.Equal(2*time.Hour, req.Expiry)
 			assert.Equal([]string{"api.example.test", "127.0.0.1"}, req.SAN)
 			assert.Equal([]string{"ops"}, req.Tags)
-			require.NotNil(req.Enabled)
-			assert.True(*req.Enabled)
 			require.NotNil(req.Subject)
 			assert.Equal("Example Org", valueOrEmpty(req.Subject.Org))
 			assert.Equal("Security", valueOrEmpty(req.Subject.Unit))
@@ -288,12 +286,11 @@ func TestCreateCertCommand(t *testing.T) {
 		defer server.Close()
 
 		cmd := &CreateCertCommand{
-			Name:    "leaf_cert",
-			CAName:  "issuer_ca",
-			Expiry:  2 * time.Hour,
-			SAN:     []string{"api.example.test", "127.0.0.1"},
-			Enabled: true,
-			Tags:    []string{"ops"},
+			Name:   "leaf_cert",
+			CAName: "issuer_ca",
+			Expiry: 2 * time.Hour,
+			SAN:    []string{"api.example.test", "127.0.0.1"},
+			Tags:   []string{"ops"},
 			certSubjectFlags: certSubjectFlags{
 				Org:  "Example Org",
 				Unit: "Security",
@@ -327,7 +324,7 @@ func TestCreateCertCommand(t *testing.T) {
 		}))
 		defer server.Close()
 
-		cmd := &CreateCertCommand{Name: "leaf_cert", CAName: "issuer_ca", CASerial: "7", Enabled: true}
+		cmd := &CreateCertCommand{Name: "leaf_cert", CAName: "issuer_ca", CASerial: "7"}
 
 		output := new(bytes.Buffer)
 		original := certmanagerOutput
@@ -427,8 +424,6 @@ func TestRenewCertCommand(t *testing.T) {
 			var req schema.RenewCertRequest
 			require.NoError(json.NewDecoder(r.Body).Decode(&req))
 			assert.Equal(2*time.Hour, req.Expiry)
-			require.NotNil(req.Enabled)
-			assert.True(*req.Enabled)
 			assert.Equal([]string{"renewed"}, req.Tags)
 			require.NotNil(req.Subject)
 			assert.Equal("Example Org", valueOrEmpty(req.Subject.Org))
@@ -447,7 +442,6 @@ func TestRenewCertCommand(t *testing.T) {
 		err := (&RenewCertCommand{
 			Name:             "leaf_cert",
 			Expiry:           2 * time.Hour,
-			Enable:           true,
 			Tags:             []string{"renewed"},
 			certSubjectFlags: certSubjectFlags{Org: "Example Org", Unit: "Security"},
 		}).Run(newFakeCmd(server.URL))
@@ -465,8 +459,8 @@ func TestRenewCertCommand(t *testing.T) {
 
 			var req schema.RenewCertRequest
 			require.NoError(json.NewDecoder(r.Body).Decode(&req))
-			require.NotNil(req.Enabled)
-			assert.False(*req.Enabled)
+			assert.Zero(req.Expiry)
+			assert.Nil(req.Subject)
 			assert.Equal([]string{}, req.Tags)
 
 			w.Header().Set("Content-Type", "application/json")
@@ -479,16 +473,9 @@ func TestRenewCertCommand(t *testing.T) {
 		certmanagerOutput = output
 		t.Cleanup(func() { certmanagerOutput = original })
 
-		err := (&RenewCertCommand{Name: "leaf_cert", Serial: "11", Disable: true, ClearTags: true}).Run(newFakeCmd(server.URL))
+		err := (&RenewCertCommand{Name: "leaf_cert", Serial: "11", ClearTags: true}).Run(newFakeCmd(server.URL))
 		require.NoError(err)
 		assert.Contains(output.String(), "leaf_cert")
-	})
-
-	t.Run("RejectsConflictingEnableDisableFlags", func(t *testing.T) {
-		assert := assert.New(t)
-
-		err := (&RenewCertCommand{Name: "leaf_cert", Enable: true, Disable: true}).Run(newFakeCmd("http://example.test"))
-		assert.EqualError(err, "cannot set both enable and disable")
 	})
 
 	t.Run("RejectsConflictingTagFlags", func(t *testing.T) {
@@ -512,8 +499,6 @@ func TestRenewCACommand(t *testing.T) {
 			var req schema.RenewCertRequest
 			require.NoError(json.NewDecoder(r.Body).Decode(&req))
 			assert.Equal(3*time.Hour, req.Expiry)
-			require.NotNil(req.Enabled)
-			assert.True(*req.Enabled)
 			assert.Equal([]string{"platform"}, req.Tags)
 			require.NotNil(req.Subject)
 			assert.Equal("Example Org", valueOrEmpty(req.Subject.Org))
@@ -531,7 +516,6 @@ func TestRenewCACommand(t *testing.T) {
 		err := (&RenewCACommand{
 			Name:             "issuer_ca",
 			Expiry:           3 * time.Hour,
-			Enable:           true,
 			Tags:             []string{"platform"},
 			certSubjectFlags: certSubjectFlags{Org: "Example Org"},
 		}).Run(newFakeCmd(server.URL))
@@ -549,8 +533,8 @@ func TestRenewCACommand(t *testing.T) {
 
 			var req schema.RenewCertRequest
 			require.NoError(json.NewDecoder(r.Body).Decode(&req))
-			require.NotNil(req.Enabled)
-			assert.False(*req.Enabled)
+			assert.Zero(req.Expiry)
+			assert.Nil(req.Subject)
 			assert.Equal([]string{}, req.Tags)
 
 			w.Header().Set("Content-Type", "application/json")
@@ -563,16 +547,9 @@ func TestRenewCACommand(t *testing.T) {
 		certmanagerOutput = output
 		t.Cleanup(func() { certmanagerOutput = original })
 
-		err := (&RenewCACommand{Name: "issuer_ca", Serial: "1", Disable: true, ClearTags: true}).Run(newFakeCmd(server.URL))
+		err := (&RenewCACommand{Name: "issuer_ca", Serial: "1", ClearTags: true}).Run(newFakeCmd(server.URL))
 		require.NoError(err)
 		assert.Contains(output.String(), "issuer_ca")
-	})
-
-	t.Run("RejectsConflictingEnableDisableFlags", func(t *testing.T) {
-		assert := assert.New(t)
-
-		err := (&RenewCACommand{Name: "issuer_ca", Enable: true, Disable: true}).Run(newFakeCmd("http://example.test"))
-		assert.EqualError(err, "cannot set both enable and disable")
 	})
 
 	t.Run("RejectsConflictingTagFlags", func(t *testing.T) {

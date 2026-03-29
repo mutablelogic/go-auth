@@ -45,10 +45,9 @@ type CACommands struct {
 }
 
 type CreateCACommand struct {
-	Name    string        `arg:"" name:"name" help:"Certificate authority name"`
-	Expiry  time.Duration `name:"expiry" help:"Certificate lifetime. Zero uses the server default."`
-	Enabled bool          `name:"enabled" help:"Enable the created certificate authority." default:"true" negatable:""`
-	Tags    []string      `name:"tag" help:"Tag to apply to the certificate authority. Repeat to set multiple tags."`
+	Name   string        `arg:"" name:"name" help:"Certificate authority name"`
+	Expiry time.Duration `name:"expiry" help:"Certificate lifetime. Zero uses the server default."`
+	Tags   []string      `name:"tag" help:"Tag to apply to the certificate authority. Repeat to set multiple tags."`
 	certSubjectFlags
 }
 
@@ -56,8 +55,6 @@ type RenewCACommand struct {
 	Name      string        `arg:"" name:"name" help:"Certificate authority name"`
 	Serial    string        `arg:"" optional:"" name:"serial" help:"Certificate authority serial number. Omit to use the latest certificate version."`
 	Expiry    time.Duration `name:"expiry" help:"Certificate lifetime. Zero preserves the current lifetime, capped by the root validity."`
-	Enable    bool          `name:"enable" help:"Enable the renewed certificate authority."`
-	Disable   bool          `name:"disable" help:"Disable the renewed certificate authority."`
 	Tags      []string      `name:"tag" help:"Replace certificate authority tags with the provided list. Repeat to set multiple tags."`
 	ClearTags bool          `name:"clear-tags" help:"Clear all certificate authority tags on the renewed certificate."`
 	certSubjectFlags
@@ -72,7 +69,6 @@ func (cmd *CreateCACommand) Run(ctx server.Cmd) error {
 			Name:    strings.TrimSpace(cmd.Name),
 			Expiry:  cmd.Expiry,
 			Subject: cmd.subject(),
-			Enabled: types.Ptr(cmd.Enabled),
 			Tags:    append([]string(nil), cmd.Tags...),
 		})
 		if err != nil {
@@ -84,7 +80,7 @@ func (cmd *CreateCACommand) Run(ctx server.Cmd) error {
 }
 
 func (cmd *RenewCACommand) Run(ctx server.Cmd) error {
-	req, err := renewRequest(cmd.Expiry, cmd.subject(), cmd.Enable, cmd.Disable, cmd.Tags, cmd.ClearTags)
+	req, err := renewRequest(cmd.Expiry, cmd.subject(), cmd.Tags, cmd.ClearTags)
 	if err != nil {
 		return err
 	}

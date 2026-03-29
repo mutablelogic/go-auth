@@ -141,9 +141,6 @@ func (m *Manager) CreateCert(ctx context.Context, req schema.CreateCertRequest, 
 		certValue.SubjectID = types.Ptr(subjectRow.ID)
 		certValue.Signer = &caRow.CertKey
 		certValue.Tags = req.Tags
-		if req.Enabled != nil {
-			certValue.Enabled = types.Ptr(*req.Enabled)
-		}
 
 		version, ciphertext, err := m.passphrase.Encrypt(0, certValue.Key)
 		if err != nil {
@@ -371,10 +368,6 @@ func (m *Manager) renewCert(ctx context.Context, current schema.CertKey, req sch
 	if req.Tags != nil {
 		tags = req.Tags
 	}
-	enabled := types.Value(currentRow.Enabled)
-	if req.Enabled != nil {
-		enabled = *req.Enabled
-	}
 
 	var renewedRow schema.Cert
 	if err = m.Tx(ctx, func(conn pg.Conn) error {
@@ -400,7 +393,6 @@ func (m *Manager) renewCert(ctx context.Context, current schema.CertKey, req sch
 		certValue.SubjectID = types.Ptr(subjectRow.ID)
 		certValue.Signer = &signerKey
 		certValue.Tags = tags
-		certValue.Enabled = types.Ptr(enabled)
 
 		version, ciphertext, err := m.passphrase.Encrypt(0, certValue.Key)
 		if err != nil {

@@ -249,8 +249,6 @@ func TestClientCertMethods(t *testing.T) {
 			var req schema.RenewCertRequest
 			require.NoError(json.NewDecoder(r.Body).Decode(&req))
 			assert.Equal(2*time.Hour, req.Expiry)
-			require.NotNil(req.Enabled)
-			assert.True(*req.Enabled)
 			assert.Equal([]string{"renewed"}, req.Tags)
 
 			w.Header().Set("Content-Type", "application/json")
@@ -261,8 +259,7 @@ func TestClientCertMethods(t *testing.T) {
 		client, err := New(server.URL)
 		require.NoError(err)
 
-		enabled := true
-		response, err := client.RenewCert(context.Background(), schema.CertKey{Name: "leaf_cert"}, schema.RenewCertRequest{Expiry: 2 * time.Hour, Enabled: &enabled, Tags: []string{"renewed"}})
+		response, err := client.RenewCert(context.Background(), schema.CertKey{Name: "leaf_cert"}, schema.RenewCertRequest{Expiry: 2 * time.Hour, Tags: []string{"renewed"}})
 		require.NoError(err)
 		require.NotNil(response)
 		assert.Equal("leaf_cert", response.Name)
@@ -283,25 +280,25 @@ func TestClientCertMethods(t *testing.T) {
 
 			var req schema.RenewCertRequest
 			require.NoError(json.NewDecoder(r.Body).Decode(&req))
-			require.NotNil(req.Enabled)
-			assert.False(*req.Enabled)
+			assert.Zero(req.Expiry)
+			assert.Nil(req.Subject)
+			assert.Nil(req.Tags)
 
 			w.Header().Set("Content-Type", "application/json")
-			require.NoError(json.NewEncoder(w).Encode(schema.Cert{CertKey: schema.CertKey{Name: "leaf_cert", Serial: "12"}, CertMeta: schema.CertMeta{Enabled: &[]bool{false}[0]}}))
+			require.NoError(json.NewEncoder(w).Encode(schema.Cert{CertKey: schema.CertKey{Name: "leaf_cert", Serial: "12"}, CertMeta: schema.CertMeta{Enabled: &[]bool{true}[0]}}))
 		}))
 		defer server.Close()
 
 		client, err := New(server.URL)
 		require.NoError(err)
 
-		enabled := false
-		response, err := client.RenewCert(context.Background(), schema.CertKey{Name: "leaf_cert", Serial: "11"}, schema.RenewCertRequest{Enabled: &enabled})
+		response, err := client.RenewCert(context.Background(), schema.CertKey{Name: "leaf_cert", Serial: "11"}, schema.RenewCertRequest{})
 		require.NoError(err)
 		require.NotNil(response)
 		assert.Equal("leaf_cert", response.Name)
 		assert.Equal("12", response.Serial)
 		require.NotNil(response.Enabled)
-		assert.False(*response.Enabled)
+		assert.True(*response.Enabled)
 	})
 
 	t.Run("ListCertsUsesQueryParameters", func(t *testing.T) {

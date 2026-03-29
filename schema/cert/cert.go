@@ -88,14 +88,12 @@ type CreateCertRequest struct {
 	Expiry  time.Duration `json:"expiry,omitempty"`
 	Subject *SubjectMeta  `json:"subject,omitempty"`
 	SAN     []string      `json:"san,omitempty"`
-	Enabled *bool         `json:"enabled,omitempty" negatable:""`
 	Tags    []string      `json:"tags,omitempty"`
 }
 
 type RenewCertRequest struct {
 	Expiry  time.Duration `json:"expiry,omitempty"`
 	Subject *SubjectMeta  `json:"subject,omitempty"`
-	Enabled *bool         `json:"enabled,omitempty" negatable:""`
 	Tags    []string      `json:"tags,omitempty"`
 }
 
