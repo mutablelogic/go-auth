@@ -4,38 +4,41 @@ A self-hosted authorization server written in Go, implementing the OAuth 2.0 aut
 
 > **Not production ready.** This project is under active development and has known gaps (see below). Do not use it to protect production systems.
 
+* For information on the related `certmanager` service for managing TLS certificates, see [pkg/certmanager/README.md](pkg/certmanager/README.md).
+* For information on the related `ldapmanager` service for managing LDAP directories, see [pkg/ldapmanager/README.md](pkg/ldapmanager/README.md).
+
 ## Motivation
 
 `go-auth` is designed to be embedded directly into a larger Go service or run as a standalone server, depending on what a deployment needs. It gives you full control over user data, token policy, and provider configuration within the same operational footprint as the rest of your stack.
 
 Key design goals:
 
-- **Self-contained tokens.** Access tokens are RS256-signed JWTs with user and session claims embedded. Protected services validate tokens locally against the public key — no round-trip to the auth server on every request.
-- **Provider abstraction.** Two identity providers are implemented: Google OAuth 2.0 and a built-in local browser flow (intended for development and debugging). The `Provider` interface makes it straightforward to add others (LDAP, SAML, certificate-based auth).
-- **Single binary.** The server binary embeds the admin UI (WebAssembly + IBM Carbon) and bootstraps its own database schema on first run.
-- **PostgreSQL-backed.** Sessions, users, groups, and identities live in PostgreSQL. `LISTEN/NOTIFY` streams table changes in real time.
+* **Self-contained tokens.** Access tokens are RS256-signed JWTs with user and session claims embedded. Protected services validate tokens locally against the public key — no round-trip to the auth server on every request.
+* **Provider abstraction.** Two identity providers are implemented: Google OAuth 2.0 and a built-in local browser flow (intended for development and debugging). The `Provider` interface makes it straightforward to add others (LDAP, SAML, certificate-based auth).
+* **Single binary.** The server binary embeds the admin UI (WebAssembly + IBM Carbon) and bootstraps its own database schema on first run.
+* **PostgreSQL-backed.** Sessions, users, groups, and identities live in PostgreSQL. `LISTEN/NOTIFY` streams table changes in real time.
 
 Current known gaps:
 
-- **Refresh tokens** are currently identical to access tokens; proper token separation is on the roadmap.
-- **The admin UI** is incomplete — user and group management works but some views are not yet finished.
-- **Scopes** are embedded in issued tokens but are not enforced by the authentication middleware; per-endpoint scope checks are not yet implemented.
-- **Revoked tokens** are not cached. The auth middleware checks the session state embedded in the JWT at issuance, so a revoked token continues to be accepted until it expires. A revocation cache (populated via `LISTEN/NOTIFY`) is on the roadmap.
+* **Refresh tokens** are currently identical to access tokens; proper token separation is on the roadmap.
+* **The admin UI** is incomplete — user and group management works but some views are not yet finished.
+* **Scopes** are embedded in issued tokens but are not enforced by the authentication middleware; per-endpoint scope checks are not yet implemented.
+* **Revoked tokens** are not cached. The auth middleware checks the session state embedded in the JWT at issuance, so a revoked token continues to be accepted until it expires. A revocation cache (populated via `LISTEN/NOTIFY`) is on the roadmap.
 
 Roadmap:
 
-- **Additional identity providers** — GitHub, Meta, Apple, and Amazon OAuth/OIDC flows, plus LDAP for corporate directory integration
-- **TLS certificate management** — automatic certificate provisioning and renewal via ACME/Let's Encrypt and locally-generated authorities/certificates
-- **Private key rotation** — scheduled RSA key rotation with a JWKS rollover period so existing tokens remain valid during the transition
-- **Token revocation cache** — in-memory set of revoked session IDs kept in sync via PostgreSQL `LISTEN/NOTIFY`, checked by the auth middleware on every request
+* **Additional identity providers** — GitHub, Meta, Apple, and Amazon OAuth/OIDC flows, plus LDAP for corporate directory integration
+* **TLS certificate management** — automatic certificate provisioning and renewal via ACME/Let's Encrypt and locally-generated authorities/certificates
+* **Private key rotation** — scheduled RSA key rotation with a JWKS rollover period so existing tokens remain valid during the transition
+* **Token revocation cache** — in-memory set of revoked session IDs kept in sync via PostgreSQL `LISTEN/NOTIFY`, checked by the auth middleware on every request
 
 ## Quick Start
 
 ### Prerequisites
 
-- Go 1.25+
-- Node.js + npm (for the frontend, if rebuilding)
-- PostgreSQL 14+
+* Go 1.25+
+* Node.js + npm (for the frontend, if rebuilding)
+* PostgreSQL 14+
 
 ### Build
 
