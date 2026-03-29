@@ -40,7 +40,11 @@ Not yet implemented:
 - Storage passphrase rotation for previously encrypted private keys.
 - Automatic certificate rotation before expiry.
 - Scopes and permissions for multi-user use cases.
-- Frontend interface wr
+- Frontend (web) interface for managing certificates.
+- Deletion of certificates and certificate authorities.
+- Rotation of the root certificate.
+- Importing certificates not signed or issued by the stored root or intermediate CAs.
+- ACME protocol support (ie, Let's Encrypt).
 
 Notable lifecycle rules:
 
