@@ -1,26 +1,79 @@
-# pkg/certmanager
+# certmanager
 
-`certmanager` stores and manages certificate chains, starting from a root certificate and continuing through intermediate certificate authorities to usable end-entity certificates. The intended model is a chain such as `root => CA => usable cert`, with the private key material stored in PostgreSQL under passphrase-based encryption.
+`pkg/certmanager` is the certificate lifecycle package used by `go-auth` for managing an internal PKI in PostgreSQL. It stores a single root certificate, issues intermediate certificate authorities and leaf certificates beneath that root, encrypts all stored private key material with application-supplied passphrases, and exposes a small manager API that higher layers can wrap with HTTP and CLI interfaces.
 
-## Storage passphrases
+The intended chain is:
 
-`certmanager` uses storage passphrases to encrypt private key material before it is written to PostgreSQL. These are separate from any passphrase used to protect the PEM file on disk. Storage passphrases are versioned in the order they are supplied. The first passphrase is version `1`, the second is version `2`, and so on. It's possible to rotate the encrypted private keys between passphrase versions through the CLI.
+```text
+root -> intermediate CA -> leaf certificate
+```
 
-Each storage passphrase must be at least 8 characters long. It's recommended to set these passphrases as environment variables to avoid exposing them in command history or process lists. Use `certmanager bootstrap --help` to determine the correct environment variable to use.
+This package is designed that it can be embedded directly in a Go service, or in an existing server-side or client-side CLI  or run as a network service.
 
-## Bootstrapping
+> **Not production ready.** This project is under active development and has known gaps (see below). Do not use it to protect production systems.
 
-### Generating a root certificate
+## Motivation
 
-Export the source-key passphrase and generate an encrypted RSA private key in the traditional PEM format expected by the current importer:
+`pkg/certmanager` exists to provide a compact certificate authority subsystem that fits the rest of the `go-auth` model:
+
+- **PostgreSQL-backed state.** Certificates, subjects, tags, and version history are stored in PostgreSQL rather than scattered across files on disk.
+- **Encrypted private keys.** Private key bytes are encrypted before being persisted, using versioned storage passphrases supplied by the host process.
+- **Versioned certificate lifecycle.** Renewals create a new serial for the same logical certificate name and disable the previous version.
+- **Embeddable manager API.** The core package focuses on domain logic. HTTP routes, JSON transport, and CLI commands wrap the manager rather than duplicating certificate logic.
+
+## Capabilities
+
+The manager supports these operations today:
+
+- Bootstrap the database schema on first use.
+- Import exactly one root certificate from a PEM bundle containing the certificate and matching RSA private key.
+- Create intermediate certificate authorities signed by the stored root.
+- Create leaf certificates signed by an explicit non-root CA.
+- Renew leaf certificates and intermediate CAs by issuing a new serial and disabling the previous version.
+- Update certificate metadata after issuance, currently enabled state and tags.
+- List certificates with filters over type, enabled state, tags, validity, and subject.
+- Retrieve certificate chains without private material.
+- Retrieve decrypted private key material for exact non-CA certificate versions.
+
+Not yet implemented:
+
+- Storage passphrase rotation for previously encrypted private keys.
+- Automatic certificate rotation before expiry.
+- Scopes and permissions for multi-user use cases.
+- Frontend interface wr
+
+Notable lifecycle rules:
+
+- The root certificate is unique and cannot be renewed through the same renewal flow as non-root certificates.
+- Leaf certificates must be signed by an intermediate CA, never directly by the root.
+- CA creation does not accept SAN entries; leaf certificate creation does.
+- Renewal preserves the existing SAN and tags, but can overlay subject fields and expiry.
+- Disabled certificates and CAs cannot be renewed.
+
+## Quick Start
+
+### Prerequisites
+
+- A built `certmanager` binary from `./cmd/certmanager`
+- A PostgreSQL database reachable via `PG_URL` or `--pg.url`
+- At least one storage passphrase supplied with `CERTMANAGER_PASSPHRASES` or `--storage-passphrase`
+- A root PEM bundle if you are bootstrapping a new PKI
+
+### Build the CLI
+
+```bash
+make cmd/certmanager
+```
+
+The binary is written to `build/certmanager`.
+
+### Bootstrap and run the server
+
+Generate a traditional RSA private key and self-signed root certificate with OpenSSL:
 
 ```bash
 openssl genrsa -traditional -aes256 -out root.key.pem 4096
-```
 
-This will prompt for a passphrase to encrypt the private key. You can also specify the passphrase non-interactively with the `-passout` flag, but be cautious about exposing passphrases in command history or process lists. Generate a self-signed root certificate from that key:
-
-```bash
 export ROOTKEY_PASSPHRASE='<passphrase>'
 openssl req \
   -x509 \
@@ -31,26 +84,201 @@ openssl req \
   -days 3650 \
   -out root.crt.pem \
   -subj "/CN=Example Root CA/O=Example Org"
-cat root.crt.pem root.key.pem > root.bundle.pem  
-```
 
-### Importing the root certificate into the database
-
-Import the PEM bundle with the bootstrap command:
-
-```bash
-export STORAGE_PASSPHRASE='<passphrase>'
+cat root.crt.pem root.key.pem > root.bundle.pem
 
 certmanager bootstrap \
   --pg.url="postgres://user:password@localhost/authdb" \
-  --certificate-pem root.bundle.pem \
-  --certificate-passphrase "${ROOTKEY_PASSPHRASE}" \
-  --storage-passphrase "${STORAGE_PASSPHRASE}"
-
-unset ROOTKEY_PASSPHRASE
-unset STORAGE_PASSPHRASE
+  --certificate-pem root.bundle.pem
+  --certificate-passphrase="$ROOTKEY_PASSPHRASE"
 ```
 
-If `root.bundle.pem` contains an unencrypted private key without passphrase,
-the import can omit `--certificate-passphrase`.
-Once you have the PEM bundle, you could delete the source key and certificate files from disk.
+If the PEM bundle contains an unencrypted private key, `CERTMANAGER_CERTIFICATE_PASSPHRASE` or `--certificate-passphrase` can be omitted.
+
+### Start the server
+
+```bash
+certmanager --http.addr='localhost:8084' run
+```
+
+For multi-tenancy use cases, you can use `--pg.schema` to isolate in a separate PostgreSQL schemas within the
+same database (or use different databases with different `PG_URL` values). The manager will create the necessary tables in the specified schema on first use.
+
+## CLI usage
+
+The `certmanager` binary doubles as a CLI client. Set `CERTMANAGER_ADDR` to the host and port of the running server so you do not need to repeat `--http.addr` on every command:
+
+```bash
+export CERTMANAGER_ADDR=localhost:8084
+```
+
+Create an intermediate CA, issue a leaf certificate from it, inspect the PEM chain, and renew the leaf certificate:
+
+```bash
+# Create an intermediate CA named "issuer-ca" with a 1 year expiry and "platform" tag
+certmanager ca-create issuer-ca \
+  --expiry=8760h \
+  --organization='Example Org' \
+  --tag=platform
+
+# Create a leaf certificate named "api.example.test" signed by "issuer-ca" with a 90 day expiry, two SAN entries, and an "edge" tag
+certmanager cert-create api.example.test issuer-ca \
+  --expiry=2160h \
+  --san=api.example.test \
+  --san=127.0.0.1 \
+  --tag=edge
+
+# Get the certificate chain for "api.example.test" in PEM format
+certmanager cert api.example.test \
+  --chain
+
+# Get the private key for "api.example.test"
+certmanager cert api.example.test \
+  --private
+
+# Renew "api.example.test" with a new 90 day expiry and postal code subject field, preserving SAN and tags
+certmanager cert-renew api.example.test \
+  --expiry=2160h \
+  --postal-code=10967
+
+# Update "api.example.test" to disable it and replace tags with "dont-use"
+certmanager cert-update api.example.test \
+  --disable \
+  --tag=dont-use
+```
+
+The CLI can return the private key for leaf certificates with `cert --private`, but CA private keys are not exposed.
+Renewal issues a new serial, preserves the existing SAN and tags, and disables the previous version.
+
+## Architecture
+
+### Relevant paths
+
+| Path | Description |
+|---|---|
+| `cmd/certmanager/` | Binary entrypoint that assembles server commands, OpenAPI commands, and the certificate manager CLI |
+| `pkg/certmanager/` | Core certificate lifecycle logic: schema bootstrap, root import, issuance, renewal, metadata updates, and private key access |
+| `pkg/cert/` | Certificate and key generation helpers used when creating roots, intermediate CAs, and leaf certificates |
+| `pkg/crypto/` | Cryptographic helpers used for storage passphrases, key wrapping, and private key protection |
+| `schema/cert/` | Shared request, response, and metadata models used by the manager, handlers, client, and CLI |
+| `pkg/httphandler/certmanager/` | HTTP routes that expose the manager over the network |
+| `pkg/httpclient/certmanager/` | Typed client for calling those HTTP routes |
+| `pkg/cmd/certmanager/` | Client-side CLI commands and PEM-oriented output formatting |
+
+### Component diagram
+
+```mermaid
+flowchart TD
+  CLI["<b>CLI Binary</b> (cmd/certmanager)"]
+  Cmd["<b>CLI Commands</b> (pkg/cmd/certmanager)"]
+  Client["<b>HTTP Client</b> (pkg/httpclient/certmanager)"]
+  Handlers["<b>HTTP Handlers</b> (pkg/httphandler/certmanager)"]
+  Manager["<b>Manager</b> (pkg/certmanager)"]
+  Cert["<b>Certificate Helpers</b> (pkg/cert)"]
+  Crypto["<b>Crypto</b> (pkg/crypto)"]
+  Schema["<b>Schema</b> (schema/cert)"]
+  PG[("<b>PostgreSQL</b>")]
+
+  CLI -->|run / bootstrap| Manager
+  CLI -->|run| Handlers
+  CLI -->|cert, certs, ca-*| Cmd
+  Cmd --> Client
+  Client --> Handlers
+  Cmd --> Schema
+  Client --> Schema
+  Handlers --> Schema
+  Handlers --> Manager
+  Manager --> Cert
+  Manager --> Crypto
+  Manager --> Schema
+  Manager --> PG
+```
+
+### Embedded usage
+
+Create a manager, bootstrap the schema, and optionally import the root certificate on first start:
+
+```go
+import (
+  "context"
+  "os"
+  "time"
+
+  manager "github.com/djthorpe/go-auth/pkg/certmanager"
+  schema "github.com/djthorpe/go-auth/schema/cert"
+  types "github.com/mutablelogic/go-server/pkg/types"
+)
+
+func main() {
+  rootPEM, err := os.ReadFile("root.bundle.pem")
+  if err != nil {
+    return err
+  }
+
+  // Only include manager.WithRoot(...) during initial bootstrap.
+  m, err := manager.New(
+    context.Background(),
+    pool,
+    manager.WithSchema("certmanager"),
+    manager.WithPassphrase(1, os.Getenv("CERT_STORAGE_PASSPHRASE")),
+    manager.WithRoot(string(rootPEM)),
+  )
+  if err != nil {
+    return err
+  }
+  defer m.Close()  
+}
+```
+
+If the root has already been imported, construct the manager without `manager.WithRoot(...)` and
+provide only the storage passphrase(s) needed to decrypt stored private keys.
+Create an intermediate CA and then a leaf certificate:
+
+```go
+ca, err := m.CreateCA(context.Background(), schema.CreateCertRequest{
+  Name:   "issuer-ca",
+  Expiry: 365 * 24 * time.Hour,
+  Tags:   []string{"platform"},
+})
+if err != nil {
+  return err
+}
+
+leaf, err := m.CreateCert(context.Background(), schema.CreateCertRequest{
+  Name:   "api.example.test",
+  Expiry: 90 * 24 * time.Hour,
+  SAN:    []string{"api.example.test", "127.0.0.1"},
+  Tags:   []string{"edge"},
+}, ca.CertKey)
+if err != nil {
+  return err
+}
+```
+
+Renew the leaf certificate while overriding part of the subject:
+
+```go
+renewed, err := m.RenewCert(context.Background(), leaf.CertKey, schema.RenewCertRequest{
+  Expiry: 90 * 24 * time.Hour,
+  Subject: &schema.SubjectMeta{
+    PostalCode: types.Ptr("10967"),
+  },
+})
+if err != nil {
+  return err
+}
+```
+
+## Appendix: Storage Passphrases
+
+Storage passphrases protect private keys at rest in PostgreSQL. They are distinct from any passphrase used to encrypt a PEM file on disk before import.
+
+- Passphrases are versioned by the `version` argument to `manager.WithPassphrase(version, value)`.
+- The manager uses the configured passphrase version to encrypt newly stored private keys.
+- Existing private keys can only be decrypted when the correct passphrase version is configured in memory.
+- If no storage passphrase is configured, operations that need private key encryption or decryption fail.
+
+Operationally, this means the host process must provide the passphrase set needed for both:
+
+- decrypting any existing stored private keys it needs to use
+- encrypting any new or renewed certificates it creates
