@@ -48,7 +48,7 @@ type Subject struct {
 }
 
 type SubjectRef struct {
-	ID uint64 `json:"id"`
+	ID uint64 `json:"-"`
 	SubjectMeta
 	Ts         time.Time `json:"timestamp,omitzero"`
 	CommonName *string   `json:"commonName,omitempty"`

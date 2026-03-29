@@ -34,6 +34,7 @@ func TestGetCertCommand(t *testing.T) {
 	t.Run("UsesLatestNamePath", func(t *testing.T) {
 		assert := assert.New(t)
 		require := require.New(t)
+		now := time.Now().UTC().Truncate(time.Second)
 
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			require.Equal(http.MethodGet, r.Method)
@@ -50,9 +51,9 @@ func TestGetCertCommand(t *testing.T) {
 					CertMeta: schema.CertMeta{
 						Enabled: types.Ptr(true),
 					},
-					NotBefore: time.Date(2026, time.March, 29, 12, 0, 0, 0, time.UTC),
-					NotAfter:  time.Date(2026, time.March, 30, 12, 0, 0, 0, time.UTC),
-					Ts:        time.Date(2026, time.March, 29, 11, 0, 0, 0, time.UTC),
+					NotBefore: now.Add(-1 * time.Hour),
+					NotAfter:  now.Add(23 * time.Hour),
+					Ts:        now.Add(-2 * time.Hour).Truncate(time.Second),
 					Cert:      []byte("leaf-der"),
 				},
 			}))
@@ -71,12 +72,11 @@ func TestGetCertCommand(t *testing.T) {
 		assert.Contains(output.String(), "# serial: 11")
 		assert.Contains(output.String(), "# san: leaf_cert.example.test, 127.0.0.1")
 		assert.Contains(output.String(), "# tags: edge, prod")
-		assert.Contains(output.String(), "# enabled: yes")
-		assert.Contains(output.String(), "# type: certificate")
+		assert.Contains(output.String(), "# type: certificate, enabled, valid")
 		assert.Contains(output.String(), "# signer: -")
-		assert.Contains(output.String(), "# not_before: 2026-03-29T12:00:00Z")
-		assert.Contains(output.String(), "# not_after: 2026-03-30T12:00:00Z")
-		assert.Contains(output.String(), "# created: 2026-03-29T11:00:00Z")
+		assert.Contains(output.String(), "# not_before: "+now.Add(-1*time.Hour).Format(time.RFC3339))
+		assert.Contains(output.String(), "# not_after: "+now.Add(23*time.Hour).Format(time.RFC3339))
+		assert.Contains(output.String(), "# created: "+now.Add(-2*time.Hour).Truncate(time.Second).Format(time.RFC3339))
 
 		blocks := parsePEMBlocks(t, output.Bytes())
 		require.Len(blocks, 1)
@@ -87,6 +87,7 @@ func TestGetCertCommand(t *testing.T) {
 	t.Run("UsesExactKeyPathWithChainAndPrivate", func(t *testing.T) {
 		assert := assert.New(t)
 		require := require.New(t)
+		now := time.Now().UTC().Truncate(time.Second)
 
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			require.Equal(http.MethodGet, r.Method)
@@ -102,9 +103,9 @@ func TestGetCertCommand(t *testing.T) {
 					Subject:       &schema.SubjectRef{Name: types.Ptr("leaf_cert.example.test")},
 					SAN:           []string{"leaf_cert.example.test", "127.0.0.1"},
 					EffectiveTags: []string{"leaf", "prod"},
-					NotBefore:     time.Date(2026, time.March, 29, 12, 0, 0, 0, time.UTC),
-					NotAfter:      time.Date(2026, time.April, 29, 12, 0, 0, 0, time.UTC),
-					Ts:            time.Date(2026, time.March, 29, 11, 0, 0, 0, time.UTC),
+					NotBefore:     now.Add(-48 * time.Hour),
+					NotAfter:      now.Add(-24 * time.Hour),
+					Ts:            now.Add(-72 * time.Hour).Truncate(time.Second),
 					CertMeta: schema.CertMeta{
 						Enabled: types.Ptr(false),
 						Tags:    []string{"leaf"},
@@ -118,9 +119,9 @@ func TestGetCertCommand(t *testing.T) {
 						Subject:       &schema.SubjectRef{Name: types.Ptr("issuer_ca.example.test")},
 						EffectiveTags: []string{"ca"},
 						IsCA:          true,
-						NotBefore:     time.Date(2026, time.March, 1, 0, 0, 0, 0, time.UTC),
-						NotAfter:      time.Date(2026, time.June, 1, 0, 0, 0, 0, time.UTC),
-						Ts:            time.Date(2026, time.March, 1, 1, 0, 0, 0, time.UTC),
+						NotBefore:     now.Add(-7 * 24 * time.Hour),
+						NotAfter:      now.Add(7 * 24 * time.Hour),
+						Ts:            now.Add(-8 * 24 * time.Hour).Truncate(time.Second),
 						CertMeta: schema.CertMeta{
 							Enabled: types.Ptr(true),
 						},
@@ -131,9 +132,9 @@ func TestGetCertCommand(t *testing.T) {
 						Subject:       &schema.SubjectRef{Name: types.Ptr("root_ca.example.test")},
 						EffectiveTags: []string{"platform", "root"},
 						IsCA:          true,
-						NotBefore:     time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC),
-						NotAfter:      time.Date(2036, time.January, 1, 0, 0, 0, 0, time.UTC),
-						Ts:            time.Date(2026, time.January, 1, 1, 0, 0, 0, time.UTC),
+						NotBefore:     now.Add(-365 * 24 * time.Hour),
+						NotAfter:      now.Add(365 * 24 * time.Hour),
+						Ts:            now.Add(-366 * 24 * time.Hour).Truncate(time.Second),
 						CertMeta: schema.CertMeta{
 							Enabled: types.Ptr(true),
 						},
@@ -153,27 +154,24 @@ func TestGetCertCommand(t *testing.T) {
 		err := (&GetCertCommand{Name: "leaf_cert", Serial: "11", Chain: true, Private: true, Comments: true}).Run(newFakeCmd(server.URL))
 		require.NoError(err)
 
-		assert.Contains(output.String(), "# type: private key")
+		assert.Contains(output.String(), "# type: private key, disabled, expired")
 		assert.Contains(output.String(), "# subject: leaf_cert.example.test")
 		assert.Contains(output.String(), "# serial: 11")
 		assert.Contains(output.String(), "# san: leaf_cert.example.test, 127.0.0.1")
 		assert.Contains(output.String(), "# tags: leaf, prod")
-		assert.Contains(output.String(), "# enabled: no")
-		assert.Contains(output.String(), "# type: certificate")
+		assert.Contains(output.String(), "# type: certificate, disabled, expired")
 		assert.Contains(output.String(), "# signer: issuer_ca")
-		assert.Contains(output.String(), "# not_before: 2026-03-29T12:00:00Z")
-		assert.Contains(output.String(), "# not_after: 2026-04-29T12:00:00Z")
-		assert.Contains(output.String(), "# created: 2026-03-29T11:00:00Z")
-		assert.Contains(output.String(), "# type: certificate authority")
+		assert.Contains(output.String(), "# type: certificate authority, enabled, valid")
 		assert.Contains(output.String(), "# subject: issuer_ca.example.test")
 		assert.Contains(output.String(), "# serial: 7")
 		assert.Contains(output.String(), "# tags: ca")
-		assert.Contains(output.String(), "# type: root")
+		assert.Contains(output.String(), "# type: root, enabled, valid")
 		assert.Contains(output.String(), "# subject: root_ca.example.test")
 		assert.Contains(output.String(), "# serial: 1")
 		assert.Contains(output.String(), "# tags: platform, root")
 		assert.Contains(output.String(), "-----END PRIVATE KEY-----\n\n# subject: leaf_cert.example.test")
 		assert.Contains(output.String(), "-----END CERTIFICATE-----\n\n# subject: issuer_ca.example.test")
+		assert.NotContains(output.String(), "# enabled:")
 
 		blocks := parsePEMBlocks(t, output.Bytes())
 		require.Len(blocks, 4)
@@ -257,6 +255,40 @@ func TestGetCertCommand(t *testing.T) {
 		assert.Equal("PRIVATE KEY", blocks[0].Type)
 		assert.Equal("CERTIFICATE", blocks[1].Type)
 		assert.Equal("CERTIFICATE", blocks[2].Type)
+	})
+}
+
+func TestPEMTypeLine(t *testing.T) {
+	t.Run("CombinesTypeEnabledAndValidity", func(t *testing.T) {
+		assert := assert.New(t)
+
+		enabled := true
+		cert := schema.Cert{
+			NotBefore: time.Now().UTC().Add(-1 * time.Hour),
+			NotAfter:  time.Now().UTC().Add(1 * time.Hour),
+			CertMeta:  schema.CertMeta{Enabled: &enabled},
+		}
+
+		assert.Equal("certificate, enabled, valid", pemTypeLine(cert, "certificate"))
+	})
+
+	t.Run("CombinesTypeDisabledAndExpired", func(t *testing.T) {
+		assert := assert.New(t)
+
+		enabled := false
+		cert := schema.Cert{
+			NotBefore: time.Now().UTC().Add(-2 * time.Hour),
+			NotAfter:  time.Now().UTC().Add(-1 * time.Hour),
+			CertMeta:  schema.CertMeta{Enabled: &enabled},
+		}
+
+		assert.Equal("certificate authority, disabled, expired", pemTypeLine(cert, "certificate authority"))
+	})
+
+	t.Run("OmitsStatusWhenUnknown", func(t *testing.T) {
+		assert := assert.New(t)
+
+		assert.Equal("private key", pemTypeLine(schema.Cert{}, "private key"))
 	})
 }
 
@@ -407,7 +439,7 @@ func TestUpdateCertCommand(t *testing.T) {
 		assert := assert.New(t)
 
 		err := (&UpdateCertCommand{Name: "leaf_cert", Tags: []string{"ops"}, ClearTags: true}).Run(newFakeCmd("http://example.test"))
-		assert.EqualError(err, "cannot set tags and clear-tags together")
+		assert.EqualError(err, "cannot set --tag and --clear-tags together")
 	})
 }
 
@@ -424,7 +456,6 @@ func TestRenewCertCommand(t *testing.T) {
 			var req schema.RenewCertRequest
 			require.NoError(json.NewDecoder(r.Body).Decode(&req))
 			assert.Equal(2*time.Hour, req.Expiry)
-			assert.Equal([]string{"renewed"}, req.Tags)
 			require.NotNil(req.Subject)
 			assert.Equal("Example Org", valueOrEmpty(req.Subject.Org))
 			assert.Equal("Security", valueOrEmpty(req.Subject.Unit))
@@ -442,14 +473,13 @@ func TestRenewCertCommand(t *testing.T) {
 		err := (&RenewCertCommand{
 			Name:             "leaf_cert",
 			Expiry:           2 * time.Hour,
-			Tags:             []string{"renewed"},
 			certSubjectFlags: certSubjectFlags{Org: "Example Org", Unit: "Security"},
 		}).Run(newFakeCmd(server.URL))
 		require.NoError(err)
 		assert.Contains(output.String(), "leaf_cert")
 	})
 
-	t.Run("UsesExactKeyPathAndClearsTags", func(t *testing.T) {
+	t.Run("UsesExactKeyPath", func(t *testing.T) {
 		assert := assert.New(t)
 		require := require.New(t)
 
@@ -461,10 +491,9 @@ func TestRenewCertCommand(t *testing.T) {
 			require.NoError(json.NewDecoder(r.Body).Decode(&req))
 			assert.Zero(req.Expiry)
 			assert.Nil(req.Subject)
-			assert.Equal([]string{}, req.Tags)
 
 			w.Header().Set("Content-Type", "application/json")
-			require.NoError(json.NewEncoder(w).Encode(schema.Cert{CertKey: schema.CertKey{Name: "leaf_cert", Serial: "12"}, CertMeta: schema.CertMeta{Tags: []string{}}}))
+			require.NoError(json.NewEncoder(w).Encode(schema.Cert{CertKey: schema.CertKey{Name: "leaf_cert", Serial: "12"}}))
 		}))
 		defer server.Close()
 
@@ -473,16 +502,9 @@ func TestRenewCertCommand(t *testing.T) {
 		certmanagerOutput = output
 		t.Cleanup(func() { certmanagerOutput = original })
 
-		err := (&RenewCertCommand{Name: "leaf_cert", Serial: "11", ClearTags: true}).Run(newFakeCmd(server.URL))
+		err := (&RenewCertCommand{Name: "leaf_cert", Serial: "11"}).Run(newFakeCmd(server.URL))
 		require.NoError(err)
 		assert.Contains(output.String(), "leaf_cert")
-	})
-
-	t.Run("RejectsConflictingTagFlags", func(t *testing.T) {
-		assert := assert.New(t)
-
-		err := (&RenewCertCommand{Name: "leaf_cert", Tags: []string{"ops"}, ClearTags: true}).Run(newFakeCmd("http://example.test"))
-		assert.EqualError(err, "cannot set tags and clear-tags together")
 	})
 }
 
@@ -499,7 +521,6 @@ func TestRenewCACommand(t *testing.T) {
 			var req schema.RenewCertRequest
 			require.NoError(json.NewDecoder(r.Body).Decode(&req))
 			assert.Equal(3*time.Hour, req.Expiry)
-			assert.Equal([]string{"platform"}, req.Tags)
 			require.NotNil(req.Subject)
 			assert.Equal("Example Org", valueOrEmpty(req.Subject.Org))
 
@@ -516,14 +537,13 @@ func TestRenewCACommand(t *testing.T) {
 		err := (&RenewCACommand{
 			Name:             "issuer_ca",
 			Expiry:           3 * time.Hour,
-			Tags:             []string{"platform"},
 			certSubjectFlags: certSubjectFlags{Org: "Example Org"},
 		}).Run(newFakeCmd(server.URL))
 		require.NoError(err)
 		assert.Contains(output.String(), "issuer_ca")
 	})
 
-	t.Run("UsesExactKeyPathAndClearsTags", func(t *testing.T) {
+	t.Run("UsesExactKeyPath", func(t *testing.T) {
 		assert := assert.New(t)
 		require := require.New(t)
 
@@ -535,10 +555,9 @@ func TestRenewCACommand(t *testing.T) {
 			require.NoError(json.NewDecoder(r.Body).Decode(&req))
 			assert.Zero(req.Expiry)
 			assert.Nil(req.Subject)
-			assert.Equal([]string{}, req.Tags)
 
 			w.Header().Set("Content-Type", "application/json")
-			require.NoError(json.NewEncoder(w).Encode(schema.Cert{CertKey: schema.CertKey{Name: "issuer_ca", Serial: "2"}, IsCA: true, CertMeta: schema.CertMeta{Tags: []string{}}}))
+			require.NoError(json.NewEncoder(w).Encode(schema.Cert{CertKey: schema.CertKey{Name: "issuer_ca", Serial: "2"}, IsCA: true}))
 		}))
 		defer server.Close()
 
@@ -547,16 +566,9 @@ func TestRenewCACommand(t *testing.T) {
 		certmanagerOutput = output
 		t.Cleanup(func() { certmanagerOutput = original })
 
-		err := (&RenewCACommand{Name: "issuer_ca", Serial: "1", ClearTags: true}).Run(newFakeCmd(server.URL))
+		err := (&RenewCACommand{Name: "issuer_ca", Serial: "1"}).Run(newFakeCmd(server.URL))
 		require.NoError(err)
 		assert.Contains(output.String(), "issuer_ca")
-	})
-
-	t.Run("RejectsConflictingTagFlags", func(t *testing.T) {
-		assert := assert.New(t)
-
-		err := (&RenewCACommand{Name: "issuer_ca", Tags: []string{"ops"}, ClearTags: true}).Run(newFakeCmd("http://example.test"))
-		assert.EqualError(err, "cannot set tags and clear-tags together")
 	})
 }
 

@@ -158,12 +158,5 @@ func renewRequestBody(req schema.RenewCertRequest) map[string]any {
 	if req.Subject != nil {
 		body["subject"] = req.Subject
 	}
-	if req.Tags != nil {
-		if len(req.Tags) == 0 {
-			body["tags"] = []string{}
-		} else {
-			body["tags"] = append([]string(nil), req.Tags...)
-		}
-	}
 	return body
 }

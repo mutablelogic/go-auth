@@ -55,7 +55,7 @@ type CertMeta struct {
 
 // Certificate
 type Cert struct {
-	ID uint64 `json:"id,omitempty" readonly:""`
+	ID uint64 `json:"-" readonly:""`
 	CertKey
 	Signer    *CertKey    `json:"signer,omitempty"`
 	Subject   *SubjectRef `json:"subject,omitempty" readonly:""`
@@ -94,7 +94,6 @@ type CreateCertRequest struct {
 type RenewCertRequest struct {
 	Expiry  time.Duration `json:"expiry,omitempty"`
 	Subject *SubjectMeta  `json:"subject,omitempty"`
-	Tags    []string      `json:"tags,omitempty"`
 }
 
 type CertListRequest struct {

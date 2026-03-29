@@ -52,11 +52,9 @@ type CreateCACommand struct {
 }
 
 type RenewCACommand struct {
-	Name      string        `arg:"" name:"name" help:"Certificate authority name"`
-	Serial    string        `arg:"" optional:"" name:"serial" help:"Certificate authority serial number. Omit to use the latest certificate version."`
-	Expiry    time.Duration `name:"expiry" help:"Certificate lifetime. Zero preserves the current lifetime, capped by the root validity."`
-	Tags      []string      `name:"tag" help:"Replace certificate authority tags with the provided list. Repeat to set multiple tags."`
-	ClearTags bool          `name:"clear-tags" help:"Clear all certificate authority tags on the renewed certificate."`
+	Name   string        `arg:"" name:"name" help:"Certificate authority name"`
+	Serial string        `arg:"" optional:"" name:"serial" help:"Certificate authority serial number. Omit to use the latest certificate version."`
+	Expiry time.Duration `name:"expiry" help:"Certificate lifetime. Zero preserves the current lifetime, capped by the root validity."`
 	certSubjectFlags
 }
 
@@ -80,10 +78,7 @@ func (cmd *CreateCACommand) Run(ctx server.Cmd) error {
 }
 
 func (cmd *RenewCACommand) Run(ctx server.Cmd) error {
-	req, err := renewRequest(cmd.Expiry, cmd.subject(), cmd.Tags, cmd.ClearTags)
-	if err != nil {
-		return err
-	}
+	req := renewRequest(cmd.Expiry, cmd.subject())
 
 	return withUnauthenticatedClient(ctx, func(client *certclient.Client, endpoint string) error {
 		ca, err := client.RenewCA(ctx.Context(), schema.CertKey{

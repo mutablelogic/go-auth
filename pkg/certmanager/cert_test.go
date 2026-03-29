@@ -573,14 +573,13 @@ func TestCert_001(t *testing.T) {
 
 		renewed, err := m.RenewCert(context.Background(), leafRow.CertKey, schema.RenewCertRequest{
 			Expiry: 30 * time.Minute,
-			Tags:   []string{"renewed-tag"},
 		})
 		require.NoError(err)
 		require.NotNil(renewed)
 
 		assert.Equal(leafRow.Name, renewed.Name)
 		assert.Equal(nextSerialString(t, leafRow.Serial), renewed.Serial)
-		assert.Equal([]string{"renewed-tag"}, renewed.Tags)
+		assert.Equal([]string{"leaf-tag"}, renewed.Tags)
 		assert.True(types.Value(renewed.Enabled))
 		require.NotNil(renewed.Signer)
 		assert.Equal(caRow.CertKey, *renewed.Signer)
@@ -597,8 +596,8 @@ func TestCert_001(t *testing.T) {
 		var newRow schema.Cert
 		require.NoError(m.Get(context.Background(), &newRow, renewed.CertKey))
 		assert.True(types.Value(newRow.Enabled))
-		assert.Equal([]string{"renewed-tag"}, newRow.Tags)
-		assert.ElementsMatch([]string{"ca-tag", "renewed-tag"}, newRow.EffectiveTags)
+		assert.Equal([]string{"leaf-tag"}, newRow.Tags)
+		assert.ElementsMatch([]string{"ca-tag", "leaf-tag"}, newRow.EffectiveTags)
 	})
 
 	t.Run("RenewCertMergesExplicitSubjectWithCurrentSubject", func(t *testing.T) {

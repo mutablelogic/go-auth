@@ -69,16 +69,14 @@ type UpdateCertCommand struct {
 	Serial    string   `arg:"" optional:"" name:"serial" help:"Certificate serial number. Omit to use the latest certificate version."`
 	Enable    bool     `name:"enable" help:"Enable the certificate."`
 	Disable   bool     `name:"disable" help:"Disable the certificate."`
-	Tags      []string `name:"tag" help:"Replace certificate tags with the provided list. Repeat to set multiple tags."`
+	Tags      []string `name:"tags" help:"Replace certificate tags with the provided list. Repeat to set multiple tags."`
 	ClearTags bool     `name:"clear-tags" help:"Clear all certificate tags."`
 }
 
 type RenewCertCommand struct {
-	Name      string        `arg:"" name:"name" help:"Certificate name"`
-	Serial    string        `arg:"" optional:"" name:"serial" help:"Certificate serial number. Omit to use the latest certificate version."`
-	Expiry    time.Duration `name:"expiry" help:"Certificate lifetime. Zero preserves the current lifetime, capped by the signer validity."`
-	Tags      []string      `name:"tag" help:"Replace certificate tags with the provided list. Repeat to set multiple tags."`
-	ClearTags bool          `name:"clear-tags" help:"Clear all certificate tags on the renewed certificate."`
+	Name   string        `arg:"" name:"name" help:"Certificate name"`
+	Serial string        `arg:"" optional:"" name:"serial" help:"Certificate serial number. Omit to use the latest certificate version."`
+	Expiry time.Duration `name:"expiry" help:"Certificate lifetime. Zero preserves the current lifetime, capped by the signer validity."`
 	certSubjectFlags
 }
 
@@ -137,7 +135,7 @@ func (cmd *UpdateCertCommand) Run(ctx server.Cmd) error {
 		return fmt.Errorf("cannot set both enable and disable")
 	}
 	if cmd.ClearTags && len(cmd.Tags) > 0 {
-		return fmt.Errorf("cannot set tags and clear-tags together")
+		return fmt.Errorf("cannot set --tag and --clear-tags together")
 	}
 
 	meta := schema.CertMeta{}
@@ -166,10 +164,7 @@ func (cmd *UpdateCertCommand) Run(ctx server.Cmd) error {
 }
 
 func (cmd *RenewCertCommand) Run(ctx server.Cmd) error {
-	req, err := renewRequest(cmd.Expiry, cmd.subject(), cmd.Tags, cmd.ClearTags)
-	if err != nil {
-		return err
-	}
+	req := renewRequest(cmd.Expiry, cmd.subject())
 
 	return withUnauthenticatedClient(ctx, func(client *certclient.Client, endpoint string) error {
 		cert, err := client.RenewCert(ctx.Context(), schema.CertKey{
@@ -187,22 +182,11 @@ func (cmd *RenewCertCommand) Run(ctx server.Cmd) error {
 ///////////////////////////////////////////////////////////////////////////////
 // PRIVATE METHODS
 
-func renewRequest(expiry time.Duration, subject *schema.SubjectMeta, tags []string, clearTags bool) (schema.RenewCertRequest, error) {
-	if clearTags && len(tags) > 0 {
-		return schema.RenewCertRequest{}, fmt.Errorf("cannot set tags and clear-tags together")
-	}
-
-	req := schema.RenewCertRequest{
+func renewRequest(expiry time.Duration, subject *schema.SubjectMeta) schema.RenewCertRequest {
+	return schema.RenewCertRequest{
 		Expiry:  expiry,
 		Subject: subject,
 	}
-	if clearTags {
-		req.Tags = []string{}
-	} else if len(tags) > 0 {
-		req.Tags = append([]string(nil), tags...)
-	}
-
-	return req, nil
 }
 
 func writeCertBundleJSON(w io.Writer, bundle *schema.CertBundle) error {
@@ -271,8 +255,7 @@ func pemCommentLines(cert schema.Cert, blockType string) []string {
 		"serial: " + pemSerial(cert),
 		"san: " + pemSAN(cert),
 		"tags: " + pemTags(cert),
-		"enabled: " + pemEnabled(cert.Enabled),
-		"type: " + blockType,
+		"type: " + pemTypeLine(cert, blockType),
 		"signer: " + pemSignerName(cert),
 		"not_before: " + pemTime(cert.NotBefore),
 		"not_after: " + pemTime(cert.NotAfter),
@@ -311,16 +294,6 @@ func pemTags(cert schema.Cert) string {
 	return strings.Join(cert.EffectiveTags, ", ")
 }
 
-func pemEnabled(enabled *bool) string {
-	if enabled == nil {
-		return "unknown"
-	}
-	if *enabled {
-		return "yes"
-	}
-	return "no"
-}
-
 func pemType(cert schema.Cert) string {
 	if cert.IsRoot() {
 		return "root"
@@ -329,6 +302,38 @@ func pemType(cert schema.Cert) string {
 		return "certificate authority"
 	}
 	return "certificate"
+}
+
+func pemTypeLine(cert schema.Cert, blockType string) string {
+	parts := []string{blockType}
+	if cert.Enabled != nil {
+		if *cert.Enabled {
+			parts = append(parts, "enabled")
+		} else {
+			parts = append(parts, "disabled")
+		}
+	}
+	if pemIsExpired(cert) {
+		parts = append(parts, "expired")
+	} else if pemIsValid(cert) {
+		parts = append(parts, "valid")
+	}
+	return strings.Join(parts, ", ")
+}
+
+func pemIsValid(cert schema.Cert) bool {
+	if cert.NotBefore.IsZero() || cert.NotAfter.IsZero() {
+		return false
+	}
+	now := time.Now().UTC()
+	return !now.Before(cert.NotBefore) && now.Before(cert.NotAfter)
+}
+
+func pemIsExpired(cert schema.Cert) bool {
+	if cert.NotAfter.IsZero() {
+		return false
+	}
+	return !time.Now().UTC().Before(cert.NotAfter)
 }
 
 func pemSignerName(cert schema.Cert) string {

@@ -249,24 +249,24 @@ func TestClientCertMethods(t *testing.T) {
 			var req schema.RenewCertRequest
 			require.NoError(json.NewDecoder(r.Body).Decode(&req))
 			assert.Equal(2*time.Hour, req.Expiry)
-			assert.Equal([]string{"renewed"}, req.Tags)
+			assert.Nil(req.Subject)
 
 			w.Header().Set("Content-Type", "application/json")
-			require.NoError(json.NewEncoder(w).Encode(schema.Cert{CertKey: schema.CertKey{Name: "leaf_cert", Serial: "12"}, CertMeta: schema.CertMeta{Enabled: &[]bool{true}[0], Tags: []string{"renewed"}}}))
+			require.NoError(json.NewEncoder(w).Encode(schema.Cert{CertKey: schema.CertKey{Name: "leaf_cert", Serial: "12"}, CertMeta: schema.CertMeta{Enabled: &[]bool{true}[0], Tags: []string{"leaf-tag"}}}))
 		}))
 		defer server.Close()
 
 		client, err := New(server.URL)
 		require.NoError(err)
 
-		response, err := client.RenewCert(context.Background(), schema.CertKey{Name: "leaf_cert"}, schema.RenewCertRequest{Expiry: 2 * time.Hour, Tags: []string{"renewed"}})
+		response, err := client.RenewCert(context.Background(), schema.CertKey{Name: "leaf_cert"}, schema.RenewCertRequest{Expiry: 2 * time.Hour})
 		require.NoError(err)
 		require.NotNil(response)
 		assert.Equal("leaf_cert", response.Name)
 		assert.Equal("12", response.Serial)
 		require.NotNil(response.Enabled)
 		assert.True(*response.Enabled)
-		assert.Equal([]string{"renewed"}, response.Tags)
+		assert.Equal([]string{"leaf-tag"}, response.Tags)
 	})
 
 	t.Run("RenewCertUsesExactKeyPath", func(t *testing.T) {
@@ -282,7 +282,6 @@ func TestClientCertMethods(t *testing.T) {
 			require.NoError(json.NewDecoder(r.Body).Decode(&req))
 			assert.Zero(req.Expiry)
 			assert.Nil(req.Subject)
-			assert.Nil(req.Tags)
 
 			w.Header().Set("Content-Type", "application/json")
 			require.NoError(json.NewEncoder(w).Encode(schema.Cert{CertKey: schema.CertKey{Name: "leaf_cert", Serial: "12"}, CertMeta: schema.CertMeta{Enabled: &[]bool{true}[0]}}))

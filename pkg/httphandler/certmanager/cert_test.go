@@ -559,7 +559,7 @@ func Test_cert_001(t *testing.T) {
 		_, handler, _ := CertRenewByNameHandler(manager)
 
 		res := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodPost, "/cert/leaf_cert/renew", strings.NewReader(`{"expiry":1800000000000,"tags":["renewed"]}`))
+		req := httptest.NewRequest(http.MethodPost, "/cert/leaf_cert/renew", strings.NewReader(`{"expiry":1800000000000}`))
 		req.Header.Set("Accept", "application/json")
 		req.Header.Set("Content-Type", "application/json")
 		req.SetPathValue("name", leafRow.Name)
@@ -573,7 +573,7 @@ func Test_cert_001(t *testing.T) {
 		assert.Equal("leaf_cert", result.Name)
 		assert.NotEmpty(result.Serial)
 		assert.NotEqual(leafRow.Serial, result.Serial)
-		assert.Equal([]string{"renewed"}, result.Tags)
+		assert.Equal([]string{"leaf"}, result.Tags)
 		require.NotNil(result.Enabled)
 		assert.True(*result.Enabled)
 
@@ -733,7 +733,6 @@ func Test_cert_001(t *testing.T) {
 		assert.True(result.IsCA)
 		assert.NotEmpty(result.Serial)
 		require.NotNil(result.Subject)
-		assert.NotZero(result.Subject.ID)
 		require.NotNil(result.Subject.CommonName)
 		assert.Equal("issuer_ca", *result.Subject.CommonName)
 		assert.Equal("Example Org", valueOrEmpty(result.Subject.Org))
@@ -772,7 +771,7 @@ func Test_cert_001(t *testing.T) {
 		_, handler, _ := CAByNameRenewHandler(manager)
 
 		res := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodPost, "/ca/issuer_ca/renew", strings.NewReader(`{"tags":["renewed"]}`))
+		req := httptest.NewRequest(http.MethodPost, "/ca/issuer_ca/renew", strings.NewReader(`{}`))
 		req.Header.Set("Accept", "application/json")
 		req.Header.Set("Content-Type", "application/json")
 		req.SetPathValue("name", caRow.Name)
@@ -787,7 +786,7 @@ func Test_cert_001(t *testing.T) {
 		assert.NotEmpty(result.Serial)
 		assert.NotEqual(caRow.Serial, result.Serial)
 		assert.True(result.IsCA)
-		assert.Equal([]string{"renewed"}, result.Tags)
+		assert.Equal([]string{"ops"}, result.Tags)
 	})
 
 	t.Run("RenewCertificateAuthorityByVersion", func(t *testing.T) {

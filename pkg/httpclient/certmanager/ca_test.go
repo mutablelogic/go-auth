@@ -79,14 +79,14 @@ func TestClientCAMethods(t *testing.T) {
 			var req schema.RenewCertRequest
 			require.NoError(json.NewDecoder(r.Body).Decode(&req))
 			assert.Equal(time.Hour, req.Expiry)
-			assert.Equal([]string{"renewed"}, req.Tags)
+			assert.Nil(req.Subject)
 
 			w.Header().Set("Content-Type", "application/json")
 			require.NoError(json.NewEncoder(w).Encode(schema.Cert{
 				CertKey: schema.CertKey{Name: "issuer_ca", Serial: "2"},
 				IsCA:    true,
 				CertMeta: schema.CertMeta{
-					Tags: []string{"renewed"},
+					Tags: []string{"ops"},
 				},
 			}))
 		}))
@@ -95,13 +95,13 @@ func TestClientCAMethods(t *testing.T) {
 		client, err := New(server.URL)
 		require.NoError(err)
 
-		response, err := client.RenewCA(context.Background(), schema.CertKey{Name: "issuer_ca"}, schema.RenewCertRequest{Expiry: time.Hour, Tags: []string{"renewed"}})
+		response, err := client.RenewCA(context.Background(), schema.CertKey{Name: "issuer_ca"}, schema.RenewCertRequest{Expiry: time.Hour})
 		require.NoError(err)
 		require.NotNil(response)
 		assert.Equal("issuer_ca", response.Name)
 		assert.Equal("2", response.Serial)
 		assert.True(response.IsCA)
-		assert.Equal([]string{"renewed"}, response.Tags)
+		assert.Equal([]string{"ops"}, response.Tags)
 	})
 
 	t.Run("RenewCAUsesExactKeyPath", func(t *testing.T) {
@@ -117,7 +117,6 @@ func TestClientCAMethods(t *testing.T) {
 			require.NoError(json.NewDecoder(r.Body).Decode(&req))
 			assert.Zero(req.Expiry)
 			assert.Nil(req.Subject)
-			assert.Nil(req.Tags)
 
 			w.Header().Set("Content-Type", "application/json")
 			require.NoError(json.NewEncoder(w).Encode(schema.Cert{

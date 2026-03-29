@@ -365,9 +365,6 @@ func (m *Manager) renewCert(ctx context.Context, current schema.CertKey, req sch
 	}
 
 	tags := append([]string(nil), currentRow.Tags...)
-	if req.Tags != nil {
-		tags = req.Tags
-	}
 
 	var renewedRow schema.Cert
 	if err = m.Tx(ctx, func(conn pg.Conn) error {
