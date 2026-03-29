@@ -15,44 +15,37 @@
 package schema
 
 import (
-	"context"
-
-	// Packages
-	pg "github.com/mutablelogic/go-pg"
+	_ "embed"
+	"time"
 )
 
 ////////////////////////////////////////////////////////////////////////////////
 // GLOBALS
 
+//go:embed objects.sql
+var Objects string
+
+//go:embed queries.sql
+var Queries string
+
 const (
-	SchemaName = "certmanager"
-	APIPrefix  = "/cert/v1"
+	SchemaName   = "cert"
+	RootCertName = "$root$"
 )
 
 const (
-	// Maximum number of names to return in a list query
-	NameListLimit = 100
+	// DefaultCACertExpiry is the default validity period for intermediate
+	// certificate authorities.
+	DefaultCACertExpiry = 5 * 365 * 24 * time.Hour
+
+	// DefaultCertExpiry is the default validity period for leaf certificates.
+	DefaultCertExpiry = 90 * 24 * time.Hour
 )
 
-////////////////////////////////////////////////////////////////////////////////
-// PUBLIC METHODS
+const (
+	// Maximum number of subjects to return in a list query
+	SubjectListLimit = 100
 
-// Bootstrap creates the schema and tables for the certificate manager
-// and returns an error if it fails. It is expected that this function
-// will be called within a transaction
-func Bootstrap(ctx context.Context, conn pg.Conn) error {
-	// Create the schema
-	if err := pg.SchemaCreate(ctx, conn, SchemaName); err != nil {
-		return err
-	}
-	// Create the tables
-	if err := bootstrapName(ctx, conn); err != nil {
-		return err
-	}
-	if err := bootstrapCert(ctx, conn); err != nil {
-		return err
-	}
-
-	// Commit the transaction
-	return nil
-}
+	// Maximum number of certificates to return in a list query
+	CertListLimit = 100
+)

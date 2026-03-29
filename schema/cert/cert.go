@@ -15,9 +15,6 @@
 package schema
 
 import (
-	"context"
-	"encoding/json"
-	"math/big"
 	"strings"
 	"time"
 
@@ -33,19 +30,6 @@ import (
 // Certificate Name
 type CertName string
 
-// Certificate Metadata for creating a new certificate
-type CertCreateMeta struct {
-	Name         string        `json:"name,omitempty"`
-	CommonName   string        `json:"common_name,omitempty"`
-	Signer       string        `json:"signer,omitempty"`
-	Subject      string        `json:"subject,omitempty"`
-	SerialNumber *big.Int      `json:"serial_number,omitempty"`
-	Expiry       time.Duration `json:"expiry,omitempty"`
-	IsCA         bool          `json:"is_ca,omitempty"`
-	KeyType      string        `json:"key_type,omitempty"`
-	Address      []string      `json:"address,omitempty"`
-}
-
 // Certificate Metadata
 type CertMeta struct {
 	Signer    *string   `json:"signer,omitempty"`
@@ -53,6 +37,8 @@ type CertMeta struct {
 	NotBefore time.Time `json:"not_before,omitzero"`
 	NotAfter  time.Time `json:"not_after,omitzero"`
 	IsCA      bool      `json:"is_ca,omitempty"`
+	IsRoot    bool      `json:"is_root,omitempty"`
+	PV        uint64    `json:"pv,omitempty"`
 	Cert      []byte    `json:"cert,omitempty"`
 	Key       []byte    `json:"key,omitempty"`
 }
@@ -64,48 +50,47 @@ type Cert struct {
 	Ts time.Time `json:"timestamp,omitzero"`
 }
 
-type CertList struct {
-	Count uint64     `json:"count"`
-	Body  []CertMeta `json:"body,omitempty"`
+type CreateCertRequest struct {
+	Name    string        `json:"name,omitempty"`
+	Expiry  time.Duration `json:"expiry,omitempty"`
+	Subject *SubjectMeta  `json:"subject,omitempty"`
 }
 
 type CertListRequest struct {
 	pg.OffsetLimit
+	IsCA    *bool   `json:"is_ca,omitempty"`
+	IsRoot  *bool   `json:"is_root,omitempty"`
+	Valid   *bool   `json:"valid,omitempty"`
+	Subject *uint64 `json:"subject,omitempty"`
+}
+
+type CertList struct {
+	CertListRequest
+	Count uint64 `json:"count"`
+	Body  []Cert `json:"body,omitempty"`
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 // STRINGIFY
 
 func (c Cert) String() string {
-	data, err := json.MarshalIndent(c, "", "  ")
-	if err != nil {
-		return err.Error()
-	}
-	return string(data)
+	return types.Stringify(c)
 }
 
 func (c CertMeta) String() string {
-	data, err := json.MarshalIndent(c, "", "  ")
-	if err != nil {
-		return err.Error()
-	}
-	return string(data)
+	return types.Stringify(c)
+}
+
+func (c CreateCertRequest) String() string {
+	return types.Stringify(c)
 }
 
 func (c CertListRequest) String() string {
-	data, err := json.MarshalIndent(c, "", "  ")
-	if err != nil {
-		return err.Error()
-	}
-	return string(data)
+	return types.Stringify(c)
 }
 
 func (c CertList) String() string {
-	data, err := json.MarshalIndent(c, "", "  ")
-	if err != nil {
-		return err.Error()
-	}
-	return string(data)
+	return types.Stringify(c)
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -115,7 +100,7 @@ func (c CertName) Select(bind *pg.Bind, op pg.Op) (string, error) {
 	// Name
 	if name := string(c); name == "" {
 		return "", httpresponse.ErrBadRequest.With("name is missing")
-	} else if !types.IsIdentifier(name) {
+	} else if name != RootCertName && !types.IsIdentifier(name) {
 		return "", httpresponse.ErrBadRequest.With("name is invalid")
 	} else {
 		bind.Set("name", name)
@@ -123,11 +108,50 @@ func (c CertName) Select(bind *pg.Bind, op pg.Op) (string, error) {
 
 	switch op {
 	case pg.Get:
-		return certGet, nil
+		return bind.Query("cert.select"), nil
 	case pg.Delete:
-		return certDelete, nil
+		return bind.Query("cert.delete"), nil
 	default:
 		return "", httpresponse.ErrBadRequest.Withf("CertName: operation %q is not supported", op)
+	}
+}
+
+func (c CertListRequest) Select(bind *pg.Bind, op pg.Op) (string, error) {
+	bind.Del("where")
+
+	if c.IsCA != nil {
+		bind.Append("where", `cert_row."is_ca" = `+bind.Set("is_ca", *c.IsCA))
+	}
+	if c.IsRoot != nil {
+		bind.Append("where", `cert_row."is_root" = `+bind.Set("is_root", *c.IsRoot))
+	}
+	if c.Valid != nil {
+		if *c.Valid {
+			bind.Append("where", `cert_row."not_before" <= CURRENT_TIMESTAMP AND cert_row."not_after" > CURRENT_TIMESTAMP`)
+		} else {
+			bind.Append("where", `(cert_row."not_before" > CURRENT_TIMESTAMP OR cert_row."not_after" <= CURRENT_TIMESTAMP)`)
+		}
+	}
+	if c.Subject != nil {
+		if *c.Subject == 0 {
+			return "", httpresponse.ErrBadRequest.With("subject is invalid")
+		}
+		bind.Append("where", `cert_row."subject" = `+bind.Set("subject", *c.Subject))
+	}
+
+	if where := bind.Join("where", " AND "); where == "" {
+		bind.Set("where", "")
+	} else {
+		bind.Set("where", "WHERE "+where)
+	}
+	bind.Set("orderby", `ORDER BY cert_row."name" ASC`)
+	c.OffsetLimit.Bind(bind, CertListLimit)
+
+	switch op {
+	case pg.List:
+		return bind.Query("cert.list"), nil
+	default:
+		return "", httpresponse.ErrBadRequest.Withf("CertListRequest: operation %q is not supported", op)
 	}
 }
 
@@ -136,10 +160,27 @@ func (c CertName) Select(bind *pg.Bind, op pg.Op) (string, error) {
 
 func (c *Cert) Scan(row pg.Row) error {
 	// Scan the row
-	if err := row.Scan(&c.Name, &c.Subject, &c.Signer, &c.Cert, &c.Key, &c.NotBefore, &c.NotAfter, &c.IsCA, &c.Ts); err != nil {
+	if err := row.Scan(&c.Name, &c.Subject, &c.Signer, &c.Cert, &c.Key, &c.NotBefore, &c.NotAfter, &c.IsCA, &c.IsRoot, &c.PV, &c.Ts); err != nil {
 		return err
 	}
 	// Todo
+	return nil
+}
+
+func (c *CertList) Scan(row pg.Row) error {
+	var cert Cert
+	if err := cert.Scan(row); err != nil {
+		return err
+	}
+	c.Body = append(c.Body, cert)
+	return nil
+}
+
+func (c *CertList) ScanCount(row pg.Row) error {
+	if err := row.Scan(&c.Count); err != nil {
+		return err
+	}
+	c.Clamp(c.Count)
 	return nil
 }
 
@@ -154,7 +195,7 @@ func (c CertMeta) Insert(bind *pg.Bind) (string, error) {
 		return "", httpresponse.ErrBadRequest.With("name is invalid")
 	} else if name = strings.TrimSpace(name); name == "" {
 		return "", httpresponse.ErrBadRequest.With("name is missing")
-	} else if !types.IsIdentifier(name) {
+	} else if name != RootCertName && !types.IsIdentifier(name) {
 		return "", httpresponse.ErrBadRequest.With("name is invalid")
 	} else {
 		bind.Set("name", name)
@@ -192,80 +233,23 @@ func (c CertMeta) Insert(bind *pg.Bind) (string, error) {
 
 	// IsCA
 	bind.Set("is_ca", c.IsCA)
+	bind.Set("is_root", c.IsRoot)
+	bind.Set("pv", c.PV)
+	if c.IsRoot {
+		if !c.IsCA {
+			return "", httpresponse.ErrBadRequest.With("root certificate must be a certificate authority")
+		}
+		if c.Signer != nil {
+			return "", httpresponse.ErrBadRequest.With("root certificate cannot have a signer")
+		}
+	} else if c.Signer == nil {
+		return "", httpresponse.ErrBadRequest.With("non-root certificate must have a signer")
+	}
 
 	// Return insert or replace
-	return certReplace, nil
+	return bind.Query("cert.insert"), nil
 }
 
 func (c CertMeta) Update(bind *pg.Bind) error {
 	return httpresponse.ErrNotImplemented
 }
-
-////////////////////////////////////////////////////////////////////////////////
-// SQL
-
-// Create objects in the schema
-func bootstrapCert(ctx context.Context, conn pg.Conn) error {
-	q := []string{
-		certCreateTable,
-	}
-	for _, query := range q {
-		if err := conn.Exec(ctx, query); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-const (
-	certCreateTable = `
-		CREATE TABLE IF NOT EXISTS ${"schema"}.cert (
-			-- cert name
-			"name" TEXT PRIMARY KEY,
-			-- subject
-			"subject" SERIAL REFERENCES ${"schema"}."name"("id") ON DELETE CASCADE,
-			-- signer
-			"signer" TEXT REFERENCES ${"schema"}.cert("name") ON DELETE RESTRICT,
-			-- expiry
-			"not_before" TIMESTAMP NOT NULL,
-			"not_after" TIMESTAMP NOT NULL,
-			-- ca
-			"is_ca" BOOLEAN NOT NULL,
-			-- certificate
-			"cert" BYTEA NOT NULL,
-			-- private key
-			"key" BYTEA NOT NULL,
-			-- timestamp
-			"ts" TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
-		)
-	`
-	certReplace = `
-		INSERT INTO ${"schema"}.cert (
-			name, subject, signer, cert, key, not_before, not_after, is_ca
-		) VALUES (
-		 	@name, @subject, @signer, @cert, @key, @not_before, @not_after, @is_ca
-		) ON CONFLICT (name) DO UPDATE SET
-			subject = @subject,
-			signer = @signer,
-			cert = @cert,
-			key = @key,
-			not_before = @not_before,
-			not_after = @not_after,
-			is_ca = @is_ca,
-			ts = CURRENT_TIMESTAMP
-		RETURNING
-			name, subject, signer, cert, key, not_before, not_after, is_ca, ts
-	`
-	certDelete = `
-		DELETE FROM ${"schema"}.cert WHERE 
-			name = @name
-		RETURNING
-			name, subject, signer, cert, key, not_before, not_after, is_ca, ts
-	`
-	certSelect = `
-		SELECT
-			name, subject, signer, cert, key, not_before, not_after, is_ca, ts
-		FROM ${"schema"}.cert
-	`
-	certGet = certSelect + `WHERE name = @name`
-)

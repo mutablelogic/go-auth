@@ -38,6 +38,7 @@ type Cert struct {
 	Name    string  `json:"name"`              // Common Name
 	Subject *uint64 `json:"subject,omitempty"` // Subject
 	Signer  *Cert   `json:"signer,omitempty"`  // Signer
+	root    bool
 
 	// The private key and certificate
 	priv any
@@ -102,6 +103,14 @@ func New(opts ...Opt) (*Cert, error) {
 	if cert.Name == "" {
 		cert.Name = cert.x509.Subject.CommonName
 	}
+	if cert.root {
+		if !cert.IsCA() {
+			return nil, fmt.Errorf("root certificate must be a certificate authority")
+		}
+		if cert.Signer != nil {
+			return nil, fmt.Errorf("root certificate cannot have a signer")
+		}
+	}
 
 	// Create the certificate
 	signer := cert.Signer
@@ -119,34 +128,6 @@ func New(opts ...Opt) (*Cert, error) {
 	// Return the certificate
 	return cert, nil
 }
-
-/*
-// Create a certificate from metadata
-func FromMeta(meta *schema.Cert) (*Cert, error) {
-	if meta == nil {
-		return nil, fmt.Errorf("missing certificate metadata")
-	}
-
-	// Set the certificate information
-	cert := new(Cert)
-	cert.Name = meta.Name
-	cert.Subject = meta.Subject
-
-	if cert_, err := x509.ParseCertificate(meta.Cert); err != nil {
-		return nil, err
-	} else {
-		cert.x509 = *cert_
-	}
-	if key, err := x509.ParsePKCS8PrivateKey(meta.Key); err != nil {
-		return nil, err
-	} else {
-		cert.priv = key
-	}
-
-	// Return success
-	return cert, nil
-}
-*/
 
 // Read a certificate
 func Read(r io.Reader) (*Cert, error) {
@@ -216,15 +197,15 @@ func (c Cert) String() string {
 // PUBLIC METHODS
 
 // Return metadata from a cert
-func (c Cert) SubjectMeta() schema.NameMeta {
+func (c Cert) SubjectMeta() schema.SubjectMeta {
 	fieldPtr := func(field []string) *string {
 		if len(field) > 0 {
-			return types.StringPtr(field[0])
+			return types.Ptr(field[0])
 		} else {
 			return nil
 		}
 	}
-	return schema.NameMeta{
+	return schema.SubjectMeta{
 		Org:           fieldPtr(c.x509.Subject.Organization),
 		Unit:          fieldPtr(c.x509.Subject.OrganizationalUnit),
 		Country:       fieldPtr(c.x509.Subject.Country),
@@ -248,13 +229,14 @@ func (c Cert) CertMeta() schema.CertMeta {
 		if signer == nil {
 			return nil
 		} else {
-			return types.StringPtr(signer.Name)
+			return types.Ptr(signer.Name)
 		}
 	}
 	return schema.CertMeta{
 		Signer:    signer(c.Signer),
 		Subject:   c.Subject,
 		IsCA:      c.IsCA(),
+		IsRoot:    c.IsRoot(),
 		NotBefore: c.x509.NotBefore,
 		NotAfter:  c.x509.NotAfter,
 		Cert:      c.x509.Raw,
@@ -265,6 +247,11 @@ func (c Cert) CertMeta() schema.CertMeta {
 // Return true if the certificate is a certificate authority
 func (c *Cert) IsCA() bool {
 	return c.x509.IsCA
+}
+
+// Return true if the certificate is marked as the unique root certificate.
+func (c *Cert) IsRoot() bool {
+	return c.root
 }
 
 // Return the private key, or nil

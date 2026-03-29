@@ -12,36 +12,32 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package config
+package main
 
 import (
-	"context"
+	"fmt"
+	"os"
 
 	// Packages
-	server "github.com/mutablelogic/go-server"
-	cert "github.com/mutablelogic/go-server/pkg/cert"
+	openapi "github.com/djthorpe/go-auth/pkg/cmd/openapi"
+	cmd "github.com/mutablelogic/go-server/pkg/cmd"
+	version "github.com/mutablelogic/go-server/pkg/version"
 )
 
-////////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
 // TYPES
 
-type task struct {
-	*cert.CertManager
+type CLI struct {
+	ServerCommands
+	openapi.OpenAPICommands
 }
 
-var _ server.Task = (*task)(nil)
-
-////////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
 // LIFECYCLE
 
-func newTaskWith(certmanager *cert.CertManager) *task {
-	return &task{certmanager}
-}
-
-////////////////////////////////////////////////////////////////////////////////
-// PUBLIC METHODS
-
-func (t *task) Run(ctx context.Context) error {
-	<-ctx.Done()
-	return nil
+func main() {
+	if err := cmd.Main(CLI{}, "Certificate management", version.Version()); err != nil {
+		fmt.Fprintln(os.Stderr, "Error:", err)
+		os.Exit(-1)
+	}
 }

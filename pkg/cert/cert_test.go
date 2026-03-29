@@ -21,6 +21,8 @@ import (
 
 	// Packages
 	cert "github.com/djthorpe/go-auth/pkg/cert"
+	schema "github.com/djthorpe/go-auth/schema/cert"
+	types "github.com/mutablelogic/go-server/pkg/types"
 	assert "github.com/stretchr/testify/assert"
 )
 
@@ -120,5 +122,95 @@ func Test_Cert_002(t *testing.T) {
 		assert.NoError(cert2.WritePrivateKey(&cert2KeyPEM))
 		assert.Equal(cert1PEM.String(), cert2PEM.String())
 		assert.Equal(cert1KeyPEM.String(), cert2KeyPEM.String())
+	})
+}
+
+func Test_Cert_003(t *testing.T) {
+	assert := assert.New(t)
+
+	t.Run("RootMarksMetadata", func(t *testing.T) {
+		cert, err := cert.New(
+			cert.WithCommonName("root.example.test"),
+			cert.WithRSAKey(0),
+			cert.WithExpiry(time.Hour),
+			cert.WithRoot(),
+		)
+		if !assert.NoError(err) {
+			t.FailNow()
+		}
+		assert.True(cert.IsCA())
+		assert.True(cert.IsRoot())
+		assert.True(cert.CertMeta().IsRoot)
+	})
+
+	t.Run("RootCannotHaveSigner", func(t *testing.T) {
+		root, err := cert.New(
+			cert.WithCommonName("root.example.test"),
+			cert.WithRSAKey(0),
+			cert.WithExpiry(time.Hour),
+			cert.WithRoot(),
+		)
+		if !assert.NoError(err) {
+			t.FailNow()
+		}
+
+		child, err := cert.New(
+			cert.WithCommonName("bad-root.example.test"),
+			cert.WithRSAKey(0),
+			cert.WithExpiry(time.Hour),
+			cert.WithRoot(),
+			cert.WithSigner(root),
+		)
+		if assert.Error(err) {
+			assert.Nil(child)
+		}
+	})
+}
+
+func Test_Cert_004(t *testing.T) {
+	assert := assert.New(t)
+
+	t.Run("WithSubjectRejectsEmpty", func(t *testing.T) {
+		cert, err := cert.New(
+			cert.WithCommonName("leaf.example.test"),
+			cert.WithSubject(schema.SubjectMeta{}),
+			cert.WithRSAKey(0),
+			cert.WithExpiry(time.Hour),
+		)
+		if assert.Error(err) {
+			assert.Nil(cert)
+			assert.EqualError(err, "subject is required")
+		}
+	})
+
+	t.Run("WithSubjectAppliesFields", func(t *testing.T) {
+		subject := schema.SubjectMeta{
+			Org:           types.Ptr("Example Org"),
+			Unit:          types.Ptr("Security"),
+			Country:       types.Ptr("US"),
+			State:         types.Ptr("California"),
+			City:          types.Ptr("San Francisco"),
+			StreetAddress: types.Ptr("1 Example Way"),
+			PostalCode:    types.Ptr("94105"),
+		}
+
+		leaf, err := cert.New(
+			cert.WithCommonName("leaf.example.test"),
+			cert.WithSubject(subject),
+			cert.WithRSAKey(0),
+			cert.WithExpiry(time.Hour),
+		)
+		if !assert.NoError(err) {
+			t.FailNow()
+		}
+
+		meta := leaf.SubjectMeta()
+		assert.Equal("Example Org", types.Value(meta.Org))
+		assert.Equal("Security", types.Value(meta.Unit))
+		assert.Equal("US", types.Value(meta.Country))
+		assert.Equal("California", types.Value(meta.State))
+		assert.Equal("San Francisco", types.Value(meta.City))
+		assert.Equal("1 Example Way", types.Value(meta.StreetAddress))
+		assert.Equal("94105", types.Value(meta.PostalCode))
 	})
 }

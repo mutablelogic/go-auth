@@ -26,6 +26,9 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	// Packages
+	schema "github.com/djthorpe/go-auth/schema/cert"
 )
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -122,6 +125,31 @@ func WithAddress(address, postcode string) Opt {
 			o.x509.Subject.PostalCode = []string{postcode}
 		}
 		return nil
+	}
+}
+
+// Set subject attributes, excluding the common name.
+func WithSubject(subject schema.SubjectMeta) Opt {
+	return func(o *Cert) error {
+		org := strings.TrimSpace(stringValue(subject.Org))
+		unit := strings.TrimSpace(stringValue(subject.Unit))
+		country := strings.TrimSpace(stringValue(subject.Country))
+		state := strings.TrimSpace(stringValue(subject.State))
+		city := strings.TrimSpace(stringValue(subject.City))
+		address := strings.TrimSpace(stringValue(subject.StreetAddress))
+		postcode := strings.TrimSpace(stringValue(subject.PostalCode))
+
+		if org == "" && unit == "" && country == "" && state == "" && city == "" && address == "" && postcode == "" {
+			return fmt.Errorf("subject is required")
+		}
+
+		if err := WithOrganization(org, unit)(o); err != nil {
+			return err
+		}
+		if err := WithCountry(country, state, city)(o); err != nil {
+			return err
+		}
+		return WithAddress(address, postcode)(o)
 	}
 }
 
@@ -251,6 +279,15 @@ func WithCA() Opt {
 	}
 }
 
+// Mark as the unique root certificate. A root certificate is always a CA and
+// must be self-signed when created.
+func WithRoot() Opt {
+	return func(o *Cert) error {
+		o.root = true
+		return WithCA()(o)
+	}
+}
+
 // Set the signer for the certificate
 func WithSigner(signer *Cert) Opt {
 	return func(o *Cert) error {
@@ -280,4 +317,11 @@ func ecdsaKey(t string) (*ecdsa.PrivateKey, error) {
 	default:
 		return nil, fmt.Errorf("unrecognized key type: %q", t)
 	}
+}
+
+func stringValue(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return *value
 }
