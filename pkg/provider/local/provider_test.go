@@ -17,6 +17,8 @@ package local
 import (
 	"context"
 	"crypto/rsa"
+	"crypto/sha256"
+	"encoding/base64"
 	"errors"
 	"net/url"
 	"testing"
@@ -191,8 +193,8 @@ func TestExchangeAuthorizationCodeErrors(t *testing.T) {
 		},
 		{
 			name:     "missing email",
-			provider: &Provider{key: "local", codec: stubCodec{issuer: "issuer", claims: map[string]any{"typ": localAuthorizationCodeType, "redirect_uri": "http://127.0.0.1/callback"}}},
-			req:      providerpkg.ExchangeRequest{Code: "code", RedirectURL: "http://127.0.0.1/callback"},
+			provider: &Provider{key: "local", codec: stubCodec{issuer: "issuer", claims: map[string]any{"typ": localAuthorizationCodeType, "redirect_uri": "http://127.0.0.1/callback", "code_challenge": codeChallengeForVerifier("verifier-123"), "code_challenge_method": "S256"}}},
+			req:      providerpkg.ExchangeRequest{Code: "code", RedirectURL: "http://127.0.0.1/callback", CodeVerifier: "verifier-123"},
 			err:      "authorization code missing email",
 		},
 	}
@@ -231,14 +233,14 @@ func TestValidateAuthorizationCodeClaimsPKCE(t *testing.T) {
 		require.EqualError(t, err, "code_verifier is required")
 	})
 
-	t.Run("plain success", func(t *testing.T) {
+	t.Run("s256 mismatch", func(t *testing.T) {
 		err := validateAuthorizationCodeClaims(map[string]any{
 			"typ":                   localAuthorizationCodeType,
 			"redirect_uri":          "http://127.0.0.1/callback",
-			"code_challenge":        "expected",
-			"code_challenge_method": "plain",
-		}, "http://127.0.0.1/callback", "expected", "")
-		require.NoError(t, err)
+			"code_challenge":        codeChallengeForVerifier("expected"),
+			"code_challenge_method": "S256",
+		}, "http://127.0.0.1/callback", "actual", "")
+		require.EqualError(t, err, "authorization code verifier mismatch")
 	})
 
 	t.Run("s256 success", func(t *testing.T) {
@@ -251,14 +253,14 @@ func TestValidateAuthorizationCodeClaimsPKCE(t *testing.T) {
 		require.NoError(t, err)
 	})
 
-	t.Run("plain mismatch", func(t *testing.T) {
+	t.Run("plain unsupported", func(t *testing.T) {
 		err := validateAuthorizationCodeClaims(map[string]any{
 			"typ":                   localAuthorizationCodeType,
 			"redirect_uri":          "http://127.0.0.1/callback",
 			"code_challenge":        "expected",
 			"code_challenge_method": "plain",
 		}, "http://127.0.0.1/callback", "actual", "")
-		require.EqualError(t, err, "authorization code verifier mismatch")
+		require.EqualError(t, err, `unsupported code_challenge_method "plain"`)
 	})
 
 	t.Run("unsupported method", func(t *testing.T) {
@@ -286,4 +288,9 @@ func mustNormalizeEmail(t *testing.T, value string) string {
 	email, err := normalizeEmail(value)
 	require.NoError(t, err)
 	return email
+}
+
+func codeChallengeForVerifier(verifier string) string {
+	sum := sha256.Sum256([]byte(verifier))
+	return base64.RawURLEncoding.EncodeToString(sum[:])
 }

@@ -31,14 +31,14 @@ import (
 	"time"
 
 	// Packages
+	managerpkg "github.com/djthorpe/go-auth/pkg/authmanager"
 	authcrypto "github.com/djthorpe/go-auth/pkg/crypto"
 	managerhandler "github.com/djthorpe/go-auth/pkg/httphandler/manager"
-	managerpkg "github.com/djthorpe/go-auth/pkg/manager"
 	middleware "github.com/djthorpe/go-auth/pkg/middleware"
 	oidc "github.com/djthorpe/go-auth/pkg/oidc"
 	googleprovider "github.com/djthorpe/go-auth/pkg/provider/google"
 	localprovider "github.com/djthorpe/go-auth/pkg/provider/local"
-	schema "github.com/djthorpe/go-auth/schema"
+	schema "github.com/djthorpe/go-auth/schema/auth"
 	jwt "github.com/golang-jwt/jwt/v5"
 	uuid "github.com/google/uuid"
 	test "github.com/mutablelogic/go-pg/pkg/test"
@@ -219,8 +219,9 @@ func Test_http_001(t *testing.T) {
 
 		mgr, _ := newHTTPTestManager(t)
 		_, handler, _ := AuthorizationHandler(mgr)
+		challenge := codeChallengeForVerifier("verifier-123")
 		res := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodGet, "/api/auth/authorize?redirect_uri=http%3A%2F%2F127.0.0.1%3A8085%2Fcallback&response_type=code&state=state-123", nil)
+		req := httptest.NewRequest(http.MethodGet, "/api/auth/authorize?redirect_uri=http%3A%2F%2F127.0.0.1%3A8085%2Fcallback&response_type=code&state=state-123&code_challenge="+url.QueryEscape(challenge)+"&code_challenge_method=S256", nil)
 
 		handler(res, req)
 
@@ -515,7 +516,8 @@ func Test_http_001(t *testing.T) {
 
 		_, handler, _ := AuthorizationHandler(mgr)
 		res := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodGet, "/auth/authorize?provider=local&redirect_uri=http%3A%2F%2F127.0.0.1%3A8085%2Fcallback&response_type=code&state=state-123", nil)
+		challenge := codeChallengeForVerifier("verifier-123")
+		req := httptest.NewRequest(http.MethodGet, "/auth/authorize?provider=local&redirect_uri=http%3A%2F%2F127.0.0.1%3A8085%2Fcallback&response_type=code&state=state-123&code_challenge="+url.QueryEscape(challenge)+"&code_challenge_method=S256", nil)
 
 		handler(res, req)
 

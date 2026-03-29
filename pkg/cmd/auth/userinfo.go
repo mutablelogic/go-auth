@@ -21,7 +21,7 @@ import (
 
 	// Packages
 	auth "github.com/djthorpe/go-auth/pkg/httpclient/auth"
-	authschema "github.com/djthorpe/go-auth/schema"
+	authschema "github.com/djthorpe/go-auth/schema/auth"
 	server "github.com/mutablelogic/go-server"
 	oauth2 "golang.org/x/oauth2"
 )

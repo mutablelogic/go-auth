@@ -36,6 +36,9 @@ func withUnauthenticatedClient(ctx server.Cmd, fn func(*manager.Client, string) 
 	return withClient(ctx, false, fn)
 }
 
+///////////////////////////////////////////////////////////////////////////////
+// PRIVATE FUNCTIONS
+
 func withClient(ctx server.Cmd, authenticated bool, fn func(*manager.Client, string) error) error {
 	endpoint, opts, err := ctx.ClientEndpoint()
 	if err != nil {
@@ -47,7 +50,7 @@ func withClient(ctx server.Cmd, authenticated bool, fn func(*manager.Client, str
 	}
 	if authenticated {
 		opts = append(opts, client.OptTransport(func(parent http.RoundTripper) http.RoundTripper {
-			return newAuthTransport(parent, ctx, endpoint, authClient)
+			return newAuthTransport(parent, ctx, authClient)
 		}))
 	}
 	client, err := manager.New(endpoint, opts...)

@@ -36,7 +36,7 @@ type authTransport struct {
 ///////////////////////////////////////////////////////////////////////////////
 // LIFECYCLE
 
-func newAuthTransport(parent http.RoundTripper, ctx server.Cmd, endpoint string, authClient *auth.Client) http.RoundTripper {
+func newAuthTransport(parent http.RoundTripper, ctx server.Cmd, authClient *auth.Client) http.RoundTripper {
 	if parent == nil {
 		parent = http.DefaultTransport
 	}

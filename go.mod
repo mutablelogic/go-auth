@@ -10,9 +10,10 @@ require (
 	github.com/google/jsonschema-go v0.4.2
 	github.com/google/uuid v1.6.0
 	github.com/lestrrat-go/jwx/v2 v2.1.6
-	github.com/mutablelogic/go-client v1.4.4
-	github.com/mutablelogic/go-pg v1.1.8
+	github.com/mutablelogic/go-client v1.4.5
+	github.com/mutablelogic/go-pg v1.1.10
 	github.com/mutablelogic/go-server v1.6.18
+	github.com/mutablelogic/go-tokenizer v0.0.3
 	github.com/pkg/browser v0.0.0-20240102092130-5ac0b6a4141c
 	github.com/stretchr/testify v1.11.1
 	golang.org/x/oauth2 v0.36.0
@@ -22,6 +23,7 @@ require (
 require (
 	dario.cat/mergo v1.0.2 // indirect
 	github.com/Azure/go-ansiterm v0.0.0-20250102033503-faa5f7b0171c // indirect
+	github.com/Azure/go-ntlmssp v0.1.0 // indirect
 	github.com/Microsoft/go-winio v0.6.2 // indirect
 	github.com/cenkalti/backoff/v4 v4.3.0 // indirect
 	github.com/cenkalti/backoff/v5 v5.0.3 // indirect
@@ -39,7 +41,9 @@ require (
 	github.com/docker/go-units v0.5.0 // indirect
 	github.com/ebitengine/purego v0.10.0 // indirect
 	github.com/felixge/httpsnoop v1.0.4 // indirect
+	github.com/go-asn1-ber/asn1-ber v1.5.8-0.20250403174932-29230038a667 // indirect
 	github.com/go-jose/go-jose/v4 v4.1.3 // indirect
+	github.com/go-ldap/ldap/v3 v3.4.13 // indirect
 	github.com/go-logr/logr v1.4.3 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/go-ole/go-ole v1.3.0 // indirect
@@ -65,7 +69,6 @@ require (
 	github.com/moby/sys/userns v0.1.0 // indirect
 	github.com/moby/term v0.5.2 // indirect
 	github.com/morikuni/aec v1.1.0 // indirect
-	github.com/mutablelogic/go-tokenizer v0.0.2 // indirect
 	github.com/opencontainers/go-digest v1.0.0 // indirect
 	github.com/opencontainers/image-spec v1.1.1 // indirect
 	github.com/pkg/errors v0.9.1 // indirect

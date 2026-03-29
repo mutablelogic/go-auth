@@ -16,7 +16,7 @@ package auth
 
 import (
 	shared "github.com/djthorpe/go-auth/pkg/httphandler/internal"
-	schema "github.com/djthorpe/go-auth/schema"
+	schema "github.com/djthorpe/go-auth/schema/auth"
 	upstream "github.com/google/jsonschema-go/jsonschema"
 	jsonschema "github.com/mutablelogic/go-server/pkg/jsonschema"
 )

@@ -16,9 +16,11 @@ package internal
 
 import (
 	"errors"
+	"strings"
 
+	// Packages
 	rootauth "github.com/djthorpe/go-auth"
-	schema "github.com/djthorpe/go-auth/schema"
+	schema "github.com/djthorpe/go-auth/schema/auth"
 	upstream "github.com/google/jsonschema-go/jsonschema"
 	httpresponse "github.com/mutablelogic/go-server/pkg/httpresponse"
 	jsonschema "github.com/mutablelogic/go-server/pkg/jsonschema"
@@ -29,23 +31,28 @@ func HTTPError(err error) error {
 	if !errors.As(err, &authErr) {
 		return err
 	}
+	reason := err.Error()
+	prefix := authErr.Error() + ": "
+	reason = strings.TrimPrefix(reason, prefix)
 	switch authErr {
 	case rootauth.ErrNotFound:
-		return httpresponse.ErrNotFound.With(err)
+		return httpresponse.ErrNotFound.With(reason)
 	case rootauth.ErrBadParameter:
-		return httpresponse.ErrBadRequest.With(err)
+		return httpresponse.ErrBadRequest.With(reason)
 	case rootauth.ErrConflict:
-		return httpresponse.ErrConflict.With(err)
+		return httpresponse.ErrConflict.With(reason)
 	case rootauth.ErrNotImplemented:
-		return httpresponse.ErrNotImplemented.With(err)
+		return httpresponse.ErrNotImplemented.With(reason)
+	case rootauth.ErrServiceUnavailable:
+		return httpresponse.ErrServiceUnavailable.With(reason)
 	case rootauth.ErrInternalServerError:
-		return httpresponse.ErrInternalError.With(err)
+		return httpresponse.ErrInternalError.With(reason)
 	case rootauth.ErrInvalidProvider:
-		return httpresponse.ErrNotAuthorized.With(err)
+		return httpresponse.ErrNotAuthorized.With(reason)
 	case rootauth.ErrForbidden:
-		return httpresponse.ErrForbidden.With(err)
+		return httpresponse.ErrForbidden.With(reason)
 	default:
-		return httpresponse.ErrInternalError.With(err)
+		return httpresponse.ErrInternalError.With(reason)
 	}
 }
 

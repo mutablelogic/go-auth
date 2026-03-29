@@ -18,7 +18,7 @@ import (
 	"context"
 
 	// Packages
-	schema "github.com/djthorpe/go-auth/schema"
+	schema "github.com/djthorpe/go-auth/schema/auth"
 	client "github.com/mutablelogic/go-client"
 )
 

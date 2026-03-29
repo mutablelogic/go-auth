@@ -18,7 +18,7 @@ import (
 	"net/url"
 
 	// Packages
-	schema "github.com/djthorpe/go-auth/schema"
+	schema "github.com/djthorpe/go-auth/schema/auth"
 )
 
 ///////////////////////////////////////////////////////////////////////////////

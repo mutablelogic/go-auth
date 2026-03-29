@@ -149,7 +149,7 @@ func TestAuthTransportPreemptiveRefresh(t *testing.T) {
 
 	authClient, err := auth.New(server.URL)
 	require.NoError(err)
-	httpClient := &http.Client{Transport: newAuthTransport(nil, cmd, server.URL, authClient)}
+	httpClient := &http.Client{Transport: newAuthTransport(nil, cmd, authClient)}
 
 	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, server.URL+"/protected", nil)
 	require.NoError(err)
@@ -193,7 +193,7 @@ func TestAuthTransportAllowsNonReplayableInitialRequest(t *testing.T) {
 
 	authClient, err := auth.New(server.URL)
 	require.NoError(err)
-	httpClient := &http.Client{Transport: newAuthTransport(nil, cmd, server.URL, authClient)}
+	httpClient := &http.Client{Transport: newAuthTransport(nil, cmd, authClient)}
 
 	req, err := http.NewRequestWithContext(context.Background(), http.MethodDelete, server.URL+"/protected", strings.NewReader(""))
 	require.NoError(err)
@@ -257,7 +257,7 @@ func TestAuthTransportRefreshesAfterUnauthorized(t *testing.T) {
 
 	authClient, err := auth.New(server.URL)
 	require.NoError(err)
-	httpClient := &http.Client{Transport: newAuthTransport(nil, cmd, server.URL, authClient)}
+	httpClient := &http.Client{Transport: newAuthTransport(nil, cmd, authClient)}
 
 	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, server.URL+"/protected", nil)
 	require.NoError(err)

@@ -26,11 +26,11 @@ import (
 	"time"
 
 	// Packages
+	manager "github.com/djthorpe/go-auth/pkg/authmanager"
 	authcrypto "github.com/djthorpe/go-auth/pkg/crypto"
 	authhandler "github.com/djthorpe/go-auth/pkg/httphandler/auth"
 	managerhandler "github.com/djthorpe/go-auth/pkg/httphandler/manager"
-	manager "github.com/djthorpe/go-auth/pkg/manager"
-	schema "github.com/djthorpe/go-auth/schema"
+	schema "github.com/djthorpe/go-auth/schema/auth"
 	server "github.com/mutablelogic/go-server"
 	cmd "github.com/mutablelogic/go-server/pkg/cmd"
 	httprouter "github.com/mutablelogic/go-server/pkg/httprouter"
@@ -47,7 +47,7 @@ type ServerCommands struct {
 
 type RunServer struct {
 	cmd.RunServer
-	PostgresFlags       `embed:"" prefix:"pg."`
+	PostgresFlags `embed:"" prefix:"pg."`
 	LocalProviderFlags
 	GoogleProviderFlags `embed:"" prefix:"google."`
 	CleanupFlags        `embed:"" prefix:"cleanup."`
@@ -197,7 +197,7 @@ func (server *RunServer) WithManager(ctx server.Cmd, fn func(*manager.Manager, s
 	defer manager.Close()
 
 	// Invoke the function with the manager and version string
-	return fn(manager, "v1")
+	return fn(manager, ctx.Version())
 }
 
 func (server *RunServer) issuer(ctx server.Cmd) string {

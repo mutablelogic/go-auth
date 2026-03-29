@@ -18,10 +18,10 @@ import (
 	"net/http"
 
 	// Packages
-	manager "github.com/djthorpe/go-auth/pkg/manager"
+	manager "github.com/djthorpe/go-auth/pkg/authmanager"
 	middleware "github.com/djthorpe/go-auth/pkg/middleware"
 	"github.com/djthorpe/go-auth/pkg/oidc"
-	schema "github.com/djthorpe/go-auth/schema"
+	schema "github.com/djthorpe/go-auth/schema/auth"
 	httprequest "github.com/mutablelogic/go-server/pkg/httprequest"
 	httpresponse "github.com/mutablelogic/go-server/pkg/httpresponse"
 	openapi "github.com/mutablelogic/go-server/pkg/openapi/schema"
