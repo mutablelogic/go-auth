@@ -16,6 +16,8 @@ package manager
 
 import (
 	"bytes"
+	"crypto/x509"
+	"encoding/pem"
 	"testing"
 	"time"
 
@@ -139,6 +141,32 @@ func Test_opt_001(t *testing.T) {
 		assert.Equal("Root CA", options.rootcert.Subject.CommonName)
 	})
 
+	t.Run("ClearRootMaterial", func(t *testing.T) {
+		assert := assert.New(t)
+		require := require.New(t)
+
+		options := new(opt)
+		root, err := cert.New(
+			cert.WithCommonName("Root CA"),
+			cert.WithOrganization("Example Org", ""),
+			cert.WithExpiry(24*time.Hour),
+			cert.WithRSAKey(2048),
+			cert.WithRoot(),
+		)
+		require.NoError(err)
+
+		var pemValue bytes.Buffer
+		require.NoError(root.Write(&pemValue))
+		require.NoError(root.WritePrivateKey(&pemValue))
+		require.NoError(WithRoot(pemValue.String())(options))
+
+		require.NotNil(options.rootkey)
+		require.NotNil(options.rootcert)
+		options.clearRootMaterial()
+		assert.Nil(options.rootkey)
+		assert.Nil(options.rootcert)
+	})
+
 	t.Run("WithRootRejectsInvalidPEM", func(t *testing.T) {
 		assert := assert.New(t)
 
@@ -166,6 +194,49 @@ func Test_opt_001(t *testing.T) {
 
 		err = WithRoot(pemValue.String())(options)
 		assert.EqualError(err, "missing certificate or key")
+	})
+
+	t.Run("WithRootRejectsNonRSAKey", func(t *testing.T) {
+		assert := assert.New(t)
+		require := require.New(t)
+
+		options := new(opt)
+		root, err := cert.New(
+			cert.WithCommonName("Root CA"),
+			cert.WithOrganization("Example Org", ""),
+			cert.WithExpiry(24*time.Hour),
+			cert.WithEllipticKey("p256"),
+			cert.WithRoot(),
+		)
+		require.NoError(err)
+
+		var pemValue bytes.Buffer
+		require.NoError(root.Write(&pemValue))
+		require.NoError(root.WritePrivateKey(&pemValue))
+
+		err = WithRoot(pemValue.String())(options)
+		assert.EqualError(err, "private key is not RSA")
+	})
+
+	t.Run("ReadPemBlocksRejectsUnsupportedBlockType", func(t *testing.T) {
+		assert := assert.New(t)
+		require := require.New(t)
+
+		root, err := cert.New(
+			cert.WithCommonName("Root CA"),
+			cert.WithOrganization("Example Org", ""),
+			cert.WithExpiry(24*time.Hour),
+			cert.WithRSAKey(2048),
+			cert.WithRoot(),
+		)
+		require.NoError(err)
+
+		publicKey, err := x509.MarshalPKIXPublicKey(root.PublicKey())
+		require.NoError(err)
+
+		pemValue := pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: publicKey})
+		_, _, err = readPemBlocks(pemValue)
+		assert.EqualError(err, `invalid PEM block type: "PUBLIC KEY"`)
 	})
 
 	t.Run("ApplyStopsOnError", func(t *testing.T) {

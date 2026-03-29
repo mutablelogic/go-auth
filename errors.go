@@ -27,6 +27,7 @@ const (
 	ErrBadParameter
 	ErrNotImplemented
 	ErrConflict
+	ErrServiceUnavailable
 	ErrInternalServerError
 	ErrInvalidProvider
 	ErrForbidden
@@ -53,6 +54,8 @@ func (e Err) Error() string {
 		return "not implemented"
 	case ErrConflict:
 		return "conflict"
+	case ErrServiceUnavailable:
+		return "service unavailable"
 	case ErrInternalServerError:
 		return "internal server error"
 	case ErrInvalidProvider:

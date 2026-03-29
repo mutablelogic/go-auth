@@ -161,12 +161,16 @@ func assertSchemaObjects(t *testing.T, m *manager.Manager, schemaName string) {
 		require.True(exists.Value, fixture.Name)
 	}
 
-	var exists boolResult
-	require.NoError(m.Get(context.Background(), &exists, indexExistsSelector{
-		Schema: schemaName,
-		Name:   "cert_single_root_idx",
-	}))
-	require.True(exists.Value)
+	indexes := []indexExistsSelector{
+		{Schema: schemaName, Name: "cert_name_serial_idx"},
+		{Schema: schemaName, Name: "cert_name_idx"},
+		{Schema: schemaName, Name: "cert_issuer_idx"},
+	}
+	for _, fixture := range indexes {
+		var exists boolResult
+		require.NoError(m.Get(context.Background(), &exists, fixture))
+		require.True(exists.Value, fixture.Name)
+	}
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -257,11 +261,11 @@ func Test_manager_001(t *testing.T) {
 		var storedRoot schema.Cert
 		require.NoError(m.Get(context.Background(), &storedRoot, schema.CertName(schema.RootCertName)))
 		assert.Equal(schema.RootCertName, storedRoot.Name)
+		assert.NotEmpty(storedRoot.Serial)
 		assert.True(storedRoot.IsCA)
 		assert.True(storedRoot.IsRoot())
 		require.NotNil(storedRoot.Subject)
 		assert.True(types.Value(storedRoot.Enabled))
-		assert.Equal(uint64(5), storedRoot.PV)
 	})
 
 	t.Run("NewWithRootRejectsWithoutPassphrase", func(t *testing.T) {

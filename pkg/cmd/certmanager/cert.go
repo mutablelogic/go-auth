@@ -12,34 +12,36 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package main
+package certmanager
 
 import (
 	"fmt"
-	"os"
 
 	// Packages
-	certmanager "github.com/djthorpe/go-auth/pkg/cmd/certmanager"
-	openapi "github.com/djthorpe/go-auth/pkg/cmd/openapi"
-	cmd "github.com/mutablelogic/go-server/pkg/cmd"
-	version "github.com/mutablelogic/go-server/pkg/version"
+	certclient "github.com/djthorpe/go-auth/pkg/httpclient/certmanager"
+	schema "github.com/djthorpe/go-auth/schema/cert"
+	server "github.com/mutablelogic/go-server"
 )
 
 ///////////////////////////////////////////////////////////////////////////////
 // TYPES
 
-type CLI struct {
-	ServerCommands
-	openapi.OpenAPICommands
-	certmanager.CertManagerCommands
+type CertCommands struct {
+	Certs ListCertsCommand `cmd:"" name:"certs" help:"List certificates." group:"CERTIFICATE MANAGER"`
 }
 
-///////////////////////////////////////////////////////////////////////////////
-// LIFECYCLE
+type ListCertsCommand schema.CertListRequest
 
-func main() {
-	if err := cmd.Main(CLI{}, "Certificate management", version.Version()); err != nil {
-		fmt.Fprintln(os.Stderr, "Error:", err)
-		os.Exit(-1)
-	}
+///////////////////////////////////////////////////////////////////////////////
+// COMMANDS
+
+func (cmd *ListCertsCommand) Run(ctx server.Cmd) error {
+	return withUnauthenticatedClient(ctx, func(client *certclient.Client, endpoint string) error {
+		certs, err := client.ListCerts(ctx.Context(), schema.CertListRequest(*cmd))
+		if err != nil {
+			return err
+		}
+		fmt.Println(certs)
+		return nil
+	})
 }

@@ -20,12 +20,17 @@ import (
 	"bytes"
 	"crypto/x509"
 	"encoding/pem"
+	"errors"
 	"fmt"
 	"os"
+	"sync"
 
 	// Packages
 	manager "github.com/djthorpe/go-auth/pkg/certmanager"
+	httphandler "github.com/djthorpe/go-auth/pkg/httphandler/certmanager"
 	server "github.com/mutablelogic/go-server"
+	cmd "github.com/mutablelogic/go-server/pkg/cmd"
+	httprouter "github.com/mutablelogic/go-server/pkg/httprouter"
 )
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -33,21 +38,24 @@ import (
 
 type ServerCommands struct {
 	Bootstrap BootstrapCommand `cmd:"" name:"bootstrap" help:"Bootstrap by importing a root certificate PEM bundle." group:"SERVER"`
+	Run       RunCommand       `cmd:"" name:"run" help:"Run the certificate manager server." group:"SERVER"`
 }
 
 type ServerCommand struct {
-	PostgresFlags `embed:"" prefix:"pg."`
+	PostgresFlags     `embed:"" prefix:"pg."`
+	StoragePassphrase []string `name:"storage-passphrase" env:"CERTMANAGER_PASSPHRASES" help:"Passphrase used to encrypt the stored root private key in PostgreSQL. Repeat the flag to define versions 1, 2, 3, and so on in order."`
 }
 
 type BootstrapCommand struct {
 	ServerCommand
-	StoragePassphrase     []string `name:"storage-passphrase" env:"CERTMANAGER_PASSPHRASES" help:"Passphrase used to encrypt the stored root private key in PostgreSQL. Repeat the flag to define versions 1, 2, 3, and so on in order."`
-	CertificatePassphrase string   `name:"certificate-passphrase" env:"CERTMANAGER_CERTIFICATE_PASSPHRASE" help:"Passphrase used to decrypt an encrypted private key inside the certificate PEM bundle before import."`
-	RootCertPEM           string   `name:"certificate-pem" placeholder:"PATH" help:"Path to a PEM bundle containing the root certificate and private key" required:""`
+	CertificatePassphrase string `name:"certificate-passphrase" env:"CERTMANAGER_CERTIFICATE_PASSPHRASE" help:"Passphrase used to decrypt an encrypted private key inside the certificate PEM bundle before import."`
+	RootCertPEM           string `name:"certificate-pem" placeholder:"PATH" help:"Path to a PEM bundle containing the root certificate and private key" required:""`
 }
 
-///////////////////////////////////////////////////////////////////////////////
-// COMMANDS
+type RunCommand struct {
+	cmd.RunServer
+	ServerCommand
+}
 
 ///////////////////////////////////////////////////////////////////////////////
 // COMMANDS
@@ -57,14 +65,46 @@ func (bootstrap *BootstrapCommand) Run(ctx server.Cmd) error {
 	if err != nil {
 		return err
 	}
-	storageOpts, err := bootstrap.storagePassphraseOpts()
+	storageOpts, err := bootstrap.storagePassphraseOpts(true)
 	if err != nil {
 		return err
 	}
 	storageOpts = append(storageOpts, rootOpt)
 
 	return bootstrap.withManager(ctx, func(manager *manager.Manager, v string) error {
-		ctx.Logger().Info("Bootstrapped certificate manager", "version", v, "action", "import", "certificate_pem", bootstrap.RootCertPEM, "storage_passphrase_versions", len(bootstrap.StoragePassphrase))
+		ctx.Logger().Info("Bootstrapped certificate manager", "certificate_pem", bootstrap.RootCertPEM)
+		return nil
+	}, storageOpts...)
+}
+
+func (run *RunCommand) Run(ctx server.Cmd) error {
+	storageOpts, err := run.storagePassphraseOpts(false)
+	if err != nil {
+		return err
+	}
+
+	return run.withManager(ctx, func(manager *manager.Manager, v string) error {
+
+		// Register HTTP handlers
+		run.Register(func(router *httprouter.Router) error {
+			var result error
+			result = errors.Join(result, httphandler.RegisterCertManagerHandlers(manager, router, false))
+			return result
+		})
+
+		// Run the server in a goroutines, and cancel both if either returns an error
+		var wg sync.WaitGroup
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if err := run.RunServer.Run(ctx); err != nil {
+				ctx.Logger().Error("Server error", "error", err)
+			}
+			ctx.Logger().Info("Server stopped")
+		}()
+
+		// Wait for all goroutines to complete
+		wg.Wait()
 		return nil
 	}, storageOpts...)
 }
@@ -113,13 +153,16 @@ func (bootstrap *BootstrapCommand) rootOpt() (manager.Opt, error) {
 	return manager.WithRoot(string(normalized)), nil
 }
 
-func (bootstrap *BootstrapCommand) storagePassphraseOpts() ([]manager.Opt, error) {
-	if len(bootstrap.StoragePassphrase) == 0 {
+func (server *ServerCommand) storagePassphraseOpts(required bool) ([]manager.Opt, error) {
+	if len(server.StoragePassphrase) == 0 {
+		if !required {
+			return nil, nil
+		}
 		return nil, fmt.Errorf("at least one storage passphrase is required")
 	}
 
-	opts := make([]manager.Opt, 0, len(bootstrap.StoragePassphrase))
-	for i, passphrase := range bootstrap.StoragePassphrase {
+	opts := make([]manager.Opt, 0, len(server.StoragePassphrase))
+	for i, passphrase := range server.StoragePassphrase {
 		opts = append(opts, manager.WithPassphrase(uint64(i+1), passphrase))
 	}
 

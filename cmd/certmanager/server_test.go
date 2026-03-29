@@ -61,6 +61,38 @@ func TestNormalizeRootPEM(t *testing.T) {
 	})
 }
 
+func TestStoragePassphraseOpts(t *testing.T) {
+	t.Run("OptionalForRun", func(t *testing.T) {
+		assert := assert.New(t)
+		require := require.New(t)
+
+		cmd := &ServerCommand{}
+		opts, err := cmd.storagePassphraseOpts(false)
+		require.NoError(err)
+		assert.Nil(opts)
+	})
+
+	t.Run("RequiredForBootstrap", func(t *testing.T) {
+		assert := assert.New(t)
+
+		cmd := &ServerCommand{}
+		_, err := cmd.storagePassphraseOpts(true)
+		assert.EqualError(err, "at least one storage passphrase is required")
+	})
+
+	t.Run("BuildsSequentialVersions", func(t *testing.T) {
+		assert := assert.New(t)
+		require := require.New(t)
+
+		cmd := &ServerCommand{StoragePassphrase: []string{"test12345", "test67890"}}
+		opts, err := cmd.storagePassphraseOpts(true)
+		require.NoError(err)
+		require.Len(opts, 2)
+		assert.NotNil(opts[0])
+		assert.NotNil(opts[1])
+	})
+}
+
 func encryptedRootPEM(t *testing.T) ([]byte, string) {
 	t.Helper()
 

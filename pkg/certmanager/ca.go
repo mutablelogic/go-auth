@@ -18,7 +18,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"time"
 
 	// Packages
 	cert "github.com/djthorpe/go-auth/pkg/cert"
@@ -40,7 +39,7 @@ import (
 // always comes from req.Name.
 func (m *Manager) CreateCA(ctx context.Context, req schema.CreateCertRequest) (_ *schema.Cert, err error) {
 	ctx, endSpan := otel.StartSpan(m.tracer, ctx, "certmanager.CreateCA",
-		attribute.String("name", req.Name),
+		attribute.String("req", req.String()),
 	)
 	defer func() { endSpan(err) }()
 
@@ -49,16 +48,19 @@ func (m *Manager) CreateCA(ctx context.Context, req schema.CreateCertRequest) (_
 		return nil, fmt.Errorf("name is required")
 	}
 	if m.passphrase == nil {
-		return nil, fmt.Errorf("certificate storage passphrase is required")
+		return nil, certificateStoragePassphraseRequired()
 	}
 	if _, version := m.passphrase.Get(0); version == 0 {
-		return nil, fmt.Errorf("certificate storage passphrase is required")
+		return nil, certificateStoragePassphraseRequired()
 	}
 
 	// Retrieve root certificate and signer
 	rootRow, rootSigner, rootCert, err := m.getRootCert(ctx)
 	if err != nil {
 		return nil, err
+	}
+	if !types.Value(rootRow.Enabled) {
+		return nil, httpresponse.ErrConflict.With("root certificate is disabled")
 	}
 
 	// Determine the subject for the CA certificate, defaulting to the root certificate subject if not provided
@@ -69,7 +71,7 @@ func (m *Manager) CreateCA(ctx context.Context, req schema.CreateCertRequest) (_
 
 	// Cap the requested expiry to the remaining validity of the root certificate,
 	// defaulting to DefaultCACertExpiry if not provided
-	expires, err := capExpiry(req.Expiry, rootCert.NotAfter)
+	expires, err := capExpiry(req.Expiry, schema.DefaultCACertExpiry, "root certificate", rootCert.NotBefore, rootCert.NotAfter)
 	if err != nil {
 		return nil, err
 	}
@@ -104,46 +106,36 @@ func (m *Manager) CreateCA(ctx context.Context, req schema.CreateCertRequest) (_
 		}
 
 		// Get the certificate metadata
-		meta := caCert.CertMeta()
-		meta.Subject = types.Ptr(subjectRow.ID)
-		meta.Signer = types.Ptr(rootRow.Name)
-		meta.Tags = req.Tags
+		certValue := caCert.SchemaCert()
+		certValue.SubjectID = types.Ptr(subjectRow.ID)
+		certValue.Signer = &rootRow.CertKey
+		certValue.Tags = req.Tags
 		if req.Enabled != nil {
-			meta.Enabled = types.Ptr(*req.Enabled)
+			certValue.Enabled = types.Ptr(*req.Enabled)
 		}
 
 		// Encrypt the private key and insert the certificate
-		version, ciphertext, err := m.passphrase.Encrypt(0, meta.Key)
+		version, ciphertext, err := m.passphrase.Encrypt(0, certValue.Key)
 		if err != nil {
 			return err
 		} else {
-			meta.Key = []byte(ciphertext)
-			meta.PV = version
+			certValue.Key = []byte(ciphertext)
+			certValue.PV = version
 		}
 
-		return conn.With("name", req.Name).Insert(ctx, &certRow, meta)
+		return conn.Insert(ctx, &certRow, certValue)
 	}); err != nil {
 		return nil, err
 	}
-
-	// Remove the private key from the returned metadata and return success
-	certRow.Key = nil
 	return types.Ptr(certRow), nil
 }
 
-///////////////////////////////////////////////////////////////////////////////
-// PRIVATE METHODS
+func (m *Manager) RenewCA(ctx context.Context, current schema.CertKey, req schema.RenewCertRequest) (_ *schema.Cert, err error) {
+	ctx, endSpan := otel.StartSpan(m.tracer, ctx, "certmanager.RenewCA",
+		attribute.String("current", current.String()),
+		attribute.String("req", req.String()),
+	)
+	defer func() { endSpan(err) }()
 
-func capExpiry(expiry time.Duration, maxNotAfter time.Time) (time.Duration, error) {
-	remaining := time.Until(maxNotAfter).Truncate(time.Second)
-	if remaining <= 0 {
-		return 0, fmt.Errorf("root certificate has expired")
-	}
-	if expiry <= 0 {
-		expiry = schema.DefaultCACertExpiry
-	}
-	if expiry > remaining {
-		return remaining, nil
-	}
-	return expiry, nil
+	return m.renewCert(ctx, current, req, true)
 }

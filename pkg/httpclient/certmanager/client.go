@@ -12,34 +12,32 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package main
+package certmanager
 
 import (
-	"fmt"
-	"os"
-
 	// Packages
-	certmanager "github.com/djthorpe/go-auth/pkg/cmd/certmanager"
-	openapi "github.com/djthorpe/go-auth/pkg/cmd/openapi"
-	cmd "github.com/mutablelogic/go-server/pkg/cmd"
-	version "github.com/mutablelogic/go-server/pkg/version"
+	auth "github.com/djthorpe/go-auth/pkg/httpclient/auth"
+	client "github.com/mutablelogic/go-client"
 )
 
 ///////////////////////////////////////////////////////////////////////////////
 // TYPES
 
-type CLI struct {
-	ServerCommands
-	openapi.OpenAPICommands
-	certmanager.CertManagerCommands
+// Client is a certificate manager HTTP client that wraps the base HTTP client.
+type Client struct {
+	*auth.Client
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 // LIFECYCLE
 
-func main() {
-	if err := cmd.Main(CLI{}, "Certificate management", version.Version()); err != nil {
-		fmt.Fprintln(os.Stderr, "Error:", err)
-		os.Exit(-1)
+// New creates a new certificate manager HTTP client with the given base URL and options.
+func New(url string, opts ...client.ClientOpt) (*Client, error) {
+	c := new(Client)
+	if client, err := auth.New(url, opts...); err != nil {
+		return nil, err
+	} else {
+		c.Client = client
 	}
+	return c, nil
 }

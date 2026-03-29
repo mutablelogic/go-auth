@@ -12,34 +12,29 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package main
+package certmanager
 
 import (
-	"fmt"
-	"os"
+	"context"
+	"net/http"
 
 	// Packages
-	certmanager "github.com/djthorpe/go-auth/pkg/cmd/certmanager"
-	openapi "github.com/djthorpe/go-auth/pkg/cmd/openapi"
-	cmd "github.com/mutablelogic/go-server/pkg/cmd"
-	version "github.com/mutablelogic/go-server/pkg/version"
+	schema "github.com/djthorpe/go-auth/schema/cert"
+	client "github.com/mutablelogic/go-client"
+	types "github.com/mutablelogic/go-server/pkg/types"
 )
 
 ///////////////////////////////////////////////////////////////////////////////
-// TYPES
+// PUBLIC METHODS
 
-type CLI struct {
-	ServerCommands
-	openapi.OpenAPICommands
-	certmanager.CertManagerCommands
-}
-
-///////////////////////////////////////////////////////////////////////////////
-// LIFECYCLE
-
-func main() {
-	if err := cmd.Main(CLI{}, "Certificate management", version.Version()); err != nil {
-		fmt.Fprintln(os.Stderr, "Error:", err)
-		os.Exit(-1)
+func (c *Client) CreateCA(ctx context.Context, req schema.CreateCertRequest) (*schema.Cert, error) {
+	var response schema.Cert
+	body, err := client.NewJSONRequestEx(http.MethodPost, req, types.ContentTypeJSON)
+	if err != nil {
+		return nil, err
 	}
+	if err := c.DoWithContext(ctx, body, &response, client.OptPath("cert", "ca")); err != nil {
+		return nil, err
+	}
+	return types.Ptr(response), nil
 }

@@ -23,8 +23,11 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"math/big"
+	"strings"
 
 	// Packages
+	auth "github.com/djthorpe/go-auth"
 	cert "github.com/djthorpe/go-auth/pkg/cert"
 	schema "github.com/djthorpe/go-auth/schema/cert"
 	otel "github.com/mutablelogic/go-client/pkg/otel"
@@ -32,6 +35,16 @@ import (
 	httpresponse "github.com/mutablelogic/go-server/pkg/httpresponse"
 	types "github.com/mutablelogic/go-server/pkg/types"
 	attribute "go.opentelemetry.io/otel/attribute"
+)
+
+///////////////////////////////////////////////////////////////////////////////
+// GLOBALS
+
+const (
+	certificateStoragePassphraseRequiredReason = "creating certificates requires --storage-passphrase on server"
+	certificateStoragePassphraseMismatchReason = "stored certificate private keys cannot be decrypted with current --storage-passphrase"
+	certificateStoragePassphraseVersionReason  = "stored certificate private keys require a configured --storage-passphrase version on server"
+	rootCertificateRequiredReason              = "root certificate has not been imported on server"
 )
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -108,80 +121,128 @@ func (m *Manager) insertRootCert(ctx context.Context, imported *x509.Certificate
 		}
 
 		// Get the certificate metadata, encrypt the private key, and insert the certificate
-		meta, err := rootCertMeta(subjectRow.ID, privateKey, imported)
+		certValue, err := rootCertRow(subjectRow.ID, privateKey, imported)
 		if err != nil {
 			return err
 		}
-		version, ciphertext, err := m.passphrase.Encrypt(0, meta.Key)
+		version, ciphertext, err := m.passphrase.Encrypt(0, certValue.Key)
 		if err != nil {
 			return err
 		} else {
-			meta.Key = []byte(ciphertext)
-			meta.PV = version
+			certValue.Key = []byte(ciphertext)
+			certValue.PV = version
 		}
 
 		// Perform the insert
-		return conn.With("name", schema.RootCertName).Insert(ctx, &certRow, meta)
+		return conn.Insert(ctx, &certRow, certValue)
 	})
 	if err != nil {
 		return nil, err
 	}
-
 	return types.Ptr(certRow), nil
 }
 
-func rootCertMeta(subjectID uint64, privateKey *rsa.PrivateKey, imported *x509.Certificate) (schema.CertMeta, error) {
+func rootCertRow(subjectID uint64, privateKey *rsa.PrivateKey, imported *x509.Certificate) (schema.CertWithPrivateKey, error) {
 	if imported == nil {
-		return schema.CertMeta{}, fmt.Errorf("root certificate is required")
+		return schema.CertWithPrivateKey{}, fmt.Errorf("root certificate is required")
 	}
 
 	keyBytes, err := x509.MarshalPKCS8PrivateKey(privateKey)
 	if err != nil {
-		return schema.CertMeta{}, err
+		return schema.CertWithPrivateKey{}, err
 	}
 
-	return schema.CertMeta{
-		Subject:   types.Ptr(subjectID),
-		NotBefore: imported.NotBefore,
-		NotAfter:  imported.NotAfter,
-		IsCA:      imported.IsCA,
-		Enabled:   types.Ptr(true),
-		PV:        0,
-		Cert:      imported.Raw,
-		Key:       keyBytes,
+	return schema.CertWithPrivateKey{
+		Cert: schema.Cert{
+			CertKey: schema.CertKey{
+				Name:   schema.RootCertName,
+				Serial: serialText(imported.SerialNumber),
+			},
+			SubjectID: types.Ptr(subjectID),
+			NotBefore: imported.NotBefore,
+			NotAfter:  imported.NotAfter,
+			IsCA:      imported.IsCA,
+			CertMeta: schema.CertMeta{
+				Enabled: types.Ptr(true),
+			},
+			Cert: imported.Raw,
+		},
+		PV:  0,
+		Key: keyBytes,
 	}, nil
 }
 
 func (m *Manager) getRootCert(ctx context.Context) (*schema.Cert, *cert.Cert, *x509.Certificate, error) {
-	var rootRow schema.Cert
-	var rootCert *x509.Certificate
+	var rootRow schema.CertWithPrivateKey
 
 	// Get the root certificate row from the database
-	if err := m.Get(ctx, &rootRow, schema.CertName(schema.RootCertName)); err != nil {
+	if err := m.Get(ctx, &rootRow, schema.PrivateCertName(schema.RootCertName)); err != nil {
+		if errors.Is(err, pg.ErrNotFound) {
+			return nil, nil, nil, auth.ErrServiceUnavailable.With(rootCertificateRequiredReason)
+		}
 		return nil, nil, nil, err
 	}
-
-	// Decrypt the private key, parse the certificate
-	decryptedKey, err := m.passphrase.Decrypt(rootRow.PV, string(rootRow.Key))
+	rootSigner, rootCert, err := m.storedCertSigner(rootRow)
 	if err != nil {
 		return nil, nil, nil, err
-	} else if cert, err := x509.ParseCertificate(rootRow.Cert); err != nil {
-		return nil, nil, nil, err
-	} else {
-		rootCert = cert
 	}
+	return &rootRow.Cert, rootSigner, rootCert, nil
+}
 
-	// Create a PEM bundle of the certificate and decrypted private key, and read it into a cert.Cert signer
-	var pemValue bytes.Buffer
-	if err := pem.Encode(&pemValue, &pem.Block{Type: "CERTIFICATE", Bytes: rootRow.Cert}); err != nil {
-		return nil, nil, nil, err
-	} else if err := pem.Encode(&pemValue, &pem.Block{Type: "PRIVATE KEY", Bytes: decryptedKey}); err != nil {
-		return nil, nil, nil, err
-	} else if rootSigner, err := cert.Read(&pemValue); err != nil {
-		return nil, nil, nil, err
+func (m *Manager) storedCertSigner(certRow schema.CertWithPrivateKey) (*cert.Cert, *x509.Certificate, error) {
+	// Decrypt the private key, parse the certificate
+	decryptedKey, err := m.decryptStoredPrivateKey(certRow.PV, certRow.Key)
+	if err != nil {
+		return nil, nil, err
+	} else if parsedCert, err := x509.ParseCertificate(certRow.Cert.Cert); err != nil {
+		return nil, nil, err
 	} else {
-		rootSigner.Name = rootRow.Name
-		rootSigner.Subject = rootRow.Subject
-		return &rootRow, rootSigner, rootCert, nil
+		var pemValue bytes.Buffer
+		if err := pem.Encode(&pemValue, &pem.Block{Type: "CERTIFICATE", Bytes: certRow.Cert.Cert}); err != nil {
+			return nil, nil, err
+		} else if err := pem.Encode(&pemValue, &pem.Block{Type: "PRIVATE KEY", Bytes: decryptedKey}); err != nil {
+			return nil, nil, err
+		} else if signer, err := cert.Read(&pemValue); err != nil {
+			return nil, nil, err
+		} else {
+			signer.Name = certRow.Name
+			signer.Subject = certRow.SubjectID
+			return signer, parsedCert, nil
+		}
 	}
+}
+
+func certificateStoragePassphraseRequired() error {
+	return auth.ErrServiceUnavailable.With(certificateStoragePassphraseRequiredReason)
+}
+
+func certificateStorageDecryptError(err error) error {
+	switch {
+	case err == nil:
+		return nil
+	case strings.Contains(err.Error(), "passphrase version not found"):
+		return auth.ErrServiceUnavailable.With(certificateStoragePassphraseVersionReason)
+	case strings.Contains(err.Error(), "message authentication failed"):
+		return auth.ErrConflict.With(certificateStoragePassphraseMismatchReason)
+	default:
+		return err
+	}
+}
+
+func (m *Manager) decryptStoredPrivateKey(version uint64, ciphertext []byte) ([]byte, error) {
+	if m.passphrase == nil {
+		return nil, certificateStoragePassphraseRequired()
+	}
+	decryptedKey, err := m.passphrase.Decrypt(version, string(ciphertext))
+	if err != nil {
+		return nil, certificateStorageDecryptError(err)
+	}
+	return decryptedKey, nil
+}
+
+func serialText(serial *big.Int) string {
+	if serial == nil {
+		return ""
+	}
+	return serial.Text(10)
 }

@@ -1,0 +1,65 @@
+// Copyright 2026 David Thorpe
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+package certmanager
+
+import (
+	"net/http"
+	"testing"
+
+	openapi "github.com/mutablelogic/go-server/pkg/openapi/schema"
+	assert "github.com/stretchr/testify/assert"
+	require "github.com/stretchr/testify/require"
+)
+
+type registeredRoute struct {
+	path       string
+	handler    http.HandlerFunc
+	middleware bool
+	spec       *openapi.PathItem
+}
+
+type fakeRouter struct {
+	routes []registeredRoute
+	err    error
+}
+
+func (f *fakeRouter) ServeHTTP(w http.ResponseWriter, r *http.Request) {}
+func (f *fakeRouter) Spec() *openapi.Spec                              { return nil }
+func (f *fakeRouter) RegisterFunc(path string, handler http.HandlerFunc, middleware bool, spec *openapi.PathItem) error {
+	f.routes = append(f.routes, registeredRoute{path: path, handler: handler, middleware: middleware, spec: spec})
+	return f.err
+}
+
+func TestRegisterCertManagerHandlers(t *testing.T) {
+	t.Run("RegistersExpectedRoutes", func(t *testing.T) {
+		assert := assert.New(t)
+		require := require.New(t)
+
+		router := new(fakeRouter)
+
+		err := RegisterCertManagerHandlers(nil, router, false)
+		require.NoError(err)
+		require.Len(router.routes, 2)
+
+		paths := []string{router.routes[0].path, router.routes[1].path}
+		assert.Contains(paths, "cert")
+		assert.Contains(paths, "cert/ca")
+		for _, route := range router.routes {
+			assert.NotNil(route.handler)
+			assert.NotNil(route.spec)
+			assert.True(route.middleware)
+		}
+	})
+}

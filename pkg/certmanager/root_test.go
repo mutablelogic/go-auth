@@ -46,17 +46,16 @@ func TestRoot_001(t *testing.T) {
 		require.NotNil(root)
 
 		assert.Equal(schema.RootCertName, root.Name)
+		assert.NotEmpty(root.Serial)
 		assert.True(root.IsCA)
 		assert.True(root.IsRoot())
 		assert.Nil(root.Signer)
 		require.NotNil(root.Subject)
-		assert.NotZero(*root.Subject)
+		assert.NotZero(root.Subject.ID)
 		assert.NotEmpty(root.Cert)
-		assert.NotEmpty(root.Key)
 		assert.True(types.Value(root.Enabled))
 		assert.Empty(root.Tags)
 		assert.Empty(root.EffectiveTags)
-		assert.Equal(uint64(1), root.PV)
 
 		storedCert, err := x509.ParseCertificate(root.Cert)
 		require.NoError(err)
@@ -66,7 +65,13 @@ func TestRoot_001(t *testing.T) {
 
 		store := authcrypto.NewPassphrases()
 		require.NoError(store.Set(1, "root-secret-1"))
-		decryptedKey, err := store.Decrypt(root.PV, string(root.Key))
+
+		var storedRoot schema.CertWithPrivateKey
+		require.NoError(m.Get(context.Background(), &storedRoot, schema.PrivateCertName(schema.RootCertName)))
+		assert.Equal(root.Serial, storedRoot.Serial)
+		assert.NotEmpty(storedRoot.Key)
+
+		decryptedKey, err := store.Decrypt(storedRoot.PV, string(storedRoot.Key))
 		require.NoError(err)
 
 		parsedKeyAny, err := x509.ParsePKCS8PrivateKey(decryptedKey)
@@ -77,7 +82,7 @@ func TestRoot_001(t *testing.T) {
 		assert.Equal(key.PublicKey.E, parsedKey.PublicKey.E)
 
 		var storedSubject schema.Subject
-		require.NoError(m.Get(context.Background(), &storedSubject, schema.SubjectID(*root.Subject)))
+		require.NoError(m.Get(context.Background(), &storedSubject, schema.SubjectID(root.Subject.ID)))
 		assert.Equal(types.Value(sourceRoot.SubjectMeta().Org), types.Value(storedSubject.Org))
 		assert.Equal(types.Value(sourceRoot.SubjectMeta().Unit), types.Value(storedSubject.Unit))
 		assert.Equal(types.Value(sourceRoot.SubjectMeta().Country), types.Value(storedSubject.Country))
@@ -100,15 +105,19 @@ func TestRoot_001(t *testing.T) {
 		require.NoError(err)
 		require.NotNil(root)
 
-		assert.Equal(uint64(9), root.PV)
-		assert.NotEmpty(root.Key)
+		assert.NotEmpty(root.Serial)
 		assert.True(types.Value(root.Enabled))
 
 		store := authcrypto.NewPassphrases()
 		require.NoError(store.Set(2, "root-secret-2"))
 		require.NoError(store.Set(9, "root-secret-9"))
 
-		decryptedKey, err := store.Decrypt(root.PV, string(root.Key))
+		var storedRoot schema.CertWithPrivateKey
+		require.NoError(m.Get(context.Background(), &storedRoot, schema.PrivateCertName(schema.RootCertName)))
+		assert.Equal(root.Serial, storedRoot.Serial)
+		assert.NotEmpty(storedRoot.Key)
+
+		decryptedKey, err := store.Decrypt(storedRoot.PV, string(storedRoot.Key))
 		require.NoError(err)
 
 		parsedKeyAny, err := x509.ParsePKCS8PrivateKey(decryptedKey)
@@ -174,7 +183,7 @@ func newRootPEMBundle(t *testing.T, commonName, organization string) (*cert.Cert
 	)
 	require.NoError(t, err)
 
-	parsed, err := x509.ParseCertificate(root.CertMeta().Cert)
+	parsed, err := x509.ParseCertificate(root.SchemaCert().Cert.Cert)
 	require.NoError(t, err)
 
 	key, ok := root.PrivateKey().(*rsa.PrivateKey)

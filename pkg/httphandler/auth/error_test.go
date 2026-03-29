@@ -37,6 +37,7 @@ func Test_error_001(t *testing.T) {
 			{"BadParameter", auth.ErrBadParameter.With("bad"), httpresponse.ErrBadRequest, "bad"},
 			{"Conflict", auth.ErrConflict.With("dup"), httpresponse.ErrConflict, "dup"},
 			{"NotImplemented", auth.ErrNotImplemented.With("todo"), httpresponse.ErrNotImplemented, "todo"},
+			{"ServiceUnavailable", auth.ErrServiceUnavailable.With("wait"), httpresponse.ErrServiceUnavailable, "wait"},
 			{"Internal", auth.ErrInternalServerError.With("boom"), httpresponse.ErrInternalError, "boom"},
 			{"InvalidProvider", auth.ErrInvalidProvider.With("provider"), httpresponse.ErrNotAuthorized, "provider"},
 		}

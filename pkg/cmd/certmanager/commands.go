@@ -12,34 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package main
-
-import (
-	"fmt"
-	"os"
-
-	// Packages
-	certmanager "github.com/djthorpe/go-auth/pkg/cmd/certmanager"
-	openapi "github.com/djthorpe/go-auth/pkg/cmd/openapi"
-	cmd "github.com/mutablelogic/go-server/pkg/cmd"
-	version "github.com/mutablelogic/go-server/pkg/version"
-)
+package certmanager
 
 ///////////////////////////////////////////////////////////////////////////////
 // TYPES
 
-type CLI struct {
-	ServerCommands
-	openapi.OpenAPICommands
-	certmanager.CertManagerCommands
-}
-
-///////////////////////////////////////////////////////////////////////////////
-// LIFECYCLE
-
-func main() {
-	if err := cmd.Main(CLI{}, "Certificate management", version.Version()); err != nil {
-		fmt.Fprintln(os.Stderr, "Error:", err)
-		os.Exit(-1)
-	}
+type CertManagerCommands struct {
+	CertCommands
+	CACommands
 }

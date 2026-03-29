@@ -22,6 +22,7 @@ import (
 	"time"
 
 	// Packages
+	auth "github.com/djthorpe/go-auth"
 	manager "github.com/djthorpe/go-auth/pkg/certmanager"
 	authcrypto "github.com/djthorpe/go-auth/pkg/crypto"
 	schema "github.com/djthorpe/go-auth/schema/cert"
@@ -48,17 +49,21 @@ func TestCA_001(t *testing.T) {
 		require.NotNil(caRow)
 
 		assert.Equal("example_ca", caRow.Name)
+		assert.NotEmpty(caRow.Serial)
 		assert.True(caRow.IsCA)
 		assert.False(caRow.IsRoot())
 		assert.True(types.Value(caRow.Enabled))
 		assert.Empty(caRow.Tags)
 		assert.Empty(caRow.EffectiveTags)
 		require.NotNil(caRow.Signer)
-		assert.Equal(schema.RootCertName, *caRow.Signer)
+		assert.Equal(schema.RootCertName, caRow.Signer.Name)
 
 		var rootRow schema.Cert
 		require.NoError(m.Get(context.Background(), &rootRow, schema.CertName(schema.RootCertName)))
-		assert.Equal(rootRow.Subject, caRow.Subject)
+		assert.Equal(rootRow.Serial, caRow.Signer.Serial)
+		require.NotNil(rootRow.Subject)
+		require.NotNil(caRow.Subject)
+		assert.Equal(rootRow.Subject.ID, caRow.Subject.ID)
 
 		parsedCA, err := x509.ParseCertificate(caRow.Cert)
 		require.NoError(err)
@@ -68,7 +73,6 @@ func TestCA_001(t *testing.T) {
 		assert.False(parsedCA.NotAfter.After(rootCert.NotAfter))
 		assert.True(parsedCA.NotAfter.After(parsedCA.NotBefore))
 		assert.LessOrEqual(parsedCA.NotAfter.Sub(parsedCA.NotBefore), 24*time.Hour)
-		assert.Equal(uint64(1), caRow.PV)
 	})
 
 	t.Run("CreateCAUsesExplicitSubjectAndExpiry", func(t *testing.T) {
@@ -96,11 +100,12 @@ func TestCA_001(t *testing.T) {
 			Name:    "custom_ca",
 			Expiry:  2 * time.Hour,
 			Subject: &subject,
-			Tags:    []string{"child-tag", " child-extra "},
+			Tags:    []string{"child-tag", " child-extra ", "child-tag", "child-extra"},
 		})
 		require.NoError(err)
 		require.NotNil(caRow)
 
+		assert.NotEmpty(caRow.Serial)
 		parsedCA, err := x509.ParseCertificate(caRow.Cert)
 		require.NoError(err)
 		assert.Equal("custom_ca", parsedCA.Subject.CommonName)
@@ -109,10 +114,9 @@ func TestCA_001(t *testing.T) {
 		assert.True(types.Value(caRow.Enabled))
 		assert.Equal([]string{"child-tag", "child-extra"}, caRow.Tags)
 		assert.Equal([]string{"child-extra", "child-tag"}, caRow.EffectiveTags)
-		assert.Equal(uint64(1), caRow.PV)
 
 		var storedSubject schema.Subject
-		require.NoError(m.Get(context.Background(), &storedSubject, schema.SubjectID(*caRow.Subject)))
+		require.NoError(m.Get(context.Background(), &storedSubject, schema.SubjectID(caRow.Subject.ID)))
 		assert.Equal("Example Org", types.Value(storedSubject.Org))
 		assert.Equal("Security", types.Value(storedSubject.Unit))
 		assert.Equal("US", types.Value(storedSubject.Country))
@@ -133,18 +137,63 @@ func TestCA_001(t *testing.T) {
 			manager.WithRoot(pemValue),
 		)
 
-		require.NoError(m.Exec(context.Background(), `UPDATE cert_test_ca_effective_tags.cert SET tags = ARRAY['root-tag'] WHERE name = '$root$'`))
+		require.NoError(m.Exec(context.Background(), `UPDATE cert_test_ca_effective_tags.cert SET tags = ARRAY['root-tag'] WHERE name = CHR(36) || 'root' || CHR(36)`))
+
+		var rootRow schema.Cert
+		require.NoError(m.Get(context.Background(), &rootRow, schema.CertName(schema.RootCertName)))
+		assert.Equal([]string{"root-tag"}, rootRow.Tags)
+		assert.Equal([]string{"root-tag"}, rootRow.EffectiveTags)
 
 		caRow, err := m.CreateCA(context.Background(), schema.CreateCertRequest{
 			Name:   "tagged_ca",
 			Expiry: time.Hour,
-			Tags:   []string{"child-tag", "root-tag"},
+			Tags:   []string{"child-tag"},
 		})
 		require.NoError(err)
 		require.NotNil(caRow)
 
-		assert.Equal([]string{"child-tag", "root-tag"}, caRow.Tags)
+		assert.NotEmpty(caRow.Serial)
+		assert.Equal([]string{"child-tag"}, caRow.Tags)
 		assert.Equal([]string{"child-tag", "root-tag"}, caRow.EffectiveTags)
+	})
+
+	t.Run("CreateCARejectsDisabledRoot", func(t *testing.T) {
+		assert := assert.New(t)
+		require := require.New(t)
+
+		_, _, _, pemValue := newRootPEMBundle(t, "Example Root CA", "Example Org")
+		m := newCustomSchemaManagerWithOpts(t,
+			"cert_test_ca_effective_enabled",
+			manager.WithPassphrase(1, "root-secret-1"),
+			manager.WithRoot(pemValue),
+		)
+
+		require.NoError(m.Exec(context.Background(), `UPDATE cert_test_ca_effective_enabled.cert SET enabled = FALSE WHERE name = CHR(36) || 'root' || CHR(36)`))
+
+		var rootRow schema.Cert
+		require.NoError(m.Get(context.Background(), &rootRow, schema.CertName(schema.RootCertName)))
+		assert.False(types.Value(rootRow.Enabled))
+
+		caRow, err := m.CreateCA(context.Background(), schema.CreateCertRequest{Name: "disabled_parent_ca", Expiry: time.Hour})
+		require.Error(err)
+		assert.Nil(caRow)
+		assert.ErrorIs(err, httpresponse.ErrConflict)
+	})
+
+	t.Run("CreateCARejectsMissingRootCertificate", func(t *testing.T) {
+		assert := assert.New(t)
+		require := require.New(t)
+
+		m := newCustomSchemaManagerWithOpts(t,
+			"cert_test_ca_missing_root",
+			manager.WithPassphrase(1, "root-secret-1"),
+		)
+
+		caRow, err := m.CreateCA(context.Background(), schema.CreateCertRequest{Name: "missing_root_ca", Expiry: time.Hour})
+		require.Error(err)
+		assert.Nil(caRow)
+		assert.ErrorIs(err, auth.ErrServiceUnavailable)
+		assert.EqualError(err, "service unavailable: root certificate has not been imported on server")
 	})
 
 	t.Run("CreateCAEncryptsPrivateKeyWithLatestPassphrase", func(t *testing.T) {
@@ -163,12 +212,11 @@ func TestCA_001(t *testing.T) {
 		require.NoError(err)
 		require.NotNil(caRow)
 
-		assert.Equal(uint64(9), caRow.PV)
-		assert.Empty(caRow.Key)
 		assert.True(types.Value(caRow.Enabled))
 
-		var storedCA schema.Cert
-		require.NoError(m.Get(context.Background(), &storedCA, schema.CertName("encrypted_ca")))
+		var storedCA schema.CertWithPrivateKey
+		require.NoError(m.Get(context.Background(), &storedCA, schema.PrivateCertKey(caRow.CertKey)))
+		assert.Equal(caRow.Serial, storedCA.Serial)
 		assert.Equal(uint64(9), storedCA.PV)
 		assert.NotEmpty(storedCA.Key)
 
@@ -202,5 +250,134 @@ func TestCA_001(t *testing.T) {
 		_, err = m.CreateCA(context.Background(), schema.CreateCertRequest{Name: "duplicate_ca", Expiry: time.Hour})
 		require.Error(err)
 		assert.ErrorIs(err, httpresponse.ErrConflict)
+	})
+
+	t.Run("CreateCARejectsInvalidTags", func(t *testing.T) {
+		assert := assert.New(t)
+		require := require.New(t)
+
+		_, _, _, pemValue := newRootPEMBundle(t, "Example Root CA", "Example Org")
+		m := newCustomSchemaManagerWithOpts(t,
+			"cert_test_ca_invalid_tags",
+			manager.WithPassphrase(1, "root-secret-1"),
+			manager.WithRoot(pemValue),
+		)
+
+		caRow, err := m.CreateCA(context.Background(), schema.CreateCertRequest{
+			Name:   "invalid_tag_ca",
+			Expiry: time.Hour,
+			Tags:   []string{"bad tag"},
+		})
+		require.Error(err)
+		assert.Nil(caRow)
+		assert.ErrorIs(err, httpresponse.ErrBadRequest)
+		assert.EqualError(err, `Bad Request: tag "bad tag" is invalid`)
+	})
+
+	t.Run("RenewCADisablesCurrentAndPreservesDefaults", func(t *testing.T) {
+		assert := assert.New(t)
+		require := require.New(t)
+
+		_, rootCert, _, pemValue := newRootPEMBundle(t, "Example Root CA", "Example Org")
+		m := newCustomSchemaManagerWithOpts(t,
+			"cert_test_ca_renew",
+			manager.WithPassphrase(1, "root-secret-1"),
+			manager.WithRoot(pemValue),
+		)
+
+		caRow, err := m.CreateCA(context.Background(), schema.CreateCertRequest{Name: "renew_ca", Expiry: 2 * time.Hour, Tags: []string{"child-tag"}})
+		require.NoError(err)
+
+		renewed, err := m.RenewCA(context.Background(), caRow.CertKey, schema.RenewCertRequest{})
+		require.NoError(err)
+		require.NotNil(renewed)
+
+		assert.Equal(caRow.Name, renewed.Name)
+		assert.Equal(nextSerialString(t, caRow.Serial), renewed.Serial)
+		assert.Equal(caRow.Tags, renewed.Tags)
+		require.NotNil(renewed.Signer)
+		assert.Equal(schema.RootCertName, renewed.Signer.Name)
+
+		parsedRenewed, err := x509.ParseCertificate(renewed.Cert)
+		require.NoError(err)
+		assert.Equal("renew_ca", parsedRenewed.Subject.CommonName)
+		assert.Equal(rootCert.Subject.String(), parsedRenewed.Issuer.String())
+		assert.Equal(caRow.NotAfter.Sub(caRow.NotBefore), renewed.NotAfter.Sub(renewed.NotBefore))
+
+		var oldRow schema.Cert
+		require.NoError(m.Get(context.Background(), &oldRow, caRow.CertKey))
+		assert.False(types.Value(oldRow.Enabled))
+
+		var newRow schema.Cert
+		require.NoError(m.Get(context.Background(), &newRow, renewed.CertKey))
+		assert.True(types.Value(newRow.Enabled))
+		assert.Equal([]string{"child-tag"}, newRow.Tags)
+		assert.Equal([]string{"child-tag"}, newRow.EffectiveTags)
+	})
+
+	t.Run("RenewCARejectsRootCertificate", func(t *testing.T) {
+		assert := assert.New(t)
+		require := require.New(t)
+
+		_, _, _, pemValue := newRootPEMBundle(t, "Example Root CA", "Example Org")
+		m := newCustomSchemaManagerWithOpts(t,
+			"cert_test_ca_renew_root",
+			manager.WithPassphrase(1, "root-secret-1"),
+			manager.WithRoot(pemValue),
+		)
+
+		var rootRow schema.Cert
+		require.NoError(m.Get(context.Background(), &rootRow, schema.CertName(schema.RootCertName)))
+
+		renewed, err := m.RenewCA(context.Background(), rootRow.CertKey, schema.RenewCertRequest{})
+		require.Error(err)
+		assert.Nil(renewed)
+		assert.ErrorIs(err, httpresponse.ErrBadRequest)
+		assert.EqualError(err, "Bad Request: root certificate cannot be renewed")
+	})
+
+	t.Run("RenewCARejectsLeafCertificate", func(t *testing.T) {
+		assert := assert.New(t)
+		require := require.New(t)
+
+		_, _, _, pemValue := newRootPEMBundle(t, "Example Root CA", "Example Org")
+		m := newCustomSchemaManagerWithOpts(t,
+			"cert_test_ca_renew_leaf",
+			manager.WithPassphrase(1, "root-secret-1"),
+			manager.WithRoot(pemValue),
+		)
+
+		caRow, err := m.CreateCA(context.Background(), schema.CreateCertRequest{Name: "issuer_ca", Expiry: 2 * time.Hour})
+		require.NoError(err)
+		leafRow, err := m.CreateCert(context.Background(), schema.CreateCertRequest{Name: "leaf_cert", Expiry: time.Hour}, caRow.CertKey)
+		require.NoError(err)
+
+		renewed, err := m.RenewCA(context.Background(), leafRow.CertKey, schema.RenewCertRequest{})
+		require.Error(err)
+		assert.Nil(renewed)
+		assert.ErrorIs(err, httpresponse.ErrBadRequest)
+		assert.EqualError(err, "Bad Request: certificate is not a certificate authority")
+	})
+
+	t.Run("RenewCARejectsDisabledRoot", func(t *testing.T) {
+		assert := assert.New(t)
+		require := require.New(t)
+
+		_, _, _, pemValue := newRootPEMBundle(t, "Example Root CA", "Example Org")
+		m := newCustomSchemaManagerWithOpts(t,
+			"cert_test_ca_renew_disabled_root",
+			manager.WithPassphrase(1, "root-secret-1"),
+			manager.WithRoot(pemValue),
+		)
+
+		caRow, err := m.CreateCA(context.Background(), schema.CreateCertRequest{Name: "renew_ca", Expiry: 2 * time.Hour})
+		require.NoError(err)
+		require.NoError(m.Exec(context.Background(), `UPDATE cert_test_ca_renew_disabled_root.cert SET enabled = FALSE WHERE name = CHR(36) || 'root' || CHR(36)`))
+
+		renewed, err := m.RenewCA(context.Background(), caRow.CertKey, schema.RenewCertRequest{})
+		require.Error(err)
+		assert.Nil(renewed)
+		assert.ErrorIs(err, httpresponse.ErrConflict)
+		assert.EqualError(err, "Conflict: root certificate is disabled")
 	})
 }

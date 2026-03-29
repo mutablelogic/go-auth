@@ -46,6 +46,13 @@ type Subject struct {
 	Subject *string   `json:"subject,omitempty"`
 }
 
+type SubjectRef struct {
+	ID uint64 `json:"id"`
+	SubjectMeta
+	Ts   time.Time `json:"timestamp,omitzero"`
+	Name *string   `json:"name,omitempty"`
+}
+
 type SubjectListRequest struct {
 	pg.OffsetLimit
 }
@@ -77,6 +84,25 @@ func SubjectMetaFromPKIXName(subject pkix.Name) SubjectMeta {
 	}
 }
 
+func pkixNameFromSubjectMeta(subject SubjectMeta) pkix.Name {
+	fieldValues := func(value *string) []string {
+		if value == nil {
+			return nil
+		}
+		return []string{types.Value(value)}
+	}
+
+	return pkix.Name{
+		Organization:       fieldValues(subject.Org),
+		OrganizationalUnit: fieldValues(subject.Unit),
+		Country:            fieldValues(subject.Country),
+		Locality:           fieldValues(subject.City),
+		Province:           fieldValues(subject.State),
+		StreetAddress:      fieldValues(subject.StreetAddress),
+		PostalCode:         fieldValues(subject.PostalCode),
+	}
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // STRINGIFY
 
@@ -85,6 +111,10 @@ func (n SubjectMeta) String() string {
 }
 
 func (n Subject) String() string {
+	return types.Stringify(n)
+}
+
+func (n SubjectRef) String() string {
 	return types.Stringify(n)
 }
 
@@ -190,36 +220,16 @@ func (n SubjectMeta) Update(bind *pg.Bind) error {
 // READER
 
 func (n *Subject) Scan(row pg.Row) error {
-	var subject pkix.Name
-
 	// Scan from row
 	if err := row.Scan(&n.ID, &n.Org, &n.Unit, &n.Country, &n.City, &n.State, &n.StreetAddress, &n.PostalCode, &n.Ts); err != nil {
 		return err
 	}
 
-	// Create subject field
-	if n.Org != nil {
-		subject.Organization = []string{types.Value(n.Org)}
+	if subject := pkixNameFromSubjectMeta(n.SubjectMeta).String(); subject != "" {
+		n.Subject = types.Ptr(subject)
+	} else {
+		n.Subject = nil
 	}
-	if n.Unit != nil {
-		subject.OrganizationalUnit = []string{types.Value(n.Unit)}
-	}
-	if n.Country != nil {
-		subject.Country = []string{types.Value(n.Country)}
-	}
-	if n.City != nil {
-		subject.Locality = []string{types.Value(n.City)}
-	}
-	if n.State != nil {
-		subject.Province = []string{types.Value(n.State)}
-	}
-	if n.StreetAddress != nil {
-		subject.StreetAddress = []string{types.Value(n.StreetAddress)}
-	}
-	if n.PostalCode != nil {
-		subject.PostalCode = []string{types.Value(n.PostalCode)}
-	}
-	n.Subject = types.Ptr(subject.String())
 
 	// Return success
 	return nil
@@ -237,4 +247,16 @@ func (n *SubjectList) Scan(row pg.Row) error {
 
 func (n *SubjectList) ScanCount(row pg.Row) error {
 	return row.Scan(&n.Count)
+}
+
+func SubjectRefFromMeta(id uint64, meta SubjectMeta, ts time.Time) SubjectRef {
+	ref := SubjectRef{
+		ID:          id,
+		SubjectMeta: meta,
+		Ts:          ts,
+	}
+	if name := pkixNameFromSubjectMeta(meta).String(); name != "" {
+		ref.Name = types.Ptr(name)
+	}
+	return ref
 }

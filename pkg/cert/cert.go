@@ -24,6 +24,7 @@ import (
 	"encoding/pem"
 	"fmt"
 	"io"
+	"math/big"
 
 	// Packages
 	schema "github.com/djthorpe/go-auth/schema/cert"
@@ -182,7 +183,7 @@ func Read(r io.Reader) (*Cert, error) {
 // STRINGIFY
 
 func (c Cert) MarshalJSON() ([]byte, error) {
-	return json.Marshal(c.CertMeta())
+	return json.Marshal(c.SchemaCert())
 }
 
 func (c Cert) String() string {
@@ -216,8 +217,15 @@ func (c Cert) SubjectMeta() schema.SubjectMeta {
 	}
 }
 
-// Return metadata from a cert
+// Return mutable metadata from a cert.
 func (c Cert) CertMeta() schema.CertMeta {
+	return schema.CertMeta{
+		Enabled: types.Ptr(true),
+	}
+}
+
+// Return a schema certificate row from a cert.
+func (c Cert) SchemaCert() schema.CertWithPrivateKey {
 	keybytes := func(priv any) []byte {
 		if key, err := x509.MarshalPKCS8PrivateKey(priv); err != nil {
 			return nil
@@ -225,28 +233,40 @@ func (c Cert) CertMeta() schema.CertMeta {
 			return key
 		}
 	}
-	signer := func(signer *Cert) *string {
-		if signer == nil {
-			return nil
-		} else {
-			return types.Ptr(signer.Name)
-		}
-	}
-	return schema.CertMeta{
-		Signer:    signer(c.Signer),
-		Subject:   c.Subject,
-		IsCA:      c.IsCA(),
-		Enabled:   types.Ptr(true),
-		NotBefore: c.x509.NotBefore,
-		NotAfter:  c.x509.NotAfter,
-		Cert:      c.x509.Raw,
-		Key:       keybytes(c.priv),
+	return schema.CertWithPrivateKey{
+		Cert: schema.Cert{
+			CertKey: schema.CertKey{
+				Name:   c.Name,
+				Serial: serialText(c.x509.SerialNumber),
+			},
+			Signer: func(signer *Cert) *schema.CertKey {
+				if signer == nil {
+					return nil
+				}
+				return &schema.CertKey{Name: signer.Name, Serial: serialText(signer.x509.SerialNumber)}
+			}(c.Signer),
+			SubjectID: c.Subject,
+			IsCA:      c.IsCA(),
+			CertMeta:  c.CertMeta(),
+			NotBefore: c.x509.NotBefore,
+			NotAfter:  c.x509.NotAfter,
+			Cert:      c.x509.Raw,
+		},
+		PV:  0,
+		Key: keybytes(c.priv),
 	}
 }
 
 // Return true if the certificate is a certificate authority
 func (c *Cert) IsCA() bool {
 	return c.x509.IsCA
+}
+
+func serialText(serial *big.Int) string {
+	if serial == nil {
+		return ""
+	}
+	return serial.Text(10)
 }
 
 // Return true if the certificate is marked as the unique root certificate.
