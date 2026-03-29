@@ -49,7 +49,10 @@ func TestCA_001(t *testing.T) {
 
 		assert.Equal("example_ca", caRow.Name)
 		assert.True(caRow.IsCA)
-		assert.False(caRow.IsRoot)
+		assert.False(caRow.IsRoot())
+		assert.True(types.Value(caRow.Enabled))
+		assert.Empty(caRow.Tags)
+		assert.Empty(caRow.EffectiveTags)
 		require.NotNil(caRow.Signer)
 		assert.Equal(schema.RootCertName, *caRow.Signer)
 
@@ -93,6 +96,7 @@ func TestCA_001(t *testing.T) {
 			Name:    "custom_ca",
 			Expiry:  2 * time.Hour,
 			Subject: &subject,
+			Tags:    []string{"child-tag", " child-extra "},
 		})
 		require.NoError(err)
 		require.NotNil(caRow)
@@ -102,6 +106,9 @@ func TestCA_001(t *testing.T) {
 		assert.Equal("custom_ca", parsedCA.Subject.CommonName)
 		assert.Equal(rootCert.Subject.String(), parsedCA.Issuer.String())
 		assert.Equal(2*time.Hour, parsedCA.NotAfter.Sub(parsedCA.NotBefore))
+		assert.True(types.Value(caRow.Enabled))
+		assert.Equal([]string{"child-tag", "child-extra"}, caRow.Tags)
+		assert.Equal([]string{"child-extra", "child-tag"}, caRow.EffectiveTags)
 		assert.Equal(uint64(1), caRow.PV)
 
 		var storedSubject schema.Subject
@@ -113,6 +120,31 @@ func TestCA_001(t *testing.T) {
 		assert.Equal("San Francisco", types.Value(storedSubject.City))
 		assert.Equal("1 Example Way", types.Value(storedSubject.StreetAddress))
 		assert.Equal("94105", types.Value(storedSubject.PostalCode))
+	})
+
+	t.Run("CreateCAIncludesParentTagsInEffectiveTags", func(t *testing.T) {
+		assert := assert.New(t)
+		require := require.New(t)
+
+		_, _, _, pemValue := newRootPEMBundle(t, "Example Root CA", "Example Org")
+		m := newCustomSchemaManagerWithOpts(t,
+			"cert_test_ca_effective_tags",
+			manager.WithPassphrase(1, "root-secret-1"),
+			manager.WithRoot(pemValue),
+		)
+
+		require.NoError(m.Exec(context.Background(), `UPDATE cert_test_ca_effective_tags.cert SET tags = ARRAY['root-tag'] WHERE name = '$root$'`))
+
+		caRow, err := m.CreateCA(context.Background(), schema.CreateCertRequest{
+			Name:   "tagged_ca",
+			Expiry: time.Hour,
+			Tags:   []string{"child-tag", "root-tag"},
+		})
+		require.NoError(err)
+		require.NotNil(caRow)
+
+		assert.Equal([]string{"child-tag", "root-tag"}, caRow.Tags)
+		assert.Equal([]string{"child-tag", "root-tag"}, caRow.EffectiveTags)
 	})
 
 	t.Run("CreateCAEncryptsPrivateKeyWithLatestPassphrase", func(t *testing.T) {
@@ -133,6 +165,7 @@ func TestCA_001(t *testing.T) {
 
 		assert.Equal(uint64(9), caRow.PV)
 		assert.Empty(caRow.Key)
+		assert.True(types.Value(caRow.Enabled))
 
 		var storedCA schema.Cert
 		require.NoError(m.Get(context.Background(), &storedCA, schema.CertName("encrypted_ca")))

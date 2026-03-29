@@ -258,8 +258,9 @@ func Test_manager_001(t *testing.T) {
 		require.NoError(m.Get(context.Background(), &storedRoot, schema.CertName(schema.RootCertName)))
 		assert.Equal(schema.RootCertName, storedRoot.Name)
 		assert.True(storedRoot.IsCA)
-		assert.True(storedRoot.IsRoot)
+		assert.True(storedRoot.IsRoot())
 		require.NotNil(storedRoot.Subject)
+		assert.True(types.Value(storedRoot.Enabled))
 		assert.Equal(uint64(5), storedRoot.PV)
 	})
 

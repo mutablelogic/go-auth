@@ -145,7 +145,7 @@ func rootCertMeta(subjectID uint64, privateKey *rsa.PrivateKey, imported *x509.C
 		NotBefore: imported.NotBefore,
 		NotAfter:  imported.NotAfter,
 		IsCA:      imported.IsCA,
-		IsRoot:    true,
+		Enabled:   types.Ptr(true),
 		PV:        0,
 		Cert:      imported.Raw,
 		Key:       keyBytes,

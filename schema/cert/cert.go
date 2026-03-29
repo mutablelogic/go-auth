@@ -37,7 +37,8 @@ type CertMeta struct {
 	NotBefore time.Time `json:"not_before,omitzero"`
 	NotAfter  time.Time `json:"not_after,omitzero"`
 	IsCA      bool      `json:"is_ca,omitempty"`
-	IsRoot    bool      `json:"is_root,omitempty"`
+	Enabled   *bool     `json:"enabled,omitempty" negatable:""`
+	Tags      []string  `json:"tags,omitempty"`
 	PV        uint64    `json:"pv,omitempty"`
 	Cert      []byte    `json:"cert,omitempty"`
 	Key       []byte    `json:"key,omitempty"`
@@ -47,19 +48,22 @@ type CertMeta struct {
 type Cert struct {
 	Name string `json:"name"`
 	CertMeta
-	Ts time.Time `json:"timestamp,omitzero"`
+	EffectiveTags []string  `json:"effective_tags,omitempty" readonly:""`
+	Ts            time.Time `json:"timestamp,omitzero"`
 }
 
 type CreateCertRequest struct {
 	Name    string        `json:"name,omitempty"`
 	Expiry  time.Duration `json:"expiry,omitempty"`
 	Subject *SubjectMeta  `json:"subject,omitempty"`
+	Enabled *bool         `json:"enabled,omitempty" negatable:""`
+	Tags    []string      `json:"tags,omitempty"`
 }
 
 type CertListRequest struct {
 	pg.OffsetLimit
 	IsCA    *bool   `json:"is_ca,omitempty"`
-	IsRoot  *bool   `json:"is_root,omitempty"`
+	Enabled *bool   `json:"enabled,omitempty" negatable:""`
 	Valid   *bool   `json:"valid,omitempty"`
 	Subject *uint64 `json:"subject,omitempty"`
 }
@@ -122,8 +126,8 @@ func (c CertListRequest) Select(bind *pg.Bind, op pg.Op) (string, error) {
 	if c.IsCA != nil {
 		bind.Append("where", `cert_row."is_ca" = `+bind.Set("is_ca", *c.IsCA))
 	}
-	if c.IsRoot != nil {
-		bind.Append("where", `cert_row."is_root" = `+bind.Set("is_root", *c.IsRoot))
+	if c.Enabled != nil {
+		bind.Append("where", `cert_row."enabled" = `+bind.Set("enabled", *c.Enabled))
 	}
 	if c.Valid != nil {
 		if *c.Valid {
@@ -159,11 +163,13 @@ func (c CertListRequest) Select(bind *pg.Bind, op pg.Op) (string, error) {
 // READER
 
 func (c *Cert) Scan(row pg.Row) error {
+	var enabled bool
+
 	// Scan the row
-	if err := row.Scan(&c.Name, &c.Subject, &c.Signer, &c.Cert, &c.Key, &c.NotBefore, &c.NotAfter, &c.IsCA, &c.IsRoot, &c.PV, &c.Ts); err != nil {
+	if err := row.Scan(&c.Name, &c.Subject, &c.Signer, &c.Cert, &c.Key, &c.NotBefore, &c.NotAfter, &c.IsCA, &enabled, &c.Tags, &c.EffectiveTags, &c.PV, &c.Ts); err != nil {
 		return err
 	}
-	// Todo
+	c.Enabled = types.Ptr(enabled)
 	return nil
 }
 
@@ -188,16 +194,19 @@ func (c *CertList) ScanCount(row pg.Row) error {
 // WRITER
 
 func (c CertMeta) Insert(bind *pg.Bind) (string, error) {
+	name := ""
+
 	// Name
 	if !bind.Has("name") {
 		return "", httpresponse.ErrBadRequest.With("name is missing")
-	} else if name, ok := bind.Get("name").(string); !ok {
+	} else if value, ok := bind.Get("name").(string); !ok {
 		return "", httpresponse.ErrBadRequest.With("name is invalid")
-	} else if name = strings.TrimSpace(name); name == "" {
+	} else if value = strings.TrimSpace(value); value == "" {
 		return "", httpresponse.ErrBadRequest.With("name is missing")
-	} else if name != RootCertName && !types.IsIdentifier(name) {
+	} else if value != RootCertName && !types.IsIdentifier(value) {
 		return "", httpresponse.ErrBadRequest.With("name is invalid")
 	} else {
+		name = value
 		bind.Set("name", name)
 	}
 
@@ -233,9 +242,14 @@ func (c CertMeta) Insert(bind *pg.Bind) (string, error) {
 
 	// IsCA
 	bind.Set("is_ca", c.IsCA)
-	bind.Set("is_root", c.IsRoot)
+	if c.Enabled == nil {
+		bind.Set("enabled", true)
+	} else {
+		bind.Set("enabled", *c.Enabled)
+	}
+	bind.Set("tags", normalizeTags(c.Tags))
 	bind.Set("pv", c.PV)
-	if c.IsRoot {
+	if name == RootCertName {
 		if !c.IsCA {
 			return "", httpresponse.ErrBadRequest.With("root certificate must be a certificate authority")
 		}
@@ -252,4 +266,21 @@ func (c CertMeta) Insert(bind *pg.Bind) (string, error) {
 
 func (c CertMeta) Update(bind *pg.Bind) error {
 	return httpresponse.ErrNotImplemented
+}
+
+func (c Cert) IsRoot() bool {
+	return c.Name == RootCertName
+}
+
+func normalizeTags(tags []string) []string {
+	result := make([]string, 0, len(tags))
+	for _, tag := range tags {
+		if tag = strings.TrimSpace(tag); tag != "" {
+			result = append(result, tag)
+		}
+	}
+	if result == nil {
+		return []string{}
+	}
+	return result
 }

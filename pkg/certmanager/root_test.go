@@ -47,12 +47,15 @@ func TestRoot_001(t *testing.T) {
 
 		assert.Equal(schema.RootCertName, root.Name)
 		assert.True(root.IsCA)
-		assert.True(root.IsRoot)
+		assert.True(root.IsRoot())
 		assert.Nil(root.Signer)
 		require.NotNil(root.Subject)
 		assert.NotZero(*root.Subject)
 		assert.NotEmpty(root.Cert)
 		assert.NotEmpty(root.Key)
+		assert.True(types.Value(root.Enabled))
+		assert.Empty(root.Tags)
+		assert.Empty(root.EffectiveTags)
 		assert.Equal(uint64(1), root.PV)
 
 		storedCert, err := x509.ParseCertificate(root.Cert)
@@ -99,6 +102,7 @@ func TestRoot_001(t *testing.T) {
 
 		assert.Equal(uint64(9), root.PV)
 		assert.NotEmpty(root.Key)
+		assert.True(types.Value(root.Enabled))
 
 		store := authcrypto.NewPassphrases()
 		require.NoError(store.Set(2, "root-secret-2"))

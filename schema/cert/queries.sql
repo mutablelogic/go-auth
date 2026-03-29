@@ -60,35 +60,110 @@ WITH q AS (
 SELECT * FROM q ${where};
 
 -- cert.insert
-INSERT INTO ${"schema"}.cert (
-	name, subject, signer, cert, key, not_before, not_after, is_ca, is_root, pv
-) VALUES (
-	@name, @subject, @signer, @cert, @key, @not_before, @not_after, @is_ca, @is_root, @pv
-) ON CONFLICT (name) DO UPDATE SET
-	subject = @subject,
-	signer = @signer,
-	cert = @cert,
-	key = @key,
-	not_before = @not_before,
-	not_after = @not_after,
-	is_ca = @is_ca,
-	is_root = @is_root,
-	pv = @pv,
-	ts = CURRENT_TIMESTAMP
-RETURNING
-	name, subject, signer, cert, key, not_before, not_after, is_ca, is_root, pv, ts;
+WITH upserted AS (
+	INSERT INTO ${"schema"}.cert (
+		name, subject, signer, cert, key, not_before, not_after, is_ca, enabled, tags, pv
+	) VALUES (
+		@name, @subject, @signer, @cert, @key, @not_before, @not_after, @is_ca, @enabled, @tags, @pv
+	) ON CONFLICT (name) DO UPDATE SET
+		subject = @subject,
+		signer = @signer,
+		cert = @cert,
+		key = @key,
+		not_before = @not_before,
+		not_after = @not_after,
+		is_ca = @is_ca,
+		enabled = @enabled,
+		tags = @tags,
+		pv = @pv,
+		ts = CURRENT_TIMESTAMP
+	RETURNING
+		name, subject, signer, cert, key, not_before, not_after, is_ca, enabled, tags, pv, ts
+)
+SELECT
+	upserted.name,
+	upserted.subject,
+	upserted.signer,
+	upserted.cert,
+	upserted.key,
+	upserted.not_before,
+	upserted.not_after,
+	upserted.is_ca,
+	upserted.enabled,
+	COALESCE(upserted.tags, '{}'::TEXT[]) AS tags,
+	COALESCE(effective.effective_tags, COALESCE(upserted.tags, '{}'::TEXT[])) AS effective_tags,
+	upserted.pv,
+	upserted.ts
+FROM upserted
+LEFT JOIN LATERAL (
+	WITH RECURSIVE chain AS (
+		SELECT current.name, current.signer, COALESCE(current.tags, '{}'::TEXT[]) AS tags
+		FROM ${"schema"}.cert AS current
+		WHERE current.name = upserted.name
+		UNION ALL
+		SELECT parent.name, parent.signer, COALESCE(parent.tags, '{}'::TEXT[]) AS tags
+		FROM ${"schema"}.cert AS parent
+		JOIN chain ON chain.signer = parent.name
+	)
+	SELECT COALESCE(array_agg(DISTINCT tag ORDER BY tag), '{}'::TEXT[]) AS effective_tags
+	FROM chain
+	LEFT JOIN LATERAL unnest(chain.tags) AS tag ON true
+) AS effective ON true;
 
 -- cert.delete
-DELETE FROM ${"schema"}.cert WHERE
-	name = @name
-RETURNING
-	name, subject, signer, cert, key, not_before, not_after, is_ca, is_root, pv, ts;
+WITH deleted AS (
+	DELETE FROM ${"schema"}.cert WHERE
+		name = @name
+	RETURNING
+		name, subject, signer, cert, key, not_before, not_after, is_ca, enabled, tags, pv, ts
+)
+SELECT
+	deleted.name,
+	deleted.subject,
+	deleted.signer,
+	deleted.cert,
+	deleted.key,
+	deleted.not_before,
+	deleted.not_after,
+	deleted.is_ca,
+	deleted.enabled,
+	COALESCE(deleted.tags, '{}'::TEXT[]) AS tags,
+	COALESCE(deleted.tags, '{}'::TEXT[]) AS effective_tags,
+	deleted.pv,
+	deleted.ts
+FROM deleted;
 
 -- cert.select
 SELECT
-	name, subject, signer, cert, key, not_before, not_after, is_ca, is_root, pv, ts
-FROM ${"schema"}.cert
-WHERE name = @name;
+	cert_row.name,
+	cert_row.subject,
+	cert_row.signer,
+	cert_row.cert,
+	cert_row.key,
+	cert_row.not_before,
+	cert_row.not_after,
+	cert_row.is_ca,
+	cert_row.enabled,
+	COALESCE(cert_row.tags, '{}'::TEXT[]) AS tags,
+	COALESCE(effective.effective_tags, '{}'::TEXT[]) AS effective_tags,
+	cert_row.pv,
+	cert_row.ts
+FROM ${"schema"}.cert AS cert_row
+LEFT JOIN LATERAL (
+	WITH RECURSIVE chain AS (
+		SELECT current.name, current.signer, COALESCE(current.tags, '{}'::TEXT[]) AS tags
+		FROM ${"schema"}.cert AS current
+		WHERE current.name = cert_row.name
+		UNION ALL
+		SELECT parent.name, parent.signer, COALESCE(parent.tags, '{}'::TEXT[]) AS tags
+		FROM ${"schema"}.cert AS parent
+		JOIN chain ON chain.signer = parent.name
+	)
+	SELECT COALESCE(array_agg(DISTINCT tag ORDER BY tag), '{}'::TEXT[]) AS effective_tags
+	FROM chain
+	LEFT JOIN LATERAL unnest(chain.tags) AS tag ON true
+) AS effective ON true
+WHERE cert_row.name = @name;
 
 -- cert.list
 SELECT
@@ -100,9 +175,25 @@ SELECT
 	cert_row.not_before,
 	cert_row.not_after,
 	cert_row.is_ca,
-	cert_row.is_root,
+	cert_row.enabled,
+	COALESCE(cert_row.tags, '{}'::TEXT[]) AS tags,
+	COALESCE(effective.effective_tags, '{}'::TEXT[]) AS effective_tags,
 	cert_row.pv,
 	cert_row.ts
 FROM ${"schema"}.cert AS cert_row
+LEFT JOIN LATERAL (
+	WITH RECURSIVE chain AS (
+		SELECT current.name, current.signer, COALESCE(current.tags, '{}'::TEXT[]) AS tags
+		FROM ${"schema"}.cert AS current
+		WHERE current.name = cert_row.name
+		UNION ALL
+		SELECT parent.name, parent.signer, COALESCE(parent.tags, '{}'::TEXT[]) AS tags
+		FROM ${"schema"}.cert AS parent
+		JOIN chain ON chain.signer = parent.name
+	)
+	SELECT COALESCE(array_agg(DISTINCT tag ORDER BY tag), '{}'::TEXT[]) AS effective_tags
+	FROM chain
+	LEFT JOIN LATERAL unnest(chain.tags) AS tag ON true
+) AS effective ON true
 ${where}
 ${orderby}

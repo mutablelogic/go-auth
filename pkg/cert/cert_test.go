@@ -140,7 +140,7 @@ func Test_Cert_003(t *testing.T) {
 		}
 		assert.True(cert.IsCA())
 		assert.True(cert.IsRoot())
-		assert.True(cert.CertMeta().IsRoot)
+		assert.True(types.Value(cert.CertMeta().Enabled))
 	})
 
 	t.Run("RootCannotHaveSigner", func(t *testing.T) {

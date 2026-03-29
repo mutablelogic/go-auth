@@ -236,7 +236,7 @@ func (c Cert) CertMeta() schema.CertMeta {
 		Signer:    signer(c.Signer),
 		Subject:   c.Subject,
 		IsCA:      c.IsCA(),
-		IsRoot:    c.IsRoot(),
+		Enabled:   types.Ptr(true),
 		NotBefore: c.x509.NotBefore,
 		NotAfter:  c.x509.NotAfter,
 		Cert:      c.x509.Raw,
