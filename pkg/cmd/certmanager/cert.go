@@ -15,25 +15,94 @@
 package certmanager
 
 import (
+	"encoding/json"
+	"encoding/pem"
 	"fmt"
+	"io"
+	"os"
+	"strings"
+	"time"
 
 	// Packages
+	certpkg "github.com/djthorpe/go-auth/pkg/cert"
 	certclient "github.com/djthorpe/go-auth/pkg/httpclient/certmanager"
 	schema "github.com/djthorpe/go-auth/schema/cert"
 	server "github.com/mutablelogic/go-server"
+	types "github.com/mutablelogic/go-server/pkg/types"
 )
 
 ///////////////////////////////////////////////////////////////////////////////
 // TYPES
 
+var certmanagerOutput io.Writer = os.Stdout
+
 type CertCommands struct {
-	Certs ListCertsCommand `cmd:"" name:"certs" help:"List certificates." group:"CERTIFICATE MANAGER"`
+	Cert       GetCertCommand    `cmd:"" name:"cert" help:"Get certificate." group:"CERTIFICATE MANAGER"`
+	Certs      ListCertsCommand  `cmd:"" name:"certs" help:"List certificates." group:"CERTIFICATE MANAGER"`
+	CreateCert CreateCertCommand `cmd:"" name:"cert-create" help:"Create certificate." group:"CERTIFICATE MANAGER"`
+	RenewCert  RenewCertCommand  `cmd:"" name:"cert-renew" help:"Renew certificate." group:"CERTIFICATE MANAGER"`
+	UpdateCert UpdateCertCommand `cmd:"" name:"cert-update" help:"Update certificate." group:"CERTIFICATE MANAGER"`
+}
+
+type GetCertCommand struct {
+	Name     string `arg:"" name:"name" help:"Certificate name"`
+	Serial   string `arg:"" optional:"" name:"serial" help:"Certificate serial number. Omit to use the latest certificate version."`
+	Chain    bool   `name:"chain" help:"Include the issuer chain in the output."`
+	Private  bool   `name:"private" help:"Include the private key in the output."`
+	Comments bool   `name:"comments" help:"Include certificate metadata comments before each PEM block." default:"true" negatable:""`
 }
 
 type ListCertsCommand schema.CertListRequest
 
+type CreateCertCommand struct {
+	Name     string        `arg:"" name:"name" help:"Certificate name"`
+	CAName   string        `arg:"" name:"ca" help:"Certificate authority name"`
+	CASerial string        `arg:"" optional:"" name:"serial" help:"Certificate authority serial number. Omit to use the latest CA version."`
+	Expiry   time.Duration `name:"expiry" help:"Certificate lifetime. Zero uses the server default."`
+	SAN      []string      `name:"san" help:"Subject alternative name entry. Repeat to set multiple DNS names, wildcard DNS names, or IP addresses."`
+	Enabled  bool          `name:"enabled" help:"Enable the created certificate." default:"true" negatable:""`
+	Tags     []string      `name:"tag" help:"Tag to apply to the certificate. Repeat to set multiple tags."`
+	certSubjectFlags
+}
+
+type UpdateCertCommand struct {
+	Name      string   `arg:"" name:"name" help:"Certificate name"`
+	Serial    string   `arg:"" optional:"" name:"serial" help:"Certificate serial number. Omit to use the latest certificate version."`
+	Enable    bool     `name:"enable" help:"Enable the certificate."`
+	Disable   bool     `name:"disable" help:"Disable the certificate."`
+	Tags      []string `name:"tag" help:"Replace certificate tags with the provided list. Repeat to set multiple tags."`
+	ClearTags bool     `name:"clear-tags" help:"Clear all certificate tags."`
+}
+
+type RenewCertCommand struct {
+	Name      string        `arg:"" name:"name" help:"Certificate name"`
+	Serial    string        `arg:"" optional:"" name:"serial" help:"Certificate serial number. Omit to use the latest certificate version."`
+	Expiry    time.Duration `name:"expiry" help:"Certificate lifetime. Zero preserves the current lifetime, capped by the signer validity."`
+	Enable    bool          `name:"enable" help:"Enable the renewed certificate."`
+	Disable   bool          `name:"disable" help:"Disable the renewed certificate."`
+	Tags      []string      `name:"tag" help:"Replace certificate tags with the provided list. Repeat to set multiple tags."`
+	ClearTags bool          `name:"clear-tags" help:"Clear all certificate tags on the renewed certificate."`
+	certSubjectFlags
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 // COMMANDS
+
+func (cmd *GetCertCommand) Run(ctx server.Cmd) error {
+	return withUnauthenticatedClient(ctx, func(client *certclient.Client, endpoint string) error {
+		bundle, err := client.GetCert(ctx.Context(), schema.CertKey{
+			Name:   strings.TrimSpace(cmd.Name),
+			Serial: strings.TrimSpace(cmd.Serial),
+		}, cmd.Chain, cmd.Private)
+		if err != nil {
+			return err
+		}
+		if ctx.IsDebug() {
+			return writeCertBundleJSON(certmanagerOutput, bundle)
+		}
+		return writeCertBundlePEM(certmanagerOutput, bundle, cmd.Private, cmd.Comments)
+	})
+}
 
 func (cmd *ListCertsCommand) Run(ctx server.Cmd) error {
 	return withUnauthenticatedClient(ctx, func(client *certclient.Client, endpoint string) error {
@@ -41,7 +110,249 @@ func (cmd *ListCertsCommand) Run(ctx server.Cmd) error {
 		if err != nil {
 			return err
 		}
-		fmt.Println(certs)
-		return nil
+		_, err = fmt.Fprintln(certmanagerOutput, certs)
+		return err
 	})
+}
+
+func (cmd *CreateCertCommand) Run(ctx server.Cmd) error {
+	return withUnauthenticatedClient(ctx, func(client *certclient.Client, endpoint string) error {
+		cert, err := client.CreateCert(ctx.Context(), schema.CreateCertRequest{
+			Name:    strings.TrimSpace(cmd.Name),
+			Expiry:  cmd.Expiry,
+			Subject: cmd.subject(),
+			SAN:     append([]string(nil), cmd.SAN...),
+			Enabled: types.Ptr(cmd.Enabled),
+			Tags:    append([]string(nil), cmd.Tags...),
+		}, schema.CertKey{
+			Name:   strings.TrimSpace(cmd.CAName),
+			Serial: strings.TrimSpace(cmd.CASerial),
+		})
+		if err != nil {
+			return err
+		}
+		_, err = fmt.Fprintln(certmanagerOutput, cert)
+		return err
+	})
+}
+
+func (cmd *UpdateCertCommand) Run(ctx server.Cmd) error {
+	if cmd.Enable && cmd.Disable {
+		return fmt.Errorf("cannot set both enable and disable")
+	}
+	if cmd.ClearTags && len(cmd.Tags) > 0 {
+		return fmt.Errorf("cannot set tags and clear-tags together")
+	}
+
+	meta := schema.CertMeta{}
+	if cmd.Enable {
+		meta.Enabled = types.Ptr(true)
+	} else if cmd.Disable {
+		meta.Enabled = types.Ptr(false)
+	}
+	if cmd.ClearTags {
+		meta.Tags = []string{}
+	} else if len(cmd.Tags) > 0 {
+		meta.Tags = append([]string(nil), cmd.Tags...)
+	}
+
+	return withUnauthenticatedClient(ctx, func(client *certclient.Client, endpoint string) error {
+		cert, err := client.UpdateCert(ctx.Context(), schema.CertKey{
+			Name:   strings.TrimSpace(cmd.Name),
+			Serial: strings.TrimSpace(cmd.Serial),
+		}, meta)
+		if err != nil {
+			return err
+		}
+		_, err = fmt.Fprintln(certmanagerOutput, cert)
+		return err
+	})
+}
+
+func (cmd *RenewCertCommand) Run(ctx server.Cmd) error {
+	req, err := renewRequest(cmd.Expiry, cmd.subject(), cmd.Enable, cmd.Disable, cmd.Tags, cmd.ClearTags)
+	if err != nil {
+		return err
+	}
+
+	return withUnauthenticatedClient(ctx, func(client *certclient.Client, endpoint string) error {
+		cert, err := client.RenewCert(ctx.Context(), schema.CertKey{
+			Name:   strings.TrimSpace(cmd.Name),
+			Serial: strings.TrimSpace(cmd.Serial),
+		}, req)
+		if err != nil {
+			return err
+		}
+		_, err = fmt.Fprintln(certmanagerOutput, cert)
+		return err
+	})
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// PRIVATE METHODS
+
+func renewRequest(expiry time.Duration, subject *schema.SubjectMeta, enable bool, disable bool, tags []string, clearTags bool) (schema.RenewCertRequest, error) {
+	if enable && disable {
+		return schema.RenewCertRequest{}, fmt.Errorf("cannot set both enable and disable")
+	}
+	if clearTags && len(tags) > 0 {
+		return schema.RenewCertRequest{}, fmt.Errorf("cannot set tags and clear-tags together")
+	}
+
+	req := schema.RenewCertRequest{
+		Expiry:  expiry,
+		Subject: subject,
+	}
+	if enable {
+		req.Enabled = types.Ptr(true)
+	} else if disable {
+		req.Enabled = types.Ptr(false)
+	}
+	if clearTags {
+		req.Tags = []string{}
+	} else if len(tags) > 0 {
+		req.Tags = append([]string(nil), tags...)
+	}
+
+	return req, nil
+}
+
+func writeCertBundleJSON(w io.Writer, bundle *schema.CertBundle) error {
+	encoder := json.NewEncoder(w)
+	encoder.SetIndent("", "  ")
+	return encoder.Encode(bundle)
+}
+
+func writeCertBundlePEM(w io.Writer, bundle *schema.CertBundle, includePrivate bool, includeComments bool) error {
+	if includePrivate {
+		if len(bundle.Key) == 0 {
+			return fmt.Errorf("missing private key bytes")
+		}
+		if includeComments {
+			if err := writePEMComment(w, bundle.Cert, "private key"); err != nil {
+				return err
+			}
+		}
+		if err := writePEMBlock(w, &pem.Block{Type: certpkg.PemTypePrivateKey, Bytes: bundle.Key}); err != nil {
+			return err
+		}
+	}
+	if err := writeCertificatePEM(w, bundle.Cert, includeComments); err != nil {
+		return err
+	}
+	for _, cert := range bundle.Chain {
+		if err := writeCertificatePEM(w, cert, includeComments); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func writeCertificatePEM(w io.Writer, cert schema.Cert, includeComments bool) error {
+	if len(cert.Cert) == 0 {
+		return fmt.Errorf("missing certificate bytes")
+	}
+	if includeComments {
+		if err := writePEMComment(w, cert, pemType(cert)); err != nil {
+			return err
+		}
+	}
+	return writePEMBlock(w, &pem.Block{Type: certpkg.PemTypeCertificate, Bytes: cert.Cert})
+}
+
+func writePEMComment(w io.Writer, cert schema.Cert, blockType string) error {
+	for _, line := range pemCommentLines(cert, blockType) {
+		if _, err := fmt.Fprintf(w, "# %s\n", line); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func writePEMBlock(w io.Writer, block *pem.Block) error {
+	if err := pem.Encode(w, block); err != nil {
+		return err
+	}
+	_, err := fmt.Fprintln(w)
+	return err
+}
+
+func pemCommentLines(cert schema.Cert, blockType string) []string {
+	return []string{
+		"subject: " + pemSubjectName(cert),
+		"serial: " + pemSerial(cert),
+		"san: " + pemSAN(cert),
+		"tags: " + pemTags(cert),
+		"enabled: " + pemEnabled(cert.Enabled),
+		"type: " + blockType,
+		"signer: " + pemSignerName(cert),
+		"not_before: " + pemTime(cert.NotBefore),
+		"not_after: " + pemTime(cert.NotAfter),
+		"created: " + pemTime(cert.Ts),
+	}
+}
+
+func pemSerial(cert schema.Cert) string {
+	if serial := strings.TrimSpace(cert.Serial); serial != "" {
+		return serial
+	}
+	return "-"
+}
+
+func pemSubjectName(cert schema.Cert) string {
+	if cert.Subject == nil {
+		return "-"
+	}
+	if cert.Subject.Name != nil && strings.TrimSpace(*cert.Subject.Name) != "" {
+		return strings.TrimSpace(*cert.Subject.Name)
+	}
+	return "-"
+}
+
+func pemSAN(cert schema.Cert) string {
+	if len(cert.SAN) == 0 {
+		return "-"
+	}
+	return strings.Join(cert.SAN, ", ")
+}
+
+func pemTags(cert schema.Cert) string {
+	if len(cert.EffectiveTags) == 0 {
+		return "-"
+	}
+	return strings.Join(cert.EffectiveTags, ", ")
+}
+
+func pemEnabled(enabled *bool) string {
+	if enabled == nil {
+		return "unknown"
+	}
+	if *enabled {
+		return "yes"
+	}
+	return "no"
+}
+
+func pemType(cert schema.Cert) string {
+	if cert.IsRoot() {
+		return "root"
+	}
+	if cert.IsCA {
+		return "certificate authority"
+	}
+	return "certificate"
+}
+
+func pemSignerName(cert schema.Cert) string {
+	if cert.Signer == nil || strings.TrimSpace(cert.Signer.Name) == "" {
+		return "-"
+	}
+	return strings.TrimSpace(cert.Signer.Name)
+}
+
+func pemTime(ts time.Time) string {
+	if ts.IsZero() {
+		return "-"
+	}
+	return ts.UTC().Format(time.RFC3339)
 }

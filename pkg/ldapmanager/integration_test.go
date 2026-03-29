@@ -390,7 +390,7 @@ func generateIntegrationTLSMaterials(t *testing.T) (string, string, string) {
 		cert.WithCommonName("localhost"),
 		cert.WithEllipticKey("P256"),
 		cert.WithExpiry(24*time.Hour),
-		cert.WithAddr("localhost", "127.0.0.1"),
+		cert.WithSAN("localhost", "127.0.0.1"),
 		cert.WithSigner(ca),
 	)
 	require.NoError(t, err)

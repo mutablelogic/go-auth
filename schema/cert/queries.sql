@@ -506,6 +506,7 @@ SELECT
 	subject_row."stateOrProvinceName",
 	subject_row."streetAddress",
 	subject_row."postalCode",
+	subject_row."ts",
 	issuer.name AS signer_name,
 	issuer.serial AS signer_serial,
 	cert_row.cert,

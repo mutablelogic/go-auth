@@ -51,11 +51,20 @@ func TestRegisterCertManagerHandlers(t *testing.T) {
 
 		err := RegisterCertManagerHandlers(nil, router, false)
 		require.NoError(err)
-		require.Len(router.routes, 2)
+		require.Len(router.routes, 8)
 
-		paths := []string{router.routes[0].path, router.routes[1].path}
+		paths := make([]string, 0, len(router.routes))
+		for _, route := range router.routes {
+			paths = append(paths, route.path)
+		}
+		assert.Contains(paths, "ca")
+		assert.Contains(paths, "ca/{name}/renew")
+		assert.Contains(paths, "ca/{name}/{serial}/renew")
 		assert.Contains(paths, "cert")
-		assert.Contains(paths, "cert/ca")
+		assert.Contains(paths, "cert/{name}")
+		assert.Contains(paths, "cert/{name}/{serial}")
+		assert.Contains(paths, "cert/{name}/renew")
+		assert.Contains(paths, "cert/{name}/{serial}/renew")
 		for _, route := range router.routes {
 			assert.NotNil(route.handler)
 			assert.NotNil(route.spec)

@@ -16,6 +16,7 @@ package schema
 
 import (
 	"crypto/x509/pkix"
+	"strings"
 	"time"
 
 	// Packages
@@ -49,8 +50,9 @@ type Subject struct {
 type SubjectRef struct {
 	ID uint64 `json:"id"`
 	SubjectMeta
-	Ts   time.Time `json:"timestamp,omitzero"`
-	Name *string   `json:"name,omitempty"`
+	Ts         time.Time `json:"timestamp,omitzero"`
+	CommonName *string   `json:"commonName,omitempty"`
+	Name       *string   `json:"name,omitempty"`
 }
 
 type SubjectListRequest struct {
@@ -71,7 +73,10 @@ func SubjectMetaFromPKIXName(subject pkix.Name) SubjectMeta {
 		if len(values) == 0 {
 			return nil
 		}
-		return types.Ptr(values[0])
+		if value := strings.TrimSpace(values[0]); value != "" {
+			return types.Ptr(value)
+		}
+		return nil
 	}
 	return SubjectMeta{
 		Org:           fieldPtr(subject.Organization),
@@ -84,12 +89,32 @@ func SubjectMetaFromPKIXName(subject pkix.Name) SubjectMeta {
 	}
 }
 
+func MergeSubjectMeta(base SubjectMeta, patch *SubjectMeta) SubjectMeta {
+	if patch == nil {
+		return normalizeSubjectMeta(base)
+	}
+
+	merged := normalizeSubjectMeta(base)
+	merged.Org = mergeSubjectValue(merged.Org, patch.Org)
+	merged.Unit = mergeSubjectValue(merged.Unit, patch.Unit)
+	merged.Country = mergeSubjectValue(merged.Country, patch.Country)
+	merged.City = mergeSubjectValue(merged.City, patch.City)
+	merged.State = mergeSubjectValue(merged.State, patch.State)
+	merged.StreetAddress = mergeSubjectValue(merged.StreetAddress, patch.StreetAddress)
+	merged.PostalCode = mergeSubjectValue(merged.PostalCode, patch.PostalCode)
+
+	return merged
+}
+
 func pkixNameFromSubjectMeta(subject SubjectMeta) pkix.Name {
 	fieldValues := func(value *string) []string {
 		if value == nil {
 			return nil
 		}
-		return []string{types.Value(value)}
+		if value := strings.TrimSpace(types.Value(value)); value != "" {
+			return []string{value}
+		}
+		return nil
 	}
 
 	return pkix.Name{
@@ -101,6 +126,34 @@ func pkixNameFromSubjectMeta(subject SubjectMeta) pkix.Name {
 		StreetAddress:      fieldValues(subject.StreetAddress),
 		PostalCode:         fieldValues(subject.PostalCode),
 	}
+}
+
+func normalizeSubjectMeta(subject SubjectMeta) SubjectMeta {
+	subject.Org = normalizeSubjectValue(subject.Org)
+	subject.Unit = normalizeSubjectValue(subject.Unit)
+	subject.Country = normalizeSubjectValue(subject.Country)
+	subject.City = normalizeSubjectValue(subject.City)
+	subject.State = normalizeSubjectValue(subject.State)
+	subject.StreetAddress = normalizeSubjectValue(subject.StreetAddress)
+	subject.PostalCode = normalizeSubjectValue(subject.PostalCode)
+	return subject
+}
+
+func mergeSubjectValue(base, patch *string) *string {
+	if patch == nil {
+		return normalizeSubjectValue(base)
+	}
+	return normalizeSubjectValue(patch)
+}
+
+func normalizeSubjectValue(value *string) *string {
+	if value == nil {
+		return nil
+	}
+	if trimmed := strings.TrimSpace(*value); trimmed != "" {
+		return types.Ptr(trimmed)
+	}
+	return nil
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -249,13 +302,18 @@ func (n *SubjectList) ScanCount(row pg.Row) error {
 	return row.Scan(&n.Count)
 }
 
-func SubjectRefFromMeta(id uint64, meta SubjectMeta, ts time.Time) SubjectRef {
+func SubjectRefFromMeta(id uint64, meta SubjectMeta, ts time.Time, commonName *string) SubjectRef {
 	ref := SubjectRef{
 		ID:          id,
 		SubjectMeta: meta,
 		Ts:          ts,
+		CommonName:  commonName,
 	}
-	if name := pkixNameFromSubjectMeta(meta).String(); name != "" {
+	pkixName := pkixNameFromSubjectMeta(meta)
+	if commonName != nil {
+		pkixName.CommonName = types.Value(commonName)
+	}
+	if name := pkixName.String(); name != "" {
 		ref.Name = types.Ptr(name)
 	}
 	return ref

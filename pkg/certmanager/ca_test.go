@@ -23,6 +23,7 @@ import (
 
 	// Packages
 	auth "github.com/djthorpe/go-auth"
+	cert "github.com/djthorpe/go-auth/pkg/cert"
 	manager "github.com/djthorpe/go-auth/pkg/certmanager"
 	authcrypto "github.com/djthorpe/go-auth/pkg/crypto"
 	schema "github.com/djthorpe/go-auth/schema/cert"
@@ -124,6 +125,77 @@ func TestCA_001(t *testing.T) {
 		assert.Equal("San Francisco", types.Value(storedSubject.City))
 		assert.Equal("1 Example Way", types.Value(storedSubject.StreetAddress))
 		assert.Equal("94105", types.Value(storedSubject.PostalCode))
+	})
+
+	t.Run("CreateCAMergesExplicitSubjectWithRootSubject", func(t *testing.T) {
+		assert := assert.New(t)
+		require := require.New(t)
+
+		_, rootCert, _, pemValue := newRootPEMBundle(t, "Example Root CA", "Example Org")
+		m := newCustomSchemaManagerWithOpts(t,
+			"cert_test_ca_merge_subject",
+			manager.WithPassphrase(1, "root-secret-1"),
+			manager.WithRoot(pemValue),
+		)
+
+		subject := schema.SubjectMeta{
+			Unit:    types.Ptr("Security"),
+			Country: types.Ptr("US"),
+		}
+
+		caRow, err := m.CreateCA(context.Background(), schema.CreateCertRequest{
+			Name:    "merged_ca",
+			Expiry:  time.Hour,
+			Subject: &subject,
+		})
+		require.NoError(err)
+
+		parsedCA, err := x509.ParseCertificate(caRow.Cert)
+		require.NoError(err)
+		assert.Equal("merged_ca", parsedCA.Subject.CommonName)
+		assert.Equal(rootCert.Subject.Organization, parsedCA.Subject.Organization)
+		assert.Equal([]string{"Security"}, parsedCA.Subject.OrganizationalUnit)
+		assert.Equal([]string{"US"}, parsedCA.Subject.Country)
+
+		var storedSubject schema.Subject
+		require.NoError(m.Get(context.Background(), &storedSubject, schema.SubjectID(caRow.Subject.ID)))
+		assert.Equal("Example Org", types.Value(storedSubject.Org))
+		assert.Equal("Security", types.Value(storedSubject.Unit))
+		assert.Equal("US", types.Value(storedSubject.Country))
+	})
+
+	t.Run("CreateCAAllowsExplicitlyClearingInheritedSubjectFields", func(t *testing.T) {
+		assert := assert.New(t)
+		require := require.New(t)
+
+		_, _, _, pemValue := newRootPEMBundle(t, "Example Root CA", "Example Org")
+		m := newCustomSchemaManagerWithOpts(t,
+			"cert_test_ca_clear_subject",
+			manager.WithPassphrase(1, "root-secret-1"),
+			manager.WithRoot(pemValue),
+		)
+
+		subject := schema.SubjectMeta{
+			Org:  types.Ptr(""),
+			Unit: types.Ptr("Security"),
+		}
+
+		caRow, err := m.CreateCA(context.Background(), schema.CreateCertRequest{
+			Name:    "cleared_ca",
+			Expiry:  time.Hour,
+			Subject: &subject,
+		})
+		require.NoError(err)
+
+		parsedCA, err := x509.ParseCertificate(caRow.Cert)
+		require.NoError(err)
+		assert.Empty(parsedCA.Subject.Organization)
+		assert.Equal([]string{"Security"}, parsedCA.Subject.OrganizationalUnit)
+
+		var storedSubject schema.Subject
+		require.NoError(m.Get(context.Background(), &storedSubject, schema.SubjectID(caRow.Subject.ID)))
+		assert.Nil(storedSubject.Org)
+		assert.Equal("Security", types.Value(storedSubject.Unit))
 	})
 
 	t.Run("CreateCAIncludesParentTagsInEffectiveTags", func(t *testing.T) {
@@ -274,6 +346,28 @@ func TestCA_001(t *testing.T) {
 		assert.EqualError(err, `Bad Request: tag "bad tag" is invalid`)
 	})
 
+	t.Run("CreateCARejectsSAN", func(t *testing.T) {
+		assert := assert.New(t)
+		require := require.New(t)
+
+		_, _, _, pemValue := newRootPEMBundle(t, "Example Root CA", "Example Org")
+		m := newCustomSchemaManagerWithOpts(t,
+			"cert_test_ca_san",
+			manager.WithPassphrase(1, "root-secret-1"),
+			manager.WithRoot(pemValue),
+		)
+
+		caRow, err := m.CreateCA(context.Background(), schema.CreateCertRequest{
+			Name:   "invalid_ca",
+			Expiry: time.Hour,
+			SAN:    []string{"*.example.test"},
+		})
+		require.Error(err)
+		assert.Nil(caRow)
+		assert.ErrorIs(err, httpresponse.ErrBadRequest)
+		assert.EqualError(err, "Bad Request: san is only supported for leaf certificates")
+	})
+
 	t.Run("RenewCADisablesCurrentAndPreservesDefaults", func(t *testing.T) {
 		assert := assert.New(t)
 		require := require.New(t)
@@ -313,6 +407,143 @@ func TestCA_001(t *testing.T) {
 		assert.True(types.Value(newRow.Enabled))
 		assert.Equal([]string{"child-tag"}, newRow.Tags)
 		assert.Equal([]string{"child-tag"}, newRow.EffectiveTags)
+	})
+
+	t.Run("RenewCAMergesExplicitSubjectWithCurrentSubject", func(t *testing.T) {
+		assert := assert.New(t)
+		require := require.New(t)
+
+		_, _, _, pemValue := newRootPEMBundle(t, "Example Root CA", "Example Org")
+		m := newCustomSchemaManagerWithOpts(t,
+			"cert_test_ca_renew_merge_subject",
+			manager.WithPassphrase(1, "root-secret-1"),
+			manager.WithRoot(pemValue),
+		)
+
+		caSubject := schema.SubjectMeta{
+			Org:     types.Ptr("Example Org"),
+			Unit:    types.Ptr("Operations"),
+			Country: types.Ptr("GB"),
+		}
+		caRow, err := m.CreateCA(context.Background(), schema.CreateCertRequest{
+			Name:    "renew_ca",
+			Expiry:  2 * time.Hour,
+			Subject: &caSubject,
+		})
+		require.NoError(err)
+
+		renewSubject := schema.SubjectMeta{
+			Unit: types.Ptr("Security"),
+			City: types.Ptr("London"),
+		}
+		renewed, err := m.RenewCA(context.Background(), caRow.CertKey, schema.RenewCertRequest{
+			Subject: &renewSubject,
+		})
+		require.NoError(err)
+
+		parsedRenewed, err := x509.ParseCertificate(renewed.Cert)
+		require.NoError(err)
+		assert.Equal([]string{"Example Org"}, parsedRenewed.Subject.Organization)
+		assert.Equal([]string{"Security"}, parsedRenewed.Subject.OrganizationalUnit)
+		assert.Equal([]string{"GB"}, parsedRenewed.Subject.Country)
+		assert.Equal([]string{"London"}, parsedRenewed.Subject.Locality)
+
+		var storedSubject schema.Subject
+		require.NoError(m.Get(context.Background(), &storedSubject, schema.SubjectID(renewed.Subject.ID)))
+		assert.Equal("Example Org", types.Value(storedSubject.Org))
+		assert.Equal("Security", types.Value(storedSubject.Unit))
+		assert.Equal("GB", types.Value(storedSubject.Country))
+		assert.Equal("London", types.Value(storedSubject.City))
+	})
+
+	t.Run("RenewCAAllowsExplicitlyClearingInheritedSubjectFields", func(t *testing.T) {
+		assert := assert.New(t)
+		require := require.New(t)
+
+		_, _, _, pemValue := newRootPEMBundle(t, "Example Root CA", "Example Org")
+		m := newCustomSchemaManagerWithOpts(t,
+			"cert_test_ca_renew_clear_subject",
+			manager.WithPassphrase(1, "root-secret-1"),
+			manager.WithRoot(pemValue),
+		)
+
+		caSubject := schema.SubjectMeta{
+			Org:  types.Ptr("Example Org"),
+			Unit: types.Ptr("Operations"),
+		}
+		caRow, err := m.CreateCA(context.Background(), schema.CreateCertRequest{
+			Name:    "renew_ca",
+			Expiry:  2 * time.Hour,
+			Subject: &caSubject,
+		})
+		require.NoError(err)
+
+		renewSubject := schema.SubjectMeta{
+			Org:  types.Ptr(""),
+			Unit: types.Ptr("Security"),
+		}
+		renewed, err := m.RenewCA(context.Background(), caRow.CertKey, schema.RenewCertRequest{
+			Subject: &renewSubject,
+		})
+		require.NoError(err)
+
+		parsedRenewed, err := x509.ParseCertificate(renewed.Cert)
+		require.NoError(err)
+		assert.Empty(parsedRenewed.Subject.Organization)
+		assert.Equal([]string{"Security"}, parsedRenewed.Subject.OrganizationalUnit)
+
+		var storedSubject schema.Subject
+		require.NoError(m.Get(context.Background(), &storedSubject, schema.SubjectID(renewed.Subject.ID)))
+		assert.Nil(storedSubject.Org)
+		assert.Equal("Security", types.Value(storedSubject.Unit))
+	})
+
+	t.Run("RenewCACarriesForwardSAN", func(t *testing.T) {
+		assert := assert.New(t)
+		require := require.New(t)
+
+		rootSigner, _, _, pemValue := newRootPEMBundle(t, "Example Root CA", "Example Org")
+		m := newCustomSchemaManagerWithOpts(t,
+			"cert_test_ca_renew_san",
+			manager.WithPassphrase(1, "root-secret-1"),
+			manager.WithRoot(pemValue),
+		)
+
+		currentCA, err := cert.New(
+			cert.WithCommonName("renew_ca"),
+			cert.WithOrganization("Example Org", "Operations"),
+			cert.WithRSAKey(0),
+			cert.WithCA(),
+			cert.WithExpiry(2*time.Hour),
+			cert.WithSigner(rootSigner),
+			cert.WithSAN("ca.example.test", "127.0.0.1"),
+		)
+		require.NoError(err)
+
+		var rootRow schema.Cert
+		require.NoError(m.Get(context.Background(), &rootRow, schema.CertName(schema.RootCertName)))
+
+		var subjectRow schema.Subject
+		require.NoError(m.Insert(context.Background(), &subjectRow, currentCA.SubjectMeta()))
+
+		certValue := currentCA.SchemaCert()
+		certValue.SubjectID = types.Ptr(subjectRow.ID)
+		certValue.Signer = &rootRow.CertKey
+
+		var caRow schema.Cert
+		require.NoError(m.Insert(context.Background(), &caRow, certValue))
+
+		renewed, err := m.RenewCA(context.Background(), caRow.CertKey, schema.RenewCertRequest{})
+		require.NoError(err)
+		require.NotNil(renewed)
+
+		parsedRenewed, err := x509.ParseCertificate(renewed.Cert)
+		require.NoError(err)
+		assert.Equal([]string{"ca.example.test"}, parsedRenewed.DNSNames)
+		if assert.Len(parsedRenewed.IPAddresses, 1) {
+			assert.Equal("127.0.0.1", parsedRenewed.IPAddresses[0].String())
+		}
+		assert.ElementsMatch([]string{"ca.example.test", "127.0.0.1"}, renewed.SAN)
 	})
 
 	t.Run("RenewCARejectsRootCertificate", func(t *testing.T) {
@@ -378,6 +609,32 @@ func TestCA_001(t *testing.T) {
 		require.Error(err)
 		assert.Nil(renewed)
 		assert.ErrorIs(err, httpresponse.ErrConflict)
-		assert.EqualError(err, "Conflict: root certificate is disabled")
+		assert.EqualError(err, "Conflict: certificate authority is disabled")
+	})
+
+	t.Run("RenewCARejectsDisabledCertificateAuthority", func(t *testing.T) {
+		assert := assert.New(t)
+		require := require.New(t)
+
+		_, _, _, pemValue := newRootPEMBundle(t, "Example Root CA", "Example Org")
+		m := newCustomSchemaManagerWithOpts(t,
+			"cert_test_ca_renew_disabled_current",
+			manager.WithPassphrase(1, "root-secret-1"),
+			manager.WithRoot(pemValue),
+		)
+
+		caRow, err := m.CreateCA(context.Background(), schema.CreateCertRequest{Name: "renew_ca", Expiry: 2 * time.Hour})
+		require.NoError(err)
+
+		enabled := false
+		updated, err := m.UpdateCert(context.Background(), caRow.CertKey, schema.CertMeta{Enabled: &enabled})
+		require.NoError(err)
+		require.NotNil(updated)
+
+		renewed, err := m.RenewCA(context.Background(), caRow.CertKey, schema.RenewCertRequest{})
+		require.Error(err)
+		assert.Nil(renewed)
+		assert.ErrorIs(err, httpresponse.ErrConflict)
+		assert.EqualError(err, "Conflict: certificate authority is disabled")
 	})
 }

@@ -42,8 +42,14 @@ func RegisterCertManagerHandlers(manager *managerpkg.Manager, router server.HTTP
 		result = errors.Join(result, router.(Register).RegisterFunc(path, handler, true, spec))
 	}
 
-	register(CertHandler(manager))
 	register(CAHandler(manager))
+	register(CAByNameRenewHandler(manager))
+	register(CAByKeyRenewHandler(manager))
+	register(CertHandler(manager))
+	register(CertByCAHandler(manager))
+	register(CertByCAKeyHandler(manager))
+	register(CertRenewByNameHandler(manager))
+	register(CertRenewByKeyHandler(manager))
 
 	return result
 }

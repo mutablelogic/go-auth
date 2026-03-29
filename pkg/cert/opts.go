@@ -23,12 +23,14 @@ import (
 	"fmt"
 	"math/big"
 	"net"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
 
 	// Packages
 	schema "github.com/djthorpe/go-auth/schema/cert"
+	types "github.com/mutablelogic/go-server/pkg/types"
 )
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -131,13 +133,13 @@ func WithAddress(address, postcode string) Opt {
 // Set subject attributes, excluding the common name.
 func WithSubject(subject schema.SubjectMeta) Opt {
 	return func(o *Cert) error {
-		org := strings.TrimSpace(stringValue(subject.Org))
-		unit := strings.TrimSpace(stringValue(subject.Unit))
-		country := strings.TrimSpace(stringValue(subject.Country))
-		state := strings.TrimSpace(stringValue(subject.State))
-		city := strings.TrimSpace(stringValue(subject.City))
-		address := strings.TrimSpace(stringValue(subject.StreetAddress))
-		postcode := strings.TrimSpace(stringValue(subject.PostalCode))
+		org := strings.TrimSpace(types.Value(subject.Org))
+		unit := strings.TrimSpace(types.Value(subject.Unit))
+		country := strings.TrimSpace(types.Value(subject.Country))
+		state := strings.TrimSpace(types.Value(subject.State))
+		city := strings.TrimSpace(types.Value(subject.City))
+		address := strings.TrimSpace(types.Value(subject.StreetAddress))
+		postcode := strings.TrimSpace(types.Value(subject.PostalCode))
 
 		if org == "" && unit == "" && country == "" && state == "" && city == "" && address == "" && postcode == "" {
 			return fmt.Errorf("subject is required")
@@ -253,21 +255,37 @@ func WithRSAKey(bits int) Opt {
 	}
 }
 
-// Set hosts and IP addreses for the certificate
-func WithAddr(addr ...string) Opt {
+// Set subject alternative names for the certificate.
+func WithSAN(san ...string) Opt {
 	return func(o *Cert) error {
-		for _, addr := range addr {
-			addr = strings.TrimSpace(addr)
-			if ip := net.ParseIP(addr); ip != nil {
+		if err := ValidateSAN(san...); err != nil {
+			return err
+		}
+		for _, value := range san {
+			value = strings.TrimSpace(value)
+			if ip := net.ParseIP(value); ip != nil {
 				o.x509.IPAddresses = append(o.x509.IPAddresses, ip)
 			} else {
-				o.x509.DNSNames = append(o.x509.DNSNames, addr)
+				o.x509.DNSNames = append(o.x509.DNSNames, value)
 			}
 		}
 
 		// Return success
 		return nil
 	}
+}
+
+// ValidateSAN validates SAN inputs accepted by WithSAN.
+// Valid inputs are IP addresses, DNS names, and wildcard DNS names.
+// CIDR ranges are rejected because they belong to CA constraints rather than
+// leaf certificate SAN entries.
+func ValidateSAN(san ...string) error {
+	for _, value := range san {
+		if _, err := validateSAN(value); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // Set as a CA certificate
@@ -319,9 +337,38 @@ func ecdsaKey(t string) (*ecdsa.PrivateKey, error) {
 	}
 }
 
-func stringValue(value *string) string {
-	if value == nil {
-		return ""
+var dnsLabelPattern = regexp.MustCompile(`^[A-Za-z0-9-]+$`)
+
+func validateSAN(san string) (string, error) {
+	san = strings.TrimSpace(san)
+	if san == "" {
+		return "", fmt.Errorf("san entry is required")
 	}
-	return *value
+	if strings.Contains(san, "/") {
+		if _, _, err := net.ParseCIDR(san); err == nil {
+			return "", fmt.Errorf("san entry %q is a CIDR range and is not supported for certificates", san)
+		}
+	}
+	if ip := net.ParseIP(san); ip != nil {
+		return san, nil
+	}
+	if strings.HasSuffix(san, ".") {
+		return "", fmt.Errorf("san entry %q is invalid", san)
+	}
+	labels := strings.Split(san, ".")
+	for i, label := range labels {
+		if label == "" {
+			return "", fmt.Errorf("san entry %q is invalid", san)
+		}
+		if label == "*" {
+			if i != 0 || len(labels) < 2 {
+				return "", fmt.Errorf("san entry %q is invalid", san)
+			}
+			continue
+		}
+		if len(label) > 63 || !dnsLabelPattern.MatchString(label) || strings.HasPrefix(label, "-") || strings.HasSuffix(label, "-") {
+			return "", fmt.Errorf("san entry %q is invalid", san)
+		}
+	}
+	return san, nil
 }

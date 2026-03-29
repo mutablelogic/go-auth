@@ -35,7 +35,7 @@ func TestClientCAMethods(t *testing.T) {
 
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			require.Equal(http.MethodPost, r.Method)
-			require.Equal("/cert/ca", r.URL.Path)
+			require.Equal("/ca", r.URL.Path)
 			require.Equal("application/json", r.Header.Get("Content-Type"))
 
 			var req schema.CreateCertRequest
@@ -65,5 +65,81 @@ func TestClientCAMethods(t *testing.T) {
 		assert.Equal("1", response.Serial)
 		assert.True(response.IsCA)
 		assert.Equal([]string{"ops"}, response.Tags)
+	})
+
+	t.Run("RenewCAUsesLatestNamePath", func(t *testing.T) {
+		assert := assert.New(t)
+		require := require.New(t)
+
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			require.Equal(http.MethodPost, r.Method)
+			require.Equal("/ca/issuer_ca/renew", r.URL.Path)
+			require.Equal("application/json", r.Header.Get("Content-Type"))
+
+			var req schema.RenewCertRequest
+			require.NoError(json.NewDecoder(r.Body).Decode(&req))
+			assert.Equal(time.Hour, req.Expiry)
+			assert.Equal([]string{"renewed"}, req.Tags)
+
+			w.Header().Set("Content-Type", "application/json")
+			require.NoError(json.NewEncoder(w).Encode(schema.Cert{
+				CertKey: schema.CertKey{Name: "issuer_ca", Serial: "2"},
+				IsCA:    true,
+				CertMeta: schema.CertMeta{
+					Tags: []string{"renewed"},
+				},
+			}))
+		}))
+		defer server.Close()
+
+		client, err := New(server.URL)
+		require.NoError(err)
+
+		response, err := client.RenewCA(context.Background(), schema.CertKey{Name: "issuer_ca"}, schema.RenewCertRequest{Expiry: time.Hour, Tags: []string{"renewed"}})
+		require.NoError(err)
+		require.NotNil(response)
+		assert.Equal("issuer_ca", response.Name)
+		assert.Equal("2", response.Serial)
+		assert.True(response.IsCA)
+		assert.Equal([]string{"renewed"}, response.Tags)
+	})
+
+	t.Run("RenewCAUsesExactKeyPath", func(t *testing.T) {
+		assert := assert.New(t)
+		require := require.New(t)
+
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			require.Equal(http.MethodPost, r.Method)
+			require.Equal("/ca/issuer_ca/1/renew", r.URL.Path)
+			require.Equal("application/json", r.Header.Get("Content-Type"))
+
+			var req schema.RenewCertRequest
+			require.NoError(json.NewDecoder(r.Body).Decode(&req))
+			require.NotNil(req.Enabled)
+			assert.False(*req.Enabled)
+
+			w.Header().Set("Content-Type", "application/json")
+			require.NoError(json.NewEncoder(w).Encode(schema.Cert{
+				CertKey: schema.CertKey{Name: "issuer_ca", Serial: "2"},
+				IsCA:    true,
+				CertMeta: schema.CertMeta{
+					Enabled: &[]bool{false}[0],
+				},
+			}))
+		}))
+		defer server.Close()
+
+		client, err := New(server.URL)
+		require.NoError(err)
+
+		enabled := false
+		response, err := client.RenewCA(context.Background(), schema.CertKey{Name: "issuer_ca", Serial: "1"}, schema.RenewCertRequest{Enabled: &enabled})
+		require.NoError(err)
+		require.NotNil(response)
+		assert.Equal("issuer_ca", response.Name)
+		assert.Equal("2", response.Serial)
+		assert.True(response.IsCA)
+		require.NotNil(response.Enabled)
+		assert.False(*response.Enabled)
 	})
 }

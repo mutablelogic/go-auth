@@ -15,6 +15,7 @@
 package schema
 
 import (
+	"crypto/x509"
 	"math/big"
 	"strings"
 	"time"
@@ -37,8 +38,10 @@ type CertKey struct {
 	Serial string `json:"serial"`
 }
 
+// Name for retrieving private certificate
 type PrivateCertName string
 
+// Key for retrieving private certificate
 type PrivateCertKey struct {
 	Name   string `json:"name"`
 	Serial string `json:"serial"`
@@ -57,6 +60,7 @@ type Cert struct {
 	Signer    *CertKey    `json:"signer,omitempty"`
 	Subject   *SubjectRef `json:"subject,omitempty" readonly:""`
 	SubjectID *uint64     `json:"-"`
+	SAN       []string    `json:"san,omitempty" readonly:""`
 	NotBefore time.Time   `json:"not_before,omitzero"`
 	NotAfter  time.Time   `json:"not_after,omitzero"`
 	IsCA      bool        `json:"is_ca,omitempty"`
@@ -66,16 +70,24 @@ type Cert struct {
 	Ts            time.Time `json:"timestamp,omitzero"`
 }
 
+// Composite of Cert and private key for select
 type CertWithPrivateKey struct {
 	Cert
 	PV  uint64 `json:"pv,omitempty" readonly:""`
 	Key []byte `json:"key,omitempty"`
 }
 
+type CertBundle struct {
+	Cert
+	Chain []Cert `json:"chain,omitempty" readonly:""`
+	Key   []byte `json:"key,omitempty" readonly:""`
+}
+
 type CreateCertRequest struct {
 	Name    string        `json:"name,omitempty"`
 	Expiry  time.Duration `json:"expiry,omitempty"`
 	Subject *SubjectMeta  `json:"subject,omitempty"`
+	SAN     []string      `json:"san,omitempty"`
 	Enabled *bool         `json:"enabled,omitempty" negatable:""`
 	Tags    []string      `json:"tags,omitempty"`
 }
@@ -114,6 +126,10 @@ func (c CertKey) String() string {
 }
 
 func (c CertWithPrivateKey) String() string {
+	return types.Stringify(c)
+}
+
+func (c CertBundle) String() string {
 	return types.Stringify(c)
 }
 
@@ -277,6 +293,21 @@ func scanCert(row pg.Row, cert *Cert, key *[]byte, pv *uint64) error {
 			return err
 		}
 	}
+	var parsedCert *x509.Certificate
+	if value, err := x509.ParseCertificate(cert.Cert); err == nil {
+		parsedCert = value
+		san := append([]string(nil), value.DNSNames...)
+		for _, ip := range value.IPAddresses {
+			san = append(san, ip.String())
+		}
+		if len(san) > 0 {
+			cert.SAN = san
+		} else {
+			cert.SAN = nil
+		}
+	} else {
+		cert.SAN = nil
+	}
 	if cert.SubjectID != nil {
 		meta := SubjectMeta{
 			Org:           subjectOrg,
@@ -287,7 +318,13 @@ func scanCert(row pg.Row, cert *Cert, key *[]byte, pv *uint64) error {
 			StreetAddress: subjectStreetAddress,
 			PostalCode:    subjectPostalCode,
 		}
-		cert.Subject = types.Ptr(SubjectRefFromMeta(types.Value(cert.SubjectID), meta, types.Value(subjectTs)))
+		var commonName *string
+		if parsedCert != nil {
+			if value := strings.TrimSpace(parsedCert.Subject.CommonName); value != "" {
+				commonName = types.Ptr(value)
+			}
+		}
+		cert.Subject = types.Ptr(SubjectRefFromMeta(types.Value(cert.SubjectID), meta, types.Value(subjectTs), commonName))
 	} else {
 		cert.Subject = nil
 	}

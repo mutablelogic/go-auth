@@ -16,6 +16,8 @@ package cert_test
 
 import (
 	"bytes"
+	"crypto/x509"
+	"net"
 	"testing"
 	"time"
 
@@ -212,5 +214,39 @@ func Test_Cert_004(t *testing.T) {
 		assert.Equal("San Francisco", types.Value(meta.City))
 		assert.Equal("1 Example Way", types.Value(meta.StreetAddress))
 		assert.Equal("94105", types.Value(meta.PostalCode))
+	})
+
+	t.Run("WithSANAppliesDNSAndIP", func(t *testing.T) {
+		leaf, err := cert.New(
+			cert.WithCommonName("leaf.example.test"),
+			cert.WithSAN("api.example.test", "*.example.test", "127.0.0.1"),
+			cert.WithRSAKey(0),
+			cert.WithExpiry(time.Hour),
+		)
+		if !assert.NoError(err) {
+			t.FailNow()
+		}
+
+		parsed, err := x509.ParseCertificate(leaf.SchemaCert().Cert.Cert)
+		if !assert.NoError(err) {
+			t.FailNow()
+		}
+		assert.ElementsMatch([]string{"api.example.test", "*.example.test"}, parsed.DNSNames)
+		if assert.Len(parsed.IPAddresses, 1) {
+			assert.True(parsed.IPAddresses[0].Equal(net.ParseIP("127.0.0.1")))
+		}
+	})
+
+	t.Run("WithSANRejectsCIDR", func(t *testing.T) {
+		leaf, err := cert.New(
+			cert.WithCommonName("leaf.example.test"),
+			cert.WithSAN("10.0.0.0/24"),
+			cert.WithRSAKey(0),
+			cert.WithExpiry(time.Hour),
+		)
+		if assert.Error(err) {
+			assert.Nil(leaf)
+			assert.EqualError(err, `san entry "10.0.0.0/24" is a CIDR range and is not supported for certificates`)
+		}
 	})
 }

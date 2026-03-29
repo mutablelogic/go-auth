@@ -47,6 +47,9 @@ func (m *Manager) CreateCA(ctx context.Context, req schema.CreateCertRequest) (_
 	if req.Name == "" {
 		return nil, fmt.Errorf("name is required")
 	}
+	if len(req.SAN) > 0 {
+		return nil, httpresponse.ErrBadRequest.With("san is only supported for leaf certificates")
+	}
 	if m.passphrase == nil {
 		return nil, certificateStoragePassphraseRequired()
 	}
@@ -63,11 +66,10 @@ func (m *Manager) CreateCA(ctx context.Context, req schema.CreateCertRequest) (_
 		return nil, httpresponse.ErrConflict.With("root certificate is disabled")
 	}
 
-	// Determine the subject for the CA certificate, defaulting to the root certificate subject if not provided
-	caSubject := schema.SubjectMetaFromPKIXName(rootCert.Subject)
-	if req.Subject != nil {
-		caSubject = *req.Subject
-	}
+	// Determine the subject for the CA certificate by overlaying any explicit
+	// request fields onto the root certificate subject. Empty string values clear
+	// inherited fields.
+	caSubject := schema.MergeSubjectMeta(schema.SubjectMetaFromPKIXName(rootCert.Subject), req.Subject)
 
 	// Cap the requested expiry to the remaining validity of the root certificate,
 	// defaulting to DefaultCACertExpiry if not provided

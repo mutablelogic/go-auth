@@ -17,6 +17,7 @@ package certmanager
 import (
 	"context"
 	"net/http"
+	"strings"
 
 	// Packages
 	schema "github.com/djthorpe/go-auth/schema/cert"
@@ -33,7 +34,23 @@ func (c *Client) CreateCA(ctx context.Context, req schema.CreateCertRequest) (*s
 	if err != nil {
 		return nil, err
 	}
-	if err := c.DoWithContext(ctx, body, &response, client.OptPath("cert", "ca")); err != nil {
+	if err := c.DoWithContext(ctx, body, &response, client.OptPath("ca")); err != nil {
+		return nil, err
+	}
+	return types.Ptr(response), nil
+}
+
+func (c *Client) RenewCA(ctx context.Context, ca schema.CertKey, req schema.RenewCertRequest) (*schema.Cert, error) {
+	var response schema.Cert
+	body, err := client.NewJSONRequestEx(http.MethodPost, renewRequestBody(req), types.ContentTypeJSON)
+	if err != nil {
+		return nil, err
+	}
+	if serial := strings.TrimSpace(ca.Serial); serial != "" {
+		if err := c.DoWithContext(ctx, body, &response, client.OptPath("ca", ca.Name, serial, "renew")); err != nil {
+			return nil, err
+		}
+	} else if err := c.DoWithContext(ctx, body, &response, client.OptPath("ca", ca.Name, "renew")); err != nil {
 		return nil, err
 	}
 	return types.Ptr(response), nil

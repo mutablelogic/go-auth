@@ -1,3 +1,17 @@
+// Copyright 2026 David Thorpe
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package manager
 
 import (
@@ -54,6 +68,9 @@ func (m *Manager) CreateCert(ctx context.Context, req schema.CreateCertRequest, 
 	if req.Name == "" {
 		return nil, fmt.Errorf("name is required")
 	}
+	if err := cert.ValidateSAN(req.SAN...); err != nil {
+		return nil, httpresponse.ErrBadRequest.With(err.Error())
+	}
 	if m.passphrase == nil {
 		return nil, certificateStoragePassphraseRequired()
 	}
@@ -84,10 +101,10 @@ func (m *Manager) CreateCert(ctx context.Context, req schema.CreateCertRequest, 
 		return nil, err
 	}
 
-	certSubject := schema.SubjectMetaFromPKIXName(caCert.Subject)
-	if req.Subject != nil {
-		certSubject = *req.Subject
-	}
+	// Determine the subject for the leaf certificate by overlaying any explicit
+	// request fields onto the signing CA subject. Empty string values clear
+	// inherited fields.
+	certSubject := schema.MergeSubjectMeta(schema.SubjectMetaFromPKIXName(caCert.Subject), req.Subject)
 
 	expires, err := capExpiry(req.Expiry, schema.DefaultCertExpiry, "certificate authority", caCert.NotBefore, caCert.NotAfter)
 	if err != nil {
@@ -97,6 +114,7 @@ func (m *Manager) CreateCert(ctx context.Context, req schema.CreateCertRequest, 
 	leafCert, err := cert.New([]cert.Opt{
 		cert.WithCommonName(req.Name),
 		cert.WithSubject(certSubject),
+		cert.WithSAN(req.SAN...),
 		cert.WithRSAKey(0),
 		cert.WithExpiry(expires),
 		cert.WithSigner(caSigner),
@@ -293,6 +311,12 @@ func (m *Manager) renewCert(ctx context.Context, current schema.CertKey, req sch
 	if !expectCA && currentRow.IsCA {
 		return nil, httpresponse.ErrBadRequest.With("certificate is not a leaf certificate")
 	}
+	if !types.Value(currentRow.Enabled) {
+		if currentRow.IsCA {
+			return nil, httpresponse.ErrConflict.With("certificate authority is disabled")
+		}
+		return nil, httpresponse.ErrConflict.With("certificate is disabled")
+	}
 	if currentRow.Signer == nil {
 		return nil, httpresponse.ErrBadRequest.With("non-root certificate must have a signer")
 	}
@@ -307,10 +331,10 @@ func (m *Manager) renewCert(ctx context.Context, current schema.CertKey, req sch
 		return nil, err
 	}
 
-	subject := schema.SubjectMetaFromPKIXName(parsedCurrent.Subject)
-	if req.Subject != nil {
-		subject = *req.Subject
-	}
+	// Determine the renewed subject by overlaying any explicit request fields
+	// onto the current certificate subject. Empty string values clear inherited
+	// fields while nil preserves them.
+	subject := schema.MergeSubjectMeta(schema.SubjectMetaFromPKIXName(parsedCurrent.Subject), req.Subject)
 
 	currentLifetime := currentRow.NotAfter.Sub(currentRow.NotBefore)
 	expires, err := capExpiry(req.Expiry, currentLifetime, signerLabel, signerCert.NotBefore, signerCert.NotAfter)
@@ -331,6 +355,9 @@ func (m *Manager) renewCert(ctx context.Context, current schema.CertKey, req sch
 		cert.WithExpiry(expires),
 		cert.WithSerial(nextSerial),
 		cert.WithSigner(signer),
+	}
+	if san := certSAN(parsedCurrent); len(san) > 0 {
+		opts = append(opts, cert.WithSAN(san...))
 	}
 	if expectCA {
 		opts = append(opts, cert.WithCA())
@@ -433,4 +460,18 @@ func nextSerial(serial string) (*big.Int, error) {
 		return nil, httpresponse.ErrBadRequest.With("serial is invalid")
 	}
 	return value.Add(value, big.NewInt(1)), nil
+}
+
+func certSAN(parsed *x509.Certificate) []string {
+	if parsed == nil {
+		return nil
+	}
+	san := append([]string(nil), parsed.DNSNames...)
+	for _, ip := range parsed.IPAddresses {
+		san = append(san, ip.String())
+	}
+	if len(san) == 0 {
+		return nil
+	}
+	return san
 }
