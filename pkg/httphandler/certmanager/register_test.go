@@ -18,16 +18,18 @@ import (
 	"net/http"
 	"testing"
 
+	// Packages
+	httprequest "github.com/mutablelogic/go-server/pkg/httprequest"
+	jsonschema "github.com/mutablelogic/go-server/pkg/jsonschema"
 	openapi "github.com/mutablelogic/go-server/pkg/openapi/schema"
 	assert "github.com/stretchr/testify/assert"
 	require "github.com/stretchr/testify/require"
 )
 
 type registeredRoute struct {
-	path       string
-	handler    http.HandlerFunc
-	middleware bool
-	spec       *openapi.PathItem
+	path     string
+	params   *jsonschema.Schema
+	pathitem httprequest.PathItem
 }
 
 type fakeRouter struct {
@@ -36,9 +38,9 @@ type fakeRouter struct {
 }
 
 func (f *fakeRouter) ServeHTTP(w http.ResponseWriter, r *http.Request) {}
-func (f *fakeRouter) Spec() *openapi.Spec                              { return nil }
-func (f *fakeRouter) RegisterFunc(path string, handler http.HandlerFunc, middleware bool, spec *openapi.PathItem) error {
-	f.routes = append(f.routes, registeredRoute{path: path, handler: handler, middleware: middleware, spec: spec})
+func (f *fakeRouter) Spec() *openapi.Spec                              { return new(openapi.Spec) }
+func (f *fakeRouter) RegisterPath(path string, params *jsonschema.Schema, pathitem httprequest.PathItem) error {
+	f.routes = append(f.routes, registeredRoute{path: path, params: params, pathitem: pathitem})
 	return f.err
 }
 
@@ -66,9 +68,7 @@ func TestRegisterCertManagerHandlers(t *testing.T) {
 		assert.Contains(paths, "cert/{name}/renew")
 		assert.Contains(paths, "cert/{name}/{serial}/renew")
 		for _, route := range router.routes {
-			assert.NotNil(route.handler)
-			assert.NotNil(route.spec)
-			assert.True(route.middleware)
+			assert.NotNil(route.pathitem)
 		}
 	})
 }

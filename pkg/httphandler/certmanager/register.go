@@ -15,41 +15,77 @@
 package certmanager
 
 import (
+	_ "embed"
 	"errors"
-	"net/http"
 
 	// Packages
 	managerpkg "github.com/djthorpe/go-auth/pkg/certmanager"
+	shared "github.com/djthorpe/go-auth/pkg/httphandler/internal"
+	"github.com/djthorpe/go-auth/pkg/markdown"
+	pg "github.com/mutablelogic/go-pg"
 	server "github.com/mutablelogic/go-server"
-	openapi "github.com/mutablelogic/go-server/pkg/openapi/schema"
+	httprequest "github.com/mutablelogic/go-server/pkg/httprequest"
+	httpresponse "github.com/mutablelogic/go-server/pkg/httpresponse"
+	jsonschema "github.com/mutablelogic/go-server/pkg/jsonschema"
 )
 
 ///////////////////////////////////////////////////////////////////////////////
 // TYPES
 
 type Register interface {
-	RegisterFunc(path string, handler http.HandlerFunc, middleware bool, spec *openapi.PathItem) error
+	RegisterPath(path string, params *jsonschema.Schema, pathitem httprequest.PathItem) error
 }
+
+///////////////////////////////////////////////////////////////////////////////
+// GLOBALS
+
+//go:embed README.md
+var doc string
 
 ///////////////////////////////////////////////////////////////////////////////
 // PUBLIC METHODS
 
 // RegisterCertManagerHandlers registers certmanager resource handlers with the provided router.
 func RegisterCertManagerHandlers(manager *managerpkg.Manager, router server.HTTPRouter, authEnabled bool) error {
-	var result error
+	// Get the router as a Register interface
 	_ = authEnabled
-	register := func(path string, handler http.HandlerFunc, spec *openapi.PathItem) {
-		result = errors.Join(result, router.(Register).RegisterFunc(path, handler, true, spec))
+	r := router.(Register)
+	// TODO: Wrap path items with authentication and authorization if authEnabled is true
+
+	doc := markdown.Parse(doc)
+
+	// Add Group Header and Certificate Management description
+	router.Spec().AddTag("Certificate Authority", doc.Section(2, "Certificate Authority").Body)
+	router.Spec().AddTag("Certificate", doc.Section(2, "Certificates").Body)
+	router.Spec().AddTagGroup("Certificate Management", "Certificate Authority", "Certificate")
+	router.Spec().Info.Description = doc.Section(1, "Certificate Manager").Body
+
+	// Register the handlers, and return any errors
+	return errors.Join(
+		r.RegisterPath(CAHandler(manager, doc)),
+		r.RegisterPath(CAByNameRenewHandler(manager, doc)),
+		r.RegisterPath(CAByKeyRenewHandler(manager, doc)),
+		r.RegisterPath(CertHandler(manager, doc)),
+		r.RegisterPath(CertByCAHandler(manager, doc)),
+		r.RegisterPath(CertByCAKeyHandler(manager, doc)),
+		r.RegisterPath(CertRenewByNameHandler(manager, doc)),
+		r.RegisterPath(CertRenewByKeyHandler(manager, doc)),
+	)
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// PRIVATE METHODS
+
+// Translate internal errors to HTTP errors
+func httpErr(err error) error {
+	switch {
+	case errors.Is(err, pg.ErrNotFound):
+		return httpresponse.ErrNotFound.With(err)
+	case errors.Is(err, pg.ErrConflict):
+		return httpresponse.ErrConflict.With(err)
+	case errors.Is(err, pg.ErrBadParameter):
+		return httpresponse.ErrBadRequest.With(err)
+	default:
+		return shared.HTTPError(err)
 	}
-
-	register(CAHandler(manager))
-	register(CAByNameRenewHandler(manager))
-	register(CAByKeyRenewHandler(manager))
-	register(CertHandler(manager))
-	register(CertByCAHandler(manager))
-	register(CertByCAKeyHandler(manager))
-	register(CertRenewByNameHandler(manager))
-	register(CertRenewByKeyHandler(manager))
-
-	return result
 }

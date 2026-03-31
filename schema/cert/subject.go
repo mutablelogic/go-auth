@@ -31,13 +31,13 @@ import (
 type SubjectID uint64
 
 type SubjectMeta struct {
-	Org           *string `json:"organizationName,omitempty"`
-	Unit          *string `json:"organizationalUnit,omitempty"`
-	Country       *string `json:"countryName,omitempty"`
-	City          *string `json:"localityName,omitempty"`
-	State         *string `json:"stateOrProvinceName,omitempty"`
-	StreetAddress *string `json:"streetAddress,omitempty"`
-	PostalCode    *string `json:"postalCode,omitempty"`
+	Org           *string `json:"organizationName,omitempty" example:"Example Corp"`
+	Unit          *string `json:"organizationalUnit,omitempty" example:"IT Department"`
+	Country       *string `json:"countryName,omitempty" example:"US"`
+	City          *string `json:"localityName,omitempty" example:"San Francisco"`
+	State         *string `json:"stateOrProvinceName,omitempty" example:"California"`
+	StreetAddress *string `json:"streetAddress,omitempty" example:"123 Main St"`
+	PostalCode    *string `json:"postalCode,omitempty" example:"94105"`
 }
 
 type Subject struct {
