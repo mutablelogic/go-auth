@@ -29,6 +29,7 @@ import (
 	// Packages
 	cert "github.com/djthorpe/go-auth/pkg/cert"
 	managerpkg "github.com/djthorpe/go-auth/pkg/certmanager"
+	markdown "github.com/djthorpe/go-auth/pkg/markdown"
 	schema "github.com/djthorpe/go-auth/schema/cert"
 	test "github.com/mutablelogic/go-pg/pkg/test"
 	types "github.com/mutablelogic/go-server/pkg/types"
@@ -37,6 +38,7 @@ import (
 )
 
 var conn test.Conn
+var testDoc = markdown.Parse(doc)
 
 func TestMain(m *testing.M) {
 	test.Main(m, &conn)
@@ -46,9 +48,10 @@ func Test_cert_001(t *testing.T) {
 	t.Run("CertHandlerPath", func(t *testing.T) {
 		assert := assert.New(t)
 
-		path, _, spec := CertHandler(nil)
+		path, _, pathitem := CertHandler(nil, testDoc)
 
 		assert.Equal("cert", path)
+		spec := pathitem.Spec(path, nil)
 		if assert.NotNil(spec) && assert.NotNil(spec.Get) {
 			assert.Equal("List certificates", spec.Get.Summary)
 			if assert.Len(spec.Get.Parameters, 7) {
@@ -63,9 +66,10 @@ func Test_cert_001(t *testing.T) {
 	t.Run("CertByCAHandlerPath", func(t *testing.T) {
 		assert := assert.New(t)
 
-		path, _, spec := CertByCAHandler(nil)
+		path, _, pathitem := CertByCAHandler(nil, testDoc)
 
 		assert.Equal("cert/{name}", path)
+		spec := pathitem.Spec(path, nil)
 		if assert.NotNil(spec) && assert.NotNil(spec.Get) {
 			assert.Equal("Get latest certificate", spec.Get.Summary)
 			if assert.Len(spec.Get.Parameters, 3) {
@@ -93,9 +97,10 @@ func Test_cert_001(t *testing.T) {
 	t.Run("CertByCAKeyHandlerPath", func(t *testing.T) {
 		assert := assert.New(t)
 
-		path, _, spec := CertByCAKeyHandler(nil)
+		path, _, pathitem := CertByCAKeyHandler(nil, testDoc)
 
 		assert.Equal("cert/{name}/{serial}", path)
+		spec := pathitem.Spec(path, nil)
 		if assert.NotNil(spec) && assert.NotNil(spec.Get) {
 			assert.Equal("Get certificate by version", spec.Get.Summary)
 			if assert.Len(spec.Get.Parameters, 4) {
@@ -126,9 +131,10 @@ func Test_cert_001(t *testing.T) {
 	t.Run("CertRenewByNameHandlerPath", func(t *testing.T) {
 		assert := assert.New(t)
 
-		path, _, spec := CertRenewByNameHandler(nil)
+		path, _, pathitem := CertRenewByNameHandler(nil, testDoc)
 
 		assert.Equal("cert/{name}/renew", path)
+		spec := pathitem.Spec(path, nil)
 		if assert.NotNil(spec) && assert.NotNil(spec.Post) {
 			assert.Equal("Renew latest certificate", spec.Post.Summary)
 			assert.NotNil(spec.Post.RequestBody)
@@ -141,9 +147,10 @@ func Test_cert_001(t *testing.T) {
 	t.Run("CertRenewByKeyHandlerPath", func(t *testing.T) {
 		assert := assert.New(t)
 
-		path, _, spec := CertRenewByKeyHandler(nil)
+		path, _, pathitem := CertRenewByKeyHandler(nil, testDoc)
 
 		assert.Equal("cert/{name}/{serial}/renew", path)
+		spec := pathitem.Spec(path, nil)
 		if assert.NotNil(spec) && assert.NotNil(spec.Post) {
 			assert.Equal("Renew certificate by version", spec.Post.Summary)
 			assert.NotNil(spec.Post.RequestBody)
@@ -157,9 +164,10 @@ func Test_cert_001(t *testing.T) {
 	t.Run("CAHandlerPath", func(t *testing.T) {
 		assert := assert.New(t)
 
-		path, _, spec := CAHandler(nil)
+		path, _, pathitem := CAHandler(nil, testDoc)
 
 		assert.Equal("ca", path)
+		spec := pathitem.Spec(path, nil)
 		if assert.NotNil(spec) && assert.NotNil(spec.Post) {
 			assert.Equal("Create certificate authority", spec.Post.Summary)
 			assert.NotNil(spec.Post.RequestBody)
@@ -169,9 +177,10 @@ func Test_cert_001(t *testing.T) {
 	t.Run("CAByNameRenewHandlerPath", func(t *testing.T) {
 		assert := assert.New(t)
 
-		path, _, spec := CAByNameRenewHandler(nil)
+		path, _, pathitem := CAByNameRenewHandler(nil, testDoc)
 
 		assert.Equal("ca/{name}/renew", path)
+		spec := pathitem.Spec(path, nil)
 		if assert.NotNil(spec) && assert.NotNil(spec.Post) {
 			assert.Equal("Renew latest certificate authority", spec.Post.Summary)
 			assert.NotNil(spec.Post.RequestBody)
@@ -184,9 +193,10 @@ func Test_cert_001(t *testing.T) {
 	t.Run("CAByKeyRenewHandlerPath", func(t *testing.T) {
 		assert := assert.New(t)
 
-		path, _, spec := CAByKeyRenewHandler(nil)
+		path, _, pathitem := CAByKeyRenewHandler(nil, testDoc)
 
 		assert.Equal("ca/{name}/{serial}/renew", path)
+		spec := pathitem.Spec(path, nil)
 		if assert.NotNil(spec) && assert.NotNil(spec.Post) {
 			assert.Equal("Renew certificate authority by version", spec.Post.Summary)
 			assert.NotNil(spec.Post.RequestBody)
@@ -206,7 +216,8 @@ func Test_cert_001(t *testing.T) {
 		require.NoError(err)
 		require.NotNil(caRow)
 
-		path, handler, _ := CertHandler(manager)
+		path, _, pathitem := CertHandler(manager, testDoc)
+		handler := pathitem.Handler()
 		assert.Equal("cert", path)
 
 		res := httptest.NewRecorder()
@@ -241,7 +252,8 @@ func Test_cert_001(t *testing.T) {
 		}, caRow.CertKey)
 		require.NoError(err)
 
-		_, handler, _ := CertHandler(manager)
+		_, _, pathitem := CertHandler(manager, testDoc)
+		handler := pathitem.Handler()
 
 		res := httptest.NewRecorder()
 		req := httptest.NewRequest(http.MethodGet, "/cert?is_ca=false&limit=10", nil)
@@ -263,7 +275,8 @@ func Test_cert_001(t *testing.T) {
 		require := require.New(t)
 
 		manager := newHTTPTestManager(t)
-		_, handler, _ := CertHandler(manager)
+		_, _, pathitem := CertHandler(manager, testDoc)
+		handler := pathitem.Handler()
 
 		res := httptest.NewRecorder()
 		req := httptest.NewRequest(http.MethodGet, "/cert?limit=-1", nil)
@@ -283,7 +296,8 @@ func Test_cert_001(t *testing.T) {
 		caRow, err := manager.CreateCA(context.Background(), schema.CreateCertRequest{Name: "issuer_ca", Expiry: time.Hour})
 		require.NoError(err)
 
-		path, handler, _ := CertByCAHandler(manager)
+		path, _, pathitem := CertByCAHandler(manager, testDoc)
+		handler := pathitem.Handler()
 		assert.Equal("cert/{name}", path)
 
 		res := httptest.NewRecorder()
@@ -318,7 +332,8 @@ func Test_cert_001(t *testing.T) {
 		caRow, err := manager.CreateCA(context.Background(), schema.CreateCertRequest{Name: "issuer_ca", Expiry: time.Hour})
 		require.NoError(err)
 
-		path, handler, _ := CertByCAKeyHandler(manager)
+		path, _, pathitem := CertByCAKeyHandler(manager, testDoc)
+		handler := pathitem.Handler()
 		assert.Equal("cert/{name}/{serial}", path)
 
 		res := httptest.NewRecorder()
@@ -350,7 +365,8 @@ func Test_cert_001(t *testing.T) {
 		leafRow, err := manager.CreateCert(context.Background(), schema.CreateCertRequest{Name: "leaf_cert", Expiry: time.Hour}, caRow.CertKey)
 		require.NoError(err)
 
-		path, handler, _ := CertByCAHandler(manager)
+		path, _, pathitem := CertByCAHandler(manager, testDoc)
+		handler := pathitem.Handler()
 		assert.Equal("cert/{name}", path)
 
 		res := httptest.NewRecorder()
@@ -380,7 +396,8 @@ func Test_cert_001(t *testing.T) {
 		leafRow, err := manager.CreateCert(context.Background(), schema.CreateCertRequest{Name: "leaf_cert", Expiry: time.Hour}, caRow.CertKey)
 		require.NoError(err)
 
-		path, handler, _ := CertByCAHandler(manager)
+		path, _, pathitem := CertByCAHandler(manager, testDoc)
+		handler := pathitem.Handler()
 		assert.Equal("cert/{name}", path)
 
 		res := httptest.NewRecorder()
@@ -411,7 +428,8 @@ func Test_cert_001(t *testing.T) {
 		leafRow, err := manager.CreateCert(context.Background(), schema.CreateCertRequest{Name: "leaf_cert", Expiry: time.Hour}, caRow.CertKey)
 		require.NoError(err)
 
-		path, handler, _ := CertByCAKeyHandler(manager)
+		path, _, pathitem := CertByCAKeyHandler(manager, testDoc)
+		handler := pathitem.Handler()
 		assert.Equal("cert/{name}/{serial}", path)
 
 		res := httptest.NewRecorder()
@@ -444,7 +462,8 @@ func Test_cert_001(t *testing.T) {
 		require.NoError(err)
 		require.NotNil(updated)
 
-		_, handler, _ := CertByCAHandler(manager)
+		_, _, pathitem := CertByCAHandler(manager, testDoc)
+		handler := pathitem.Handler()
 
 		res := httptest.NewRecorder()
 		req := httptest.NewRequest(http.MethodGet, "/cert/leaf_cert", nil)
@@ -471,7 +490,8 @@ func Test_cert_001(t *testing.T) {
 		require.NoError(err)
 		require.NotNil(updated)
 
-		_, handler, _ := CertByCAKeyHandler(manager)
+		_, _, pathitem := CertByCAKeyHandler(manager, testDoc)
+		handler := pathitem.Handler()
 
 		res := httptest.NewRecorder()
 		req := httptest.NewRequest(http.MethodGet, "/cert/leaf_cert/"+leafRow.Serial, nil)
@@ -495,7 +515,8 @@ func Test_cert_001(t *testing.T) {
 		leafRow, err := manager.CreateCert(context.Background(), schema.CreateCertRequest{Name: "leaf_cert", Expiry: time.Hour}, caRow.CertKey)
 		require.NoError(err)
 
-		_, handler, _ := CertByCAHandler(manager)
+		_, _, pathitem := CertByCAHandler(manager, testDoc)
+		handler := pathitem.Handler()
 
 		res := httptest.NewRecorder()
 		req := httptest.NewRequest(http.MethodPatch, "/cert/leaf_cert", strings.NewReader(`{"enabled":false,"tags":["ops","prod"]}`))
@@ -526,7 +547,8 @@ func Test_cert_001(t *testing.T) {
 		leafRow, err := manager.CreateCert(context.Background(), schema.CreateCertRequest{Name: "leaf_cert", Expiry: time.Hour}, caRow.CertKey)
 		require.NoError(err)
 
-		_, handler, _ := CertByCAKeyHandler(manager)
+		_, _, pathitem := CertByCAKeyHandler(manager, testDoc)
+		handler := pathitem.Handler()
 
 		res := httptest.NewRecorder()
 		req := httptest.NewRequest(http.MethodPatch, "/cert/leaf_cert/"+leafRow.Serial, strings.NewReader(`{"tags":[]}`))
@@ -556,7 +578,8 @@ func Test_cert_001(t *testing.T) {
 		leafRow, err := manager.CreateCert(context.Background(), schema.CreateCertRequest{Name: "leaf_cert", Expiry: time.Hour, Tags: []string{"leaf"}}, caRow.CertKey)
 		require.NoError(err)
 
-		_, handler, _ := CertRenewByNameHandler(manager)
+		_, _, pathitem := CertRenewByNameHandler(manager, testDoc)
+		handler := pathitem.Handler()
 
 		res := httptest.NewRecorder()
 		req := httptest.NewRequest(http.MethodPost, "/cert/leaf_cert/renew", strings.NewReader(`{"expiry":1800000000000}`))
@@ -593,7 +616,8 @@ func Test_cert_001(t *testing.T) {
 		leafRow, err := manager.CreateCert(context.Background(), schema.CreateCertRequest{Name: "leaf_cert", Expiry: time.Hour}, caRow.CertKey)
 		require.NoError(err)
 
-		_, handler, _ := CertRenewByKeyHandler(manager)
+		_, _, pathitem := CertRenewByKeyHandler(manager, testDoc)
+		handler := pathitem.Handler()
 
 		res := httptest.NewRecorder()
 		req := httptest.NewRequest(http.MethodPost, "/cert/leaf_cert/"+leafRow.Serial+"/renew", strings.NewReader(`{}`))
@@ -620,7 +644,8 @@ func Test_cert_001(t *testing.T) {
 		require := require.New(t)
 
 		manager := newHTTPTestManager(t)
-		_, handler, _ := CertByCAHandler(manager)
+		_, _, pathitem := CertByCAHandler(manager, testDoc)
+		handler := pathitem.Handler()
 
 		res := httptest.NewRecorder()
 		req := httptest.NewRequest(http.MethodPost, "/cert/issuer_ca", strings.NewReader(`{"name":`))
@@ -639,7 +664,8 @@ func Test_cert_001(t *testing.T) {
 		require := require.New(t)
 
 		manager := newHTTPTestManager(t)
-		_, handler, _ := CertByCAHandler(manager)
+		_, _, pathitem := CertByCAHandler(manager, testDoc)
+		handler := pathitem.Handler()
 
 		res := httptest.NewRecorder()
 		req := httptest.NewRequest(http.MethodPatch, "/cert/leaf_cert", strings.NewReader(`{"enabled":`))
@@ -658,7 +684,8 @@ func Test_cert_001(t *testing.T) {
 		require := require.New(t)
 
 		manager := newHTTPTestManager(t)
-		_, handler, _ := CertByCAKeyHandler(manager)
+		_, _, pathitem := CertByCAKeyHandler(manager, testDoc)
+		handler := pathitem.Handler()
 
 		res := httptest.NewRecorder()
 		req := httptest.NewRequest(http.MethodPost, "/cert/issuer_ca", strings.NewReader(`{"name":"leaf_cert","expiry":3600000000000}`))
@@ -677,7 +704,8 @@ func Test_cert_001(t *testing.T) {
 		require := require.New(t)
 
 		manager := newHTTPTestManager(t)
-		_, handler, _ := CertRenewByNameHandler(manager)
+		_, _, pathitem := CertRenewByNameHandler(manager, testDoc)
+		handler := pathitem.Handler()
 
 		res := httptest.NewRecorder()
 		req := httptest.NewRequest(http.MethodPost, "/cert/leaf_cert/renew", strings.NewReader(`{"expiry":`))
@@ -696,7 +724,8 @@ func Test_cert_001(t *testing.T) {
 		require := require.New(t)
 
 		manager := newHTTPTestManager(t)
-		_, handler, _ := CertRenewByKeyHandler(manager)
+		_, _, pathitem := CertRenewByKeyHandler(manager, testDoc)
+		handler := pathitem.Handler()
 
 		res := httptest.NewRecorder()
 		req := httptest.NewRequest(http.MethodPost, "/cert/leaf_cert/renew", strings.NewReader(`{}`))
@@ -715,7 +744,8 @@ func Test_cert_001(t *testing.T) {
 		require := require.New(t)
 
 		manager := newHTTPTestManager(t)
-		path, handler, _ := CAHandler(manager)
+		path, _, pathitem := CAHandler(manager, testDoc)
+		handler := pathitem.Handler()
 		assert.Equal("ca", path)
 
 		res := httptest.NewRecorder()
@@ -747,7 +777,8 @@ func Test_cert_001(t *testing.T) {
 		require := require.New(t)
 
 		manager := newHTTPTestManager(t)
-		_, handler, _ := CAHandler(manager)
+		_, _, pathitem := CAHandler(manager, testDoc)
+		handler := pathitem.Handler()
 
 		res := httptest.NewRecorder()
 		req := httptest.NewRequest(http.MethodPost, "/ca", strings.NewReader(`{"name":`))
@@ -768,7 +799,8 @@ func Test_cert_001(t *testing.T) {
 		caRow, err := manager.CreateCA(context.Background(), schema.CreateCertRequest{Name: "issuer_ca", Expiry: 2 * time.Hour, Tags: []string{"ops"}})
 		require.NoError(err)
 
-		_, handler, _ := CAByNameRenewHandler(manager)
+		_, _, pathitem := CAByNameRenewHandler(manager, testDoc)
+		handler := pathitem.Handler()
 
 		res := httptest.NewRecorder()
 		req := httptest.NewRequest(http.MethodPost, "/ca/issuer_ca/renew", strings.NewReader(`{}`))
@@ -797,7 +829,8 @@ func Test_cert_001(t *testing.T) {
 		caRow, err := manager.CreateCA(context.Background(), schema.CreateCertRequest{Name: "issuer_ca", Expiry: 2 * time.Hour})
 		require.NoError(err)
 
-		_, handler, _ := CAByKeyRenewHandler(manager)
+		_, _, pathitem := CAByKeyRenewHandler(manager, testDoc)
+		handler := pathitem.Handler()
 
 		res := httptest.NewRecorder()
 		req := httptest.NewRequest(http.MethodPost, "/ca/issuer_ca/"+caRow.Serial+"/renew", strings.NewReader(`{}`))
@@ -825,7 +858,8 @@ func Test_cert_001(t *testing.T) {
 		require := require.New(t)
 
 		manager := newHTTPTestManager(t)
-		_, handler, _ := CAByNameRenewHandler(manager)
+		_, _, pathitem := CAByNameRenewHandler(manager, testDoc)
+		handler := pathitem.Handler()
 
 		res := httptest.NewRecorder()
 		req := httptest.NewRequest(http.MethodPost, "/ca/issuer_ca/renew", strings.NewReader(`{"tags":`))
@@ -844,7 +878,8 @@ func Test_cert_001(t *testing.T) {
 		require := require.New(t)
 
 		manager := newHTTPTestManager(t)
-		_, handler, _ := CAByKeyRenewHandler(manager)
+		_, _, pathitem := CAByKeyRenewHandler(manager, testDoc)
+		handler := pathitem.Handler()
 
 		res := httptest.NewRecorder()
 		req := httptest.NewRequest(http.MethodPost, "/ca/issuer_ca/renew", strings.NewReader(`{}`))
@@ -871,7 +906,8 @@ func Test_cert_001(t *testing.T) {
 		require.NoError(err)
 		require.NoError(manager.Exec(context.Background(), `TRUNCATE cert.subject CASCADE`))
 
-		_, handler, _ := CAHandler(manager)
+		_, _, pathitem := CAHandler(manager, testDoc)
+		handler := pathitem.Handler()
 
 		res := httptest.NewRecorder()
 		req := httptest.NewRequest(http.MethodPost, "/ca", strings.NewReader(`{"name":"issuer_ca","expiry":3600000000000}`))

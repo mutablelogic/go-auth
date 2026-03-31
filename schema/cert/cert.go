@@ -34,8 +34,8 @@ type CertName string
 
 // Certificate key
 type CertKey struct {
-	Name   string `json:"name"`
-	Serial string `json:"serial"`
+	Name   string `json:"name" example:"my_cert"`
+	Serial string `json:"serial" example:"123456789"`
 }
 
 // Name for retrieving private certificate
@@ -57,24 +57,24 @@ type CertMeta struct {
 type Cert struct {
 	ID uint64 `json:"-" readonly:""`
 	CertKey
-	Signer    *CertKey    `json:"signer,omitempty"`
-	Subject   *SubjectRef `json:"subject,omitempty" readonly:""`
+	Signer    *CertKey    `json:"signer,omitempty" jsonschema:"certificate authority that signed this certificate"`
+	Subject   *SubjectRef `json:"subject,omitempty" readonly:"" jsonschema:"certificate subject details"`
 	SubjectID *uint64     `json:"-"`
-	SAN       []string    `json:"san,omitempty" readonly:""`
-	NotBefore time.Time   `json:"not_before,omitzero"`
-	NotAfter  time.Time   `json:"not_after,omitzero"`
-	IsCA      bool        `json:"is_ca,omitempty"`
+	SAN       []string    `json:"san,omitempty" readonly:"" jsonschema:"subject alternative names: domains, wildcards, IPs or CIDR ranges" example:"[\"*.example.com\",\"192.168.1.1\",\"10.0.0.0/8\"]"`
+	NotBefore time.Time   `json:"not_before,omitzero" jsonschema:"start of certificate validity period" example:"2026-01-01T00:00:00Z"`
+	NotAfter  time.Time   `json:"not_after,omitzero" jsonschema:"end of certificate validity period" example:"2027-01-01T00:00:00Z"`
+	IsCA      bool        `json:"is_ca,omitempty" jsonschema:"whether this is a certificate authority" example:"false"`
 	CertMeta
-	Cert          []byte    `json:"cert,omitempty"`
-	EffectiveTags []string  `json:"effective_tags,omitempty" readonly:""`
-	Ts            time.Time `json:"timestamp,omitzero"`
+	Cert          []byte    `json:"cert,omitempty" jsonschema:"DER-encoded certificate data"`
+	EffectiveTags []string  `json:"effective_tags,omitempty" readonly:"" jsonschema:"tags inherited from the signing chain" example:"[\"production\",\"web\"]"`
+	Ts            time.Time `json:"timestamp,omitzero" jsonschema:"last modification timestamp"`
 }
 
 // Composite of Cert and private key for select
 type CertWithPrivateKey struct {
 	Cert
-	PV  uint64 `json:"pv,omitempty" readonly:""`
-	Key []byte `json:"key,omitempty"`
+	PV  uint64 `json:"pv,omitempty" readonly:"" jsonschema:"private key version"`
+	Key []byte `json:"key,omitempty" jsonschema:"DER-encoded private key data"`
 }
 
 type CertBundle struct {
@@ -84,25 +84,25 @@ type CertBundle struct {
 }
 
 type CreateCertRequest struct {
-	Name    string        `json:"name,omitempty"`
-	Expiry  time.Duration `json:"expiry,omitempty"`
-	Subject *SubjectMeta  `json:"subject,omitempty"`
-	SAN     []string      `json:"san,omitempty"`
-	Tags    []string      `json:"tags,omitempty"`
+	Name    string        `json:"name,omitempty" jsonschema:"unique certificate name" example:"my_cert"`
+	Expiry  time.Duration `json:"expiry,omitempty" jsonschema:"certificate validity duration" example:"8760h"`
+	Subject *SubjectMeta  `json:"subject,omitempty" optional:"" jsonschema:"certificate subject details"`
+	SAN     []string      `json:"san,omitempty" optional:"" jsonschema:"subject alternative names: domains, wildcards, IPs or CIDR ranges" example:"[\"*.example.com\",\"192.168.1.1\",\"10.0.0.0/8\"]"`
+	Tags    []string      `json:"tags,omitempty" jsonschema:"labels for grouping and filtering certificates" example:"[\"tag1\",\"tag2\"]"`
 }
 
 type RenewCertRequest struct {
-	Expiry  time.Duration `json:"expiry,omitempty"`
-	Subject *SubjectMeta  `json:"subject,omitempty"`
+	Expiry  time.Duration `json:"expiry,omitempty" jsonschema:"new certificate validity duration" example:"8760h"`
+	Subject *SubjectMeta  `json:"subject,omitempty" jsonschema:"updated certificate subject details"`
 }
 
 type CertListRequest struct {
 	pg.OffsetLimit
-	IsCA    *bool    `json:"is_ca,omitempty"`
-	Enabled *bool    `json:"enabled,omitempty" negatable:""`
-	Tags    []string `json:"tags,omitempty"`
-	Valid   *bool    `json:"valid,omitempty"`
-	Subject *uint64  `json:"subject,omitempty"`
+	IsCA    *bool    `json:"is_ca,omitempty" jsonschema:"filter by certificate authority status" example:"true"`
+	Enabled *bool    `json:"enabled,omitempty" negatable:"" jsonschema:"filter by effective enabled state" example:"true"`
+	Tags    []string `json:"tags,omitempty" jsonschema:"require all specified effective tags" example:"[\"production\"]"`
+	Valid   *bool    `json:"valid,omitempty" jsonschema:"filter by current validity window" example:"true"`
+	Subject *uint64  `json:"subject,omitempty" jsonschema:"filter by subject row identifier" example:"1"`
 }
 
 type CertList struct {

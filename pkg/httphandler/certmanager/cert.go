@@ -20,308 +20,158 @@ import (
 
 	// Packages
 	managerpkg "github.com/djthorpe/go-auth/pkg/certmanager"
+	"github.com/djthorpe/go-auth/pkg/markdown"
 	schema "github.com/djthorpe/go-auth/schema/cert"
 	httprequest "github.com/mutablelogic/go-server/pkg/httprequest"
 	httpresponse "github.com/mutablelogic/go-server/pkg/httpresponse"
 	jsonschema "github.com/mutablelogic/go-server/pkg/jsonschema"
-	openapi "github.com/mutablelogic/go-server/pkg/openapi/schema"
+	opts "github.com/mutablelogic/go-server/pkg/openapi"
 	types "github.com/mutablelogic/go-server/pkg/types"
 )
 
 ///////////////////////////////////////////////////////////////////////////////
 // PUBLIC METHODS
 
-// CertHandler returns an http.HandlerFunc for the certificate list endpoint.
-func CertHandler(manager *managerpkg.Manager) (string, http.HandlerFunc, *openapi.PathItem) {
-	return "cert", func(w http.ResponseWriter, r *http.Request) {
-			switch r.Method {
-			case http.MethodGet:
-				_ = listCerts(r.Context(), manager, w, r)
-			default:
-				_ = httpresponse.Error(w, httpresponse.Err(http.StatusMethodNotAllowed), r.Method)
-			}
-		}, &openapi.PathItem{
-			Summary:     "Certificate operations",
-			Description: "Operations on managed certificates.",
-			Get: &openapi.Operation{
-				Tags:        []string{"Certificate"},
-				Summary:     "List certificates",
-				Description: "Returns a paginated list of non-root certificates, optionally filtered by effective state and tags.",
-				Parameters: []openapi.Parameter{
-					{Name: "is_ca", In: openapi.ParameterInQuery, Description: "Filter certificate authorities or leaf certificates.", Schema: jsonschema.MustFor[bool]()},
-					{Name: "enabled", In: openapi.ParameterInQuery, Description: "Filter by effective enabled state.", Schema: jsonschema.MustFor[bool]()},
-					{Name: "tags", In: openapi.ParameterInQuery, Description: "Require all effective tags. May be repeated.", Schema: jsonschema.MustFor[[]string]()},
-					{Name: "valid", In: openapi.ParameterInQuery, Description: "Filter by current validity window.", Schema: jsonschema.MustFor[bool]()},
-					{Name: "subject", In: openapi.ParameterInQuery, Description: "Filter by subject row identifier.", Schema: jsonschema.MustFor[uint64]()},
-					{Name: "offset", In: openapi.ParameterInQuery, Description: "Pagination offset.", Schema: jsonschema.MustFor[uint64]()},
-					{Name: "limit", In: openapi.ParameterInQuery, Description: "Maximum number of certificates to return.", Schema: jsonschema.MustFor[uint64]()},
-				},
-				Responses: map[string]openapi.Response{
-					"200": {Description: "Certificate list.", Content: map[string]openapi.MediaType{"application/json": {Schema: jsonschema.MustFor[schema.CertList]()}}},
-					"400": {Description: "Invalid filter or pagination parameters."},
-				},
-			},
-		}
+// CertHandler returns a path and pathitem for the certificate list endpoint.
+func CertHandler(manager *managerpkg.Manager, doc *markdown.Document) (string, *jsonschema.Schema, httprequest.PathItem) {
+	return "cert", nil, httprequest.NewPathItem(
+		"Certificate operations",
+		"Operations on managed certificates.",
+		"Certificate",
+	).Get(
+		func(w http.ResponseWriter, r *http.Request) { listCerts(r.Context(), manager, w, r) },
+		"List certificates",
+		opts.WithDescription(doc.Section(3, "GET /{prefix}/cert").Body),
+		opts.WithQuery(jsonschema.MustFor[schema.CertListRequest]()),
+		opts.WithJSONResponse(200, jsonschema.MustFor[schema.CertList]()),
+		opts.WithErrorResponse(400, "Invalid filter or pagination parameters."),
+	)
 }
 
-// CertByCAHandler returns an http.HandlerFunc for creating a certificate signed by the latest CA version with the provided name.
-func CertByCAHandler(manager *managerpkg.Manager) (string, http.HandlerFunc, *openapi.PathItem) {
-	nameSchema := jsonschema.MustFor[string]()
-	querySchema := jsonschema.MustFor[bool]()
-
-	return "cert/{name}", func(w http.ResponseWriter, r *http.Request) {
-			name := r.PathValue("name")
-			if name == "" {
-				_ = httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest), "name is required")
-				return
-			}
-
-			switch r.Method {
-			case http.MethodGet:
-				_ = getCertByName(r.Context(), manager, w, r, name)
-			case http.MethodPatch:
-				_ = updateCertByName(r.Context(), manager, w, r, name)
-			case http.MethodPost:
-				_ = createCertByCAName(r.Context(), manager, w, r, name)
-			default:
-				_ = httpresponse.Error(w, httpresponse.Err(http.StatusMethodNotAllowed), r.Method)
-			}
-		}, &openapi.PathItem{
-			Summary:     "Certificate operations by name",
-			Description: "Fetches the latest certificate version by name or creates a leaf certificate signed by the latest certificate authority version with that name.",
-			Get: &openapi.Operation{
-				Tags:        []string{"Certificate"},
-				Summary:     "Get latest certificate",
-				Description: "Returns the latest certificate version for the supplied name. Use query parameters to include issuer-chain certificates and the decrypted private key where available.",
-				Parameters: []openapi.Parameter{
-					{Name: "name", In: openapi.ParameterInPath, Description: "Certificate name.", Required: true, Schema: nameSchema},
-					{Name: "chain", In: openapi.ParameterInQuery, Description: "Include issuer-chain certificates in the response.", Schema: querySchema},
-					{Name: "private", In: openapi.ParameterInQuery, Description: "Include the decrypted private key bytes for leaf certificates.", Schema: querySchema},
-				},
-				Responses: map[string]openapi.Response{
-					"200": {Description: "Requested certificate bundle.", Content: map[string]openapi.MediaType{"application/json": {Schema: jsonschema.MustFor[schema.CertBundle]()}}},
-					"400": {Description: "Invalid certificate name or query parameters."},
-					"404": {Description: "Certificate not found."},
-					"409": {Description: "Certificate is disabled."},
-				},
-			},
-			Post: &openapi.Operation{
-				Tags:        []string{"Certificate"},
-				Summary:     "Create certificate from CA name",
-				Description: "Creates a new leaf certificate signed by the latest certificate authority version with the supplied name.",
-				Parameters:  []openapi.Parameter{{Name: "name", In: openapi.ParameterInPath, Description: "Certificate authority name.", Required: true, Schema: nameSchema}},
-				RequestBody: &openapi.RequestBody{
-					Description: "Leaf certificate fields for the new certificate.",
-					Required:    true,
-					Content:     map[string]openapi.MediaType{"application/json": {Schema: jsonschema.MustFor[schema.CreateCertRequest]()}},
-				},
-				Responses: map[string]openapi.Response{
-					"201": {Description: "Created certificate.", Content: map[string]openapi.MediaType{"application/json": {Schema: jsonschema.MustFor[schema.Cert]()}}},
-					"400": {Description: "Invalid certificate authority name or request body."},
-					"404": {Description: "Signing certificate authority was not found."},
-					"409": {Description: "Certificate already exists or signing certificate authority state prevents issuance."},
-					"503": {Description: "Certificate issuance is not available because server certificate prerequisites are not configured."},
-				},
-			},
-			Patch: &openapi.Operation{
-				Tags:        []string{"Certificate"},
-				Summary:     "Update latest certificate",
-				Description: "Updates mutable certificate metadata on the latest certificate version with the supplied name.",
-				Parameters:  []openapi.Parameter{{Name: "name", In: openapi.ParameterInPath, Description: "Certificate name.", Required: true, Schema: nameSchema}},
-				RequestBody: &openapi.RequestBody{
-					Description: "Certificate metadata fields to update.",
-					Required:    true,
-					Content:     map[string]openapi.MediaType{"application/json": {Schema: jsonschema.MustFor[schema.CertMeta]()}},
-				},
-				Responses: map[string]openapi.Response{
-					"200": {Description: "Updated certificate.", Content: map[string]openapi.MediaType{"application/json": {Schema: jsonschema.MustFor[schema.Cert]()}}},
-					"400": {Description: "Invalid certificate name or request body."},
-					"404": {Description: "Certificate not found."},
-				},
-			},
-		}
+// CertByCAHandler returns a path and pathitem for certificate operations by name.
+func CertByCAHandler(manager *managerpkg.Manager, doc *markdown.Document) (string, *jsonschema.Schema, httprequest.PathItem) {
+	return "cert/{name}", nil, httprequest.NewPathItem(
+		"Certificate operations by name",
+		"Fetches the latest certificate version by name or creates a leaf certificate signed by the latest certificate authority version with that name.",
+		"Certificate",
+	).Get(
+		func(w http.ResponseWriter, r *http.Request) {
+			getCertByName(r.Context(), manager, w, r, r.PathValue("name"))
+		},
+		"Get latest certificate",
+		opts.WithDescription(doc.Section(3, "GET /{prefix}/cert/{name}").Body),
+		opts.WithQuery(jsonschema.MustFor[certQuery]()),
+		opts.WithJSONResponse(200, jsonschema.MustFor[schema.CertBundle]()),
+		opts.WithErrorResponse(400, "Invalid certificate name or query parameters."),
+		opts.WithErrorResponse(404, "Certificate not found."),
+		opts.WithErrorResponse(409, "Certificate is disabled."),
+	).Post(
+		func(w http.ResponseWriter, r *http.Request) {
+			createCertByCAName(r.Context(), manager, w, r, r.PathValue("name"))
+		},
+		"Create certificate from CA name",
+		opts.WithDescription(doc.Section(3, "POST /{prefix}/cert/{name}").Body),
+		opts.WithJSONRequest(jsonschema.MustFor[schema.CreateCertRequest]()),
+		opts.WithJSONResponse(201, jsonschema.MustFor[schema.Cert]()),
+		opts.WithErrorResponse(400, "Invalid certificate authority name or request body."),
+		opts.WithErrorResponse(404, "Signing certificate authority was not found."),
+		opts.WithErrorResponse(409, "Certificate already exists or signing certificate authority state prevents issuance."),
+		opts.WithErrorResponse(503, "Certificate issuance is not available because server certificate prerequisites are not configured."),
+	).Patch(
+		func(w http.ResponseWriter, r *http.Request) {
+			updateCertByName(r.Context(), manager, w, r, r.PathValue("name"))
+		},
+		"Update latest certificate",
+		opts.WithDescription(doc.Section(3, "PATCH /{prefix}/cert/{name}").Body),
+		opts.WithJSONRequest(jsonschema.MustFor[schema.CertMeta]()),
+		opts.WithJSONResponse(200, jsonschema.MustFor[schema.Cert]()),
+		opts.WithErrorResponse(400, "Invalid certificate name or request body."),
+		opts.WithErrorResponse(404, "Certificate not found."),
+	)
 }
 
-// CertByCAKeyHandler returns an http.HandlerFunc for creating a certificate signed by an explicit CA version.
-func CertByCAKeyHandler(manager *managerpkg.Manager) (string, http.HandlerFunc, *openapi.PathItem) {
-	nameSchema := jsonschema.MustFor[string]()
-	serialSchema := jsonschema.MustFor[string]()
-	querySchema := jsonschema.MustFor[bool]()
-
-	return "cert/{name}/{serial}", func(w http.ResponseWriter, r *http.Request) {
-			name := r.PathValue("name")
-			serial := r.PathValue("serial")
-			if name == "" {
-				_ = httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest), "name is required")
-				return
-			}
-			if serial == "" {
-				_ = httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest), "serial is required")
-				return
-			}
-
-			switch r.Method {
-			case http.MethodGet:
-				_ = getCertByKey(r.Context(), manager, w, r, schema.CertKey{Name: name, Serial: serial})
-			case http.MethodPatch:
-				_ = updateCertByKey(r.Context(), manager, w, r, schema.CertKey{Name: name, Serial: serial})
-			case http.MethodPost:
-				_ = createCert(r.Context(), manager, w, r, schema.CertKey{Name: name, Serial: serial})
-			default:
-				_ = httpresponse.Error(w, httpresponse.Err(http.StatusMethodNotAllowed), r.Method)
-			}
-		}, &openapi.PathItem{
-			Summary:     "Certificate operations by version",
-			Description: "Fetches a specific certificate version or creates a leaf certificate signed by a specific certificate authority version.",
-			Get: &openapi.Operation{
-				Tags:        []string{"Certificate"},
-				Summary:     "Get certificate by version",
-				Description: "Returns the requested certificate version. Use query parameters to include issuer-chain certificates and the decrypted private key where available.",
-				Parameters: []openapi.Parameter{
-					{Name: "name", In: openapi.ParameterInPath, Description: "Certificate name.", Required: true, Schema: nameSchema},
-					{Name: "serial", In: openapi.ParameterInPath, Description: "Certificate serial number.", Required: true, Schema: serialSchema},
-					{Name: "chain", In: openapi.ParameterInQuery, Description: "Include issuer-chain certificates in the response.", Schema: querySchema},
-					{Name: "private", In: openapi.ParameterInQuery, Description: "Include the decrypted private key bytes for leaf certificates.", Schema: querySchema},
-				},
-				Responses: map[string]openapi.Response{
-					"200": {Description: "Requested certificate bundle.", Content: map[string]openapi.MediaType{"application/json": {Schema: jsonschema.MustFor[schema.CertBundle]()}}},
-					"400": {Description: "Invalid certificate key or query parameters."},
-					"404": {Description: "Certificate not found."},
-					"409": {Description: "Certificate is disabled."},
-				},
-			},
-			Post: &openapi.Operation{
-				Tags:        []string{"Certificate"},
-				Summary:     "Create certificate from CA version",
-				Description: "Creates a new leaf certificate signed by the supplied certificate authority name and serial number.",
-				Parameters: []openapi.Parameter{
-					{Name: "name", In: openapi.ParameterInPath, Description: "Certificate authority name.", Required: true, Schema: nameSchema},
-					{Name: "serial", In: openapi.ParameterInPath, Description: "Certificate authority serial number.", Required: true, Schema: serialSchema},
-				},
-				RequestBody: &openapi.RequestBody{
-					Description: "Leaf certificate fields for the new certificate.",
-					Required:    true,
-					Content:     map[string]openapi.MediaType{"application/json": {Schema: jsonschema.MustFor[schema.CreateCertRequest]()}},
-				},
-				Responses: map[string]openapi.Response{
-					"201": {Description: "Created certificate.", Content: map[string]openapi.MediaType{"application/json": {Schema: jsonschema.MustFor[schema.Cert]()}}},
-					"400": {Description: "Invalid certificate authority key or request body."},
-					"404": {Description: "Signing certificate authority was not found."},
-					"409": {Description: "Certificate already exists or signing certificate authority state prevents issuance."},
-					"503": {Description: "Certificate issuance is not available because server certificate prerequisites are not configured."},
-				},
-			},
-			Patch: &openapi.Operation{
-				Tags:        []string{"Certificate"},
-				Summary:     "Update certificate by version",
-				Description: "Updates mutable certificate metadata on the requested certificate version.",
-				Parameters: []openapi.Parameter{
-					{Name: "name", In: openapi.ParameterInPath, Description: "Certificate name.", Required: true, Schema: nameSchema},
-					{Name: "serial", In: openapi.ParameterInPath, Description: "Certificate serial number.", Required: true, Schema: serialSchema},
-				},
-				RequestBody: &openapi.RequestBody{
-					Description: "Certificate metadata fields to update.",
-					Required:    true,
-					Content:     map[string]openapi.MediaType{"application/json": {Schema: jsonschema.MustFor[schema.CertMeta]()}},
-				},
-				Responses: map[string]openapi.Response{
-					"200": {Description: "Updated certificate.", Content: map[string]openapi.MediaType{"application/json": {Schema: jsonschema.MustFor[schema.Cert]()}}},
-					"400": {Description: "Invalid certificate key or request body."},
-					"404": {Description: "Certificate not found."},
-				},
-			},
-		}
+// CertByCAKeyHandler returns a path and pathitem for certificate operations by version.
+func CertByCAKeyHandler(manager *managerpkg.Manager, doc *markdown.Document) (string, *jsonschema.Schema, httprequest.PathItem) {
+	return "cert/{name}/{serial}", nil, httprequest.NewPathItem(
+		"Certificate operations by version",
+		"Fetches a specific certificate version or creates a leaf certificate signed by a specific certificate authority version.",
+		"Certificate",
+	).Get(
+		func(w http.ResponseWriter, r *http.Request) {
+			getCertByKey(r.Context(), manager, w, r, schema.CertKey{Name: r.PathValue("name"), Serial: r.PathValue("serial")})
+		},
+		"Get certificate by version",
+		opts.WithDescription(doc.Section(3, "GET /{prefix}/cert/{name}/{serial}").Body),
+		opts.WithQuery(jsonschema.MustFor[certQuery]()),
+		opts.WithJSONResponse(200, jsonschema.MustFor[schema.CertBundle]()),
+		opts.WithErrorResponse(400, "Invalid certificate key or query parameters."),
+		opts.WithErrorResponse(404, "Certificate not found."),
+		opts.WithErrorResponse(409, "Certificate is disabled."),
+	).Post(
+		func(w http.ResponseWriter, r *http.Request) {
+			createCert(r.Context(), manager, w, r, schema.CertKey{Name: r.PathValue("name"), Serial: r.PathValue("serial")})
+		},
+		"Create certificate from CA version",
+		opts.WithDescription(doc.Section(3, "POST /{prefix}/cert/{name}/{serial}").Body),
+		opts.WithJSONRequest(jsonschema.MustFor[schema.CreateCertRequest]()),
+		opts.WithJSONResponse(201, jsonschema.MustFor[schema.Cert]()),
+		opts.WithErrorResponse(400, "Invalid certificate authority key or request body."),
+		opts.WithErrorResponse(404, "Signing certificate authority was not found."),
+		opts.WithErrorResponse(409, "Certificate already exists or signing certificate authority state prevents issuance."),
+		opts.WithErrorResponse(503, "Certificate issuance is not available because server certificate prerequisites are not configured."),
+	).Patch(
+		func(w http.ResponseWriter, r *http.Request) {
+			updateCertByKey(r.Context(), manager, w, r, schema.CertKey{Name: r.PathValue("name"), Serial: r.PathValue("serial")})
+		},
+		"Update certificate by version",
+		opts.WithDescription(doc.Section(3, "PATCH /{prefix}/cert/{name}/{serial}").Body),
+		opts.WithJSONRequest(jsonschema.MustFor[schema.CertMeta]()),
+		opts.WithJSONResponse(200, jsonschema.MustFor[schema.Cert]()),
+		opts.WithErrorResponse(400, "Invalid certificate key or request body."),
+		opts.WithErrorResponse(404, "Certificate not found."),
+	)
 }
 
-// CertRenewByNameHandler returns an http.HandlerFunc for renewing the latest certificate version with the provided name.
-func CertRenewByNameHandler(manager *managerpkg.Manager) (string, http.HandlerFunc, *openapi.PathItem) {
-	nameSchema := jsonschema.MustFor[string]()
-
-	return "cert/{name}/renew", func(w http.ResponseWriter, r *http.Request) {
-			name := r.PathValue("name")
-			if name == "" {
-				_ = httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest), "name is required")
-				return
-			}
-
-			switch r.Method {
-			case http.MethodPost:
-				_ = renewCertByName(r.Context(), manager, w, r, name)
-			default:
-				_ = httpresponse.Error(w, httpresponse.Err(http.StatusMethodNotAllowed), r.Method)
-			}
-		}, &openapi.PathItem{
-			Summary:     "Certificate renewal by name",
-			Description: "Renews the latest certificate version with the supplied name.",
-			Post: &openapi.Operation{
-				Tags:        []string{"Certificate"},
-				Summary:     "Renew latest certificate",
-				Description: "Creates a new certificate version from the latest certificate with the supplied name and disables the previous version.",
-				Parameters:  []openapi.Parameter{{Name: "name", In: openapi.ParameterInPath, Description: "Certificate name.", Required: true, Schema: nameSchema}},
-				RequestBody: &openapi.RequestBody{
-					Description: "Certificate renewal fields for the new certificate version.",
-					Required:    true,
-					Content:     map[string]openapi.MediaType{"application/json": {Schema: jsonschema.MustFor[schema.RenewCertRequest]()}},
-				},
-				Responses: map[string]openapi.Response{
-					"201": {Description: "Renewed certificate.", Content: map[string]openapi.MediaType{"application/json": {Schema: jsonschema.MustFor[schema.Cert]()}}},
-					"400": {Description: "Invalid certificate name or request body."},
-					"404": {Description: "Certificate not found."},
-					"409": {Description: "Certificate or signer state prevents renewal."},
-					"503": {Description: "Certificate renewal is not available because server certificate prerequisites are not configured."},
-				},
-			},
-		}
+// CertRenewByNameHandler returns a path and pathitem for renewing the latest certificate version with the provided name.
+func CertRenewByNameHandler(manager *managerpkg.Manager, doc *markdown.Document) (string, *jsonschema.Schema, httprequest.PathItem) {
+	return "cert/{name}/renew", nil, httprequest.NewPathItem(
+		"Certificate renewal by name",
+		"Renews the latest certificate version with the supplied name.",
+		"Certificate",
+	).Post(
+		func(w http.ResponseWriter, r *http.Request) {
+			renewCertByName(r.Context(), manager, w, r, r.PathValue("name"))
+		},
+		"Renew latest certificate",
+		opts.WithDescription(doc.Section(3, "POST /{prefix}/cert/{name}/renew").Body),
+		opts.WithJSONRequest(jsonschema.MustFor[schema.RenewCertRequest]()),
+		opts.WithJSONResponse(201, jsonschema.MustFor[schema.Cert]()),
+		opts.WithErrorResponse(400, "Invalid certificate name or request body."),
+		opts.WithErrorResponse(404, "Certificate not found."),
+		opts.WithErrorResponse(409, "Certificate or signer state prevents renewal."),
+		opts.WithErrorResponse(503, "Certificate renewal is not available because server certificate prerequisites are not configured."),
+	)
 }
 
-// CertRenewByKeyHandler returns an http.HandlerFunc for renewing an explicit certificate version.
-func CertRenewByKeyHandler(manager *managerpkg.Manager) (string, http.HandlerFunc, *openapi.PathItem) {
-	nameSchema := jsonschema.MustFor[string]()
-	serialSchema := jsonschema.MustFor[string]()
-
-	return "cert/{name}/{serial}/renew", func(w http.ResponseWriter, r *http.Request) {
-			name := r.PathValue("name")
-			serial := r.PathValue("serial")
-			if name == "" {
-				_ = httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest), "name is required")
-				return
-			}
-			if serial == "" {
-				_ = httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest), "serial is required")
-				return
-			}
-
-			switch r.Method {
-			case http.MethodPost:
-				_ = renewCertByKey(r.Context(), manager, w, r, schema.CertKey{Name: name, Serial: serial})
-			default:
-				_ = httpresponse.Error(w, httpresponse.Err(http.StatusMethodNotAllowed), r.Method)
-			}
-		}, &openapi.PathItem{
-			Summary:     "Certificate renewal by version",
-			Description: "Renews the specified certificate version.",
-			Post: &openapi.Operation{
-				Tags:        []string{"Certificate"},
-				Summary:     "Renew certificate by version",
-				Description: "Creates a new certificate version from the requested certificate name and serial number and disables the previous version.",
-				Parameters: []openapi.Parameter{
-					{Name: "name", In: openapi.ParameterInPath, Description: "Certificate name.", Required: true, Schema: nameSchema},
-					{Name: "serial", In: openapi.ParameterInPath, Description: "Certificate serial number.", Required: true, Schema: serialSchema},
-				},
-				RequestBody: &openapi.RequestBody{
-					Description: "Certificate renewal fields for the new certificate version.",
-					Required:    true,
-					Content:     map[string]openapi.MediaType{"application/json": {Schema: jsonschema.MustFor[schema.RenewCertRequest]()}},
-				},
-				Responses: map[string]openapi.Response{
-					"201": {Description: "Renewed certificate.", Content: map[string]openapi.MediaType{"application/json": {Schema: jsonschema.MustFor[schema.Cert]()}}},
-					"400": {Description: "Invalid certificate key or request body."},
-					"404": {Description: "Certificate not found."},
-					"409": {Description: "Certificate or signer state prevents renewal."},
-					"503": {Description: "Certificate renewal is not available because server certificate prerequisites are not configured."},
-				},
-			},
-		}
+// CertRenewByKeyHandler returns a path and pathitem for renewing an explicit certificate version.
+func CertRenewByKeyHandler(manager *managerpkg.Manager, doc *markdown.Document) (string, *jsonschema.Schema, httprequest.PathItem) {
+	return "cert/{name}/{serial}/renew", nil, httprequest.NewPathItem(
+		"Certificate renewal by version",
+		"Renews the specified certificate version.",
+		"Certificate",
+	).Post(
+		func(w http.ResponseWriter, r *http.Request) {
+			renewCertByKey(r.Context(), manager, w, r, schema.CertKey{Name: r.PathValue("name"), Serial: r.PathValue("serial")})
+		},
+		"Renew certificate by version",
+		opts.WithDescription(doc.Section(3, "POST /{prefix}/cert/{name}/{serial}/renew").Body),
+		opts.WithJSONRequest(jsonschema.MustFor[schema.RenewCertRequest]()),
+		opts.WithJSONResponse(201, jsonschema.MustFor[schema.Cert]()),
+		opts.WithErrorResponse(400, "Invalid certificate key or request body."),
+		opts.WithErrorResponse(404, "Certificate not found."),
+		opts.WithErrorResponse(409, "Certificate or signer state prevents renewal."),
+		opts.WithErrorResponse(503, "Certificate renewal is not available because server certificate prerequisites are not configured."),
+	)
 }
 
 ///////////////////////////////////////////////////////////////////////////////
