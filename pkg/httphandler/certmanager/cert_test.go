@@ -52,13 +52,16 @@ func Test_cert_001(t *testing.T) {
 
 		assert.Equal("cert", path)
 		spec := pathitem.Spec(path, nil)
-		if assert.NotNil(spec) && assert.NotNil(spec.Get) {
-			assert.Equal("List certificates", spec.Get.Summary)
-			if assert.Len(spec.Get.Parameters, 7) {
-				assert.Equal("is_ca", spec.Get.Parameters[0].Name)
-				assert.Equal("enabled", spec.Get.Parameters[1].Name)
-				assert.Equal("tags", spec.Get.Parameters[2].Name)
-				assert.Equal("valid", spec.Get.Parameters[3].Name)
+		if assert.NotNil(spec) {
+			assert.Empty(spec.Parameters)
+			if assert.NotNil(spec.Get) {
+				assert.Equal("List certificates", spec.Get.Summary)
+				if assert.Len(spec.Get.Parameters, 7) {
+					assert.Equal("enabled", spec.Get.Parameters[0].Name)
+					assert.Equal("is_ca", spec.Get.Parameters[1].Name)
+					assert.Equal("limit", spec.Get.Parameters[2].Name)
+					assert.Equal("offset", spec.Get.Parameters[3].Name)
+				}
 			}
 		}
 	})
@@ -70,26 +73,26 @@ func Test_cert_001(t *testing.T) {
 
 		assert.Equal("cert/{name}", path)
 		spec := pathitem.Spec(path, nil)
-		if assert.NotNil(spec) && assert.NotNil(spec.Get) {
-			assert.Equal("Get latest certificate", spec.Get.Summary)
-			if assert.Len(spec.Get.Parameters, 3) {
-				assert.Equal("name", spec.Get.Parameters[0].Name)
-				assert.Equal("chain", spec.Get.Parameters[1].Name)
-				assert.Equal("private", spec.Get.Parameters[2].Name)
+		if assert.NotNil(spec) {
+			if assert.Len(spec.Parameters, 1) {
+				assert.Equal("name", spec.Parameters[0].Name)
 			}
-		}
-		if assert.NotNil(spec) && assert.NotNil(spec.Post) {
-			assert.Equal("Create certificate from CA name", spec.Post.Summary)
-			assert.NotNil(spec.Post.RequestBody)
-			if assert.Len(spec.Post.Parameters, 1) {
-				assert.Equal("name", spec.Post.Parameters[0].Name)
+			if assert.NotNil(spec.Get) {
+				assert.Equal("Get latest certificate", spec.Get.Summary)
+				if assert.Len(spec.Get.Parameters, 2) {
+					assert.Equal("chain", spec.Get.Parameters[0].Name)
+					assert.Equal("private", spec.Get.Parameters[1].Name)
+				}
 			}
-		}
-		if assert.NotNil(spec) && assert.NotNil(spec.Patch) {
-			assert.Equal("Update latest certificate", spec.Patch.Summary)
-			assert.NotNil(spec.Patch.RequestBody)
-			if assert.Len(spec.Patch.Parameters, 1) {
-				assert.Equal("name", spec.Patch.Parameters[0].Name)
+			if assert.NotNil(spec.Post) {
+				assert.Equal("Create certificate from CA name", spec.Post.Summary)
+				assert.NotNil(spec.Post.RequestBody)
+				assert.Empty(spec.Post.Parameters)
+			}
+			if assert.NotNil(spec.Patch) {
+				assert.Equal("Update latest certificate", spec.Patch.Summary)
+				assert.NotNil(spec.Patch.RequestBody)
+				assert.Empty(spec.Patch.Parameters)
 			}
 		}
 	})
@@ -101,29 +104,27 @@ func Test_cert_001(t *testing.T) {
 
 		assert.Equal("cert/{name}/{serial}", path)
 		spec := pathitem.Spec(path, nil)
-		if assert.NotNil(spec) && assert.NotNil(spec.Get) {
-			assert.Equal("Get certificate by version", spec.Get.Summary)
-			if assert.Len(spec.Get.Parameters, 4) {
-				assert.Equal("name", spec.Get.Parameters[0].Name)
-				assert.Equal("serial", spec.Get.Parameters[1].Name)
-				assert.Equal("chain", spec.Get.Parameters[2].Name)
-				assert.Equal("private", spec.Get.Parameters[3].Name)
+		if assert.NotNil(spec) {
+			if assert.Len(spec.Parameters, 2) {
+				assert.Equal("name", spec.Parameters[0].Name)
+				assert.Equal("serial", spec.Parameters[1].Name)
 			}
-		}
-		if assert.NotNil(spec) && assert.NotNil(spec.Post) {
-			assert.Equal("Create certificate from CA version", spec.Post.Summary)
-			assert.NotNil(spec.Post.RequestBody)
-			if assert.Len(spec.Post.Parameters, 2) {
-				assert.Equal("name", spec.Post.Parameters[0].Name)
-				assert.Equal("serial", spec.Post.Parameters[1].Name)
+			if assert.NotNil(spec.Get) {
+				assert.Equal("Get certificate by version", spec.Get.Summary)
+				if assert.Len(spec.Get.Parameters, 2) {
+					assert.Equal("chain", spec.Get.Parameters[0].Name)
+					assert.Equal("private", spec.Get.Parameters[1].Name)
+				}
 			}
-		}
-		if assert.NotNil(spec) && assert.NotNil(spec.Patch) {
-			assert.Equal("Update certificate by version", spec.Patch.Summary)
-			assert.NotNil(spec.Patch.RequestBody)
-			if assert.Len(spec.Patch.Parameters, 2) {
-				assert.Equal("name", spec.Patch.Parameters[0].Name)
-				assert.Equal("serial", spec.Patch.Parameters[1].Name)
+			if assert.NotNil(spec.Post) {
+				assert.Equal("Create certificate from CA version", spec.Post.Summary)
+				assert.NotNil(spec.Post.RequestBody)
+				assert.Empty(spec.Post.Parameters)
+			}
+			if assert.NotNil(spec.Patch) {
+				assert.Equal("Update certificate by version", spec.Patch.Summary)
+				assert.NotNil(spec.Patch.RequestBody)
+				assert.Empty(spec.Patch.Parameters)
 			}
 		}
 	})
@@ -135,11 +136,14 @@ func Test_cert_001(t *testing.T) {
 
 		assert.Equal("cert/{name}/renew", path)
 		spec := pathitem.Spec(path, nil)
-		if assert.NotNil(spec) && assert.NotNil(spec.Post) {
-			assert.Equal("Renew latest certificate", spec.Post.Summary)
-			assert.NotNil(spec.Post.RequestBody)
-			if assert.Len(spec.Post.Parameters, 1) {
-				assert.Equal("name", spec.Post.Parameters[0].Name)
+		if assert.NotNil(spec) {
+			if assert.Len(spec.Parameters, 1) {
+				assert.Equal("name", spec.Parameters[0].Name)
+			}
+			if assert.NotNil(spec.Post) {
+				assert.Equal("Renew latest certificate", spec.Post.Summary)
+				assert.NotNil(spec.Post.RequestBody)
+				assert.Empty(spec.Post.Parameters)
 			}
 		}
 	})
@@ -151,12 +155,15 @@ func Test_cert_001(t *testing.T) {
 
 		assert.Equal("cert/{name}/{serial}/renew", path)
 		spec := pathitem.Spec(path, nil)
-		if assert.NotNil(spec) && assert.NotNil(spec.Post) {
-			assert.Equal("Renew certificate by version", spec.Post.Summary)
-			assert.NotNil(spec.Post.RequestBody)
-			if assert.Len(spec.Post.Parameters, 2) {
-				assert.Equal("name", spec.Post.Parameters[0].Name)
-				assert.Equal("serial", spec.Post.Parameters[1].Name)
+		if assert.NotNil(spec) {
+			if assert.Len(spec.Parameters, 2) {
+				assert.Equal("name", spec.Parameters[0].Name)
+				assert.Equal("serial", spec.Parameters[1].Name)
+			}
+			if assert.NotNil(spec.Post) {
+				assert.Equal("Renew certificate by version", spec.Post.Summary)
+				assert.NotNil(spec.Post.RequestBody)
+				assert.Empty(spec.Post.Parameters)
 			}
 		}
 	})
@@ -168,9 +175,12 @@ func Test_cert_001(t *testing.T) {
 
 		assert.Equal("ca", path)
 		spec := pathitem.Spec(path, nil)
-		if assert.NotNil(spec) && assert.NotNil(spec.Post) {
-			assert.Equal("Create certificate authority", spec.Post.Summary)
-			assert.NotNil(spec.Post.RequestBody)
+		if assert.NotNil(spec) {
+			assert.Empty(spec.Parameters)
+			if assert.NotNil(spec.Post) {
+				assert.Equal("Create a certificate authority", spec.Post.Summary)
+				assert.NotNil(spec.Post.RequestBody)
+			}
 		}
 	})
 
@@ -181,11 +191,14 @@ func Test_cert_001(t *testing.T) {
 
 		assert.Equal("ca/{name}/renew", path)
 		spec := pathitem.Spec(path, nil)
-		if assert.NotNil(spec) && assert.NotNil(spec.Post) {
-			assert.Equal("Renew latest certificate authority", spec.Post.Summary)
-			assert.NotNil(spec.Post.RequestBody)
-			if assert.Len(spec.Post.Parameters, 1) {
-				assert.Equal("name", spec.Post.Parameters[0].Name)
+		if assert.NotNil(spec) {
+			if assert.Len(spec.Parameters, 1) {
+				assert.Equal("name", spec.Parameters[0].Name)
+			}
+			if assert.NotNil(spec.Post) {
+				assert.Equal("Renew latest certificate authority", spec.Post.Summary)
+				assert.NotNil(spec.Post.RequestBody)
+				assert.Empty(spec.Post.Parameters)
 			}
 		}
 	})
@@ -197,12 +210,15 @@ func Test_cert_001(t *testing.T) {
 
 		assert.Equal("ca/{name}/{serial}/renew", path)
 		spec := pathitem.Spec(path, nil)
-		if assert.NotNil(spec) && assert.NotNil(spec.Post) {
-			assert.Equal("Renew certificate authority by version", spec.Post.Summary)
-			assert.NotNil(spec.Post.RequestBody)
-			if assert.Len(spec.Post.Parameters, 2) {
-				assert.Equal("name", spec.Post.Parameters[0].Name)
-				assert.Equal("serial", spec.Post.Parameters[1].Name)
+		if assert.NotNil(spec) {
+			if assert.Len(spec.Parameters, 2) {
+				assert.Equal("name", spec.Parameters[0].Name)
+				assert.Equal("serial", spec.Parameters[1].Name)
+			}
+			if assert.NotNil(spec.Post) {
+				assert.Equal("Renew certificate authority by version", spec.Post.Summary)
+				assert.NotNil(spec.Post.RequestBody)
+				assert.Empty(spec.Post.Parameters)
 			}
 		}
 	})
@@ -696,7 +712,7 @@ func Test_cert_001(t *testing.T) {
 		handler(res, req)
 
 		require.Equal(http.StatusBadRequest, res.Code)
-		assert.Contains(res.Body.String(), "serial is required")
+		assert.Contains(res.Body.String(), "serial is missing")
 	})
 
 	t.Run("RenewCertificateRejectsBadBody", func(t *testing.T) {
@@ -736,7 +752,7 @@ func Test_cert_001(t *testing.T) {
 		handler(res, req)
 
 		require.Equal(http.StatusBadRequest, res.Code)
-		assert.Contains(res.Body.String(), "serial is required")
+		assert.Contains(res.Body.String(), "serial is missing")
 	})
 
 	t.Run("CreateCertificateAuthority", func(t *testing.T) {
@@ -890,7 +906,7 @@ func Test_cert_001(t *testing.T) {
 		handler(res, req)
 
 		require.Equal(http.StatusBadRequest, res.Code)
-		assert.Contains(res.Body.String(), "serial is required")
+		assert.Contains(res.Body.String(), "serial is missing")
 	})
 
 	t.Run("CreateCertificateAuthorityRejectsMissingRoot", func(t *testing.T) {

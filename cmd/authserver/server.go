@@ -29,7 +29,7 @@ import (
 	manager "github.com/djthorpe/go-auth/pkg/authmanager"
 	authcrypto "github.com/djthorpe/go-auth/pkg/crypto"
 	authhandler "github.com/djthorpe/go-auth/pkg/httphandler/auth"
-	managerhandler "github.com/djthorpe/go-auth/pkg/httphandler/manager"
+	managerhandler "github.com/djthorpe/go-auth/pkg/httphandler/authmanager"
 	schema "github.com/djthorpe/go-auth/schema/auth"
 	server "github.com/mutablelogic/go-server"
 	cmd "github.com/mutablelogic/go-server/pkg/cmd"
@@ -106,7 +106,7 @@ func (server *RunServer) Run(ctx server.Cmd) error {
 		// Register HTTP handlers
 		server.RunServer.Register(func(router *httprouter.Router) error {
 			var result error
-			result = errors.Join(result, managerhandler.RegisterManagerHandlers(manager, router, server.Auth))
+			result = errors.Join(result, managerhandler.RegisterManagerHandlers(manager, router))
 			result = errors.Join(result, authhandler.RegisterAuthHandlers(manager, router))
 			if server.UI {
 				result = errors.Join(result, registerUIHandlers(router))
@@ -206,9 +206,6 @@ func (server *RunServer) issuer(ctx server.Cmd) string {
 		scheme = "https"
 	}
 	prefix := strings.TrimRight(ctx.HTTPPrefix(), "/")
-	if origin := strings.TrimSpace(ctx.HTTPOrigin()); origin != "" && origin != "*" {
-		return strings.TrimRight(origin, "/") + prefix
-	}
 	if hostport := publicHostPort(strings.TrimSpace(ctx.HTTPAddr())); hostport != "" {
 		return scheme + "://" + hostport + prefix
 	}

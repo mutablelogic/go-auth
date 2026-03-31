@@ -17,6 +17,7 @@ package manager
 import (
 	"testing"
 
+	"github.com/djthorpe/go-auth/pkg/markdown"
 	assert "github.com/stretchr/testify/assert"
 )
 
@@ -24,9 +25,10 @@ func Test_class_001(t *testing.T) {
 	t.Run("ClassHandlerPath", func(t *testing.T) {
 		assert := assert.New(t)
 
-		path, _, spec := ClassHandler(nil)
+		path, _, pathitem := ClassHandler(nil, &markdown.Document{})
 
 		assert.Equal("class", path)
+		spec := pathitem.Spec(path, nil)
 		if assert.NotNil(spec) && assert.NotNil(spec.Get) {
 			assert.Equal("List object classes", spec.Get.Summary)
 			if assert.Len(spec.Get.Parameters, 8) {
@@ -52,18 +54,19 @@ func Test_class_002(t *testing.T) {
 	t.Run("AttrHandlerPath", func(t *testing.T) {
 		assert := assert.New(t)
 
-		path, _, spec := AttrHandler(nil)
+		path, _, pathitem := AttrHandler(nil, &markdown.Document{})
 
 		assert.Equal("attr", path)
+		spec := pathitem.Spec(path, nil)
 		if assert.NotNil(spec) && assert.NotNil(spec.Get) {
 			assert.Equal("List attribute types", spec.Get.Summary)
 			if assert.Len(spec.Get.Parameters, 9) {
-				assert.Equal("filter", spec.Get.Parameters[0].Name)
-				assert.Nil(spec.Get.Parameters[0].Schema.Enum)
-				assert.Equal("usage", spec.Get.Parameters[1].Name)
-				assert.Equal([]any{"userApplications", "directoryOperation", "distributedOperation", "dSAOperation"}, spec.Get.Parameters[1].Schema.Enum)
+				assert.Equal("filter", spec.Get.Parameters[1].Name)
+				assert.Nil(spec.Get.Parameters[1].Schema.Enum)
+				assert.Equal("usage", spec.Get.Parameters[8].Name)
+				assert.Equal([]any{"userApplications", "directoryOperation", "distributedOperation", "dSAOperation"}, spec.Get.Parameters[8].Schema.Enum)
 				// Verify the enum on 'usage' did not leak onto the 'filter' schema
-				assert.Nil(spec.Get.Parameters[0].Schema.Enum)
+				assert.Nil(spec.Get.Parameters[1].Schema.Enum)
 			}
 			response := spec.Get.Responses["200"].Content["application/json"].Schema
 			if assert.NotNil(response) {

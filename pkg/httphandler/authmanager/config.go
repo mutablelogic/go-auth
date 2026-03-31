@@ -20,23 +20,30 @@ import (
 
 	// Packages
 	manager "github.com/djthorpe/go-auth/pkg/authmanager"
+	shared "github.com/djthorpe/go-auth/pkg/httphandler/internal"
+	markdown "github.com/djthorpe/go-auth/pkg/markdown"
 	httprequest "github.com/mutablelogic/go-server/pkg/httprequest"
 	httpresponse "github.com/mutablelogic/go-server/pkg/httpresponse"
-	openapi "github.com/mutablelogic/go-server/pkg/openapi/schema"
+	jsonschema "github.com/mutablelogic/go-server/pkg/jsonschema"
+	opts "github.com/mutablelogic/go-server/pkg/openapi"
 )
 
 ///////////////////////////////////////////////////////////////////////////////
 // PUBLIC METHODS
 
-func ConfigHandler(mgr *manager.Manager) (string, http.HandlerFunc, *openapi.PathItem) {
-	return "config", func(w http.ResponseWriter, r *http.Request) {
-		switch r.Method {
-		case http.MethodGet:
+func ConfigHandler(mgr *manager.Manager, doc *markdown.Document) (string, *jsonschema.Schema, httprequest.PathItem) {
+	return "config", nil, httprequest.NewPathItem(
+		"Public configuration",
+		"Returns the upstream authentication provider details that are safe to expose to clients.",
+		"Configuration",
+	).Get(
+		func(w http.ResponseWriter, r *http.Request) {
 			_ = getAuthConfig(r.Context(), mgr, w, r)
-		default:
-			_ = httpresponse.Error(w, httpresponse.Err(http.StatusMethodNotAllowed), r.Method)
-		}
-	}, &openapi.PathItem{Summary: "Public configuration", Description: "Returns the upstream authentication provider details that are safe to expose to clients."}
+		},
+		"Get configuration",
+		opts.WithDescription(doc.Section(3, "GET /{prefix}/config").Body),
+		opts.WithJSONResponse(200, nil),
+	)
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -45,7 +52,7 @@ func ConfigHandler(mgr *manager.Manager) (string, http.HandlerFunc, *openapi.Pat
 func getAuthConfig(_ context.Context, mgr *manager.Manager, w http.ResponseWriter, r *http.Request) error {
 	config, err := mgr.AuthConfig()
 	if err != nil {
-		return httpresponse.Error(w, httpErr(err))
+		return httpresponse.Error(w, shared.HTTPError(err))
 	}
 	return httpresponse.JSON(w, http.StatusOK, httprequest.Indent(r), config)
 }

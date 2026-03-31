@@ -33,7 +33,8 @@ import (
 	// Packages
 	managerpkg "github.com/djthorpe/go-auth/pkg/authmanager"
 	authcrypto "github.com/djthorpe/go-auth/pkg/crypto"
-	managerhandler "github.com/djthorpe/go-auth/pkg/httphandler/manager"
+	managerhandler "github.com/djthorpe/go-auth/pkg/httphandler/authmanager"
+	markdown "github.com/djthorpe/go-auth/pkg/markdown"
 	middleware "github.com/djthorpe/go-auth/pkg/middleware"
 	oidc "github.com/djthorpe/go-auth/pkg/oidc"
 	googleprovider "github.com/djthorpe/go-auth/pkg/provider/google"
@@ -42,6 +43,9 @@ import (
 	jwt "github.com/golang-jwt/jwt/v5"
 	uuid "github.com/google/uuid"
 	test "github.com/mutablelogic/go-pg/pkg/test"
+	httprequest "github.com/mutablelogic/go-server/pkg/httprequest"
+	jsonschema "github.com/mutablelogic/go-server/pkg/jsonschema"
+	openapi "github.com/mutablelogic/go-server/pkg/openapi/schema"
 	assert "github.com/stretchr/testify/assert"
 	require "github.com/stretchr/testify/require"
 )
@@ -95,14 +99,23 @@ func (r *streamRecorder) Code() int {
 var conn test.Conn
 
 var (
-	ChangesHandler   = managerhandler.ChangesHandler
-	GroupHandler     = managerhandler.GroupHandler
-	GroupItemHandler = managerhandler.GroupItemHandler
-	ScopeHandler     = managerhandler.ScopeHandler
-	UserHandler      = managerhandler.UserHandler
-	UserItemHandler  = managerhandler.UserItemHandler
-	UserGroupHandler = managerhandler.UserGroupHandler
+	changesHandler   = managerHandlerFunc(managerhandler.ChangesHandler)
+	groupHandler     = managerHandlerFunc(managerhandler.GroupHandler)
+	groupItemHandler = managerHandlerFunc(managerhandler.GroupItemHandler)
+	scopeHandler     = managerHandlerFunc(managerhandler.ScopeHandler)
+	userHandler      = managerHandlerFunc(managerhandler.UserHandler)
+	userItemHandler  = managerHandlerFunc(managerhandler.UserItemHandler)
+	userGroupHandler = managerHandlerFunc(managerhandler.UserGroupHandler)
 )
+
+type managerHandlerFn func(*managerpkg.Manager, *markdown.Document) (string, *jsonschema.Schema, httprequest.PathItem)
+
+func managerHandlerFunc(fn managerHandlerFn) func(*managerpkg.Manager) (string, http.HandlerFunc, *openapi.PathItem) {
+	return func(mgr *managerpkg.Manager) (string, http.HandlerFunc, *openapi.PathItem) {
+		path, params, pi := fn(mgr, markdown.Parse(""))
+		return path, pi.Handler(), pi.Spec(path, params)
+	}
+}
 
 func TestMain(m *testing.M) {
 	test.Main(m, &conn)
@@ -113,7 +126,7 @@ func Test_http_001(t *testing.T) {
 		require := require.New(t)
 
 		mgr, _ := newHTTPTestManager(t)
-		_, handler, _ := ChangesHandler(mgr)
+		_, handler, _ := changesHandler(mgr)
 		res := httptest.NewRecorder()
 		req := httptest.NewRequest(http.MethodPost, "/changes", nil)
 
@@ -127,7 +140,7 @@ func Test_http_001(t *testing.T) {
 		require := require.New(t)
 
 		mgr, _ := newHTTPTestManagerWithOpts(t, managerpkg.WithNotificationChannel("backend.table_change"))
-		_, handler, _ := ChangesHandler(mgr)
+		_, handler, _ := changesHandler(mgr)
 		res := httptest.NewRecorder()
 		req := httptest.NewRequest(http.MethodGet, "/changes", nil)
 		req.Header.Set("Accept", "application/json")
@@ -143,7 +156,7 @@ func Test_http_001(t *testing.T) {
 		require := require.New(t)
 
 		mgr, _ := newHTTPTestManagerWithOpts(t, managerpkg.WithNotificationChannel("backend.table_change"))
-		_, handler, _ := ChangesHandler(mgr)
+		_, handler, _ := changesHandler(mgr)
 
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
@@ -640,7 +653,7 @@ func Test_http_001(t *testing.T) {
 		user, _, token := mustLoginToken(t, mgr, issuer)
 		_ = token
 
-		_, handler, _ := UserItemHandler(mgr)
+		_, handler, _ := userItemHandler(mgr)
 		protected := middleware.NewMiddleware(mgr)(handler)
 
 		req := httptest.NewRequest(http.MethodGet, "/user/"+uuid.UUID(user.ID).String(), nil)
@@ -658,7 +671,7 @@ func Test_http_001(t *testing.T) {
 		require := require.New(t)
 
 		mgr, _ := newHTTPTestManager(t)
-		_, handler, _ := UserHandler(mgr)
+		_, handler, _ := userHandler(mgr)
 
 		createRes := httptest.NewRecorder()
 		createReq := httptest.NewRequest(http.MethodPost, "/user", mustJSONBody(t, schema.UserMeta{
@@ -716,7 +729,7 @@ func Test_http_001(t *testing.T) {
 		}, nil)
 		require.NoError(err)
 
-		_, itemHandler, _ := UserItemHandler(mgr)
+		_, itemHandler, _ := userItemHandler(mgr)
 		getRes := httptest.NewRecorder()
 		getReq := httptest.NewRequest(http.MethodGet, "/user/"+uuid.UUID(created.ID).String(), nil)
 		getReq.SetPathValue("user", uuid.UUID(created.ID).String())
@@ -730,7 +743,7 @@ func Test_http_001(t *testing.T) {
 		assert.Equal([]string{"admins"}, fetched.Groups)
 		assert.Equal([]string{"disabled-group"}, fetched.DisabledGroups)
 
-		_, collectionHandler, _ := UserHandler(mgr)
+		_, collectionHandler, _ := userHandler(mgr)
 		listRes := httptest.NewRecorder()
 		listReq := httptest.NewRequest(http.MethodGet, "/user?email=meta.user@example.com", nil)
 		collectionHandler(listRes, listReq)
@@ -750,7 +763,7 @@ func Test_http_001(t *testing.T) {
 		require := require.New(t)
 
 		mgr, _ := newHTTPTestManager(t)
-		_, handler, _ := GroupHandler(mgr)
+		_, handler, _ := groupHandler(mgr)
 
 		createRes := httptest.NewRecorder()
 		description := "Created Group"
@@ -798,7 +811,7 @@ func Test_http_001(t *testing.T) {
 		})
 		require.NoError(err)
 
-		_, handler, _ := GroupItemHandler(mgr)
+		_, handler, _ := groupItemHandler(mgr)
 
 		getRes := httptest.NewRecorder()
 		getReq := httptest.NewRequest(http.MethodGet, "/group/managed-group", nil)
@@ -881,7 +894,7 @@ func Test_http_001(t *testing.T) {
 		})
 		require.NoError(err)
 
-		path, handler, spec := ScopeHandler(mgr)
+		path, handler, spec := scopeHandler(mgr)
 		assert.Equal("scope", path)
 		require.NotNil(spec)
 		require.NotNil(spec.Get)
@@ -929,7 +942,7 @@ func Test_http_001(t *testing.T) {
 		token, err := mgr.OIDCSign(loginTokenClaims("https://wrong.example.test/api", user, session))
 		require.NoError(err)
 
-		_, handler, _ := UserItemHandler(mgr)
+		_, handler, _ := userItemHandler(mgr)
 		protected := middleware.NewMiddleware(mgr)(handler)
 
 		req := httptest.NewRequest(http.MethodGet, "/user/"+uuid.UUID(user.ID).String(), nil)
@@ -953,7 +966,7 @@ func Test_http_001(t *testing.T) {
 		token, err := mgr.OIDCSign(loginTokenClaims(issuer, user, session))
 		require.NoError(err)
 
-		_, handler, _ := UserItemHandler(mgr)
+		_, handler, _ := userItemHandler(mgr)
 		protected := middleware.NewMiddleware(mgr)(handler)
 
 		req := httptest.NewRequest(http.MethodGet, "/user/"+uuid.UUID(user.ID).String(), nil)
@@ -974,7 +987,7 @@ func Test_http_001(t *testing.T) {
 		mgr, issuer := newHTTPTestManager(t)
 		user, _, token := mustLoginToken(t, mgr, issuer)
 
-		_, handler, _ := UserItemHandler(mgr)
+		_, handler, _ := userItemHandler(mgr)
 		protected := middleware.NewMiddleware(mgr)(handler)
 
 		req := httptest.NewRequest(http.MethodGet, "/user/"+uuid.UUID(user.ID).String(), nil)
@@ -996,7 +1009,7 @@ func Test_http_001(t *testing.T) {
 
 		mgr, _ := newHTTPTestManager(t)
 		user, _ := mustLoginSession(t, mgr)
-		_, handler, _ := UserItemHandler(mgr)
+		_, handler, _ := userItemHandler(mgr)
 
 		patchRes := httptest.NewRecorder()
 		patchReq := httptest.NewRequest(http.MethodPatch, "/user/"+uuid.UUID(user.ID).String(), mustJSONBody(t, schema.UserMeta{
@@ -1114,51 +1127,12 @@ func Test_http_001(t *testing.T) {
 		assert.Error(err)
 	})
 
-	t.Run("OpenAPIHelpers", func(t *testing.T) {
-		assert := assert.New(t)
-
-		assert.Equal("uuid", uuidSchema().Format)
-		assert.NotNil(groupSchema())
-		assert.NotNil(groupListSchema())
-		scopeList := scopeListSchema()
-		if assert.NotNil(scopeList) {
-			body := schemaProperty(scopeList, "body")
-			if assert.NotNil(body) {
-				require.NotNil(t, body.Items)
-				assert.Equal("string", body.Items.Type)
-			}
-		}
-		userGroupList := userGroupListSchema()
-		if assert.NotNil(userGroupList) {
-			if assert.NotNil(userGroupList.Items) {
-				assert.Equal("string", userGroupList.Items.Type)
-			}
-		}
-		user := userSchema()
-		if assert.NotNil(user) {
-			assert.NotNil(schemaProperty(user, "groups"))
-			assert.NotNil(schemaProperty(user, "disabled_groups"))
-			assert.NotNil(schemaProperty(user, "effective_meta"))
-		}
-		userMeta := userMetaSchema()
-		if assert.NotNil(userMeta) {
-			assert.NotNil(schemaProperty(userMeta, "groups"))
-		}
-		assert.NotNil(userListSchema())
-		assert.NotNil(userInfoSchema())
-		assert.NotNil(sessionSchema())
-		assert.NotNil(tokenResponseSchema())
-		assert.Nil(schemaProperty(nil, "missing"))
-		setSchemaProperty(nil, "missing", nil)
-		assert.Nil(unwrapSchema(nil))
-	})
-
 	t.Run("UserGroupHandlerOpenAPI", func(t *testing.T) {
 		assert := assert.New(t)
 		require := require.New(t)
 
 		mgr, _ := newHTTPTestManager(t)
-		path, _, spec := UserGroupHandler(mgr)
+		path, _, spec := userGroupHandler(mgr)
 
 		require.Equal("user/{user}/group", path)
 		require.NotNil(spec)

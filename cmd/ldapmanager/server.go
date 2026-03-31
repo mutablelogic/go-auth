@@ -21,7 +21,7 @@ import (
 	"errors"
 
 	// Packages
-	httphandler "github.com/djthorpe/go-auth/pkg/httphandler/ldap"
+	httphandler "github.com/djthorpe/go-auth/pkg/httphandler/ldapmanager"
 	ldap "github.com/djthorpe/go-auth/pkg/ldapmanager"
 	server "github.com/mutablelogic/go-server"
 	cmd "github.com/mutablelogic/go-server/pkg/cmd"

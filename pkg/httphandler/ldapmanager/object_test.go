@@ -17,6 +17,7 @@ package manager
 import (
 	"testing"
 
+	"github.com/djthorpe/go-auth/pkg/markdown"
 	assert "github.com/stretchr/testify/assert"
 )
 
@@ -24,9 +25,10 @@ func Test_object_001(t *testing.T) {
 	t.Run("ObjectHandlerPath", func(t *testing.T) {
 		assert := assert.New(t)
 
-		path, _, spec := ObjectHandler(nil)
+		path, _, pathitem := ObjectHandler(nil, &markdown.Document{})
 
 		assert.Equal("object", path)
+		spec := pathitem.Spec(path, nil)
 		if assert.NotNil(spec) && assert.NotNil(spec.Get) {
 			assert.Equal("List objects", spec.Get.Summary)
 		}
@@ -35,9 +37,10 @@ func Test_object_001(t *testing.T) {
 	t.Run("ObjectResourceHandlerPath", func(t *testing.T) {
 		assert := assert.New(t)
 
-		path, _, spec := ObjectResourceHandler(nil)
+		path, _, pathitem := ObjectResourceHandler(nil, &markdown.Document{})
 
 		assert.Equal("object/{dn}", path)
+		spec := pathitem.Spec(path, nil)
 		if assert.NotNil(spec) && assert.NotNil(spec.Get) {
 			assert.Equal("Get object", spec.Get.Summary)
 		}
@@ -55,9 +58,10 @@ func Test_object_001(t *testing.T) {
 	t.Run("ObjectBindHandlerPath", func(t *testing.T) {
 		assert := assert.New(t)
 
-		path, _, spec := ObjectBindHandler(nil)
+		path, _, pathitem := ObjectBindHandler(nil, &markdown.Document{})
 
 		assert.Equal("object/{dn}/bind", path)
+		spec := pathitem.Spec(path, nil)
 		if assert.NotNil(spec) && assert.NotNil(spec.Post) {
 			assert.Equal("Bind object", spec.Post.Summary)
 		}
@@ -66,9 +70,10 @@ func Test_object_001(t *testing.T) {
 	t.Run("ObjectPasswordHandlerPath", func(t *testing.T) {
 		assert := assert.New(t)
 
-		path, _, spec := ObjectPasswordHandler(nil)
+		path, _, pathitem := ObjectPasswordHandler(nil, &markdown.Document{})
 
 		assert.Equal("object/{dn}/password", path)
+		spec := pathitem.Spec(path, nil)
 		if assert.NotNil(spec) && assert.NotNil(spec.Post) {
 			assert.Equal("Change object password", spec.Post.Summary)
 		}
