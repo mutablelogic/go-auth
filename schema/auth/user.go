@@ -209,6 +209,15 @@ func (u User) HasScope(scope string) bool {
 	return slices.Contains(u.Scopes, strings.TrimSpace(scope))
 }
 
+func (u User) HasAllScopes(scopes ...string) bool {
+	for _, scope := range scopes {
+		if !u.HasScope(scope) {
+			return false
+		}
+	}
+	return true
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 // PUBLIC METHODS - QUERY
 

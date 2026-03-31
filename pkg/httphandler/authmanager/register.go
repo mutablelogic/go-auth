@@ -20,9 +20,12 @@ import (
 
 	// Packages
 	managerpkg "github.com/djthorpe/go-auth/pkg/authmanager"
-	"github.com/djthorpe/go-auth/pkg/markdown"
+	markdown "github.com/djthorpe/go-auth/pkg/markdown"
+	"github.com/djthorpe/go-auth/pkg/middleware"
+	schema "github.com/djthorpe/go-auth/schema/auth"
 	server "github.com/mutablelogic/go-server"
 	httprequest "github.com/mutablelogic/go-server/pkg/httprequest"
+	httprouter "github.com/mutablelogic/go-server/pkg/httprouter"
 	jsonschema "github.com/mutablelogic/go-server/pkg/jsonschema"
 )
 
@@ -31,6 +34,7 @@ import (
 
 type Register interface {
 	RegisterPath(path string, params *jsonschema.Schema, pathitem httprequest.PathItem) error
+	RegisterSecurityScheme(name string, scheme httprouter.SecurityScheme) error
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -43,7 +47,7 @@ var doc string
 // PUBLIC METHODS
 
 // RegisterManagerHandlers registers manager resource handlers with the provided router.
-func RegisterManagerHandlers(manager *managerpkg.Manager, router server.HTTPRouter) error {
+func RegisterManagerHandlers(manager *managerpkg.Manager, router server.HTTPRouter, auth bool) error {
 	r := router.(Register)
 	doc := markdown.Parse(doc)
 
@@ -58,11 +62,18 @@ func RegisterManagerHandlers(manager *managerpkg.Manager, router server.HTTPRout
 	router.Spec().AddTag("Scope", doc.Section(2, "Scope").Body)
 	router.Spec().AddTag("Changes", doc.Section(2, "Changes").Body)
 
-	// Register the handlers, and return any errors
+	// Register the security scheme
+	if auth {
+		if err := r.RegisterSecurityScheme(schema.SecurityBearerAuth, middleware.NewBearerAuth(manager)); err != nil {
+			return err
+		}
+	}
+
+	// Register the security schemes, then the paths
 	return errors.Join(
 		r.RegisterPath(ConfigHandler(manager, doc)),
 		r.RegisterPath(UserHandler(manager, doc)),
-		r.RegisterPath(UserItemHandler(manager, doc)),
+		r.RegisterPath(UserResourceHandler(manager, doc)),
 		r.RegisterPath(UserGroupHandler(manager, doc)),
 		r.RegisterPath(GroupHandler(manager, doc)),
 		r.RegisterPath(GroupItemHandler(manager, doc)),

@@ -106,7 +106,7 @@ func (server *RunServer) Run(ctx server.Cmd) error {
 		// Register HTTP handlers
 		server.RunServer.Register(func(router *httprouter.Router) error {
 			var result error
-			result = errors.Join(result, managerhandler.RegisterManagerHandlers(manager, router))
+			result = errors.Join(result, managerhandler.RegisterManagerHandlers(manager, router, server.Auth))
 			result = errors.Join(result, authhandler.RegisterAuthHandlers(manager, router))
 			if server.UI {
 				result = errors.Join(result, registerUIHandlers(router))

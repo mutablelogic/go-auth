@@ -21,7 +21,7 @@ import (
 	// Packages
 	coremanager "github.com/djthorpe/go-auth/pkg/authmanager"
 	shared "github.com/djthorpe/go-auth/pkg/httphandler/internal"
-	"github.com/djthorpe/go-auth/pkg/markdown"
+	markdown "github.com/djthorpe/go-auth/pkg/markdown"
 	schema "github.com/djthorpe/go-auth/schema/auth"
 	httprequest "github.com/mutablelogic/go-server/pkg/httprequest"
 	httpresponse "github.com/mutablelogic/go-server/pkg/httpresponse"
@@ -49,6 +49,7 @@ func GroupHandler(mgr *coremanager.Manager, doc *markdown.Document) (string, *js
 		opts.WithQuery(jsonschema.MustFor[schema.GroupListRequest]()),
 		opts.WithJSONResponse(200, jsonschema.MustFor[schema.GroupList]()),
 		opts.WithErrorResponse(400, "Invalid pagination parameters."),
+		opts.WithSecurity(schema.SecurityBearerAuth, schema.ScopeAuthGroupRead),
 	).Post(
 		func(w http.ResponseWriter, r *http.Request) {
 			if err := createGroup(r.Context(), mgr, w, r); err != nil {
@@ -60,6 +61,7 @@ func GroupHandler(mgr *coremanager.Manager, doc *markdown.Document) (string, *js
 		opts.WithJSONRequest(jsonschema.MustFor[schema.GroupInsert]()),
 		opts.WithJSONResponse(201, jsonschema.MustFor[schema.Group]()),
 		opts.WithErrorResponse(400, "Invalid request body or group creation failure."),
+		opts.WithSecurity(schema.SecurityBearerAuth, schema.ScopeAuthGroupRead, schema.ScopeAuthGroupWrite),
 	)
 }
 
@@ -85,6 +87,7 @@ func GroupItemHandler(mgr *coremanager.Manager, doc *markdown.Document) (string,
 		opts.WithJSONResponse(200, jsonschema.MustFor[schema.Group]()),
 		opts.WithErrorResponse(400, "Invalid group identifier."),
 		opts.WithErrorResponse(404, "Group not found."),
+		opts.WithSecurity(schema.SecurityBearerAuth, schema.ScopeAuthGroupRead),
 	).Patch(
 		func(w http.ResponseWriter, r *http.Request) {
 			group := r.PathValue("group")
@@ -102,6 +105,7 @@ func GroupItemHandler(mgr *coremanager.Manager, doc *markdown.Document) (string,
 		opts.WithJSONResponse(200, jsonschema.MustFor[schema.Group]()),
 		opts.WithErrorResponse(400, "Invalid group identifier or request body."),
 		opts.WithErrorResponse(404, "Group not found."),
+		opts.WithSecurity(schema.SecurityBearerAuth, schema.ScopeAuthGroupRead, schema.ScopeAuthGroupWrite),
 	).Delete(
 		func(w http.ResponseWriter, r *http.Request) {
 			group := r.PathValue("group")
@@ -117,6 +121,7 @@ func GroupItemHandler(mgr *coremanager.Manager, doc *markdown.Document) (string,
 		opts.WithDescription(doc.Section(3, "DELETE /{prefix}/group/{group}").Body),
 		opts.WithErrorResponse(400, "Invalid group identifier."),
 		opts.WithErrorResponse(404, "Group not found."),
+		opts.WithSecurity(schema.SecurityBearerAuth, schema.ScopeAuthGroupWrite),
 	)
 }
 

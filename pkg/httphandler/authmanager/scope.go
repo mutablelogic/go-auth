@@ -21,7 +21,7 @@ import (
 	// Packages
 	coremanager "github.com/djthorpe/go-auth/pkg/authmanager"
 	shared "github.com/djthorpe/go-auth/pkg/httphandler/internal"
-	"github.com/djthorpe/go-auth/pkg/markdown"
+	markdown "github.com/djthorpe/go-auth/pkg/markdown"
 	schema "github.com/djthorpe/go-auth/schema/auth"
 	httprequest "github.com/mutablelogic/go-server/pkg/httprequest"
 	httpresponse "github.com/mutablelogic/go-server/pkg/httpresponse"
@@ -49,6 +49,7 @@ func ScopeHandler(mgr *coremanager.Manager, doc *markdown.Document) (string, *js
 		opts.WithQuery(jsonschema.MustFor[schema.ScopeListRequest]()),
 		opts.WithJSONResponse(200, jsonschema.MustFor[schema.ScopeList]()),
 		opts.WithErrorResponse(400, "Invalid filter or pagination parameters."),
+		opts.WithSecurity(schema.SecurityBearerAuth, schema.ScopeAuthGroupRead),
 	)
 }
 

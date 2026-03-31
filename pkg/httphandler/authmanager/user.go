@@ -21,7 +21,7 @@ import (
 	// Packages
 	coremanager "github.com/djthorpe/go-auth/pkg/authmanager"
 	shared "github.com/djthorpe/go-auth/pkg/httphandler/internal"
-	"github.com/djthorpe/go-auth/pkg/markdown"
+	markdown "github.com/djthorpe/go-auth/pkg/markdown"
 	schema "github.com/djthorpe/go-auth/schema/auth"
 	httprequest "github.com/mutablelogic/go-server/pkg/httprequest"
 	httpresponse "github.com/mutablelogic/go-server/pkg/httpresponse"
@@ -49,6 +49,7 @@ func UserHandler(mgr *coremanager.Manager, doc *markdown.Document) (string, *jso
 		opts.WithQuery(jsonschema.MustFor[schema.UserListRequest]()),
 		opts.WithJSONResponse(200, jsonschema.MustFor[schema.UserList]()),
 		opts.WithErrorResponse(400, "Invalid filter or pagination parameters."),
+		opts.WithSecurity(schema.SecurityBearerAuth, schema.ScopeAuthUserRead),
 	).Post(
 		func(w http.ResponseWriter, r *http.Request) {
 			if err := createUser(r.Context(), mgr, w, r); err != nil {
@@ -60,11 +61,12 @@ func UserHandler(mgr *coremanager.Manager, doc *markdown.Document) (string, *jso
 		opts.WithJSONRequest(jsonschema.MustFor[schema.UserMeta]()),
 		opts.WithJSONResponse(201, jsonschema.MustFor[schema.User]()),
 		opts.WithErrorResponse(400, "Invalid request body or user creation failure."),
+		opts.WithSecurity(schema.SecurityBearerAuth, schema.ScopeAuthUserRead, schema.ScopeAuthUserWrite),
 	)
 }
 
-// UserItemHandler returns a path and pathitem for the user resource endpoint.
-func UserItemHandler(mgr *coremanager.Manager, doc *markdown.Document) (string, *jsonschema.Schema, httprequest.PathItem) {
+// UserResourceHandler returns a path and pathitem for the user resource endpoint.
+func UserResourceHandler(mgr *coremanager.Manager, doc *markdown.Document) (string, *jsonschema.Schema, httprequest.PathItem) {
 	return "user/{user}", nil, httprequest.NewPathItem(
 		"User operations",
 		"Operations on a specific user",
@@ -85,6 +87,7 @@ func UserItemHandler(mgr *coremanager.Manager, doc *markdown.Document) (string, 
 		opts.WithJSONResponse(200, jsonschema.MustFor[schema.User]()),
 		opts.WithErrorResponse(400, "Invalid user ID."),
 		opts.WithErrorResponse(404, "User not found."),
+		opts.WithSecurity(schema.SecurityBearerAuth, schema.ScopeAuthUserRead),
 	).Patch(
 		func(w http.ResponseWriter, r *http.Request) {
 			user, err := schema.UserIDFromString(r.PathValue("user"))
@@ -102,6 +105,7 @@ func UserItemHandler(mgr *coremanager.Manager, doc *markdown.Document) (string, 
 		opts.WithJSONResponse(200, jsonschema.MustFor[schema.User]()),
 		opts.WithErrorResponse(400, "Invalid user ID or request body."),
 		opts.WithErrorResponse(404, "User not found."),
+		opts.WithSecurity(schema.SecurityBearerAuth, schema.ScopeAuthUserRead, schema.ScopeAuthUserWrite),
 	).Delete(
 		func(w http.ResponseWriter, r *http.Request) {
 			user, err := schema.UserIDFromString(r.PathValue("user"))
@@ -117,6 +121,7 @@ func UserItemHandler(mgr *coremanager.Manager, doc *markdown.Document) (string, 
 		opts.WithDescription(doc.Section(3, "DELETE /{prefix}/user/{user}").Body),
 		opts.WithErrorResponse(400, "Invalid user ID."),
 		opts.WithErrorResponse(404, "User not found."),
+		opts.WithSecurity(schema.SecurityBearerAuth, schema.ScopeAuthUserWrite),
 	)
 }
 
