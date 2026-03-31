@@ -54,7 +54,7 @@ func RegisterCertManagerHandlers(manager *managerpkg.Manager, router server.HTTP
 
 	doc := markdown.Parse(doc)
 
-	// Add Goup Header and Certificate Management description
+	// Add Group Header and Certificate Management description
 	router.Spec().AddTag("Certificate Authority", doc.Section(2, "Certificate Authority").Body)
 	router.Spec().AddTag("Certificate", doc.Section(2, "Certificates").Body)
 	router.Spec().AddTagGroup("Certificate Management", "Certificate Authority", "Certificate")
