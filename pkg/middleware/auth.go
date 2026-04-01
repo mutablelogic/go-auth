@@ -22,12 +22,20 @@ import (
 	"time"
 
 	// Packages
-	manager "github.com/djthorpe/go-auth/pkg/authmanager"
 	oidc "github.com/djthorpe/go-auth/pkg/oidc"
 	schema "github.com/djthorpe/go-auth/schema/auth"
 	uuid "github.com/google/uuid"
 	httpresponse "github.com/mutablelogic/go-server/pkg/httpresponse"
 )
+
+///////////////////////////////////////////////////////////////////////////////
+// INTERFACES
+
+// TokenVerifier validates and decodes a bearer JWT token.
+type TokenVerifier interface {
+	OIDCIssuer() (string, error)
+	OIDCVerify(token, issuer string) (map[string]any, error)
+}
 
 ///////////////////////////////////////////////////////////////////////////////
 // PUBLIC METHODS
@@ -36,53 +44,53 @@ import (
 // extracts the embedded session and user claims, and rejects revoked or expired
 // sessions or users. If any check fails, a 401 Unauthorized
 // response is returned with a WWW-Authenticate header containing the error details.
-func AuthN(manager *manager.Manager) func(http.HandlerFunc) http.HandlerFunc {
+func AuthN(verifier TokenVerifier) func(http.HandlerFunc) http.HandlerFunc {
 	return func(next http.HandlerFunc) http.HandlerFunc {
 		return func(w http.ResponseWriter, r *http.Request) {
 			token, ok := bearerToken(r)
 			if !ok {
-				writeUnauthorized(w, r, manager, "invalid_request", "missing bearer token")
+				writeUnauthorized(w, r, verifier, "invalid_request", "missing bearer token")
 				return
 			}
-			issuer, err := manager.OIDCIssuer()
+			issuer, err := verifier.OIDCIssuer()
 			if err != nil {
 				_ = httpresponse.Error(w, httpresponse.ErrInternalError.With(err))
 				return
 			}
-			claims, err := manager.OIDCVerify(token, issuer)
+			claims, err := verifier.OIDCVerify(token, issuer)
 			if err != nil {
-				writeUnauthorized(w, r, manager, "invalid_token", err.Error())
+				writeUnauthorized(w, r, verifier, "invalid_token", err.Error())
 				return
 			}
 			session, err := sessionFromClaims(claims)
 			if err != nil {
-				writeUnauthorized(w, r, manager, "invalid_token", err.Error())
+				writeUnauthorized(w, r, verifier, "invalid_token", err.Error())
 				return
 			}
 			user, err := userFromClaims(claims)
 			if err != nil {
-				writeUnauthorized(w, r, manager, "invalid_token", err.Error())
+				writeUnauthorized(w, r, verifier, "invalid_token", err.Error())
 				return
 			}
 			if err := validateClaimBindings(claims, user, session); err != nil {
-				writeUnauthorized(w, r, manager, "invalid_token", err.Error())
+				writeUnauthorized(w, r, verifier, "invalid_token", err.Error())
 				return
 			}
 			if session.RevokedAt != nil {
-				writeUnauthorized(w, r, manager, "invalid_token", "session is revoked")
+				writeUnauthorized(w, r, verifier, "invalid_token", "session is revoked")
 				return
 			}
 			now := time.Now().UTC()
 			if !session.ExpiresAt.After(now) {
-				writeUnauthorized(w, r, manager, "invalid_token", "session is expired")
+				writeUnauthorized(w, r, verifier, "invalid_token", "session is expired")
 				return
 			}
 			if user.ExpiresAt != nil && !user.ExpiresAt.After(now) {
-				writeUnauthorized(w, r, manager, "invalid_token", "user is expired")
+				writeUnauthorized(w, r, verifier, "invalid_token", "user is expired")
 				return
 			}
 			if user.Status != nil && *user.Status != schema.UserStatusActive {
-				writeUnauthorized(w, r, manager, "invalid_token", "user is not active")
+				writeUnauthorized(w, r, verifier, "invalid_token", "user is not active")
 				return
 			}
 
@@ -93,8 +101,8 @@ func AuthN(manager *manager.Manager) func(http.HandlerFunc) http.HandlerFunc {
 }
 
 // NewMiddleware is kept as a compatibility wrapper for existing callers.
-func NewMiddleware(manager *manager.Manager) func(http.HandlerFunc) http.HandlerFunc {
-	return AuthN(manager)
+func NewMiddleware(verifier TokenVerifier) func(http.HandlerFunc) http.HandlerFunc {
+	return AuthN(verifier)
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -165,14 +173,14 @@ func bearerToken(r *http.Request) (string, bool) {
 	return token, token != ""
 }
 
-func writeUnauthorized(w http.ResponseWriter, r *http.Request, mgr *manager.Manager, code string, detail any) {
+func writeUnauthorized(w http.ResponseWriter, r *http.Request, verifier TokenVerifier, code string, detail any) {
 	description := strings.TrimSpace(fmt.Sprint(detail))
 	challenge := []string{fmt.Sprintf(`error=%q`, strings.TrimSpace(code))}
 	if description != "" {
 		challenge = append(challenge, fmt.Sprintf(`error_description=%q`, description))
 	}
-	if mgr != nil {
-		if issuer, err := mgr.OIDCIssuer(); err == nil {
+	if verifier != nil {
+		if issuer, err := verifier.OIDCIssuer(); err == nil {
 			resourceMetadata := strings.TrimRight(issuer, "/") + "/" + oidc.ProtectedResourcePath
 			challenge = append(challenge, fmt.Sprintf(`resource_metadata=%q`, resourceMetadata))
 		}

@@ -19,10 +19,14 @@ import (
 	"errors"
 
 	// Packages
+
 	ldap "github.com/djthorpe/go-auth/pkg/ldapmanager"
-	"github.com/djthorpe/go-auth/pkg/markdown"
+	markdown "github.com/djthorpe/go-auth/pkg/markdown"
+	middleware "github.com/djthorpe/go-auth/pkg/middleware"
+	schema "github.com/djthorpe/go-auth/schema/auth"
 	server "github.com/mutablelogic/go-server"
 	httprequest "github.com/mutablelogic/go-server/pkg/httprequest"
+	httprouter "github.com/mutablelogic/go-server/pkg/httprouter"
 	jsonschema "github.com/mutablelogic/go-server/pkg/jsonschema"
 )
 
@@ -31,6 +35,7 @@ import (
 
 type Register interface {
 	RegisterPath(path string, params *jsonschema.Schema, pathitem httprequest.PathItem) error
+	RegisterSecurityScheme(name string, scheme httprouter.SecurityScheme) error
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -43,11 +48,8 @@ var doc string
 // PUBLIC METHODS
 
 // RegisterHandlers registers LDAP manager resource handlers with the provided router.
-func RegisterHandlers(manager *ldap.Manager, router server.HTTPRouter, authEnabled bool) error {
-	_ = authEnabled
+func RegisterHandlers(manager *ldap.Manager, auth middleware.TokenVerifier, router server.HTTPRouter) error {
 	r := router.(Register)
-	// TODO: Wrap path items with authentication and authorization if authEnabled is true
-
 	doc := markdown.Parse(doc)
 
 	// Add description
@@ -59,6 +61,13 @@ func RegisterHandlers(manager *ldap.Manager, router server.HTTPRouter, authEnabl
 	router.Spec().AddTag("Users", doc.Section(2, "Users").Body)
 	router.Spec().AddTag("Groups", doc.Section(2, "Groups").Body)
 	router.Spec().AddTag("Object", doc.Section(2, "Object").Body)
+
+	// Register the security scheme
+	if auth != nil {
+		if err := r.RegisterSecurityScheme(schema.SecurityBearerAuth, middleware.NewBearerAuth(auth)); err != nil {
+			return err
+		}
+	}
 
 	// Register the handlers, and return any errors
 	return errors.Join(
