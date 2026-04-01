@@ -22,7 +22,7 @@ import (
 
 	// Packages
 	ldap "github.com/djthorpe/go-auth/pkg/ldapmanager"
-	"github.com/djthorpe/go-auth/pkg/markdown"
+	markdown "github.com/djthorpe/go-auth/pkg/markdown"
 	schema "github.com/djthorpe/go-auth/schema/ldap"
 	httprequest "github.com/mutablelogic/go-server/pkg/httprequest"
 	httpresponse "github.com/mutablelogic/go-server/pkg/httpresponse"
@@ -40,9 +40,7 @@ func GroupHandler(manager *ldap.Manager, doc *markdown.Document) (string, *jsons
 		"Groups",
 	).Get(
 		func(w http.ResponseWriter, r *http.Request) {
-			if err := listGroups(r.Context(), manager, w, r); err != nil {
-				httpresponse.Error(w, httpErr(err))
-			}
+			_ = listGroups(r.Context(), manager, w, r)
 		},
 		"List groups",
 		opts.WithDescription(doc.Section(3, "GET /{prefix}/group").Body),
@@ -64,9 +62,7 @@ func GroupResourceHandler(manager *ldap.Manager, doc *markdown.Document) (string
 				httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest), "invalid cn")
 				return
 			}
-			if err := getGroup(r.Context(), manager, w, r, cn); err != nil {
-				httpresponse.Error(w, httpErr(err))
-			}
+			_ = getGroup(r.Context(), manager, w, r, cn)
 		},
 		"Get group",
 		opts.WithDescription(doc.Section(3, "GET /{prefix}/group/{cn}").Body),
@@ -80,9 +76,7 @@ func GroupResourceHandler(manager *ldap.Manager, doc *markdown.Document) (string
 				httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest), "invalid cn")
 				return
 			}
-			if err := createGroup(r.Context(), manager, w, r, cn); err != nil {
-				httpresponse.Error(w, httpErr(err))
-			}
+			_ = createGroup(r.Context(), manager, w, r, cn)
 		},
 		"Create group",
 		opts.WithDescription(doc.Section(3, "PUT /{prefix}/group/{cn}").Body),
@@ -97,9 +91,7 @@ func GroupResourceHandler(manager *ldap.Manager, doc *markdown.Document) (string
 				httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest), "invalid cn")
 				return
 			}
-			if err := updateGroup(r.Context(), manager, w, r, cn); err != nil {
-				httpresponse.Error(w, httpErr(err))
-			}
+			_ = updateGroup(r.Context(), manager, w, r, cn)
 		},
 		"Update group",
 		opts.WithDescription(doc.Section(3, "PATCH /{prefix}/group/{cn}").Body),
@@ -114,9 +106,7 @@ func GroupResourceHandler(manager *ldap.Manager, doc *markdown.Document) (string
 				httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest), "invalid cn")
 				return
 			}
-			if err := deleteGroup(r.Context(), manager, w, r, cn); err != nil {
-				httpresponse.Error(w, httpErr(err))
-			}
+			_ = deleteGroup(r.Context(), manager, w, r, cn)
 		},
 		"Delete group",
 		opts.WithDescription(doc.Section(3, "DELETE /{prefix}/group/{cn}").Body),
@@ -138,9 +128,7 @@ func GroupUserResourceHandler(manager *ldap.Manager, doc *markdown.Document) (st
 				httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest), "invalid cn")
 				return
 			}
-			if err := addGroupUsers(r.Context(), manager, w, r, cn); err != nil {
-				httpresponse.Error(w, httpErr(err))
-			}
+			_ = addGroupUsers(r.Context(), manager, w, r, cn)
 		},
 		"Add users to group",
 		opts.WithDescription(doc.Section(3, "POST /{prefix}/group/{cn}/user").Body),
@@ -155,9 +143,7 @@ func GroupUserResourceHandler(manager *ldap.Manager, doc *markdown.Document) (st
 				httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest), "invalid cn")
 				return
 			}
-			if err := removeGroupUsers(r.Context(), manager, w, r, cn); err != nil {
-				httpresponse.Error(w, httpErr(err))
-			}
+			_ = removeGroupUsers(r.Context(), manager, w, r, cn)
 		},
 		"Remove users from group",
 		opts.WithDescription(doc.Section(3, "DELETE /{prefix}/group/{cn}/user").Body),

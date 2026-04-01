@@ -21,7 +21,7 @@ import (
 	// Packages
 	managerpkg "github.com/djthorpe/go-auth/pkg/certmanager"
 	shared "github.com/djthorpe/go-auth/pkg/httphandler/internal"
-	"github.com/djthorpe/go-auth/pkg/markdown"
+	markdown "github.com/djthorpe/go-auth/pkg/markdown"
 	pg "github.com/mutablelogic/go-pg"
 	server "github.com/mutablelogic/go-server"
 	httprequest "github.com/mutablelogic/go-server/pkg/httprequest"

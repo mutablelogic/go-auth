@@ -21,7 +21,7 @@ import (
 	// Packages
 	managerpkg "github.com/djthorpe/go-auth/pkg/authmanager"
 	markdown "github.com/djthorpe/go-auth/pkg/markdown"
-	"github.com/djthorpe/go-auth/pkg/middleware"
+	middleware "github.com/djthorpe/go-auth/pkg/middleware"
 	schema "github.com/djthorpe/go-auth/schema/auth"
 	server "github.com/mutablelogic/go-server"
 	httprequest "github.com/mutablelogic/go-server/pkg/httprequest"

@@ -23,7 +23,7 @@ import (
 
 	// Packages
 	ldap "github.com/djthorpe/go-auth/pkg/ldapmanager"
-	"github.com/djthorpe/go-auth/pkg/markdown"
+	markdown "github.com/djthorpe/go-auth/pkg/markdown"
 	schema "github.com/djthorpe/go-auth/schema/ldap"
 	httprequest "github.com/mutablelogic/go-server/pkg/httprequest"
 	httpresponse "github.com/mutablelogic/go-server/pkg/httpresponse"
@@ -41,9 +41,7 @@ func ObjectHandler(manager *ldap.Manager, doc *markdown.Document) (string, *json
 		"Object",
 	).Get(
 		func(w http.ResponseWriter, r *http.Request) {
-			if err := listObjects(r.Context(), manager, w, r); err != nil {
-				httpresponse.Error(w, httpErr(err))
-			}
+			_ = listObjects(r.Context(), manager, w, r)
 		},
 		"List objects",
 		opts.WithDescription(doc.Section(3, "GET /{prefix}/object").Body),
@@ -65,9 +63,7 @@ func ObjectResourceHandler(manager *ldap.Manager, doc *markdown.Document) (strin
 				httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest), err.Error())
 				return
 			}
-			if err := getObject(r.Context(), manager, w, r, dn); err != nil {
-				httpresponse.Error(w, httpErr(err))
-			}
+			_ = getObject(r.Context(), manager, w, r, dn)
 		},
 		"Get object",
 		opts.WithDescription(doc.Section(3, "GET /{prefix}/object/{dn}").Body),
@@ -81,9 +77,7 @@ func ObjectResourceHandler(manager *ldap.Manager, doc *markdown.Document) (strin
 				httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest), err.Error())
 				return
 			}
-			if err := createObject(r.Context(), manager, w, r, dn); err != nil {
-				httpresponse.Error(w, httpErr(err))
-			}
+			_ = createObject(r.Context(), manager, w, r, dn)
 		},
 		"Create object",
 		opts.WithDescription(doc.Section(3, "PUT /{prefix}/object/{dn}").Body),
@@ -98,9 +92,7 @@ func ObjectResourceHandler(manager *ldap.Manager, doc *markdown.Document) (strin
 				httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest), err.Error())
 				return
 			}
-			if err := updateObject(r.Context(), manager, w, r, dn); err != nil {
-				httpresponse.Error(w, httpErr(err))
-			}
+			_ = updateObject(r.Context(), manager, w, r, dn)
 		},
 		"Update object",
 		opts.WithDescription(doc.Section(3, "PATCH /{prefix}/object/{dn}").Body),
@@ -115,9 +107,7 @@ func ObjectResourceHandler(manager *ldap.Manager, doc *markdown.Document) (strin
 				httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest), err.Error())
 				return
 			}
-			if err := deleteObject(r.Context(), manager, w, r, dn); err != nil {
-				httpresponse.Error(w, httpErr(err))
-			}
+			_ = deleteObject(r.Context(), manager, w, r, dn)
 		},
 		"Delete object",
 		opts.WithDescription(doc.Section(3, "DELETE /{prefix}/object/{dn}").Body),
@@ -139,9 +129,7 @@ func ObjectBindHandler(manager *ldap.Manager, doc *markdown.Document) (string, *
 				httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest), err.Error())
 				return
 			}
-			if err := bindObject(r.Context(), manager, w, r, dn); err != nil {
-				httpresponse.Error(w, httpErr(err))
-			}
+			_ = bindObject(r.Context(), manager, w, r, dn)
 		},
 		"Bind object",
 		opts.WithDescription(doc.Section(3, "POST /{prefix}/object/{dn}/bind").Body),
@@ -165,9 +153,7 @@ func ObjectPasswordHandler(manager *ldap.Manager, doc *markdown.Document) (strin
 				httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest), err.Error())
 				return
 			}
-			if err := changePasswordObject(r.Context(), manager, w, r, dn); err != nil {
-				httpresponse.Error(w, httpErr(err))
-			}
+			_ = changePasswordObject(r.Context(), manager, w, r, dn)
 		},
 		"Change object password",
 		opts.WithDescription(doc.Section(3, "POST /{prefix}/object/{dn}/password").Body),

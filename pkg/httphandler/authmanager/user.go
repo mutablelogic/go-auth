@@ -40,9 +40,7 @@ func UserHandler(mgr *coremanager.Manager, doc *markdown.Document) (string, *jso
 		"User",
 	).Get(
 		func(w http.ResponseWriter, r *http.Request) {
-			if err := listUser(r.Context(), mgr, w, r); err != nil {
-				httpresponse.Error(w, shared.HTTPError(err))
-			}
+			_ = listUser(r.Context(), mgr, w, r)
 		},
 		"List users",
 		opts.WithDescription(doc.Section(3, "GET /{prefix}/user").Body),
@@ -52,9 +50,7 @@ func UserHandler(mgr *coremanager.Manager, doc *markdown.Document) (string, *jso
 		opts.WithSecurity(schema.SecurityBearerAuth, schema.ScopeAuthUserRead),
 	).Post(
 		func(w http.ResponseWriter, r *http.Request) {
-			if err := createUser(r.Context(), mgr, w, r); err != nil {
-				httpresponse.Error(w, shared.HTTPError(err))
-			}
+			_ = createUser(r.Context(), mgr, w, r)
 		},
 		"Create user",
 		opts.WithDescription(doc.Section(3, "POST /{prefix}/user").Body),
@@ -78,9 +74,7 @@ func UserResourceHandler(mgr *coremanager.Manager, doc *markdown.Document) (stri
 				httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest), err.Error())
 				return
 			}
-			if err := getUser(r.Context(), mgr, w, r, user); err != nil {
-				httpresponse.Error(w, shared.HTTPError(err))
-			}
+			_ = getUser(r.Context(), mgr, w, r, user)
 		},
 		"Get user",
 		opts.WithDescription(doc.Section(3, "GET /{prefix}/user/{user}").Body),
@@ -95,9 +89,7 @@ func UserResourceHandler(mgr *coremanager.Manager, doc *markdown.Document) (stri
 				httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest), err.Error())
 				return
 			}
-			if err := updateUser(r.Context(), mgr, w, r, user); err != nil {
-				httpresponse.Error(w, shared.HTTPError(err))
-			}
+			_ = updateUser(r.Context(), mgr, w, r, user)
 		},
 		"Update user",
 		opts.WithDescription(doc.Section(3, "PATCH /{prefix}/user/{user}").Body),
@@ -113,9 +105,7 @@ func UserResourceHandler(mgr *coremanager.Manager, doc *markdown.Document) (stri
 				httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest), err.Error())
 				return
 			}
-			if err := deleteUser(r.Context(), mgr, w, r, user); err != nil {
-				httpresponse.Error(w, shared.HTTPError(err))
-			}
+			_ = deleteUser(r.Context(), mgr, w, r, user)
 		},
 		"Delete user",
 		opts.WithDescription(doc.Section(3, "DELETE /{prefix}/user/{user}").Body),

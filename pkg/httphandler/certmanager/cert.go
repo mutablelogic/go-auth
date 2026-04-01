@@ -20,7 +20,7 @@ import (
 
 	// Packages
 	managerpkg "github.com/djthorpe/go-auth/pkg/certmanager"
-	"github.com/djthorpe/go-auth/pkg/markdown"
+	markdown "github.com/djthorpe/go-auth/pkg/markdown"
 	schema "github.com/djthorpe/go-auth/schema/cert"
 	httprequest "github.com/mutablelogic/go-server/pkg/httprequest"
 	httpresponse "github.com/mutablelogic/go-server/pkg/httpresponse"
@@ -40,9 +40,7 @@ func CertHandler(manager *managerpkg.Manager, doc *markdown.Document) (string, *
 		"Certificate",
 	).Get(
 		func(w http.ResponseWriter, r *http.Request) {
-			if err := listCerts(r.Context(), manager, w, r); err != nil {
-				httpresponse.Error(w, httpErr(err))
-			}
+			_ = listCerts(r.Context(), manager, w, r)
 		},
 		"List certificates",
 		opts.WithDescription(doc.Section(3, "GET /{prefix}/cert").Body),
@@ -60,9 +58,7 @@ func CertByCAHandler(manager *managerpkg.Manager, doc *markdown.Document) (strin
 		"Certificate",
 	).Get(
 		func(w http.ResponseWriter, r *http.Request) {
-			if err := getCertByName(r.Context(), manager, w, r, r.PathValue("name")); err != nil {
-				httpresponse.Error(w, httpErr(err))
-			}
+			_ = getCertByName(r.Context(), manager, w, r, r.PathValue("name"))
 		},
 		"Get latest certificate",
 		opts.WithDescription(doc.Section(3, "GET /{prefix}/cert/{name}").Body),
@@ -73,9 +69,7 @@ func CertByCAHandler(manager *managerpkg.Manager, doc *markdown.Document) (strin
 		opts.WithErrorResponse(409, "Certificate is disabled."),
 	).Post(
 		func(w http.ResponseWriter, r *http.Request) {
-			if err := createCertByCAName(r.Context(), manager, w, r, r.PathValue("name")); err != nil {
-				httpresponse.Error(w, httpErr(err))
-			}
+			_ = createCertByCAName(r.Context(), manager, w, r, r.PathValue("name"))
 		},
 		"Create certificate from CA name",
 		opts.WithDescription(doc.Section(3, "POST /{prefix}/cert/{name}").Body),
@@ -87,9 +81,7 @@ func CertByCAHandler(manager *managerpkg.Manager, doc *markdown.Document) (strin
 		opts.WithErrorResponse(503, "Certificate issuance is not available because server certificate prerequisites are not configured."),
 	).Patch(
 		func(w http.ResponseWriter, r *http.Request) {
-			if err := updateCertByName(r.Context(), manager, w, r, r.PathValue("name")); err != nil {
-				httpresponse.Error(w, httpErr(err))
-			}
+			_ = updateCertByName(r.Context(), manager, w, r, r.PathValue("name"))
 		},
 		"Update latest certificate",
 		opts.WithDescription(doc.Section(3, "PATCH /{prefix}/cert/{name}").Body),
@@ -108,9 +100,7 @@ func CertByCAKeyHandler(manager *managerpkg.Manager, doc *markdown.Document) (st
 		"Certificate",
 	).Get(
 		func(w http.ResponseWriter, r *http.Request) {
-			if err := getCertByKey(r.Context(), manager, w, r, schema.CertKey{Name: r.PathValue("name"), Serial: r.PathValue("serial")}); err != nil {
-				httpresponse.Error(w, httpErr(err))
-			}
+			_ = getCertByKey(r.Context(), manager, w, r, schema.CertKey{Name: r.PathValue("name"), Serial: r.PathValue("serial")})
 		},
 		"Get certificate by version",
 		opts.WithDescription(doc.Section(3, "GET /{prefix}/cert/{name}/{serial}").Body),
@@ -121,9 +111,7 @@ func CertByCAKeyHandler(manager *managerpkg.Manager, doc *markdown.Document) (st
 		opts.WithErrorResponse(409, "Certificate is disabled."),
 	).Post(
 		func(w http.ResponseWriter, r *http.Request) {
-			if err := createCert(r.Context(), manager, w, r, schema.CertKey{Name: r.PathValue("name"), Serial: r.PathValue("serial")}); err != nil {
-				httpresponse.Error(w, httpErr(err))
-			}
+			_ = createCert(r.Context(), manager, w, r, schema.CertKey{Name: r.PathValue("name"), Serial: r.PathValue("serial")})
 		},
 		"Create certificate from CA version",
 		opts.WithDescription(doc.Section(3, "POST /{prefix}/cert/{name}/{serial}").Body),
@@ -135,9 +123,7 @@ func CertByCAKeyHandler(manager *managerpkg.Manager, doc *markdown.Document) (st
 		opts.WithErrorResponse(503, "Certificate issuance is not available because server certificate prerequisites are not configured."),
 	).Patch(
 		func(w http.ResponseWriter, r *http.Request) {
-			if err := updateCertByKey(r.Context(), manager, w, r, schema.CertKey{Name: r.PathValue("name"), Serial: r.PathValue("serial")}); err != nil {
-				httpresponse.Error(w, httpErr(err))
-			}
+			_ = updateCertByKey(r.Context(), manager, w, r, schema.CertKey{Name: r.PathValue("name"), Serial: r.PathValue("serial")})
 		},
 		"Update certificate by version",
 		opts.WithDescription(doc.Section(3, "PATCH /{prefix}/cert/{name}/{serial}").Body),
@@ -156,9 +142,7 @@ func CertRenewByNameHandler(manager *managerpkg.Manager, doc *markdown.Document)
 		"Certificate",
 	).Post(
 		func(w http.ResponseWriter, r *http.Request) {
-			if err := renewCertByName(r.Context(), manager, w, r, r.PathValue("name")); err != nil {
-				httpresponse.Error(w, httpErr(err))
-			}
+			_ = renewCertByName(r.Context(), manager, w, r, r.PathValue("name"))
 		},
 		"Renew latest certificate",
 		opts.WithDescription(doc.Section(3, "POST /{prefix}/cert/{name}/renew").Body),
@@ -179,9 +163,7 @@ func CertRenewByKeyHandler(manager *managerpkg.Manager, doc *markdown.Document) 
 		"Certificate",
 	).Post(
 		func(w http.ResponseWriter, r *http.Request) {
-			if err := renewCertByKey(r.Context(), manager, w, r, schema.CertKey{Name: r.PathValue("name"), Serial: r.PathValue("serial")}); err != nil {
-				httpresponse.Error(w, httpErr(err))
-			}
+			_ = renewCertByKey(r.Context(), manager, w, r, schema.CertKey{Name: r.PathValue("name"), Serial: r.PathValue("serial")})
 		},
 		"Renew certificate by version",
 		opts.WithDescription(doc.Section(3, "POST /{prefix}/cert/{name}/{serial}/renew").Body),

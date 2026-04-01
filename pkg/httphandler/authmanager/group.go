@@ -40,9 +40,7 @@ func GroupHandler(mgr *coremanager.Manager, doc *markdown.Document) (string, *js
 		"Group",
 	).Get(
 		func(w http.ResponseWriter, r *http.Request) {
-			if err := listGroup(r.Context(), mgr, w, r); err != nil {
-				httpresponse.Error(w, shared.HTTPError(err))
-			}
+			_ = listGroup(r.Context(), mgr, w, r)
 		},
 		"List groups",
 		opts.WithDescription(doc.Section(3, "GET /{prefix}/group").Body),
@@ -52,9 +50,7 @@ func GroupHandler(mgr *coremanager.Manager, doc *markdown.Document) (string, *js
 		opts.WithSecurity(schema.SecurityBearerAuth, schema.ScopeAuthGroupRead),
 	).Post(
 		func(w http.ResponseWriter, r *http.Request) {
-			if err := createGroup(r.Context(), mgr, w, r); err != nil {
-				httpresponse.Error(w, shared.HTTPError(err))
-			}
+			_ = createGroup(r.Context(), mgr, w, r)
 		},
 		"Create group",
 		opts.WithDescription(doc.Section(3, "POST /{prefix}/group").Body),
@@ -78,9 +74,7 @@ func GroupItemHandler(mgr *coremanager.Manager, doc *markdown.Document) (string,
 				httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest), "group is required")
 				return
 			}
-			if err := getGroup(r.Context(), mgr, w, r, group); err != nil {
-				httpresponse.Error(w, shared.HTTPError(err))
-			}
+			_ = getGroup(r.Context(), mgr, w, r, group)
 		},
 		"Get group",
 		opts.WithDescription(doc.Section(3, "GET /{prefix}/group/{group}").Body),
@@ -95,9 +89,7 @@ func GroupItemHandler(mgr *coremanager.Manager, doc *markdown.Document) (string,
 				httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest), "group is required")
 				return
 			}
-			if err := updateGroup(r.Context(), mgr, w, r, group); err != nil {
-				httpresponse.Error(w, shared.HTTPError(err))
-			}
+			_ = updateGroup(r.Context(), mgr, w, r, group)
 		},
 		"Update group",
 		opts.WithDescription(doc.Section(3, "PATCH /{prefix}/group/{group}").Body),
@@ -113,9 +105,7 @@ func GroupItemHandler(mgr *coremanager.Manager, doc *markdown.Document) (string,
 				httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest), "group is required")
 				return
 			}
-			if err := deleteGroup(r.Context(), mgr, w, r, group); err != nil {
-				httpresponse.Error(w, shared.HTTPError(err))
-			}
+			_ = deleteGroup(r.Context(), mgr, w, r, group)
 		},
 		"Delete group",
 		opts.WithDescription(doc.Section(3, "DELETE /{prefix}/group/{group}").Body),

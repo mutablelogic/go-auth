@@ -20,7 +20,7 @@ import (
 
 	// Packages
 	ldap "github.com/djthorpe/go-auth/pkg/ldapmanager"
-	"github.com/djthorpe/go-auth/pkg/markdown"
+	markdown "github.com/djthorpe/go-auth/pkg/markdown"
 	schema "github.com/djthorpe/go-auth/schema/ldap"
 	schemadef "github.com/djthorpe/go-auth/schema/ldapparser"
 	httprequest "github.com/mutablelogic/go-server/pkg/httprequest"
@@ -39,9 +39,7 @@ func ClassHandler(manager *ldap.Manager, doc *markdown.Document) (string, *jsons
 		"Object Schema",
 	).Get(
 		func(w http.ResponseWriter, r *http.Request) {
-			if err := listClasses(r.Context(), manager, w, r); err != nil {
-				httpresponse.Error(w, httpErr(err))
-			}
+			_ = listClasses(r.Context(), manager, w, r)
 		},
 		"List object classes",
 		opts.WithDescription(doc.Section(3, "GET /{prefix}/class").Body),
@@ -58,9 +56,7 @@ func AttrHandler(manager *ldap.Manager, doc *markdown.Document) (string, *jsonsc
 		"Object Schema",
 	).Get(
 		func(w http.ResponseWriter, r *http.Request) {
-			if err := listAttributes(r.Context(), manager, w, r); err != nil {
-				httpresponse.Error(w, httpErr(err))
-			}
+			_ = listAttributes(r.Context(), manager, w, r)
 		},
 		"List attribute types",
 		opts.WithDescription(doc.Section(3, "GET /{prefix}/attr").Body),

@@ -39,9 +39,7 @@ func CAHandler(manager *managerpkg.Manager, doc *markdown.Document) (string, *js
 		"Certificate Authority",                          // Tags
 	).Post(
 		func(w http.ResponseWriter, r *http.Request) {
-			if err := createCA(r.Context(), manager, w, r); err != nil {
-				httpresponse.Error(w, httpErr(err))
-			}
+			_ = createCA(r.Context(), manager, w, r)
 		},
 		"Create a certificate authority",
 		opts.WithDescription(doc.Section(3, "POST /{prefix}/ca").Body),
@@ -61,9 +59,7 @@ func CAByNameRenewHandler(manager *managerpkg.Manager, doc *markdown.Document) (
 		"Certificate Authority",
 	).Post(
 		func(w http.ResponseWriter, r *http.Request) {
-			if err := renewCAByName(r.Context(), manager, w, r, r.PathValue("name")); err != nil {
-				httpresponse.Error(w, httpErr(err))
-			}
+			_ = renewCAByName(r.Context(), manager, w, r, r.PathValue("name"))
 		},
 		"Renew latest certificate authority",
 		opts.WithDescription(doc.Section(3, "POST /{prefix}/ca/{name}/renew").Body),
@@ -84,9 +80,7 @@ func CAByKeyRenewHandler(manager *managerpkg.Manager, doc *markdown.Document) (s
 		"Certificate Authority",
 	).Post(
 		func(w http.ResponseWriter, r *http.Request) {
-			if err := renewCAByKey(r.Context(), manager, w, r, schema.CertKey{Name: r.PathValue("name"), Serial: r.PathValue("serial")}); err != nil {
-				httpresponse.Error(w, httpErr(err))
-			}
+			_ = renewCAByKey(r.Context(), manager, w, r, schema.CertKey{Name: r.PathValue("name"), Serial: r.PathValue("serial")})
 		},
 		"Renew certificate authority by version",
 		opts.WithDescription(doc.Section(3, "POST /{prefix}/ca/{name}/{serial}/renew").Body),

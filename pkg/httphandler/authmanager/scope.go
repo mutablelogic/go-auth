@@ -40,9 +40,7 @@ func ScopeHandler(mgr *coremanager.Manager, doc *markdown.Document) (string, *js
 		"Scope",
 	).Get(
 		func(w http.ResponseWriter, r *http.Request) {
-			if err := listScope(r.Context(), mgr, w, r); err != nil {
-				httpresponse.Error(w, shared.HTTPError(err))
-			}
+			_ = listScope(r.Context(), mgr, w, r)
 		},
 		"List scopes",
 		opts.WithDescription(doc.Section(3, "GET /{prefix}/scope").Body),

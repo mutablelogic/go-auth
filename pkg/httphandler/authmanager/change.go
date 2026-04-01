@@ -21,7 +21,6 @@ import (
 
 	// Packages
 	coremanager "github.com/djthorpe/go-auth/pkg/authmanager"
-	shared "github.com/djthorpe/go-auth/pkg/httphandler/internal"
 	markdown "github.com/djthorpe/go-auth/pkg/markdown"
 	schema "github.com/djthorpe/go-auth/schema/auth"
 	pg "github.com/mutablelogic/go-pg"
@@ -43,9 +42,7 @@ func ChangesHandler(mgr *coremanager.Manager, doc *markdown.Document) (string, *
 		"Changes",
 	).Get(
 		func(w http.ResponseWriter, r *http.Request) {
-			if err := streamChanges(r.Context(), mgr, w, r); err != nil {
-				httpresponse.Error(w, shared.HTTPError(err))
-			}
+			_ = streamChanges(r.Context(), mgr, w, r)
 		},
 		"Stream changes",
 		opts.WithDescription(doc.Section(3, "GET /{prefix}/changes").Body),

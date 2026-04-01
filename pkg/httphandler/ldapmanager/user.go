@@ -23,7 +23,7 @@ import (
 
 	// Packages
 	ldap "github.com/djthorpe/go-auth/pkg/ldapmanager"
-	"github.com/djthorpe/go-auth/pkg/markdown"
+	markdown "github.com/djthorpe/go-auth/pkg/markdown"
 	schema "github.com/djthorpe/go-auth/schema/ldap"
 	httprequest "github.com/mutablelogic/go-server/pkg/httprequest"
 	httpresponse "github.com/mutablelogic/go-server/pkg/httpresponse"
@@ -41,9 +41,7 @@ func UserHandler(manager *ldap.Manager, doc *markdown.Document) (string, *jsonsc
 		"Users",
 	).Get(
 		func(w http.ResponseWriter, r *http.Request) {
-			if err := listUsers(r.Context(), manager, w, r); err != nil {
-				httpresponse.Error(w, httpErr(err))
-			}
+			_ = listUsers(r.Context(), manager, w, r)
 		},
 		"List users",
 		opts.WithDescription(doc.Section(3, "GET /{prefix}/user").Body),
@@ -65,9 +63,7 @@ func UserResourceHandler(manager *ldap.Manager, doc *markdown.Document) (string,
 				httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest), "invalid cn")
 				return
 			}
-			if err := getUser(r.Context(), manager, w, r, cn); err != nil {
-				httpresponse.Error(w, httpErr(err))
-			}
+			_ = getUser(r.Context(), manager, w, r, cn)
 		},
 		"Get user",
 		opts.WithDescription(doc.Section(3, "GET /{prefix}/user/{cn}").Body),
@@ -81,9 +77,7 @@ func UserResourceHandler(manager *ldap.Manager, doc *markdown.Document) (string,
 				httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest), "invalid cn")
 				return
 			}
-			if err := createUser(r.Context(), manager, w, r, cn); err != nil {
-				httpresponse.Error(w, httpErr(err))
-			}
+			_ = createUser(r.Context(), manager, w, r, cn)
 		},
 		"Create user",
 		opts.WithDescription(doc.Section(3, "PUT /{prefix}/user/{cn}").Body),
@@ -98,9 +92,7 @@ func UserResourceHandler(manager *ldap.Manager, doc *markdown.Document) (string,
 				httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest), "invalid cn")
 				return
 			}
-			if err := updateUser(r.Context(), manager, w, r, cn); err != nil {
-				httpresponse.Error(w, httpErr(err))
-			}
+			_ = updateUser(r.Context(), manager, w, r, cn)
 		},
 		"Update user",
 		opts.WithDescription(doc.Section(3, "PATCH /{prefix}/user/{cn}").Body),
@@ -115,9 +107,7 @@ func UserResourceHandler(manager *ldap.Manager, doc *markdown.Document) (string,
 				httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest), "invalid cn")
 				return
 			}
-			if err := deleteUser(r.Context(), manager, w, r, cn); err != nil {
-				httpresponse.Error(w, httpErr(err))
-			}
+			_ = deleteUser(r.Context(), manager, w, r, cn)
 		},
 		"Delete user",
 		opts.WithDescription(doc.Section(3, "DELETE /{prefix}/user/{cn}").Body),
