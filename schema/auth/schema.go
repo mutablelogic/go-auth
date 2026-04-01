@@ -39,3 +39,8 @@ const (
 	ScopeListMax    = 100
 	UserListMax     = 100
 )
+
+// Scopes
+const (
+	SecurityBearerAuth = "bearerAuth"
+)

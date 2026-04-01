@@ -18,10 +18,9 @@ package main
 
 import (
 	"context"
-	"errors"
 
 	// Packages
-	httphandler "github.com/djthorpe/go-auth/pkg/httphandler/ldap"
+	httphandler "github.com/djthorpe/go-auth/pkg/httphandler/ldapmanager"
 	ldap "github.com/djthorpe/go-auth/pkg/ldapmanager"
 	server "github.com/mutablelogic/go-server"
 	cmd "github.com/mutablelogic/go-server/pkg/cmd"
@@ -59,9 +58,8 @@ func (server *RunServer) Run(ctx server.Cmd) error {
 
 		// Register HTTP handlers
 		server.RunServer.Register(func(router *httprouter.Router) error {
-			var result error
-			result = errors.Join(result, httphandler.RegisterHandlers(manager, router, true))
-			return result
+			// TODO: TokenVerifier should be passed in here if auth is enabled
+			return httphandler.RegisterHandlers(manager, nil, router)
 		})
 
 		// Create a cancelable context and errgroup to run the manager and server concurrently
@@ -76,6 +74,7 @@ func (server *RunServer) Run(ctx server.Cmd) error {
 		})
 		group.Go(func() error {
 			defer cancel()
+			// TODO: We should be passing in groupCtx
 			return server.RunServer.Run(ctx)
 		})
 
@@ -84,9 +83,7 @@ func (server *RunServer) Run(ctx server.Cmd) error {
 	})
 }
 
-// WithManager creates the resource manager, registers all resource instances
-// (logger, otel, handlers, router) in dependency order, invokes fn, then
-// closes the manager regardless of whether fn returned an error.
+// WithManager creates the LDAP manager
 func (server *RunServer) WithManager(ctx server.Cmd, fn func(*ldap.Manager, string) error) error {
 	opts := []ldap.Opt{
 		ldap.WithUrl(server.Url),

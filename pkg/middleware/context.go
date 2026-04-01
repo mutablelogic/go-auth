@@ -39,21 +39,27 @@ const (
 // PUBLIC METHODS
 
 // ClaimsFromContext returns JWT claims stored by the auth middleware.
-func ClaimsFromContext(ctx context.Context) (map[string]any, bool) {
-	claims, ok := ctx.Value(contextKeyClaims).(map[string]any)
-	return claims, ok
+func ClaimsFromContext(ctx context.Context) map[string]any {
+	if claims, ok := ctx.Value(contextKeyClaims).(map[string]any); ok {
+		return claims
+	}
+	return nil
 }
 
 // UserFromContext returns the authenticated user stored by the auth middleware.
-func UserFromContext(ctx context.Context) (*schema.User, bool) {
-	user, ok := ctx.Value(contextKeyUser).(*schema.User)
-	return user, ok
+func UserFromContext(ctx context.Context) *schema.User {
+	if user, ok := ctx.Value(contextKeyUser).(*schema.User); ok {
+		return user
+	}
+	return nil
 }
 
 // SessionFromContext returns the authenticated session stored by the auth middleware.
-func SessionFromContext(ctx context.Context) (*schema.Session, bool) {
-	session, ok := ctx.Value(contextKeySession).(*schema.Session)
-	return session, ok
+func SessionFromContext(ctx context.Context) *schema.Session {
+	if session, ok := ctx.Value(contextKeySession).(*schema.Session); ok {
+		return session
+	}
+	return nil
 }
 
 ///////////////////////////////////////////////////////////////////////////////

@@ -21,51 +21,35 @@ import (
 
 	// Packages
 	coremanager "github.com/djthorpe/go-auth/pkg/authmanager"
+	markdown "github.com/djthorpe/go-auth/pkg/markdown"
 	schema "github.com/djthorpe/go-auth/schema/auth"
 	pg "github.com/mutablelogic/go-pg"
+	httprequest "github.com/mutablelogic/go-server/pkg/httprequest"
 	httpresponse "github.com/mutablelogic/go-server/pkg/httpresponse"
 	jsonschema "github.com/mutablelogic/go-server/pkg/jsonschema"
-	openapi "github.com/mutablelogic/go-server/pkg/openapi/schema"
+	opts "github.com/mutablelogic/go-server/pkg/openapi"
 	types "github.com/mutablelogic/go-server/pkg/types"
 )
 
 ///////////////////////////////////////////////////////////////////////////////
 // PUBLIC METHODS
 
-// ChangesHandler streams change notifications as server-sent events.
-func ChangesHandler(mgr *coremanager.Manager) (string, http.HandlerFunc, *openapi.PathItem) {
-	return "changes", func(w http.ResponseWriter, r *http.Request) {
-			switch r.Method {
-			case http.MethodGet:
-				_ = streamChanges(r.Context(), mgr, w, r)
-			default:
-				_ = httpresponse.Error(w, httpresponse.Err(http.StatusMethodNotAllowed), r.Method)
-			}
-		}, &openapi.PathItem{
-			Summary:     "Change notifications",
-			Description: "Streams table change notifications as server-sent events.",
-			Get: &openapi.Operation{
-				Tags:        []string{"Changes"},
-				Summary:     "Stream changes",
-				Description: "Requires an Accept header of text/event-stream and streams change notifications until the client disconnects.",
-				Responses: map[string]openapi.Response{
-					"200": {
-						Description: "Text/event-stream of change notifications.",
-						Content: map[string]openapi.MediaType{
-							types.ContentTypeTextStream: {
-								Schema: jsonschema.MustFor[schema.ChangeNotification](),
-							},
-						},
-					},
-					"406": {
-						Description: "The request must accept text/event-stream.",
-					},
-					"503": {
-						Description: "Change notifications are not configured on the manager.",
-					},
-				},
-			},
-		}
+// ChangesHandler returns a path and pathitem for the changes SSE endpoint.
+func ChangesHandler(mgr *coremanager.Manager, doc *markdown.Document) (string, *jsonschema.Schema, httprequest.PathItem) {
+	return "changes", nil, httprequest.NewPathItem(
+		"Change notifications",
+		"Streams table change notifications as server-sent events.",
+		"Changes",
+	).Get(
+		func(w http.ResponseWriter, r *http.Request) {
+			_ = streamChanges(r.Context(), mgr, w, r)
+		},
+		"Stream changes",
+		opts.WithDescription(doc.Section(3, "GET /{prefix}/changes").Body),
+		opts.WithResponse(200, types.ContentTypeTextStream, jsonschema.MustFor[schema.ChangeNotification]()),
+		opts.WithErrorResponse(406, "The request must accept text/event-stream."),
+		opts.WithErrorResponse(503, "Change notifications are not configured on the manager."),
+	)
 }
 
 ///////////////////////////////////////////////////////////////////////////////

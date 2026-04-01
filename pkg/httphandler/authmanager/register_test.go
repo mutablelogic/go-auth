@@ -28,7 +28,9 @@ import (
 	providerpkg "github.com/djthorpe/go-auth/pkg/provider"
 	localprovider "github.com/djthorpe/go-auth/pkg/provider/local"
 	test "github.com/mutablelogic/go-pg/pkg/test"
+	httprequest "github.com/mutablelogic/go-server/pkg/httprequest"
 	httprouter "github.com/mutablelogic/go-server/pkg/httprouter"
+	jsonschema "github.com/mutablelogic/go-server/pkg/jsonschema"
 	openapi "github.com/mutablelogic/go-server/pkg/openapi/schema"
 	assert "github.com/stretchr/testify/assert"
 	require "github.com/stretchr/testify/require"
@@ -38,21 +40,21 @@ import (
 // TYPES
 
 type registeredRoute struct {
-	path       string
-	handler    http.HandlerFunc
-	middleware bool
-	spec       *openapi.PathItem
+	path     string
+	params   *jsonschema.Schema
+	pathitem httprequest.PathItem
 }
 
 type fakeRouter struct {
+	spec   *openapi.Spec
 	routes []registeredRoute
 	err    error
 }
 
 func (f *fakeRouter) ServeHTTP(w http.ResponseWriter, r *http.Request) {}
-func (f *fakeRouter) Spec() *openapi.Spec                              { return nil }
-func (f *fakeRouter) RegisterFunc(path string, handler http.HandlerFunc, middleware bool, spec *openapi.PathItem) error {
-	f.routes = append(f.routes, registeredRoute{path: path, handler: handler, middleware: middleware, spec: spec})
+func (f *fakeRouter) Spec() *openapi.Spec                              { return f.spec }
+func (f *fakeRouter) RegisterPath(path string, params *jsonschema.Schema, pathitem httprequest.PathItem) error {
+	f.routes = append(f.routes, registeredRoute{path: path, params: params, pathitem: pathitem})
 	return f.err
 }
 
@@ -80,18 +82,16 @@ func TestRegisterManagerHandlers(t *testing.T) {
 		require := require.New(t)
 
 		mgr := newHTTPTestManager(t)
-		router := new(fakeRouter)
+		router := &fakeRouter{spec: openapi.NewSpec("test", "1.0")}
 
-		err := RegisterManagerHandlers(mgr, router, false)
+		err := RegisterManagerHandlers(mgr, router)
 		require.NoError(err)
 		require.Len(router.routes, 8)
 
 		paths := make([]string, 0, len(router.routes))
 		for _, route := range router.routes {
 			paths = append(paths, route.path)
-			assert.NotNil(route.handler)
-			assert.NotNil(route.spec)
-			assert.True(route.middleware)
+			assert.NotNil(route.pathitem.Handler())
 		}
 
 		assert.Contains(paths, "config")
@@ -104,37 +104,14 @@ func TestRegisterManagerHandlers(t *testing.T) {
 		assert.Contains(paths, "user/{user}/group")
 	})
 
-	t.Run("ProtectsChangesWhenAuthEnabled", func(t *testing.T) {
-		assert := assert.New(t)
-		require := require.New(t)
-
-		mgr := newHTTPTestManager(t)
-		router := new(fakeRouter)
-
-		err := RegisterManagerHandlers(mgr, router, true)
-		require.NoError(err)
-
-		route, ok := router.route("changes")
-		require.True(ok)
-
-		res := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodGet, "/changes", nil)
-		req.Header.Set("Accept", "application/json")
-
-		route.handler(res, req)
-
-		require.Equal(http.StatusUnauthorized, res.Code)
-		assert.Contains(res.Body.String(), "missing bearer token")
-	})
-
 	t.Run("LeavesChangesOpenWhenAuthDisabled", func(t *testing.T) {
 		assert := assert.New(t)
 		require := require.New(t)
 
 		mgr := newHTTPTestManager(t)
-		router := new(fakeRouter)
+		router := &fakeRouter{spec: openapi.NewSpec("test", "1.0")}
 
-		err := RegisterManagerHandlers(mgr, router, false)
+		err := RegisterManagerHandlers(mgr, router)
 		require.NoError(err)
 
 		route, ok := router.route("changes")
@@ -144,7 +121,7 @@ func TestRegisterManagerHandlers(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/changes", nil)
 		req.Header.Set("Accept", "application/json")
 
-		route.handler(res, req)
+		route.pathitem.Handler()(res, req)
 
 		require.Equal(http.StatusNotAcceptable, res.Code)
 		assert.Contains(res.Body.String(), "text/event-stream")
@@ -157,7 +134,7 @@ func TestRegisterManagerHandlers(t *testing.T) {
 		mgr := newHTTPTestManager(t)
 		router, err := httprouter.NewRouter(context.Background(), "/api", "", "Test API", "1.0.0")
 		require.NoError(err)
-		require.NoError(RegisterManagerHandlers(mgr, router, false))
+		require.NoError(RegisterManagerHandlers(mgr, router))
 
 		req := httptest.NewRequest(http.MethodGet, "/api/changes", nil)
 		req.Header.Set("Accept", "application/json")

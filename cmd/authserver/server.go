@@ -29,7 +29,7 @@ import (
 	manager "github.com/djthorpe/go-auth/pkg/authmanager"
 	authcrypto "github.com/djthorpe/go-auth/pkg/crypto"
 	authhandler "github.com/djthorpe/go-auth/pkg/httphandler/auth"
-	managerhandler "github.com/djthorpe/go-auth/pkg/httphandler/manager"
+	managerhandler "github.com/djthorpe/go-auth/pkg/httphandler/authmanager"
 	schema "github.com/djthorpe/go-auth/schema/auth"
 	server "github.com/mutablelogic/go-server"
 	cmd "github.com/mutablelogic/go-server/pkg/cmd"
@@ -206,9 +206,6 @@ func (server *RunServer) issuer(ctx server.Cmd) string {
 		scheme = "https"
 	}
 	prefix := strings.TrimRight(ctx.HTTPPrefix(), "/")
-	if origin := strings.TrimSpace(ctx.HTTPOrigin()); origin != "" && origin != "*" {
-		return strings.TrimRight(origin, "/") + prefix
-	}
 	if hostport := publicHostPort(strings.TrimSpace(ctx.HTTPAddr())); hostport != "" {
 		return scheme + "://" + hostport + prefix
 	}
