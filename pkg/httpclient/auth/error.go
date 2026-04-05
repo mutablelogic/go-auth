@@ -15,6 +15,8 @@
 package auth
 
 import (
+	"errors"
+	"fmt"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -84,13 +86,31 @@ func newAuthError(header http.Header) error {
 ///////////////////////////////////////////////////////////////////////////////
 // PUBLIC METHODS
 
-func (e *AuthError) String() string {
+// AsAuthError extracts an AuthError regardless of whether it was returned as a
+// value or pointer.
+func AsAuthError(err error) *AuthError {
+	var authErrValue *AuthError
+	if errors.As(err, &authErrValue) {
+		return authErrValue
+	}
+	return nil
+}
+
+func (e AuthError) String() string {
 	return types.Stringify(e)
 }
 
-func (e *AuthError) Error() string {
-	if e == nil {
-		return ""
+func (e AuthError) Error() string {
+	code := e.Get("error")
+	desc := e.Get("error_description")
+	switch {
+	case desc != "" && code != "":
+		return fmt.Sprintf("%s: %s", code, desc)
+	case desc != "":
+		return desc
+	case code != "":
+		return code
+	default:
+		return "unauthorized"
 	}
-	return e.String()
 }

@@ -35,16 +35,17 @@ import (
 // BaseConfiguration contains the fields shared by OIDC and
 // OAuth authorization server metadata documents.
 type BaseConfiguration struct {
-	Issuer                string   `json:"issuer"`
-	AuthorizationEndpoint string   `json:"authorization_endpoint,omitempty"`
-	TokenEndpoint         string   `json:"token_endpoint,omitempty"`
-	RegistrationEndpoint  string   `json:"registration_endpoint,omitempty"`
-	RevocationEndpoint    string   `json:"revocation_endpoint,omitempty"`
-	ResponseTypes         []string `json:"response_types_supported,omitempty"`
-	GrantTypesSupported   []string `json:"grant_types_supported,omitempty"`
-	ScopesSupported       []string `json:"scopes_supported,omitempty"`
-	CodeChallengeMethods  []string `json:"code_challenge_methods_supported,omitempty"`
-	NonceSupported        bool     `json:"-"`
+	Issuer                   string   `json:"issuer"`
+	AuthorizationEndpoint    string   `json:"authorization_endpoint,omitempty"`
+	TokenEndpoint            string   `json:"token_endpoint,omitempty"`
+	RegistrationEndpoint     string   `json:"registration_endpoint,omitempty"`
+	RevocationEndpoint       string   `json:"revocation_endpoint,omitempty"`
+	ResponseTypes            []string `json:"response_types_supported,omitempty"`
+	GrantTypesSupported      []string `json:"grant_types_supported,omitempty"`
+	ScopesSupported          []string `json:"scopes_supported,omitempty"`
+	CodeChallengeMethods     []string `json:"code_challenge_methods_supported,omitempty"`
+	TokenEndpointAuthMethods []string `json:"-"`
+	NonceSupported           bool     `json:"-"`
 }
 
 // OIDCConfiguration represents the OpenID Connect discovery document.

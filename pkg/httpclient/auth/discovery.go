@@ -22,7 +22,6 @@ import (
 	"strings"
 
 	// Packages
-	auth "github.com/djthorpe/go-auth"
 	oidc "github.com/djthorpe/go-auth/pkg/oidc"
 	client "github.com/mutablelogic/go-client"
 	httpresponse "github.com/mutablelogic/go-server/pkg/httpresponse"
@@ -44,10 +43,79 @@ type Config struct {
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-// STRINGIFY
+// PUBLIC METHODS
 
-func (c Config) String() string {
-	return types.Stringify(c)
+// DiscoverWithError resolves auth metadata from an auth challenge.
+func (c *Client) DiscoverWithError(ctx context.Context, err error) (*Config, error) {
+	authErr := AsAuthError(err)
+	if authErr == nil {
+		return nil, err
+	}
+
+	config := new(Config)
+	seen := map[string]struct{}{}
+
+	// Attempt discovery using resource_metadata hint, if present.
+	if endpoint := strings.TrimSpace(authErr.Get("resource_metadata")); endpoint != "" {
+		var resource oidc.ProtectedResourceMetadata
+		if err := c.DoWithContext(ctx, nil, &resource, client.OptReqEndpoint(endpoint)); err != nil {
+			return nil, err
+		}
+		resourceConfig := &Config{ProtectedResourceMetadata: resource}
+		c.appendDiscoveredServers(ctx, resourceConfig, map[string]struct{}{}, resource.AuthorizationServers...)
+		mergeDiscoveredConfig(config, seen, resourceConfig)
+	}
+
+	c.appendDiscoveredServers(ctx, config, seen, authServerCandidates(authErr)...)
+	if len(config.AuthorizationServers) == 0 {
+		c.appendDiscoveredServers(ctx, config, seen, c.Endpoint)
+	}
+	if len(config.AuthorizationServers) == 0 {
+		c.appendDiscoveredServers(ctx, config, seen, interoperabilityIssuerCandidates(c.Endpoint)...)
+	}
+	if len(config.AuthorizationServers) == 0 {
+		return nil, fmt.Errorf("authorization server metadata is required")
+	}
+	return config, nil
+}
+
+// Discover resolves auth server metadata directly from an issuer URL.
+func (c *Client) Discover(ctx context.Context, issuer string) (*Config, error) {
+	config := new(Config)
+	seen := map[string]struct{}{}
+	for _, endpoint := range progressiveMetadataCandidates(issuer, oidc.ProtectedResourcePath) {
+		if err := c.DoWithContext(ctx, nil, &config.ProtectedResourceMetadata, client.OptReqEndpoint(endpoint)); err == nil {
+			break
+		} else {
+			var httpErr httpresponse.Err
+			if errors.As(err, &httpErr) && (httpErr == httpresponse.ErrNotFound || httpErr == httpresponse.ErrNotAuthorized) {
+				continue
+			}
+			return nil, fmt.Errorf("fetch resource metadata from %q: %w", endpoint, err)
+		}
+	}
+	c.appendDiscoveredServers(ctx, config, seen, config.ProtectedResourceMetadata.AuthorizationServers...)
+	if len(config.AuthorizationServers) == 0 {
+		c.appendDiscoveredServers(ctx, config, seen, issuer)
+	}
+	if len(config.AuthorizationServers) == 0 {
+		c.appendDiscoveredServers(ctx, config, seen, interoperabilityIssuerCandidates(issuer)...)
+	}
+	return config, nil
+}
+
+// DiscoverFromIssuer resolves authorization server metadata directly from a
+// known issuer URL without first probing protected-resource metadata.
+func (c *Client) DiscoverFromIssuer(ctx context.Context, issuer string) (*Config, error) {
+	serverMeta, err := c.discoverFromIssuer(ctx, issuer)
+	if err != nil {
+		return nil, err
+	}
+	config := &Config{}
+	if serverMeta != nil {
+		config.AuthorizationServers = append(config.AuthorizationServers, types.Value(serverMeta))
+	}
+	return config, nil
 }
 
 // AuthorizationServerForFlow selects a discovered authorization server that
@@ -58,11 +126,11 @@ func (c *Config) AuthorizationServerForFlow() (*ServerMetadata, error) {
 	}
 	for index := range c.AuthorizationServers {
 		serverMeta := &c.AuthorizationServers[index]
-		if strings.TrimSpace(serverMeta.Oidc.AuthorizationEndpoint) != "" || strings.TrimSpace(serverMeta.OAuth.AuthorizationEndpoint) != "" {
+		if _, ok := serverMeta.authorizationCodeBaseConfig(); ok {
 			return serverMeta, nil
 		}
 	}
-	return nil, fmt.Errorf("no authorization endpoint is advertised")
+	return nil, fmt.Errorf("no authorization code flow is advertised")
 }
 
 // AuthorizationServerForRegistration selects a discovered authorization server
@@ -118,130 +186,62 @@ func (serverMeta *ServerMetadata) AuthorizationCodeConfig() (oidc.BaseConfigurat
 	if serverMeta == nil {
 		return oidc.BaseConfiguration{}, fmt.Errorf("authorization server metadata is required")
 	}
-	if strings.TrimSpace(serverMeta.Oidc.AuthorizationEndpoint) != "" {
-		config := serverMeta.Oidc.BaseConfiguration
-		if strings.TrimSpace(config.Issuer) == "" {
-			config.Issuer = strings.TrimSpace(serverMeta.Issuer)
-		}
-		config.NonceSupported = true
+	if config, ok := serverMeta.authorizationCodeBaseConfig(); ok {
 		return config, nil
 	}
-	if strings.TrimSpace(serverMeta.OAuth.AuthorizationEndpoint) != "" {
-		config := serverMeta.OAuth.BaseConfiguration
-		if strings.TrimSpace(config.Issuer) == "" {
-			config.Issuer = strings.TrimSpace(serverMeta.Issuer)
-		}
-		config.NonceSupported = false
-		return config, nil
-	}
-	return oidc.BaseConfiguration{}, fmt.Errorf("no authorization endpoint is advertised")
-}
-
-///////////////////////////////////////////////////////////////////////////////
-// PUBLIC METHODS
-
-// DiscoverWithError resolves auth metadata from an auth challenge.
-func (c *Client) DiscoverWithError(ctx context.Context, err error) (*Config, error) {
-	var authErr *AuthError
-	if ok := errors.As(err, &authErr); !ok || authErr == nil {
-		return nil, err
-	}
-
-	// Attempt discovery using resource_metadata hint, if present.
-	if endpoint := strings.TrimSpace(authErr.Get("resource_metadata")); endpoint != "" {
-		config, resourceErr := c.discoverFromResourceMetadata(ctx, endpoint)
-		if resourceErr == nil && len(config.AuthorizationServers) > 0 {
-			return config, nil
-		}
-		if fallback, fallbackErr := c.discoverWithoutResourceMetadata(ctx, authErr); fallbackErr == nil {
-			if config != nil {
-				fallback.ProtectedResourceMetadata = config.ProtectedResourceMetadata
-			}
-			return fallback, nil
-		}
-		if resourceErr != nil {
-			return nil, resourceErr
-		}
-		return config, nil
-	}
-
-	return c.discoverWithoutResourceMetadata(ctx, authErr)
-}
-
-// Discover resolves auth server metadata directly from an issuer URL.
-func (c *Client) Discover(ctx context.Context, issuer string) (*Config, error) {
-	var config Config
-	for _, endpoint := range resourceMetadataCandidates(issuer) {
-		if err := c.DoWithContext(ctx, nil, &config.ProtectedResourceMetadata, client.OptReqEndpoint(endpoint)); err == nil {
-			break
-		} else {
-			var httpErr httpresponse.Err
-			if errors.As(err, &httpErr) && (httpErr == httpresponse.ErrNotFound || httpErr == httpresponse.ErrNotAuthorized) {
-				continue
-			}
-			return nil, fmt.Errorf("fetch resource metadata from %q: %w", endpoint, err)
-		}
-	}
-
-	seen := map[string]struct{}{}
-	c.appendDiscoveredServers(ctx, &config, seen, config.ProtectedResourceMetadata.AuthorizationServers...)
-
-	// If there is no protected resource metadata, we can attempt to discover directly from the issuer
-	if len(config.ProtectedResourceMetadata.AuthorizationServers) == 0 {
-		c.appendDiscoveredServers(ctx, &config, seen, issuer)
-	}
-
-	// Interoperability fallback for providers that host resources and auth metadata on different subdomains.
-	if len(config.AuthorizationServers) == 0 {
-		c.appendDiscoveredServers(ctx, &config, seen, interoperabilityIssuerCandidates(issuer)...)
-	}
-
-	return &config, nil
-}
-
-// DiscoverFromIssuer resolves authorization server metadata directly from a
-// known issuer URL without first probing protected-resource metadata.
-func (c *Client) DiscoverFromIssuer(ctx context.Context, issuer string) (*Config, error) {
-	serverMeta, err := c.discoverFromIssuer(ctx, issuer)
-	if err != nil {
-		return nil, err
-	}
-	config := &Config{}
-	if serverMeta != nil {
-		config.AuthorizationServers = append(config.AuthorizationServers, types.Value(serverMeta))
-	}
-	return config, nil
+	return oidc.BaseConfiguration{}, fmt.Errorf("no authorization code flow is advertised")
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 // PRIVATE METHODS
 
-func (c *Client) discoverWithoutResourceMetadata(ctx context.Context, authErr *AuthError) (*Config, error) {
-	if authErr == nil {
-		return nil, auth.ErrNotImplemented
-	}
-
-	config := new(Config)
-	seen := map[string]struct{}{}
-	c.appendDiscoveredServers(ctx, config, seen, authServerCandidates(authErr)...)
-	if len(config.AuthorizationServers) == 0 {
-		c.appendDiscoveredServers(ctx, config, seen, interoperabilityIssuerCandidates(c.Endpoint)...)
-	}
-
-	if len(config.AuthorizationServers) == 0 {
-		return nil, fmt.Errorf("authorization server metadata is required")
-	}
-	return config, nil
+func hasAuthorizationCodeFlow(config oidc.BaseConfiguration) bool {
+	return strings.TrimSpace(config.AuthorizationEndpoint) != "" && strings.TrimSpace(config.TokenEndpoint) != ""
 }
 
-func (c *Client) discoverFromResourceMetadata(ctx context.Context, endpoint string) (*Config, error) {
-	resource, err := c.discoverWithResourceMetadata(ctx, endpoint)
-	if err != nil {
-		return nil, err
+func buildAuthorizationCodeConfig(issuer string, config oidc.BaseConfiguration, authMethods []string, nonceSupported bool) (oidc.BaseConfiguration, bool) {
+	if !hasAuthorizationCodeFlow(config) {
+		return oidc.BaseConfiguration{}, false
 	}
-	config := &Config{ProtectedResourceMetadata: types.Value(resource)}
-	c.appendDiscoveredServers(ctx, config, map[string]struct{}{}, resource.AuthorizationServers...)
-	return config, nil
+	if strings.TrimSpace(config.Issuer) == "" {
+		config.Issuer = strings.TrimSpace(issuer)
+	}
+	config.TokenEndpointAuthMethods = compactStrings(authMethods)
+	config.NonceSupported = nonceSupported
+	return config, true
+}
+
+func (serverMeta *ServerMetadata) authorizationCodeBaseConfig() (oidc.BaseConfiguration, bool) {
+	if serverMeta == nil {
+		return oidc.BaseConfiguration{}, false
+	}
+	if config, ok := buildAuthorizationCodeConfig(serverMeta.Issuer, serverMeta.Oidc.BaseConfiguration, serverMeta.Oidc.TokenEndpointAuthMethodsSupported, true); ok {
+		return config, true
+	}
+	if config, ok := buildAuthorizationCodeConfig(serverMeta.Issuer, serverMeta.OAuth.BaseConfiguration, serverMeta.OAuth.TokenEndpointAuthMethodsSupported, false); ok {
+		return config, true
+	}
+	return oidc.BaseConfiguration{}, false
+}
+
+func mergeDiscoveredConfig(dst *Config, seen map[string]struct{}, src *Config) {
+	if dst == nil || src == nil {
+		return
+	}
+	if strings.TrimSpace(src.ProtectedResourceMetadata.Resource) != "" || len(src.ProtectedResourceMetadata.AuthorizationServers) > 0 {
+		dst.ProtectedResourceMetadata = src.ProtectedResourceMetadata
+	}
+	dst.AuthorizationServers = append(dst.AuthorizationServers, src.AuthorizationServers...)
+	if seen == nil {
+		return
+	}
+	for _, serverMeta := range src.AuthorizationServers {
+		issuer := strings.TrimSpace(serverMeta.Issuer)
+		if issuer == "" {
+			continue
+		}
+		seen[issuer] = struct{}{}
+	}
 }
 
 func (c *Client) appendDiscoveredServers(ctx context.Context, config *Config, seen map[string]struct{}, issuers ...string) {
@@ -266,30 +266,7 @@ func (c *Client) appendDiscoveredServers(ctx context.Context, config *Config, se
 	}
 }
 
-// discoverFromResourceMetadata fetches discovery from an explicit metadata endpoint.
-func (c *Client) discoverWithResourceMetadata(ctx context.Context, endpoint string) (*oidc.ProtectedResourceMetadata, error) {
-	var resource oidc.ProtectedResourceMetadata
-	if err := c.DoWithContext(ctx, nil, &resource, client.OptReqEndpoint(endpoint)); err != nil {
-		return nil, err
-	}
-	return types.Ptr(resource), nil
-}
-
 func authServerCandidates(authErr *AuthError) []string {
-	if authErr == nil {
-		return nil
-	}
-	return collectIssuerCandidates(
-		explicitIssuerCandidates(authErr),
-		authorizationURIIssuerCandidates(authErr),
-		[]string{absoluteRealmURL(authErr)},
-	)
-}
-
-func explicitIssuerCandidates(authErr *AuthError) []string {
-	if authErr == nil {
-		return nil
-	}
 	result := make([]string, 0, 3)
 	for _, key := range []string{"issuer", "authorization_server", "authorization_server_uri"} {
 		value := absoluteURL(authErr.Get(key))
@@ -297,13 +274,14 @@ func explicitIssuerCandidates(authErr *AuthError) []string {
 			result = append(result, value)
 		}
 	}
-	return result
+	return collectIssuerCandidates(
+		result,
+		authorizationURIIssuerCandidates(authErr),
+		[]string{absoluteURL(authErr.Get("realm"))},
+	)
 }
 
 func authorizationURIIssuerCandidates(authErr *AuthError) []string {
-	if authErr == nil {
-		return nil
-	}
 	authorizationURI := strings.TrimSpace(authErr.Get("authorization_uri"))
 	uri, err := url.Parse(authorizationURI)
 	if err != nil || uri.Scheme == "" || uri.Host == "" {
@@ -318,13 +296,6 @@ func authorizationURIIssuerCandidates(authErr *AuthError) []string {
 	}
 	issuer := &url.URL{Scheme: uri.Scheme, Host: uri.Host, Path: path}
 	return []string{issuer.String()}
-}
-
-func absoluteRealmURL(authErr *AuthError) string {
-	if authErr == nil {
-		return ""
-	}
-	return absoluteURL(authErr.Get("realm"))
 }
 
 func absoluteURL(raw string) string {
@@ -357,7 +328,7 @@ func interoperabilityIssuerCandidates(resource string) []string {
 	if host == "atlassian.com" || strings.HasSuffix(host, ".atlassian.com") {
 		result = append(result, (&url.URL{Scheme: uri.Scheme, Host: "auth.atlassian.com"}).String())
 	}
-	return compactIssuerCandidates(result)
+	return collectIssuerCandidates(result)
 }
 
 func collectIssuerCandidates(groups ...[]string) []string {
@@ -380,15 +351,6 @@ func collectIssuerCandidates(groups ...[]string) []string {
 		return nil
 	}
 	return result
-}
-
-func compactIssuerCandidates(values []string) []string {
-	return collectIssuerCandidates(values)
-}
-
-// resourceMetadataCandidates derives protected-resource metadata URLs from a resource URL.
-func resourceMetadataCandidates(resource string) []string {
-	return progressiveMetadataCandidates(resource, oidc.ProtectedResourcePath)
 }
 
 func progressiveMetadataCandidates(raw, wellKnownPath string) []string {
@@ -423,16 +385,6 @@ func progressiveMetadataCandidates(raw, wellKnownPath string) []string {
 	}
 
 	return result
-}
-
-// oidcMetadataCandidates derives OIDC discovery document URLs from an issuer URL.
-func oidcMetadataCandidates(issuer string) []string {
-	return metadataCandidates(issuer, oidc.ConfigPath, oidc.ConfigURL(issuer))
-}
-
-// oauthMetadataCandidates derives OAuth metadata URLs from an issuer URL.
-func oauthMetadataCandidates(issuer string) []string {
-	return metadataCandidates(issuer, oidc.OAuthConfigPath, oidc.OAuthConfigURL(issuer))
 }
 
 func metadataCandidates(raw, wellKnownPath, compatibility string) []string {
@@ -483,21 +435,58 @@ func (c *Client) discoverFromIssuer(ctx context.Context, issuer string) (*Server
 	meta := ServerMetadata{
 		Issuer: strings.TrimSpace(issuer),
 	}
+	var found bool
 
-	// Prefer OIDC discovery when available; it already carries the shared base
-	// configuration fields used by the auth client flows.
-	for _, endpoint := range oidcMetadataCandidates(meta.Issuer) {
+	for _, endpoint := range metadataCandidates(meta.Issuer, oidc.ConfigPath, oidc.ConfigURL(meta.Issuer)) {
 		if err := c.DoWithContext(ctx, nil, &meta.Oidc, client.OptReqEndpoint(endpoint)); err == nil {
-			return types.Ptr(meta), nil
+			found = true
+			break
 		}
 	}
 
-	// Fall back to OAuth authorization-server metadata when no OIDC document is available.
-	for _, endpoint := range oauthMetadataCandidates(meta.Issuer) {
+	for _, endpoint := range metadataCandidates(meta.Issuer, oidc.OAuthConfigPath, oidc.OAuthConfigURL(meta.Issuer)) {
 		if err := c.DoWithContext(ctx, nil, &meta.OAuth, client.OptReqEndpoint(endpoint)); err == nil {
-			return types.Ptr(meta), nil
+			found = true
+			break
 		}
+	}
+	if issuer := strings.TrimSpace(meta.Oidc.Issuer); issuer != "" {
+		meta.Issuer = issuer
+	} else if issuer := strings.TrimSpace(meta.OAuth.Issuer); issuer != "" {
+		meta.Issuer = issuer
+	}
+
+	if _, ok := meta.authorizationCodeBaseConfig(); ok {
+		return types.Ptr(meta), nil
+	}
+	if meta.applyLegacyAuthorizationCodeFallback() {
+		return types.Ptr(meta), nil
+	}
+	if found {
+		return nil, fmt.Errorf("fetch auth server metadata for %q: no authorization code flow is advertised", meta.Issuer)
 	}
 
 	return nil, fmt.Errorf("fetch auth server metadata for %q: no valid OIDC or OAuth configuration found", meta.Issuer)
+}
+
+func (serverMeta *ServerMetadata) applyLegacyAuthorizationCodeFallback() bool {
+	if serverMeta == nil {
+		return false
+	}
+	issuer := strings.TrimRight(strings.TrimSpace(serverMeta.Issuer), "/")
+	uri, err := url.Parse(issuer)
+	if err != nil || uri.Scheme == "" || uri.Host == "" {
+		return false
+	}
+	if strings.EqualFold(uri.Hostname(), "github.com") && strings.TrimRight(uri.Path, "/") == "/login/oauth" {
+		serverMeta.OAuth.BaseConfiguration = oidc.BaseConfiguration{
+			Issuer:                   issuer,
+			AuthorizationEndpoint:    issuer + "/authorize",
+			TokenEndpoint:            issuer + "/access_token",
+			TokenEndpointAuthMethods: []string{"client_secret_post"},
+		}
+		serverMeta.OAuth.TokenEndpointAuthMethodsSupported = []string{"client_secret_post"}
+		return true
+	}
+	return false
 }
