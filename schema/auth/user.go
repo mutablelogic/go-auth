@@ -205,6 +205,13 @@ func (id *UserID) UnmarshalJSON(data []byte) error {
 ///////////////////////////////////////////////////////////////////////////////
 // PUBLIC METHODS - USER
 
+func (u *User) UUID() uuid.UUID {
+	if u == nil {
+		return uuid.Nil
+	}
+	return uuid.UUID(u.ID)
+}
+
 func (u User) HasScope(scope string) bool {
 	return slices.Contains(u.Scopes, strings.TrimSpace(scope))
 }

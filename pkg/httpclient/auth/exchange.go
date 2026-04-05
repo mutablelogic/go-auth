@@ -17,6 +17,7 @@ package auth
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 
 	// Packages
@@ -26,6 +27,25 @@ import (
 
 ///////////////////////////////////////////////////////////////////////////////
 // PUBLIC METHODS
+
+func tokenEndpointAuthStyle(authMethods []string) oauth2.AuthStyle {
+	normalized := make([]string, 0, len(authMethods))
+	for _, method := range authMethods {
+		if method = strings.ToLower(strings.TrimSpace(method)); method != "" {
+			normalized = append(normalized, method)
+		}
+	}
+	hasBasic := slices.Contains(normalized, "client_secret_basic")
+	hasPost := slices.Contains(normalized, "client_secret_post")
+	switch {
+	case hasPost && !hasBasic:
+		return oauth2.AuthStyleInParams
+	case hasBasic && !hasPost:
+		return oauth2.AuthStyleInHeader
+	default:
+		return oauth2.AuthStyleAutoDetect
+	}
+}
 
 // ExchangeCode exchanges an authorization code using the supplied flow
 // configuration and returns the token response from the configured endpoint.
@@ -80,8 +100,9 @@ func OAuth2ConfigForFlow(flow *oidc.AuthorizationCodeFlow, clientSecret string) 
 		RedirectURL:  flow.RedirectURL,
 		Scopes:       append([]string(nil), flow.Scopes...),
 		Endpoint: oauth2.Endpoint{
-			AuthURL:  strings.TrimSpace(flow.AuthorizationEndpoint),
-			TokenURL: strings.TrimSpace(flow.TokenEndpoint),
+			AuthURL:   strings.TrimSpace(flow.AuthorizationEndpoint),
+			TokenURL:  strings.TrimSpace(flow.TokenEndpoint),
+			AuthStyle: tokenEndpointAuthStyle(flow.TokenEndpointAuthMethods),
 		},
 	}, nil
 }
@@ -97,8 +118,9 @@ func OAuth2Config(config oidc.BaseConfiguration, clientID, clientSecret string, 
 		ClientSecret: strings.TrimSpace(clientSecret),
 		Scopes:       append([]string(nil), scopes...),
 		Endpoint: oauth2.Endpoint{
-			AuthURL:  strings.TrimSpace(config.AuthorizationEndpoint),
-			TokenURL: strings.TrimSpace(config.TokenEndpoint),
+			AuthURL:   strings.TrimSpace(config.AuthorizationEndpoint),
+			TokenURL:  strings.TrimSpace(config.TokenEndpoint),
+			AuthStyle: tokenEndpointAuthStyle(config.TokenEndpointAuthMethods),
 		},
 	}, nil
 }

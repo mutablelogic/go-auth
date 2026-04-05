@@ -37,6 +37,34 @@ func TestOAuth2ConfigWithoutClientID(t *testing.T) {
 	require.Equal(t, "https://issuer.example.test/auth/code", config.Endpoint.TokenURL)
 }
 
+func TestOAuth2ConfigUsesTokenEndpointAuthMethods(t *testing.T) {
+	config, err := OAuth2Config(oidc.BaseConfiguration{
+		AuthorizationEndpoint:    "https://issuer.example.test/auth/authorize",
+		TokenEndpoint:            "https://issuer.example.test/auth/code",
+		TokenEndpointAuthMethods: []string{"client_secret_post"},
+	}, "client-id", "client-secret")
+	require.NoError(t, err)
+	require.Equal(t, oauth2.AuthStyleInParams, config.Endpoint.AuthStyle)
+
+	flowConfig, err := OAuth2ConfigForFlow(&oidc.AuthorizationCodeFlow{
+		AuthorizationEndpoint:    "https://issuer.example.test/auth/authorize",
+		TokenEndpoint:            "https://issuer.example.test/auth/code",
+		TokenEndpointAuthMethods: []string{"client_secret_basic"},
+		RedirectURL:              "http://localhost/callback",
+	}, "client-secret")
+	require.NoError(t, err)
+	require.Equal(t, oauth2.AuthStyleInHeader, flowConfig.Endpoint.AuthStyle)
+}
+
+func TestOAuth2ConfigNormalizesTokenEndpointAuthMethods(t *testing.T) {
+	config, err := OAuth2Config(oidc.BaseConfiguration{
+		TokenEndpoint:            "https://issuer.example.test/auth/code",
+		TokenEndpointAuthMethods: []string{"  CLIENT_SECRET_POST  "},
+	}, "client-id", "client-secret")
+	require.NoError(t, err)
+	require.Equal(t, oauth2.AuthStyleInParams, config.Endpoint.AuthStyle)
+}
+
 func TestRefreshStoredTokenWithoutClientID(t *testing.T) {
 	tokenEndpointCalled := false
 	tokenEndpointForm := url.Values{}

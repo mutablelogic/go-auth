@@ -29,20 +29,21 @@ import (
 // AuthorizationCodeFlow contains the generated state required to start an
 // interactive OAuth2/OIDC authorization code flow with optional PKCE.
 type AuthorizationCodeFlow struct {
-	Provider              string   `json:"provider,omitempty"`
-	Issuer                string   `json:"issuer,omitempty"`
-	AuthorizationEndpoint string   `json:"authorization_endpoint"`
-	AuthorizationURL      string   `json:"authorization_url"`
-	TokenEndpoint         string   `json:"token_endpoint,omitempty"`
-	ClientID              string   `json:"client_id"`
-	RedirectURL           string   `json:"redirect_url"`
-	ResponseType          string   `json:"response_type"`
-	Scopes                []string `json:"scopes,omitempty"`
-	State                 string   `json:"state"`
-	Nonce                 string   `json:"nonce,omitempty"`
-	CodeChallenge         string   `json:"code_challenge,omitempty"`
-	CodeChallengeMethod   string   `json:"code_challenge_method,omitempty"`
-	CodeVerifier          string   `json:"code_verifier,omitempty"`
+	Provider                 string   `json:"provider,omitempty"`
+	Issuer                   string   `json:"issuer,omitempty"`
+	AuthorizationEndpoint    string   `json:"authorization_endpoint"`
+	AuthorizationURL         string   `json:"authorization_url"`
+	TokenEndpoint            string   `json:"token_endpoint,omitempty"`
+	TokenEndpointAuthMethods []string `json:"-"`
+	ClientID                 string   `json:"client_id"`
+	RedirectURL              string   `json:"redirect_url"`
+	ResponseType             string   `json:"response_type"`
+	Scopes                   []string `json:"scopes,omitempty"`
+	State                    string   `json:"state"`
+	Nonce                    string   `json:"nonce,omitempty"`
+	CodeChallenge            string   `json:"code_challenge,omitempty"`
+	CodeChallengeMethod      string   `json:"code_challenge_method,omitempty"`
+	CodeVerifier             string   `json:"code_verifier,omitempty"`
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -79,14 +80,15 @@ func NewAuthorizationCodeFlow(config BaseConfiguration, clientID, redirectURL st
 		return nil, err
 	}
 	flow := &AuthorizationCodeFlow{
-		Issuer:                strings.TrimSpace(config.Issuer),
-		AuthorizationEndpoint: strings.TrimSpace(config.AuthorizationEndpoint),
-		TokenEndpoint:         strings.TrimSpace(config.TokenEndpoint),
-		ClientID:              clientID,
-		RedirectURL:           redirectURL,
-		ResponseType:          ResponseTypeCode,
-		Scopes:                scopes,
-		State:                 state,
+		Issuer:                   strings.TrimSpace(config.Issuer),
+		AuthorizationEndpoint:    strings.TrimSpace(config.AuthorizationEndpoint),
+		TokenEndpoint:            strings.TrimSpace(config.TokenEndpoint),
+		TokenEndpointAuthMethods: compactValues(config.TokenEndpointAuthMethods),
+		ClientID:                 clientID,
+		RedirectURL:              redirectURL,
+		ResponseType:             ResponseTypeCode,
+		Scopes:                   scopes,
+		State:                    state,
 	}
 	if config.NonceSupported {
 		nonce, err := randomToken(randomTokenBytes)

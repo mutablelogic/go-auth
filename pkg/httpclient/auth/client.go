@@ -16,14 +16,12 @@ package auth
 
 import (
 	"context"
-	"errors"
 	"net/http"
 	"strings"
 
 	// Packages
 	client "github.com/mutablelogic/go-client"
 	transport "github.com/mutablelogic/go-client/pkg/transport"
-	httpresponse "github.com/mutablelogic/go-server/pkg/httpresponse"
 )
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -66,16 +64,22 @@ func (c *Client) DoAuthWithContext(ctx context.Context, req client.Payload, v an
 
 	// Perform the request, and parse the WWW-Authenticate header if the response is 401 Unauthorized
 	if err := c.Client.DoWithContext(ctx, req, v, opts...); err != nil {
-		var code httpresponse.Err
-		if ok := errors.As(err, &code); !ok {
+		if err := IsUnauthorized(auth); err != nil {
 			return err
-		}
-		if code == httpresponse.ErrNotAuthorized && auth != nil {
-			return errors.Join(err, newAuthError(auth.Header()))
 		}
 		return err
 	}
 
 	// Otherwise, return success
 	return nil
+}
+
+// IsUnauthorized checks if the error is an HTTP 401 Unauthorized error, and if so,
+// it parses the WWW-Authenticate header and returns an AuthError with the header values.
+func IsUnauthorized(recorder *transport.Recorder) error {
+	if recorder.StatusCode() != http.StatusUnauthorized {
+		return nil
+	}
+	err := newAuthError(recorder.Header())
+	return err
 }
