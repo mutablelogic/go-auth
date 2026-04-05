@@ -59,7 +59,7 @@ func (c *Client) DiscoverWithError(ctx context.Context, err error) (*Config, err
 	if endpoint := strings.TrimSpace(authErr.Get("resource_metadata")); endpoint != "" {
 		var resource oidc.ProtectedResourceMetadata
 		if err := c.DoWithContext(ctx, nil, &resource, client.OptReqEndpoint(endpoint)); err != nil {
-			return nil, err
+			return nil, fmt.Errorf("fetch resource metadata from %q: %w", endpoint, err)
 		}
 		resourceConfig := &Config{ProtectedResourceMetadata: resource}
 		c.appendDiscoveredServers(ctx, resourceConfig, map[string]struct{}{}, resource.AuthorizationServers...)

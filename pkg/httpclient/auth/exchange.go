@@ -29,8 +29,14 @@ import (
 // PUBLIC METHODS
 
 func tokenEndpointAuthStyle(authMethods []string) oauth2.AuthStyle {
-	hasBasic := slices.Contains(authMethods, "client_secret_basic")
-	hasPost := slices.Contains(authMethods, "client_secret_post")
+	normalized := make([]string, 0, len(authMethods))
+	for _, method := range authMethods {
+		if method = strings.ToLower(strings.TrimSpace(method)); method != "" {
+			normalized = append(normalized, method)
+		}
+	}
+	hasBasic := slices.Contains(normalized, "client_secret_basic")
+	hasPost := slices.Contains(normalized, "client_secret_post")
 	switch {
 	case hasPost && !hasBasic:
 		return oauth2.AuthStyleInParams

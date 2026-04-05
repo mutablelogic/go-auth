@@ -313,3 +313,23 @@ func TestDiscoverWithErrorFallsBackToEndpointWhenChallengeHasNoHints(t *testing.
 	assert.Equal(t, srv.URL+"/token", flowConfig.TokenEndpoint)
 	assert.Equal(t, []string{"S256"}, flowConfig.CodeChallengeMethods)
 }
+
+func TestDiscoverWithErrorWrapsResourceMetadataFetchError(t *testing.T) {
+	resourceSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "boom", http.StatusInternalServerError)
+	}))
+	defer resourceSrv.Close()
+
+	client, err := New(resourceSrv.URL)
+	require.NoError(t, err)
+
+	endpoint := resourceSrv.URL + "/.well-known/oauth-protected-resource/mcp"
+	authErr := &AuthError{Scheme: "Bearer", Values: url.Values{
+		"resource_metadata": {endpoint},
+	}}
+
+	_, err = client.DiscoverWithError(context.Background(), authErr)
+	require.Error(t, err)
+	require.ErrorContains(t, err, endpoint)
+	require.ErrorContains(t, err, "fetch resource metadata")
+}

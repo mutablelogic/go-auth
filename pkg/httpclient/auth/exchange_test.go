@@ -56,6 +56,15 @@ func TestOAuth2ConfigUsesTokenEndpointAuthMethods(t *testing.T) {
 	require.Equal(t, oauth2.AuthStyleInHeader, flowConfig.Endpoint.AuthStyle)
 }
 
+func TestOAuth2ConfigNormalizesTokenEndpointAuthMethods(t *testing.T) {
+	config, err := OAuth2Config(oidc.BaseConfiguration{
+		TokenEndpoint:            "https://issuer.example.test/auth/code",
+		TokenEndpointAuthMethods: []string{"  CLIENT_SECRET_POST  "},
+	}, "client-id", "client-secret")
+	require.NoError(t, err)
+	require.Equal(t, oauth2.AuthStyleInParams, config.Endpoint.AuthStyle)
+}
+
 func TestRefreshStoredTokenWithoutClientID(t *testing.T) {
 	tokenEndpointCalled := false
 	tokenEndpointForm := url.Values{}
