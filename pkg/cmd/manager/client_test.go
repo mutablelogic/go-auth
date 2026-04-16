@@ -27,7 +27,7 @@ import (
 	"time"
 
 	// Packages
-	auth "github.com/mutablelogic/go-auth/pkg/httpclient/auth"
+	auth "github.com/mutablelogic/go-auth/auth/httpclient"
 	managerclient "github.com/mutablelogic/go-auth/pkg/httpclient/manager"
 	clientpkg "github.com/mutablelogic/go-client"
 	assert "github.com/stretchr/testify/assert"

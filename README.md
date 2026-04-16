@@ -4,8 +4,8 @@ A self-hosted authorization server written in Go, implementing the OAuth 2.0 aut
 
 > **Not production ready.** This project is under active development and has known gaps (see below). Do not use it to protect production systems.
 
-* For information on the related `certmanager` service for managing TLS certificates, see [pkg/certmanager/README.md](pkg/certmanager/README.md).
-* For information on the related `ldapmanager` service for managing LDAP directories, see [pkg/ldapmanager/README.md](pkg/ldapmanager/README.md).
+* For information on the related `certmanager` service for managing TLS certificates, see [cert/manager/README.md](cert/manager/README.md).
+* For information on the related `ldapmanager` service for managing LDAP directories, see [ldap/httphandler/README.md](ldap/httphandler/README.md).
 
 ## Motivation
 
@@ -146,14 +146,17 @@ After a successful `login`, the resulting token is stored locally and used autom
 | Path | Description |
 |---|---|
 | `cmd/authserver/` | Server binary — CLI flags, provider wiring, HTTP server setup |
-| `pkg/authmanager/` | Core domain logic — users, groups, scopes, sessions, identities, token signing |
-| `pkg/httphandler/auth/` | OIDC/OAuth endpoints — authorize, token exchange, revoke, userinfo, JWKS |
-| `pkg/httphandler/manager/` | REST management API — CRUD for users, groups, scopes |
-| `pkg/middleware/` | JWT authentication middleware — validates tokens and injects user/session into context |
-| `pkg/provider/` | Identity provider interface and implementations (Google, local browser flow) |
-| `pkg/oidc/` | OIDC/OAuth primitives — token signing, PKCE, authorization code flow helpers |
-| `pkg/crypto/` | RSA key generation, PEM encoding/decoding |
-| `schema/` | Database types, query builders, and JSON serialization |
+| `auth/manager/` | Core domain logic — users, groups, scopes, sessions, identities, token signing |
+| `auth/httphandler/auth/` | OIDC/OAuth endpoints — authorize, token exchange, revoke, userinfo, JWKS |
+| `auth/httphandler/manager/` | REST management API — CRUD for users, groups, scopes |
+| `auth/middleware/` | JWT authentication middleware — validates tokens and injects user/session into context |
+| `auth/provider/` | Identity provider interface and implementations (Google, local browser flow) |
+| `auth/oidc/` | OIDC/OAuth primitives — token signing, PKCE, authorization code flow helpers |
+| `crypto/` | RSA key generation, PEM encoding/decoding |
+| `auth/schema/` | Auth domain schema types, query builders, and JSON serialization |
+| `cert/schema/` | Certificate domain schema types, query builders, and JSON serialization |
+| `ldap/schema/` | LDAP domain schema types, query builders, and JSON serialization |
+| `ldap/parser/schema/` | LDAP schema parser data models and serialization helpers |
 | `wasm/frontend/` | WebAssembly admin UI (Go compiled to WASM, IBM Carbon design system) |
 | `npm/carbon/` | esbuild bundle for Carbon web components |
 
@@ -163,16 +166,16 @@ After a successful `login`, the resulting token is stored locally and used autom
 flowchart TD
     Browser["<b>Browser / Client</b>"]
     AdminUI["<b>Admin UI</b> (WASM + Carbon)"]
-    AuthEP["<b>Auth Endpoints</b> (pkg/httphandler/auth)"]
-    MgrEP["<b>Manager Endpoints</b> (pkg/httphandler/manager)"]
-    Middleware["<b>Auth Middleware</b> (pkg/middleware)"]
-    Manager["<b>Manager</b> (pkg/authmanager)"]
-    OIDC["<b>OIDC Primitives</b> (pkg/oidc)"]
-    Crypto["<b>Crypto</b> (pkg/crypto)"]
-    Providers["<b>Providers</b> (pkg/provider)"]
+    AuthEP["<b>Auth Endpoints</b> (auth/httphandler/auth)"]
+    MgrEP["<b>Manager Endpoints</b> (auth/httphandler/manager)"]
+    Middleware["<b>Auth Middleware</b> (auth/middleware)"]
+    Manager["<b>Manager</b> (auth/manager)"]
+    OIDC["<b>OIDC Primitives</b> (auth/oidc)"]
+    Crypto["<b>Crypto</b> (crypto)"]
+    Providers["<b>Providers</b> (auth/provider)"]
     Google["<b>Google Provider</b>"]
     Local["<b>Local Provider</b>"]
-    Schema["<b>Schema</b> (schema/)"]
+    Schema["<b>Schema</b> (auth/schema, cert/schema, ldap/schema, ldap/parser/schema)"]
     PG[("<b>PostgreSQL</b>")]
 
     Browser -->|"OAuth flow"| AuthEP
@@ -215,7 +218,7 @@ sequenceDiagram
 
 ### Login hooks
 
-When embedding `pkg/authmanager` directly in a larger service, you can supply a hooks object via `manager.WithHooks(...)` to customise login-time behaviour. The object may implement one or both interfaces:
+When embedding `auth/manager` directly in a larger service, you can supply a hooks object via `manager.WithHooks(...)` to customise login-time behaviour. The object may implement one or both interfaces:
 
 ```go
 // UserCreationHook is called the first time a provider identity logs in and
@@ -263,7 +266,7 @@ If no `UserCreationHook` is registered, new users are created with the default s
 
 When `--notify-channel` is set (default `backend.table_change`), the server listens on a PostgreSQL `LISTEN/NOTIFY` channel and streams change events whenever a user, group, identity, session, or scope row is inserted, updated, or deleted.
 
-**Programmatically** — subscribe via `manager.ChangeNotification` when embedding `pkg/authmanager` directly:
+**Programmatically** — subscribe via `manager.ChangeNotification` when embedding `auth/manager` directly:
 
 ```go
 err := mgr.ChangeNotification(ctx, func(change schema.ChangeNotification) {

@@ -19,8 +19,8 @@ import (
 	"os"
 
 	// Packages
-	auth "github.com/mutablelogic/go-auth/pkg/cmd/auth"
-	ldap "github.com/mutablelogic/go-auth/pkg/cmd/ldap"
+	auth "github.com/mutablelogic/go-auth/auth/cmd"
+	ldap "github.com/mutablelogic/go-auth/ldap/cmd"
 	openapi "github.com/mutablelogic/go-auth/pkg/cmd/openapi"
 	cmd "github.com/mutablelogic/go-server/pkg/cmd"
 	version "github.com/mutablelogic/go-server/pkg/version"

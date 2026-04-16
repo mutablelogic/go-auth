@@ -19,7 +19,7 @@ import (
 	"time"
 
 	// Packages
-	schema "github.com/mutablelogic/go-auth/schema/auth"
+	schema "github.com/mutablelogic/go-auth/auth/schema"
 	dom "github.com/djthorpe/go-wasmbuild"
 	carbon "github.com/djthorpe/go-wasmbuild/pkg/carbon"
 	mvc "github.com/djthorpe/go-wasmbuild/pkg/mvc"

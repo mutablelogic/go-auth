@@ -18,7 +18,7 @@ import (
 	"net/url"
 
 	// Packages
-	schema "github.com/mutablelogic/go-auth/schema/auth"
+	schema "github.com/mutablelogic/go-auth/auth/schema"
 )
 
 ///////////////////////////////////////////////////////////////////////////////

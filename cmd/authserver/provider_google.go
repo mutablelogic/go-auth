@@ -20,8 +20,8 @@ import (
 	"strings"
 
 	// Packages
-	provider "github.com/mutablelogic/go-auth/pkg/provider"
-	googleprovider "github.com/mutablelogic/go-auth/pkg/provider/google"
+	provider "github.com/mutablelogic/go-auth/auth/provider"
+	googleprovider "github.com/mutablelogic/go-auth/auth/provider/google"
 )
 
 ///////////////////////////////////////////////////////////////////////////////

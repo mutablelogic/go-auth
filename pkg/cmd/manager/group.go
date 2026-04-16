@@ -19,7 +19,7 @@ import (
 
 	// Packages
 	manager "github.com/mutablelogic/go-auth/pkg/httpclient/manager"
-	schema "github.com/mutablelogic/go-auth/schema/auth"
+	schema "github.com/mutablelogic/go-auth/auth/schema"
 	server "github.com/mutablelogic/go-server"
 )
 

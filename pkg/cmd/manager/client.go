@@ -18,7 +18,7 @@ import (
 	"net/http"
 
 	// Packages
-	auth "github.com/mutablelogic/go-auth/pkg/httpclient/auth"
+	auth "github.com/mutablelogic/go-auth/auth/httpclient"
 	manager "github.com/mutablelogic/go-auth/pkg/httpclient/manager"
 	client "github.com/mutablelogic/go-client"
 	server "github.com/mutablelogic/go-server"

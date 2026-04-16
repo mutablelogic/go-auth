@@ -21,7 +21,7 @@ import (
 	"os"
 
 	// Packages
-	authclient "github.com/mutablelogic/go-auth/pkg/httpclient/auth"
+	authclient "github.com/mutablelogic/go-auth/auth/httpclient"
 	client "github.com/mutablelogic/go-client"
 	server "github.com/mutablelogic/go-server"
 	browser "github.com/pkg/browser"

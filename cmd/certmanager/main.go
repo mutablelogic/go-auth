@@ -19,7 +19,7 @@ import (
 	"os"
 
 	// Packages
-	certmanager "github.com/mutablelogic/go-auth/pkg/cmd/certmanager"
+	certmanager "github.com/mutablelogic/go-auth/pkg/cert/cmd"
 	openapi "github.com/mutablelogic/go-auth/pkg/cmd/openapi"
 	cmd "github.com/mutablelogic/go-server/pkg/cmd"
 	version "github.com/mutablelogic/go-server/pkg/version"
