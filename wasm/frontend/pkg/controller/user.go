@@ -19,8 +19,8 @@ import (
 	"net/url"
 
 	// Packages
-	schema "github.com/djthorpe/go-auth/schema/auth"
-	provider "github.com/djthorpe/go-auth/wasm/frontend/pkg/provider"
+	schema "github.com/mutablelogic/go-auth/auth/schema"
+	provider "github.com/mutablelogic/go-auth/wasm/frontend/pkg/provider"
 	dom "github.com/djthorpe/go-wasmbuild"
 	carbon "github.com/djthorpe/go-wasmbuild/pkg/carbon"
 	js "github.com/djthorpe/go-wasmbuild/pkg/js"

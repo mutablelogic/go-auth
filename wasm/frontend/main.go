@@ -18,9 +18,9 @@ import (
 	"net/url"
 
 	// Packages
-	auth "github.com/djthorpe/go-auth/wasm/frontend/pkg/auth"
-	controller "github.com/djthorpe/go-auth/wasm/frontend/pkg/controller"
-	view "github.com/djthorpe/go-auth/wasm/frontend/pkg/view"
+	auth "github.com/mutablelogic/go-auth/wasm/frontend/pkg/auth"
+	controller "github.com/mutablelogic/go-auth/wasm/frontend/pkg/controller"
+	view "github.com/mutablelogic/go-auth/wasm/frontend/pkg/view"
 	carbon "github.com/djthorpe/go-wasmbuild/pkg/carbon"
 	browserdom "github.com/djthorpe/go-wasmbuild/pkg/dom"
 	mvc "github.com/djthorpe/go-wasmbuild/pkg/mvc"

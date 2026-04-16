@@ -20,7 +20,7 @@ import (
 	"strings"
 
 	// Packages
-	auth "github.com/djthorpe/go-auth/pkg/httpclient/auth"
+	auth "github.com/mutablelogic/go-auth/auth/httpclient"
 	server "github.com/mutablelogic/go-server"
 	oauth2 "golang.org/x/oauth2"
 )

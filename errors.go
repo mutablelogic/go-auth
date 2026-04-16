@@ -15,7 +15,12 @@
 package auth
 
 import (
+	"errors"
 	"fmt"
+	"strings"
+
+	// Packages
+	"github.com/mutablelogic/go-server/pkg/httpresponse"
 )
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -72,4 +77,36 @@ func (e Err) With(args ...any) error {
 
 func (e Err) Withf(format string, args ...any) error {
 	return fmt.Errorf("%w: %s", e, fmt.Sprintf(format, args...))
+}
+
+// HTTPError converts an auth.Err to an appropriate httpresponse error, preserving the
+// reason message.
+func HTTPError(err error) error {
+	var authErr Err
+	if !errors.As(err, &authErr) {
+		return err
+	}
+	reason := strings.TrimPrefix(err.Error(), authErr.Error()+": ")
+	switch authErr {
+	case ErrSuccess:
+		return nil
+	case ErrNotFound:
+		return httpresponse.ErrNotFound.With(reason)
+	case ErrBadParameter:
+		return httpresponse.ErrBadRequest.With(reason)
+	case ErrConflict:
+		return httpresponse.ErrConflict.With(reason)
+	case ErrNotImplemented:
+		return httpresponse.ErrNotImplemented.With(reason)
+	case ErrServiceUnavailable:
+		return httpresponse.ErrServiceUnavailable.With(reason)
+	case ErrInternalServerError:
+		return httpresponse.ErrInternalError.With(reason)
+	case ErrInvalidProvider:
+		return httpresponse.ErrNotAuthorized.With(reason)
+	case ErrForbidden:
+		return httpresponse.ErrForbidden.With(reason)
+	default:
+		return httpresponse.ErrInternalError.With(reason)
+	}
 }

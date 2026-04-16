@@ -27,8 +27,8 @@ import (
 	"time"
 
 	// Packages
-	auth "github.com/djthorpe/go-auth/pkg/httpclient/auth"
-	managerclient "github.com/djthorpe/go-auth/pkg/httpclient/manager"
+	auth "github.com/mutablelogic/go-auth/auth/httpclient"
+	managerclient "github.com/mutablelogic/go-auth/pkg/httpclient/manager"
 	clientpkg "github.com/mutablelogic/go-client"
 	assert "github.com/stretchr/testify/assert"
 	require "github.com/stretchr/testify/require"

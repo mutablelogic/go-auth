@@ -22,8 +22,8 @@ import (
 	"strings"
 
 	// Packages
-	providerpkg "github.com/djthorpe/go-auth/pkg/provider"
-	localprovider "github.com/djthorpe/go-auth/pkg/provider/local"
+	providerpkg "github.com/mutablelogic/go-auth/auth/provider"
+	localprovider "github.com/mutablelogic/go-auth/auth/provider/local"
 )
 
 ///////////////////////////////////////////////////////////////////////////////
