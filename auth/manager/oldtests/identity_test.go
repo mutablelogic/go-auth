@@ -17,15 +17,14 @@ package manager_test
 import (
 	"context"
 	"errors"
-	"strings"
 	"testing"
 	"time"
 
 	// Packages
-	uuid "github.com/google/uuid"
 	auth "github.com/mutablelogic/go-auth"
 	manager "github.com/mutablelogic/go-auth/auth/manager"
 	schema "github.com/mutablelogic/go-auth/auth/schema"
+	uuid "github.com/google/uuid"
 	pg "github.com/mutablelogic/go-pg"
 	assert "github.com/stretchr/testify/assert"
 	require "github.com/stretchr/testify/require"
@@ -63,11 +62,8 @@ func (h testLinkHook) OnIdentityLink(ctx context.Context, identity schema.Identi
 	return nil
 }
 
-func newIdentityTestManagerWithOpts(t *testing.T, opts ...manager.Opt) *manager.Manager {
-	t.Helper()
-	schemaName := "auth_test_identity_" + strings.ReplaceAll(uuid.NewString(), "-", "_")
-	return newCustomSchemaManagerWithOpts(t, schemaName, opts...)
-}
+///////////////////////////////////////////////////////////////////////////////
+// TESTS
 
 func Test_identity_001(t *testing.T) {
 	t.Run("ListIdentities", func(t *testing.T) {
@@ -158,7 +154,7 @@ func Test_identity_001(t *testing.T) {
 			require.NoError(provider.Shutdown(context.Background()))
 		}()
 
-		m := newIdentityTestManagerWithOpts(t, manager.WithTracer(provider.Tracer("manager-identity-test")))
+		m := newTestManagerWithOpts(t, manager.WithTracer(provider.Tracer("manager-identity-test")))
 
 		user, err := m.CreateUser(context.Background(), schema.UserMeta{
 			Name:  "Trace Identity User",
@@ -483,7 +479,7 @@ func Test_identity_001(t *testing.T) {
 		assert := assert.New(t)
 		require := require.New(t)
 
-		m := newIdentityTestManagerWithOpts(t, manager.WithHooks(testCreateHook{}))
+		m := newTestManagerWithOpts(t, manager.WithHooks(testCreateHook{}))
 
 		loggedIn, session, err := m.LoginWithIdentity(context.Background(), schema.IdentityInsert{
 			IdentityKey: schema.IdentityKey{
@@ -511,7 +507,7 @@ func Test_identity_001(t *testing.T) {
 		require := require.New(t)
 		expected := errors.New("signup blocked")
 
-		m := newIdentityTestManagerWithOpts(t, manager.WithHooks(testRejectCreateHook{err: expected}))
+		m := newTestManagerWithOpts(t, manager.WithHooks(testRejectCreateHook{err: expected}))
 
 		loggedIn, session, err := m.LoginWithIdentity(context.Background(), schema.IdentityInsert{
 			IdentityKey: schema.IdentityKey{
@@ -538,7 +534,7 @@ func Test_identity_001(t *testing.T) {
 		require := require.New(t)
 
 		called := false
-		m := newIdentityTestManagerWithOpts(t, manager.WithHooks(testCalledCreateHook{called: &called}))
+		m := newTestManagerWithOpts(t, manager.WithHooks(testCalledCreateHook{called: &called}))
 
 		user, err := m.CreateUser(context.Background(), schema.UserMeta{
 			Name:  "Existing Hook User",
@@ -578,7 +574,7 @@ func Test_identity_001(t *testing.T) {
 		require := require.New(t)
 
 		called := false
-		m := newIdentityTestManagerWithOpts(t, manager.WithHooks(testLinkHook{called: &called}))
+		m := newTestManagerWithOpts(t, manager.WithHooks(testLinkHook{called: &called}))
 
 		user, err := m.CreateUser(context.Background(), schema.UserMeta{
 			Name:  "Linked User",

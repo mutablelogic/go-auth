@@ -20,16 +20,17 @@ import (
 	"testing"
 
 	// Packages
-	auth "github.com/mutablelogic/go-auth"
 	manager "github.com/mutablelogic/go-auth/auth/manager"
-	schema "github.com/mutablelogic/go-auth/auth/schema"
+	authtest "github.com/mutablelogic/go-auth/auth/test"
 	pg "github.com/mutablelogic/go-pg"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
+	assert "github.com/stretchr/testify/assert"
+	require "github.com/stretchr/testify/require"
 )
 
 ///////////////////////////////////////////////////////////////////////////////
-// TYPES
+// GLOBALS
+
+var conn authtest.Conn
 
 type boolResult struct {
 	Value bool
@@ -56,7 +57,11 @@ type functionDefinitionSelector struct {
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-// HELPERS
+// TEST MAIN
+
+func TestMain(m *testing.M) {
+	authtest.Main(m, &conn)
+}
 
 func (result *boolResult) Scan(row pg.Row) error {
 	return row.Scan(&result.Value)
@@ -110,45 +115,21 @@ func (selector functionDefinitionSelector) Select(bind *pg.Bind, op pg.Op) (stri
 	`, nil
 }
 
-func resetManagerSchemaState(ctx context.Context, mgr *manager.Manager, schemaName string) error {
-	if err := mgr.Exec(ctx, `TRUNCATE `+schemaName+`.user CASCADE`); err != nil {
-		return err
-	}
-	if err := mgr.Exec(ctx, `
-		DELETE FROM `+schemaName+`."group"
-	`); err != nil {
-		return err
-	}
-	adminDescription := "Server-managed group. Members have full access to the management API and CLI."
-	adminConn := mgr.With(
-		"system_group", schema.GroupSysAdmin,
-		"system_description", adminDescription,
-	).(pg.Conn)
-	if err := adminConn.Exec(ctx, `
-		INSERT INTO `+schemaName+`."group" (id, description, enabled, scopes, meta)
-		VALUES (@system_group, @system_description, TRUE, '{}'::text[], '{}'::jsonb)
-	`); err != nil {
-		return err
-	}
-	for _, scope := range schema.GroupSysAdminScopes {
-		if _, err := mgr.AddGroupScope(ctx, schema.GroupSysAdmin, scope); err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
+///////////////////////////////////////////////////////////////////////////////
+// HELPERS
 
 func newTestManager(t *testing.T) *manager.Manager {
 	t.Helper()
-	require.NotNil(t, shared)
-	require.NoError(t, resetManagerSchemaState(context.Background(), shared, schema.DefaultSchema))
-	t.Cleanup(func() {
-		if err := resetManagerSchemaState(context.Background(), shared, schema.DefaultSchema); err != nil {
-			t.Error(err)
-		}
-	})
-	return shared
+	return newTestManagerWithOpts(t)
+}
+
+func newTestManagerWithOpts(t *testing.T, opts ...manager.Opt) *manager.Manager {
+	t.Helper()
+	return authtest.NewManager(t, &conn,
+		authtest.WithSchema("auth"),
+		authtest.WithoutLocalProvider(),
+		authtest.WithManagerOptions(opts...),
+	).Manager
 }
 
 func newCustomSchemaManager(t *testing.T, schemaName string) *manager.Manager {
@@ -158,35 +139,17 @@ func newCustomSchemaManager(t *testing.T, schemaName string) *manager.Manager {
 
 func newCustomSchemaManagerWithOpts(t *testing.T, schemaName string, opts ...manager.Opt) *manager.Manager {
 	t.Helper()
-	require.NotNil(t, shared)
-
-	ctx := context.Background()
-	exists, err := pg.SchemaExists(ctx, shared, schemaName)
-	require.NoError(t, err)
-	if exists {
-		require.NoError(t, pg.SchemaDrop(ctx, shared, schemaName))
-	}
-	t.Cleanup(func() {
-		if err := pg.SchemaDrop(context.Background(), shared, schemaName); err != nil {
-			t.Error(err)
-		}
-	})
-
-	managerOpts := append([]manager.Opt{manager.WithSchema(schemaName)}, opts...)
-	mgr, err := manager.New(ctx, shared.PoolConn, managerOpts...)
-	require.NoError(t, err)
-	return mgr
+	return authtest.NewManager(t, &conn,
+		authtest.WithSchema(schemaName),
+		authtest.WithoutLocalProvider(),
+		authtest.WithManagerOptions(opts...),
+	).Manager
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 // TESTS
 
-func Test_Manager_001(t *testing.T) {
-	t.Run("SharedManagerAvailable", func(t *testing.T) {
-		assert := assert.New(t)
-		assert.NotNil(shared)
-	})
-
+func Test_manager_001(t *testing.T) {
 	t.Run("NewNilPool", func(t *testing.T) {
 		assert := assert.New(t)
 		require := require.New(t)
@@ -226,33 +189,6 @@ func Test_Manager_001(t *testing.T) {
 
 		err = m.Exec(context.Background(), `TRUNCATE auth_test_custom.user CASCADE`)
 		assert.NoError(err)
-	})
-
-	t.Run("AuthConfigReturnsConfiguredProviders", func(t *testing.T) {
-		assert := assert.New(t)
-		require := require.New(t)
-
-		config, err := newTestManager(t).AuthConfig()
-
-		require.NoError(err)
-		require.Len(config, 1)
-		local, ok := config[schema.ProviderKeyLocal]
-		require.True(ok)
-		assert.Equal(DefaultIssuer, local.Issuer)
-		assert.Empty(local.ClientID)
-	})
-
-	t.Run("AuthConfigRequiresProviders", func(t *testing.T) {
-		assert := assert.New(t)
-		require := require.New(t)
-
-		m := newCustomSchemaManager(t, "auth_test_auth_config_no_providers")
-		config, err := m.AuthConfig()
-
-		require.Error(err)
-		assert.Nil(config)
-		assert.ErrorIs(err, auth.ErrNotFound)
-		assert.Contains(err.Error(), "providers are not configured")
 	})
 
 	t.Run("BootstrapSkipsTableChangeNotificationsByDefault", func(t *testing.T) {

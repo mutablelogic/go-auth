@@ -38,7 +38,7 @@ func ConfigHandler(mgr *manager.Manager, doc *markdown.Document) (string, *jsons
 		"Configuration",
 	).Get(
 		func(w http.ResponseWriter, r *http.Request) {
-			_ = getAuthConfig(r.Context(), mgr, w, r)
+			_ = GetAuthConfig(r.Context(), mgr, w, r)
 		},
 		"Get configuration",
 		opts.WithDescription(doc.Section(3, "GET /{prefix}/config").Body),
@@ -49,7 +49,7 @@ func ConfigHandler(mgr *manager.Manager, doc *markdown.Document) (string, *jsons
 ///////////////////////////////////////////////////////////////////////////////
 // PRIVATE METHODS
 
-func getAuthConfig(_ context.Context, mgr *manager.Manager, w http.ResponseWriter, r *http.Request) error {
+func GetAuthConfig(_ context.Context, mgr *manager.Manager, w http.ResponseWriter, r *http.Request) error {
 	config, err := mgr.AuthConfig()
 	if err != nil {
 		return httpresponse.Error(w, authpkg.HTTPError(err))

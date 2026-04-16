@@ -18,36 +18,19 @@ import (
 	"net/http"
 
 	// Packages
-	manager "github.com/mutablelogic/go-auth/auth/manager"
 	middleware "github.com/mutablelogic/go-auth/auth/middleware"
-	oidc "github.com/mutablelogic/go-auth/auth/oidc"
 	schema "github.com/mutablelogic/go-auth/auth/schema"
 	httprequest "github.com/mutablelogic/go-server/pkg/httprequest"
 	httpresponse "github.com/mutablelogic/go-server/pkg/httpresponse"
-	openapi "github.com/mutablelogic/go-server/pkg/openapi/schema"
 )
-
-///////////////////////////////////////////////////////////////////////////////
-// PUBLIC METHODS
-
-func UserInfoHandler(manager *manager.Manager) (string, http.HandlerFunc, *openapi.PathItem) {
-	return oidc.UserInfoPath, func(w http.ResponseWriter, r *http.Request) {
-		switch r.Method {
-		case http.MethodGet:
-			_ = getUserInfo(w, r)
-		default:
-			_ = httpresponse.Error(w, httpresponse.Err(http.StatusMethodNotAllowed), r.Method)
-		}
-	}, &openapi.PathItem{Summary: "Authenticated user info", Description: "Returns the client-facing identity claims for the authenticated local token."}
-}
 
 ///////////////////////////////////////////////////////////////////////////////
 // PRIVATE METHODS
 
-func getUserInfo(w http.ResponseWriter, r *http.Request) error {
+func GetUserInfoHandler(w http.ResponseWriter, r *http.Request) error {
 	user := middleware.UserFromContext(r.Context())
 	if user == nil {
-		return httpresponse.Error(w, httpresponse.Err(http.StatusInternalServerError).With("authenticated user missing from context"))
+		return httpresponse.Error(w, httpresponse.ErrNotAuthorized)
 	}
 	return httpresponse.JSON(w, http.StatusOK, httprequest.Indent(r), schema.NewUserInfo(user))
 }

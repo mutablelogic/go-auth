@@ -17,10 +17,25 @@ package manager
 import (
 	"context"
 	"time"
+
+	// Packages
+	broadcaster "github.com/mutablelogic/go-pg/pkg/broadcaster"
 )
 
 // Run periodically prunes stale sessions until the context is cancelled.
 func (m *Manager) Run(ctx context.Context) error {
+	if m.channel != "" && m.notifications == nil {
+		notifications, err := broadcaster.NewBroadcaster(m.PoolConn, m.channel)
+		if err != nil {
+			return err
+		}
+		m.notifications = notifications
+	}
+
+	defer func() {
+		_ = m.closeNotifications()
+	}()
+
 	interval := m.cleanupint
 	if interval <= 0 {
 		interval = DefaultCleanupInterval

@@ -160,13 +160,13 @@ func Test_group_001(t *testing.T) {
 		})
 		require.NoError(err)
 		require.NotNil(listed)
-		assert.Equal(uint(4), listed.Count)
+		assert.Equal(uint(3), listed.Count)
 		assert.Equal(uint64(1), listed.Offset)
 		require.NotNil(listed.Limit)
 		assert.Equal(uint64(2), *listed.Limit)
 		require.Len(listed.Body, 2)
-		assert.Equal("alpha", listed.Body[0].ID)
-		assert.Equal("bravo", listed.Body[1].ID)
+		assert.Equal("bravo", listed.Body[0].ID)
+		assert.Equal("charlie", listed.Body[1].ID)
 
 		largeLimit := uint64(10)
 		clamped, err := m.ListGroups(context.Background(), schema.GroupListRequest{
@@ -174,14 +174,13 @@ func Test_group_001(t *testing.T) {
 		})
 		require.NoError(err)
 		require.NotNil(clamped)
-		assert.Equal(uint(4), clamped.Count)
+		assert.Equal(uint(3), clamped.Count)
 		require.NotNil(clamped.Limit)
-		assert.Equal(uint64(4), *clamped.Limit)
-		require.Len(clamped.Body, 4)
-		assert.Equal(schema.GroupSysAdmin, clamped.Body[0].ID)
-		assert.Equal("alpha", clamped.Body[1].ID)
-		assert.Equal("bravo", clamped.Body[2].ID)
-		assert.Equal("charlie", clamped.Body[3].ID)
+		assert.Equal(uint64(3), *clamped.Limit)
+		require.Len(clamped.Body, 3)
+		assert.Equal("alpha", clamped.Body[0].ID)
+		assert.Equal("bravo", clamped.Body[1].ID)
+		assert.Equal("charlie", clamped.Body[2].ID)
 	})
 
 	t.Run("GetUpdateDeleteMissingGroup", func(t *testing.T) {
@@ -204,102 +203,5 @@ func Test_group_001(t *testing.T) {
 		require.Error(err)
 		assert.Nil(group)
 		assert.True(errors.Is(err, auth.ErrNotFound))
-	})
-
-	t.Run("SystemGroupsAreProtected", func(t *testing.T) {
-		assert := assert.New(t)
-		require := require.New(t)
-
-		m := newTestManager(t)
-		enabled := true
-
-		created, err := m.CreateGroup(context.Background(), schema.GroupInsert{ID: schema.GroupSysAdmin, GroupMeta: schema.GroupMeta{Enabled: &enabled}})
-		require.Error(err)
-		assert.Nil(created)
-		assert.ErrorIs(err, auth.ErrForbidden)
-
-		updated, err := m.UpdateGroup(context.Background(), schema.GroupSysAdmin, schema.GroupMeta{Description: types.Ptr("Nope")})
-		require.Error(err)
-		assert.Nil(updated)
-		assert.ErrorIs(err, auth.ErrForbidden)
-
-		deleted, err := m.DeleteGroup(context.Background(), schema.GroupSysAdmin)
-		require.Error(err)
-		assert.Nil(deleted)
-		assert.ErrorIs(err, auth.ErrForbidden)
-	})
-
-	t.Run("AddAndRemoveGroupScope", func(t *testing.T) {
-		assert := assert.New(t)
-		require := require.New(t)
-
-		m := newTestManager(t)
-		created, err := m.CreateGroup(context.Background(), schema.GroupInsert{ID: "scoped_group"})
-		require.NoError(err)
-		require.NotNil(created)
-		assert.Empty(created.Scopes)
-
-		added, err := m.AddGroupScope(context.Background(), "scoped_group", "scope:write")
-		require.NoError(err)
-		require.NotNil(added)
-		assert.Equal([]string{"scope:write"}, added.Scopes)
-
-		added, err = m.AddGroupScope(context.Background(), "scoped_group", "scope:read")
-		require.NoError(err)
-		require.NotNil(added)
-		assert.Equal([]string{"scope:read", "scope:write"}, added.Scopes)
-
-		added, err = m.AddGroupScope(context.Background(), "scoped_group", "scope:write")
-		require.NoError(err)
-		require.NotNil(added)
-		assert.Equal([]string{"scope:read", "scope:write"}, added.Scopes)
-
-		removed, err := m.RemoveGroupScope(context.Background(), "scoped_group", "scope:read")
-		require.NoError(err)
-		require.NotNil(removed)
-		assert.Equal([]string{"scope:write"}, removed.Scopes)
-
-		removed, err = m.RemoveGroupScope(context.Background(), "scoped_group", "scope:missing")
-		require.NoError(err)
-		require.NotNil(removed)
-		assert.Equal([]string{"scope:write"}, removed.Scopes)
-	})
-
-	t.Run("GroupScopeRequiresScope", func(t *testing.T) {
-		assert := assert.New(t)
-		require := require.New(t)
-
-		m := newTestManager(t)
-		_, err := m.CreateGroup(context.Background(), schema.GroupInsert{ID: "scope_validation"})
-		require.NoError(err)
-
-		group, err := m.AddGroupScope(context.Background(), "scope_validation", " ")
-		require.Error(err)
-		assert.Nil(group)
-		assert.ErrorIs(err, auth.ErrBadParameter)
-
-		group, err = m.RemoveGroupScope(context.Background(), "scope_validation", "")
-		require.Error(err)
-		assert.Nil(group)
-		assert.ErrorIs(err, auth.ErrBadParameter)
-	})
-
-	t.Run("SystemGroupScopeMutationAllowed", func(t *testing.T) {
-		assert := assert.New(t)
-		require := require.New(t)
-
-		m := newTestManager(t)
-		const extraScope = "debug:temporary"
-
-		updated, err := m.AddGroupScope(context.Background(), schema.GroupSysAdmin, extraScope)
-		require.NoError(err)
-		require.NotNil(updated)
-		assert.Contains(updated.Scopes, extraScope)
-
-		updated, err = m.RemoveGroupScope(context.Background(), schema.GroupSysAdmin, extraScope)
-		require.NoError(err)
-		require.NotNil(updated)
-		assert.NotContains(updated.Scopes, extraScope)
-		assert.ElementsMatch(schema.GroupSysAdminScopes, updated.Scopes)
 	})
 }

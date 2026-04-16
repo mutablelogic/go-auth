@@ -1217,6 +1217,12 @@ func newHTTPTestManagerWithOpts(t *testing.T, opts ...managerpkg.Opt) (*managerp
 	require.NoError(t, err)
 	require.NoError(t, mgr.Exec(context.Background(), "TRUNCATE auth.user CASCADE"))
 
+	runCtx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	go func() {
+		_ = mgr.Run(runCtx)
+	}()
+
 	return mgr, issuer
 }
 
