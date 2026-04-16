@@ -17,7 +17,7 @@ package manager
 import (
 	"testing"
 
-	"github.com/djthorpe/go-auth/pkg/markdown"
+	"github.com/mutablelogic/go-auth/pkg/markdown"
 	assert "github.com/stretchr/testify/assert"
 )
 

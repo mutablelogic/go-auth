@@ -23,7 +23,7 @@ import (
 	"testing"
 
 	// Packages
-	providerpkg "github.com/djthorpe/go-auth/pkg/provider"
+	providerpkg "github.com/mutablelogic/go-auth/pkg/provider"
 	assert "github.com/stretchr/testify/assert"
 	require "github.com/stretchr/testify/require"
 )

@@ -18,7 +18,7 @@ import (
 	"errors"
 
 	// Packages
-	auth "github.com/djthorpe/go-auth"
+	auth "github.com/mutablelogic/go-auth"
 	pg "github.com/mutablelogic/go-pg"
 )
 

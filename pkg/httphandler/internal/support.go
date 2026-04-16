@@ -19,7 +19,7 @@ import (
 	"strings"
 
 	// Packages
-	auth "github.com/djthorpe/go-auth"
+	auth "github.com/mutablelogic/go-auth"
 	httpresponse "github.com/mutablelogic/go-server/pkg/httpresponse"
 )
 

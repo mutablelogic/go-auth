@@ -23,7 +23,7 @@ import (
 
 	// Packages
 	coreoidc "github.com/coreos/go-oidc/v3/oidc"
-	auth "github.com/djthorpe/go-auth"
+	auth "github.com/mutablelogic/go-auth"
 	jwt "github.com/golang-jwt/jwt/v5"
 	jwa "github.com/lestrrat-go/jwx/v2/jwa"
 	jwk "github.com/lestrrat-go/jwx/v2/jwk"

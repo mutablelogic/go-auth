@@ -20,7 +20,7 @@ import (
 	"strings"
 	"testing"
 
-	schemadef "github.com/djthorpe/go-auth/schema/ldapparser"
+	schemadef "github.com/mutablelogic/go-auth/schema/ldapparser"
 	assert "github.com/stretchr/testify/assert"
 	require "github.com/stretchr/testify/require"
 )

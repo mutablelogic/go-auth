@@ -20,7 +20,7 @@ import (
 	"io"
 	"os"
 
-	manager "github.com/djthorpe/go-auth/pkg/httpclient/manager"
+	manager "github.com/mutablelogic/go-auth/pkg/httpclient/manager"
 	server "github.com/mutablelogic/go-server"
 )
 

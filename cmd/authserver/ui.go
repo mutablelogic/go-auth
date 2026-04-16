@@ -1,3 +1,5 @@
+//go:build uiassets
+
 // Copyright 2026 David Thorpe
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -15,7 +17,7 @@
 package main
 
 import (
-	frontend "github.com/djthorpe/go-auth/build/frontend.wasm"
+	frontend "github.com/mutablelogic/go-auth/build/frontend.wasm"
 	httprouter "github.com/mutablelogic/go-server/pkg/httprouter"
 )
 

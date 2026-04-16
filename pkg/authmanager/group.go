@@ -19,8 +19,8 @@ import (
 	"strings"
 
 	// Packages
-	auth "github.com/djthorpe/go-auth"
-	schema "github.com/djthorpe/go-auth/schema/auth"
+	auth "github.com/mutablelogic/go-auth"
+	schema "github.com/mutablelogic/go-auth/schema/auth"
 	otel "github.com/mutablelogic/go-client/pkg/otel"
 	pg "github.com/mutablelogic/go-pg"
 	types "github.com/mutablelogic/go-server/pkg/types"

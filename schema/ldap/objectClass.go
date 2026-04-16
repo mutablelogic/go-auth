@@ -20,8 +20,8 @@ import (
 	"strings"
 
 	// Packages
-	ldapparser "github.com/djthorpe/go-auth/pkg/ldapparser"
-	schemadef "github.com/djthorpe/go-auth/schema/ldapparser"
+	ldapparser "github.com/mutablelogic/go-auth/pkg/ldapparser"
+	schemadef "github.com/mutablelogic/go-auth/schema/ldapparser"
 	pg "github.com/mutablelogic/go-pg"
 	types "github.com/mutablelogic/go-server/pkg/types"
 )

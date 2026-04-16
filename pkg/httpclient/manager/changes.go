@@ -20,7 +20,7 @@ import (
 	"net/http"
 
 	// Packages
-	schema "github.com/djthorpe/go-auth/schema/auth"
+	schema "github.com/mutablelogic/go-auth/schema/auth"
 	client "github.com/mutablelogic/go-client"
 )
 

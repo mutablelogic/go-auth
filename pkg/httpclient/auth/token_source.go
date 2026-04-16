@@ -22,7 +22,7 @@ import (
 	"time"
 
 	// Packages
-	oidc "github.com/djthorpe/go-auth/pkg/oidc"
+	oidc "github.com/mutablelogic/go-auth/pkg/oidc"
 	oauth2 "golang.org/x/oauth2"
 )
 

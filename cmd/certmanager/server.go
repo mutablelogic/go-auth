@@ -26,8 +26,8 @@ import (
 	"sync"
 
 	// Packages
-	manager "github.com/djthorpe/go-auth/pkg/certmanager"
-	httphandler "github.com/djthorpe/go-auth/pkg/httphandler/certmanager"
+	manager "github.com/mutablelogic/go-auth/pkg/certmanager"
+	httphandler "github.com/mutablelogic/go-auth/pkg/httphandler/certmanager"
 	server "github.com/mutablelogic/go-server"
 	cmd "github.com/mutablelogic/go-server/pkg/cmd"
 	httprouter "github.com/mutablelogic/go-server/pkg/httprouter"

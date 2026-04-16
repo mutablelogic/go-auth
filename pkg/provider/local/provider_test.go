@@ -24,8 +24,8 @@ import (
 	"testing"
 
 	// Packages
-	authcrypto "github.com/djthorpe/go-auth/pkg/crypto"
-	providerpkg "github.com/djthorpe/go-auth/pkg/provider"
+	authcrypto "github.com/mutablelogic/go-auth/pkg/crypto"
+	providerpkg "github.com/mutablelogic/go-auth/pkg/provider"
 	jwt "github.com/golang-jwt/jwt/v5"
 	assert "github.com/stretchr/testify/assert"
 	require "github.com/stretchr/testify/require"

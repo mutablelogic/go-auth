@@ -22,11 +22,11 @@ import (
 	"time"
 
 	// Packages
-	auth "github.com/djthorpe/go-auth"
-	cert "github.com/djthorpe/go-auth/pkg/cert"
-	manager "github.com/djthorpe/go-auth/pkg/certmanager"
-	authcrypto "github.com/djthorpe/go-auth/pkg/crypto"
-	schema "github.com/djthorpe/go-auth/schema/cert"
+	auth "github.com/mutablelogic/go-auth"
+	cert "github.com/mutablelogic/go-auth/pkg/cert"
+	manager "github.com/mutablelogic/go-auth/pkg/certmanager"
+	authcrypto "github.com/mutablelogic/go-auth/pkg/crypto"
+	schema "github.com/mutablelogic/go-auth/schema/cert"
 	httpresponse "github.com/mutablelogic/go-server/pkg/httpresponse"
 	types "github.com/mutablelogic/go-server/pkg/types"
 	assert "github.com/stretchr/testify/assert"

@@ -19,7 +19,7 @@ import (
 	"testing"
 
 	// Packages
-	authcrypto "github.com/djthorpe/go-auth/pkg/crypto"
+	authcrypto "github.com/mutablelogic/go-auth/pkg/crypto"
 	jwt "github.com/golang-jwt/jwt/v5"
 	require "github.com/stretchr/testify/require"
 )

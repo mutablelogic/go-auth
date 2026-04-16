@@ -21,7 +21,7 @@ import (
 	"testing"
 
 	// Packages
-	schemadef "github.com/djthorpe/go-auth/schema/ldapparser"
+	schemadef "github.com/mutablelogic/go-auth/schema/ldapparser"
 	pg "github.com/mutablelogic/go-pg"
 	jsonschema "github.com/mutablelogic/go-server/pkg/jsonschema"
 	assert "github.com/stretchr/testify/assert"

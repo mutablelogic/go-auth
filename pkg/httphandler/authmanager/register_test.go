@@ -23,10 +23,10 @@ import (
 	"time"
 
 	// Packages
-	managerpkg "github.com/djthorpe/go-auth/pkg/authmanager"
-	authcrypto "github.com/djthorpe/go-auth/pkg/crypto"
-	providerpkg "github.com/djthorpe/go-auth/pkg/provider"
-	localprovider "github.com/djthorpe/go-auth/pkg/provider/local"
+	managerpkg "github.com/mutablelogic/go-auth/pkg/authmanager"
+	authcrypto "github.com/mutablelogic/go-auth/pkg/crypto"
+	providerpkg "github.com/mutablelogic/go-auth/pkg/provider"
+	localprovider "github.com/mutablelogic/go-auth/pkg/provider/local"
 	test "github.com/mutablelogic/go-pg/pkg/test"
 	httprequest "github.com/mutablelogic/go-server/pkg/httprequest"
 	httprouter "github.com/mutablelogic/go-server/pkg/httprouter"

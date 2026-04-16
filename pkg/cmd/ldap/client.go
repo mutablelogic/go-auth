@@ -18,8 +18,8 @@ import (
 	"net/http"
 
 	// Packages
-	auth "github.com/djthorpe/go-auth/pkg/httpclient/auth"
-	ldap "github.com/djthorpe/go-auth/pkg/httpclient/ldap"
+	auth "github.com/mutablelogic/go-auth/pkg/httpclient/auth"
+	ldap "github.com/mutablelogic/go-auth/pkg/httpclient/ldap"
 	client "github.com/mutablelogic/go-client"
 	server "github.com/mutablelogic/go-server"
 )

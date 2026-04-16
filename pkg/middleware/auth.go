@@ -22,8 +22,8 @@ import (
 	"time"
 
 	// Packages
-	oidc "github.com/djthorpe/go-auth/pkg/oidc"
-	schema "github.com/djthorpe/go-auth/schema/auth"
+	oidc "github.com/mutablelogic/go-auth/pkg/oidc"
+	schema "github.com/mutablelogic/go-auth/schema/auth"
 	uuid "github.com/google/uuid"
 	httpresponse "github.com/mutablelogic/go-server/pkg/httpresponse"
 )

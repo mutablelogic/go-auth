@@ -19,8 +19,8 @@ import (
 	"net/url"
 
 	// Packages
-	auth "github.com/djthorpe/go-auth"
-	provider "github.com/djthorpe/go-auth/pkg/provider"
+	auth "github.com/mutablelogic/go-auth"
+	provider "github.com/mutablelogic/go-auth/pkg/provider"
 	openapi "github.com/mutablelogic/go-server/pkg/openapi/schema"
 	types "github.com/mutablelogic/go-server/pkg/types"
 )

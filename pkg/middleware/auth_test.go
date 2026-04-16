@@ -22,10 +22,10 @@ import (
 	"time"
 
 	// Packages
-	manager "github.com/djthorpe/go-auth/pkg/authmanager"
-	authcrypto "github.com/djthorpe/go-auth/pkg/crypto"
-	localprovider "github.com/djthorpe/go-auth/pkg/provider/local"
-	schema "github.com/djthorpe/go-auth/schema/auth"
+	manager "github.com/mutablelogic/go-auth/pkg/authmanager"
+	authcrypto "github.com/mutablelogic/go-auth/pkg/crypto"
+	localprovider "github.com/mutablelogic/go-auth/pkg/provider/local"
+	schema "github.com/mutablelogic/go-auth/schema/auth"
 	jwt "github.com/golang-jwt/jwt/v5"
 	uuid "github.com/google/uuid"
 	test "github.com/mutablelogic/go-pg/pkg/test"

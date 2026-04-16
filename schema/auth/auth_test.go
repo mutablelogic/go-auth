@@ -20,8 +20,8 @@ import (
 	"testing"
 
 	// Packages
-	auth "github.com/djthorpe/go-auth"
-	oidc "github.com/djthorpe/go-auth/pkg/oidc"
+	auth "github.com/mutablelogic/go-auth"
+	oidc "github.com/mutablelogic/go-auth/pkg/oidc"
 	uuid "github.com/google/uuid"
 	assert "github.com/stretchr/testify/assert"
 	require "github.com/stretchr/testify/require"

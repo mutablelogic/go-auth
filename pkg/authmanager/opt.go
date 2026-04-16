@@ -21,8 +21,8 @@ import (
 	"time"
 
 	// Packages
-	providerpkg "github.com/djthorpe/go-auth/pkg/provider"
-	schema "github.com/djthorpe/go-auth/schema/auth"
+	providerpkg "github.com/mutablelogic/go-auth/pkg/provider"
+	schema "github.com/mutablelogic/go-auth/schema/auth"
 	trace "go.opentelemetry.io/otel/trace"
 )
 

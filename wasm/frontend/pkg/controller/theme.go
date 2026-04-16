@@ -16,7 +16,7 @@ package controller
 
 import (
 	// Packages
-	view "github.com/djthorpe/go-auth/wasm/frontend/pkg/view"
+	view "github.com/mutablelogic/go-auth/wasm/frontend/pkg/view"
 	carbon "github.com/djthorpe/go-wasmbuild/pkg/carbon"
 	js "github.com/djthorpe/go-wasmbuild/pkg/js"
 )

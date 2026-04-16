@@ -24,7 +24,7 @@ import (
 	"time"
 
 	// Packages
-	webcallback "github.com/djthorpe/go-auth/pkg/webcallback"
+	webcallback "github.com/mutablelogic/go-auth/pkg/webcallback"
 	assert "github.com/stretchr/testify/assert"
 	require "github.com/stretchr/testify/require"
 )

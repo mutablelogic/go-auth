@@ -20,7 +20,7 @@ import (
 	"time"
 
 	// Packages
-	auth "github.com/djthorpe/go-auth"
+	auth "github.com/mutablelogic/go-auth"
 	uuid "github.com/google/uuid"
 	pg "github.com/mutablelogic/go-pg"
 	types "github.com/mutablelogic/go-server/pkg/types"

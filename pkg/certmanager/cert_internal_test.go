@@ -20,9 +20,9 @@ import (
 	"testing"
 	"time"
 
-	auth "github.com/djthorpe/go-auth"
-	authcrypto "github.com/djthorpe/go-auth/pkg/crypto"
-	schema "github.com/djthorpe/go-auth/schema/cert"
+	auth "github.com/mutablelogic/go-auth"
+	authcrypto "github.com/mutablelogic/go-auth/pkg/crypto"
+	schema "github.com/mutablelogic/go-auth/schema/cert"
 	pg "github.com/mutablelogic/go-pg"
 	assert "github.com/stretchr/testify/assert"
 	require "github.com/stretchr/testify/require"

@@ -18,7 +18,7 @@ import (
 	"bytes"
 	"testing"
 
-	authcrypto "github.com/djthorpe/go-auth/pkg/crypto"
+	authcrypto "github.com/mutablelogic/go-auth/pkg/crypto"
 	assert "github.com/stretchr/testify/assert"
 )
 

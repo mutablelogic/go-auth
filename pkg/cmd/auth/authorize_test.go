@@ -19,8 +19,8 @@ import (
 	"testing"
 
 	// Packages
-	authclient "github.com/djthorpe/go-auth/pkg/httpclient/auth"
-	oidc "github.com/djthorpe/go-auth/pkg/oidc"
+	authclient "github.com/mutablelogic/go-auth/pkg/httpclient/auth"
+	oidc "github.com/mutablelogic/go-auth/pkg/oidc"
 	require "github.com/stretchr/testify/require"
 )
 

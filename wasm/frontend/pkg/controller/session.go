@@ -19,8 +19,8 @@ import (
 	"strings"
 
 	// Packages
-	auth "github.com/djthorpe/go-auth/wasm/frontend/pkg/auth"
-	view "github.com/djthorpe/go-auth/wasm/frontend/pkg/view"
+	auth "github.com/mutablelogic/go-auth/wasm/frontend/pkg/auth"
+	view "github.com/mutablelogic/go-auth/wasm/frontend/pkg/view"
 	dom "github.com/djthorpe/go-wasmbuild"
 	js "github.com/djthorpe/go-wasmbuild/pkg/js"
 )

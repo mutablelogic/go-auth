@@ -21,7 +21,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	schema "github.com/djthorpe/go-auth/schema/ldap"
+	schema "github.com/mutablelogic/go-auth/schema/ldap"
 	pg "github.com/mutablelogic/go-pg"
 	require "github.com/stretchr/testify/require"
 )

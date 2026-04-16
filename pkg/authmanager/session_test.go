@@ -21,9 +21,9 @@ import (
 	"time"
 
 	// Packages
-	auth "github.com/djthorpe/go-auth"
-	manager "github.com/djthorpe/go-auth/pkg/authmanager"
-	schema "github.com/djthorpe/go-auth/schema/auth"
+	auth "github.com/mutablelogic/go-auth"
+	manager "github.com/mutablelogic/go-auth/pkg/authmanager"
+	schema "github.com/mutablelogic/go-auth/schema/auth"
 	assert "github.com/stretchr/testify/assert"
 	require "github.com/stretchr/testify/require"
 	attribute "go.opentelemetry.io/otel/attribute"

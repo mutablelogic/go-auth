@@ -21,9 +21,9 @@ import (
 	"time"
 
 	// Packages
-	auth "github.com/djthorpe/go-auth"
-	manager "github.com/djthorpe/go-auth/pkg/authmanager"
-	schema "github.com/djthorpe/go-auth/schema/auth"
+	auth "github.com/mutablelogic/go-auth"
+	manager "github.com/mutablelogic/go-auth/pkg/authmanager"
+	schema "github.com/mutablelogic/go-auth/schema/auth"
 	uuid "github.com/google/uuid"
 	pg "github.com/mutablelogic/go-pg"
 	assert "github.com/stretchr/testify/assert"

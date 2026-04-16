@@ -29,8 +29,8 @@ import (
 	"time"
 
 	// Packages
-	cert "github.com/djthorpe/go-auth/pkg/cert"
-	schema "github.com/djthorpe/go-auth/schema/ldap"
+	cert "github.com/mutablelogic/go-auth/pkg/cert"
+	schema "github.com/mutablelogic/go-auth/schema/ldap"
 	ldap "github.com/go-ldap/ldap/v3"
 	test "github.com/mutablelogic/go-pg/pkg/test"
 	httpresponse "github.com/mutablelogic/go-server/pkg/httpresponse"

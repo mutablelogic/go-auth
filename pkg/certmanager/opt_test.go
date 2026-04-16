@@ -21,7 +21,7 @@ import (
 	"testing"
 	"time"
 
-	cert "github.com/djthorpe/go-auth/pkg/cert"
+	cert "github.com/mutablelogic/go-auth/pkg/cert"
 	assert "github.com/stretchr/testify/assert"
 	require "github.com/stretchr/testify/require"
 	nooptrace "go.opentelemetry.io/otel/trace/noop"

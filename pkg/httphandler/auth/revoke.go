@@ -20,9 +20,9 @@ import (
 	"strings"
 
 	// Packages
-	manager "github.com/djthorpe/go-auth/pkg/authmanager"
-	oidc "github.com/djthorpe/go-auth/pkg/oidc"
-	schema "github.com/djthorpe/go-auth/schema/auth"
+	manager "github.com/mutablelogic/go-auth/pkg/authmanager"
+	oidc "github.com/mutablelogic/go-auth/pkg/oidc"
+	schema "github.com/mutablelogic/go-auth/schema/auth"
 	httprequest "github.com/mutablelogic/go-server/pkg/httprequest"
 	httpresponse "github.com/mutablelogic/go-server/pkg/httpresponse"
 	openapi "github.com/mutablelogic/go-server/pkg/openapi/schema"

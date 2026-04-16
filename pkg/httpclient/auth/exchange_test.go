@@ -24,7 +24,7 @@ import (
 	"testing"
 
 	// Packages
-	oidc "github.com/djthorpe/go-auth/pkg/oidc"
+	oidc "github.com/mutablelogic/go-auth/pkg/oidc"
 	require "github.com/stretchr/testify/require"
 	oauth2 "golang.org/x/oauth2"
 )

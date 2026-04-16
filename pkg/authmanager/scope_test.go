@@ -19,8 +19,8 @@ import (
 	"testing"
 
 	// Packages
-	manager "github.com/djthorpe/go-auth/pkg/authmanager"
-	schema "github.com/djthorpe/go-auth/schema/auth"
+	manager "github.com/mutablelogic/go-auth/pkg/authmanager"
+	schema "github.com/mutablelogic/go-auth/schema/auth"
 	pg "github.com/mutablelogic/go-pg"
 	types "github.com/mutablelogic/go-server/pkg/types"
 	assert "github.com/stretchr/testify/assert"

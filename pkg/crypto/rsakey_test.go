@@ -23,7 +23,7 @@ import (
 	"testing"
 
 	// Packages
-	authcrypto "github.com/djthorpe/go-auth/pkg/crypto"
+	authcrypto "github.com/mutablelogic/go-auth/pkg/crypto"
 	assert "github.com/stretchr/testify/assert"
 	require "github.com/stretchr/testify/require"
 )

@@ -20,8 +20,8 @@ import (
 	"time"
 
 	// Packages
-	certclient "github.com/djthorpe/go-auth/pkg/httpclient/certmanager"
-	schema "github.com/djthorpe/go-auth/schema/cert"
+	certclient "github.com/mutablelogic/go-auth/pkg/httpclient/certmanager"
+	schema "github.com/mutablelogic/go-auth/schema/cert"
 	server "github.com/mutablelogic/go-server"
 	types "github.com/mutablelogic/go-server/pkg/types"
 )

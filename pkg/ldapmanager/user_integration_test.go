@@ -24,7 +24,7 @@ import (
 	"testing"
 
 	// Packages
-	schema "github.com/djthorpe/go-auth/schema/ldap"
+	schema "github.com/mutablelogic/go-auth/schema/ldap"
 	httpresponse "github.com/mutablelogic/go-server/pkg/httpresponse"
 	assert "github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"

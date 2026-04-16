@@ -20,8 +20,8 @@ import (
 	"fmt"
 
 	// Packages
-	cert "github.com/djthorpe/go-auth/pkg/cert"
-	schema "github.com/djthorpe/go-auth/schema/cert"
+	cert "github.com/mutablelogic/go-auth/pkg/cert"
+	schema "github.com/mutablelogic/go-auth/schema/cert"
 	otel "github.com/mutablelogic/go-client/pkg/otel"
 	pg "github.com/mutablelogic/go-pg"
 	httpresponse "github.com/mutablelogic/go-server/pkg/httpresponse"

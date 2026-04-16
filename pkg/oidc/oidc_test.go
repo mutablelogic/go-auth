@@ -20,8 +20,8 @@ import (
 	"testing"
 
 	// Packages
-	authcrypto "github.com/djthorpe/go-auth/pkg/crypto"
-	oidc "github.com/djthorpe/go-auth/pkg/oidc"
+	authcrypto "github.com/mutablelogic/go-auth/pkg/crypto"
+	oidc "github.com/mutablelogic/go-auth/pkg/oidc"
 	jwt "github.com/golang-jwt/jwt/v5"
 	jwk "github.com/lestrrat-go/jwx/v2/jwk"
 	assert "github.com/stretchr/testify/assert"

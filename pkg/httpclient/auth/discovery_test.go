@@ -22,7 +22,7 @@ import (
 	"net/url"
 	"testing"
 
-	oidc "github.com/djthorpe/go-auth/pkg/oidc"
+	oidc "github.com/mutablelogic/go-auth/pkg/oidc"
 	assert "github.com/stretchr/testify/assert"
 	require "github.com/stretchr/testify/require"
 )

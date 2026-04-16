@@ -27,10 +27,10 @@ import (
 	"time"
 
 	// Packages
-	cert "github.com/djthorpe/go-auth/pkg/cert"
-	managerpkg "github.com/djthorpe/go-auth/pkg/certmanager"
-	markdown "github.com/djthorpe/go-auth/pkg/markdown"
-	schema "github.com/djthorpe/go-auth/schema/cert"
+	cert "github.com/mutablelogic/go-auth/pkg/cert"
+	managerpkg "github.com/mutablelogic/go-auth/pkg/certmanager"
+	markdown "github.com/mutablelogic/go-auth/pkg/markdown"
+	schema "github.com/mutablelogic/go-auth/schema/cert"
 	test "github.com/mutablelogic/go-pg/pkg/test"
 	types "github.com/mutablelogic/go-server/pkg/types"
 	assert "github.com/stretchr/testify/assert"

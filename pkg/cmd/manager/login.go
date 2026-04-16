@@ -22,9 +22,9 @@ import (
 	"strings"
 
 	// Packages
-	manager "github.com/djthorpe/go-auth/pkg/httpclient/manager"
-	oidc "github.com/djthorpe/go-auth/pkg/oidc"
-	webcallback "github.com/djthorpe/go-auth/pkg/webcallback"
+	manager "github.com/mutablelogic/go-auth/pkg/httpclient/manager"
+	oidc "github.com/mutablelogic/go-auth/pkg/oidc"
+	webcallback "github.com/mutablelogic/go-auth/pkg/webcallback"
 	server "github.com/mutablelogic/go-server"
 	browser "github.com/pkg/browser"
 	errgroup "golang.org/x/sync/errgroup"

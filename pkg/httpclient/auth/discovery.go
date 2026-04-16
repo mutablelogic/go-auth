@@ -22,7 +22,7 @@ import (
 	"strings"
 
 	// Packages
-	oidc "github.com/djthorpe/go-auth/pkg/oidc"
+	oidc "github.com/mutablelogic/go-auth/pkg/oidc"
 	client "github.com/mutablelogic/go-client"
 	httpresponse "github.com/mutablelogic/go-server/pkg/httpresponse"
 	types "github.com/mutablelogic/go-server/pkg/types"

@@ -15,7 +15,7 @@
 package auth
 
 import (
-	shared "github.com/djthorpe/go-auth/pkg/httphandler/internal"
+	shared "github.com/mutablelogic/go-auth/pkg/httphandler/internal"
 )
 
 func httpErr(err error) error {

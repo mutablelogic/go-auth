@@ -19,8 +19,8 @@ import (
 	"net/http"
 
 	// Packages
-	managerpkg "github.com/djthorpe/go-auth/pkg/authmanager"
-	middleware "github.com/djthorpe/go-auth/pkg/middleware"
+	managerpkg "github.com/mutablelogic/go-auth/pkg/authmanager"
+	middleware "github.com/mutablelogic/go-auth/pkg/middleware"
 	server "github.com/mutablelogic/go-server"
 	openapi "github.com/mutablelogic/go-server/pkg/openapi/schema"
 )

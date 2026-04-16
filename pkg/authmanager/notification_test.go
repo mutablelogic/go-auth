@@ -20,8 +20,8 @@ import (
 	"time"
 
 	// Packages
-	manager "github.com/djthorpe/go-auth/pkg/authmanager"
-	schema "github.com/djthorpe/go-auth/schema/auth"
+	manager "github.com/mutablelogic/go-auth/pkg/authmanager"
+	schema "github.com/mutablelogic/go-auth/schema/auth"
 	pg "github.com/mutablelogic/go-pg"
 	assert "github.com/stretchr/testify/assert"
 	require "github.com/stretchr/testify/require"

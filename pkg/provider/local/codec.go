@@ -20,7 +20,7 @@ import (
 	"strings"
 
 	// Packages
-	oidc "github.com/djthorpe/go-auth/pkg/oidc"
+	oidc "github.com/mutablelogic/go-auth/pkg/oidc"
 	jwt "github.com/golang-jwt/jwt/v5"
 )
 

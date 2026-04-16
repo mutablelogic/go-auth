@@ -19,9 +19,9 @@ import (
 	"net/http"
 
 	// Packages
-	managerpkg "github.com/djthorpe/go-auth/pkg/certmanager"
-	markdown "github.com/djthorpe/go-auth/pkg/markdown"
-	schema "github.com/djthorpe/go-auth/schema/cert"
+	managerpkg "github.com/mutablelogic/go-auth/pkg/certmanager"
+	markdown "github.com/mutablelogic/go-auth/pkg/markdown"
+	schema "github.com/mutablelogic/go-auth/schema/cert"
 	httprequest "github.com/mutablelogic/go-server/pkg/httprequest"
 	httpresponse "github.com/mutablelogic/go-server/pkg/httpresponse"
 	jsonschema "github.com/mutablelogic/go-server/pkg/jsonschema"

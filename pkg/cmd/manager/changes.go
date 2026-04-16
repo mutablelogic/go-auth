@@ -20,8 +20,8 @@ import (
 	"fmt"
 
 	// Packages
-	manager "github.com/djthorpe/go-auth/pkg/httpclient/manager"
-	schema "github.com/djthorpe/go-auth/schema/auth"
+	manager "github.com/mutablelogic/go-auth/pkg/httpclient/manager"
+	schema "github.com/mutablelogic/go-auth/schema/auth"
 	server "github.com/mutablelogic/go-server"
 )
 

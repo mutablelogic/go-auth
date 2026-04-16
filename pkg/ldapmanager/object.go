@@ -22,7 +22,7 @@ import (
 	"strings"
 
 	// Packages
-	schema "github.com/djthorpe/go-auth/schema/ldap"
+	schema "github.com/mutablelogic/go-auth/schema/ldap"
 	ldap "github.com/go-ldap/ldap/v3"
 	httpresponse "github.com/mutablelogic/go-server/pkg/httpresponse"
 	types "github.com/mutablelogic/go-server/pkg/types"

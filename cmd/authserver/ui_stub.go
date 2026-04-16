@@ -1,3 +1,5 @@
+//go:build !uiassets
+
 // Copyright 2026 David Thorpe
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -12,23 +14,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package manager
+package main
 
 import (
-	"context"
+	"fmt"
 
-	// Packages
-	schema "github.com/mutablelogic/go-auth/schema/auth"
-	client "github.com/mutablelogic/go-client"
+	httprouter "github.com/mutablelogic/go-server/pkg/httprouter"
 )
 
-///////////////////////////////////////////////////////////////////////////////
-// PUBLIC METHODS
-
-func (c *Client) Config(ctx context.Context) (schema.PublicClientConfigurations, error) {
-	var response schema.PublicClientConfigurations
-	if err := c.DoWithContext(ctx, nil, &response, client.OptPath("config")); err != nil {
-		return nil, err
-	}
-	return response, nil
+func registerUIHandlers(_ *httprouter.Router) error {
+	return fmt.Errorf("embedded UI assets are not built; run make wasm && make cmd or start authserver with --no-ui")
 }

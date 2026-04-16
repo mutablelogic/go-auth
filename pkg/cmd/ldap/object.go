@@ -21,8 +21,8 @@ import (
 	"strings"
 
 	// Packages
-	ldap "github.com/djthorpe/go-auth/pkg/httpclient/ldap"
-	schema "github.com/djthorpe/go-auth/schema/ldap"
+	ldap "github.com/mutablelogic/go-auth/pkg/httpclient/ldap"
+	schema "github.com/mutablelogic/go-auth/schema/ldap"
 	server "github.com/mutablelogic/go-server"
 	httpresponse "github.com/mutablelogic/go-server/pkg/httpresponse"
 	term "golang.org/x/crypto/ssh/terminal"

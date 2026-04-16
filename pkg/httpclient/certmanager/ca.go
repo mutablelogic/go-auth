@@ -20,7 +20,7 @@ import (
 	"strings"
 
 	// Packages
-	schema "github.com/djthorpe/go-auth/schema/cert"
+	schema "github.com/mutablelogic/go-auth/schema/cert"
 	client "github.com/mutablelogic/go-client"
 	types "github.com/mutablelogic/go-server/pkg/types"
 )

@@ -20,8 +20,8 @@ import (
 	"context"
 
 	// Packages
-	httphandler "github.com/djthorpe/go-auth/pkg/httphandler/ldapmanager"
-	ldap "github.com/djthorpe/go-auth/pkg/ldapmanager"
+	httphandler "github.com/mutablelogic/go-auth/pkg/httphandler/ldapmanager"
+	ldap "github.com/mutablelogic/go-auth/pkg/ldapmanager"
 	server "github.com/mutablelogic/go-server"
 	cmd "github.com/mutablelogic/go-server/pkg/cmd"
 	httprouter "github.com/mutablelogic/go-server/pkg/httprouter"

@@ -20,8 +20,8 @@ import (
 	"strings"
 
 	// Packages
-	auth "github.com/djthorpe/go-auth"
-	schema "github.com/djthorpe/go-auth/schema/ldapparser"
+	auth "github.com/mutablelogic/go-auth"
+	schema "github.com/mutablelogic/go-auth/schema/ldapparser"
 	tokenizer "github.com/mutablelogic/go-tokenizer"
 )
 

@@ -19,9 +19,9 @@ import (
 	"errors"
 
 	// Packages
-	managerpkg "github.com/djthorpe/go-auth/pkg/certmanager"
-	shared "github.com/djthorpe/go-auth/pkg/httphandler/internal"
-	markdown "github.com/djthorpe/go-auth/pkg/markdown"
+	managerpkg "github.com/mutablelogic/go-auth/pkg/certmanager"
+	shared "github.com/mutablelogic/go-auth/pkg/httphandler/internal"
+	markdown "github.com/mutablelogic/go-auth/pkg/markdown"
 	pg "github.com/mutablelogic/go-pg"
 	server "github.com/mutablelogic/go-server"
 	httprequest "github.com/mutablelogic/go-server/pkg/httprequest"

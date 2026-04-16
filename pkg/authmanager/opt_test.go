@@ -20,10 +20,10 @@ import (
 	"time"
 
 	// Packages
-	authcrypto "github.com/djthorpe/go-auth/pkg/crypto"
-	providerpkg "github.com/djthorpe/go-auth/pkg/provider"
-	localprovider "github.com/djthorpe/go-auth/pkg/provider/local"
-	schema "github.com/djthorpe/go-auth/schema/auth"
+	authcrypto "github.com/mutablelogic/go-auth/pkg/crypto"
+	providerpkg "github.com/mutablelogic/go-auth/pkg/provider"
+	localprovider "github.com/mutablelogic/go-auth/pkg/provider/local"
+	schema "github.com/mutablelogic/go-auth/schema/auth"
 	assert "github.com/stretchr/testify/assert"
 	require "github.com/stretchr/testify/require"
 	nooptrace "go.opentelemetry.io/otel/trace/noop"

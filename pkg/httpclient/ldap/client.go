@@ -16,7 +16,7 @@ package ldap
 
 import (
 	// Packages
-	auth "github.com/djthorpe/go-auth/pkg/httpclient/auth"
+	auth "github.com/mutablelogic/go-auth/pkg/httpclient/auth"
 	client "github.com/mutablelogic/go-client"
 )
 

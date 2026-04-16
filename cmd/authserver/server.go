@@ -26,11 +26,11 @@ import (
 	"time"
 
 	// Packages
-	manager "github.com/djthorpe/go-auth/pkg/authmanager"
-	authcrypto "github.com/djthorpe/go-auth/pkg/crypto"
-	authhandler "github.com/djthorpe/go-auth/pkg/httphandler/auth"
-	managerhandler "github.com/djthorpe/go-auth/pkg/httphandler/authmanager"
-	schema "github.com/djthorpe/go-auth/schema/auth"
+	manager "github.com/mutablelogic/go-auth/pkg/authmanager"
+	authcrypto "github.com/mutablelogic/go-auth/pkg/crypto"
+	authhandler "github.com/mutablelogic/go-auth/pkg/httphandler/auth"
+	managerhandler "github.com/mutablelogic/go-auth/pkg/httphandler/authmanager"
+	schema "github.com/mutablelogic/go-auth/schema/auth"
 	server "github.com/mutablelogic/go-server"
 	cmd "github.com/mutablelogic/go-server/pkg/cmd"
 	httprouter "github.com/mutablelogic/go-server/pkg/httprouter"

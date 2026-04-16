@@ -16,7 +16,7 @@ package schema
 
 import (
 	// Packages
-	auth "github.com/djthorpe/go-auth"
+	auth "github.com/mutablelogic/go-auth"
 	types "github.com/mutablelogic/go-server/pkg/types"
 )
 

@@ -19,10 +19,10 @@ import (
 	"errors"
 
 	// Packages
-	managerpkg "github.com/djthorpe/go-auth/pkg/authmanager"
-	markdown "github.com/djthorpe/go-auth/pkg/markdown"
-	middleware "github.com/djthorpe/go-auth/pkg/middleware"
-	schema "github.com/djthorpe/go-auth/schema/auth"
+	managerpkg "github.com/mutablelogic/go-auth/pkg/authmanager"
+	markdown "github.com/mutablelogic/go-auth/pkg/markdown"
+	middleware "github.com/mutablelogic/go-auth/pkg/middleware"
+	schema "github.com/mutablelogic/go-auth/schema/auth"
 	server "github.com/mutablelogic/go-server"
 	httprequest "github.com/mutablelogic/go-server/pkg/httprequest"
 	httprouter "github.com/mutablelogic/go-server/pkg/httprouter"

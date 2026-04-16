@@ -24,7 +24,7 @@ import (
 	"time"
 
 	// Packages
-	schema "github.com/djthorpe/go-auth/schema/cert"
+	schema "github.com/mutablelogic/go-auth/schema/cert"
 	types "github.com/mutablelogic/go-server/pkg/types"
 	assert "github.com/stretchr/testify/assert"
 	require "github.com/stretchr/testify/require"

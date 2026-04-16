@@ -29,9 +29,11 @@ cmd: $(CMD_BINS)
 
 $(CMD_BINS): $(GOFILES) | go-dep
 	@echo "Building $(patsubst $(BUILDDIR)/%,cmd/%,$@)"
-	@$(GO) build -ldflags "$(LD_FLAGS)" -o $@ ./$(patsubst $(BUILDDIR)/%,cmd/%,$@)
+	@$(GO) build $(GO_BUILD_FLAGS) -ldflags "$(LD_FLAGS)" -o $@ ./$(patsubst $(BUILDDIR)/%,cmd/%,$@)
 
 $(BUILDDIR)/authserver: $(BUILDDIR)/frontend.wasm
+
+$(BUILDDIR)/authserver: GO_BUILD_FLAGS += -tags uiassets
 
 define cmd-alias-rule
 $(1): $(BUILDDIR)/$(notdir $(1))
@@ -107,7 +109,7 @@ coveragetests: go-dep
 		printf '%-10s %-50s %s\n' '----------' '--------------------------------------------------' '--------'; \
 		awk ' \
 			function trim_prefix(pkg) { \
-				sub(/^github.com\/djthorpe\/go-auth\/?/, "", pkg); \
+				sub(/^github.com\/mutablelogic\/go-auth\/?/, "", pkg); \
 				return pkg == "" ? "." : pkg; \
 			} \
 			$$1 == "?" { \
@@ -120,7 +122,7 @@ coveragetests: go-dep
 				printf "%-10s %-50s %s\n", "ok", trim_prefix($$2), cov; \
 				next; \
 			} \
-			index($$1, "github.com/djthorpe/go-auth") == 1 { \
+			index($$1, "github.com/mutablelogic/go-auth") == 1 { \
 				cov = "-"; \
 				for (i = 2; i <= NF; i++) if ($$i == "coverage:") cov = $$(i + 1); \
 				printf "%-10s %-50s %s\n", "cover", trim_prefix($$1), cov; \

@@ -23,8 +23,8 @@ import (
 	"fmt"
 
 	// Packages
-	authcrypto "github.com/djthorpe/go-auth/pkg/crypto"
-	schema "github.com/djthorpe/go-auth/schema/cert"
+	authcrypto "github.com/mutablelogic/go-auth/pkg/crypto"
+	schema "github.com/mutablelogic/go-auth/schema/cert"
 	trace "go.opentelemetry.io/otel/trace"
 )
 
