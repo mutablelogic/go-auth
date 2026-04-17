@@ -27,6 +27,7 @@ import (
 	webcallback "github.com/mutablelogic/go-auth/auth/webcallback"
 	client "github.com/mutablelogic/go-client"
 	server "github.com/mutablelogic/go-server"
+	types "github.com/mutablelogic/go-server/pkg/types"
 	browser "github.com/pkg/browser"
 	oauth2 "golang.org/x/oauth2"
 	errgroup "golang.org/x/sync/errgroup"
@@ -49,6 +50,7 @@ type AuthorizeCommand struct {
 
 const clientIDStoreKeyPrefix = "auth.client_id."
 const clientSecretStoreKeyPrefix = "auth.client_secret."
+const endpointStoreKeyPrefix = "auth.endpoint"
 const issuerStoreKeyPrefix = "auth.issuer."
 const tokenStoreKeyPrefix = "auth.token."
 const defaultRedirectURL = "http://localhost/"
@@ -60,8 +62,24 @@ func (cmd *AuthorizeCommand) Run(ctx server.Cmd) error {
 	auth_client, endpoint, err := clientFor(ctx)
 	if err != nil {
 		return err
-	} else if cmd.Endpoint == "" {
+	}
+
+	// Set the endpoint
+	if cmd.Endpoint == "" {
 		cmd.Endpoint = endpoint
+		if stored_endpoint := ctx.GetString(endpointStoreKeyPrefix); stored_endpoint != "" {
+			cmd.Endpoint = stored_endpoint
+		}
+	}
+
+	// Check the endpoint
+	url, err := url.Parse(cmd.Endpoint)
+	if err != nil {
+		return fmt.Errorf("invalid endpoint URL: %w", err)
+	} else if url.Scheme != types.SchemeSecure && url.Scheme != types.SchemeInsecure {
+		return fmt.Errorf("endpoint URL must have http or https scheme")
+	} else if url.Host == "" {
+		return fmt.Errorf("endpoint URL must have a host")
 	}
 
 	// Retrieve stored token for the endpoint, if it exists and is valid, return it immediately
@@ -287,6 +305,9 @@ func storeToken(ctx server.Cmd, endpoint, issuer string, token *oauth2.Token) er
 		return fmt.Errorf("store token: %w", err)
 	}
 	if endpoint != "" {
+		if err := ctx.Set(endpointStoreKeyPrefix, endpoint); err != nil {
+			return fmt.Errorf("store endpoint: %w", err)
+		}
 		if err := ctx.Set(issuerStoreKey(endpoint), issuer); err != nil {
 			return fmt.Errorf("store token issuer: %w", err)
 		}

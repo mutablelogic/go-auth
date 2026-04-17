@@ -12,28 +12,31 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package httpclient
+package main
 
 import (
-	"context"
+	"fmt"
+	"os"
 
 	// Packages
-	oidc "github.com/mutablelogic/go-auth/auth/oidc"
-	client "github.com/mutablelogic/go-client"
-	types "github.com/mutablelogic/go-server/pkg/types"
-	oauth2 "golang.org/x/oauth2"
+	auth "github.com/mutablelogic/go-auth/auth/cmd"
+	cmd "github.com/mutablelogic/go-server/pkg/cmd"
+	version "github.com/mutablelogic/go-server/pkg/version"
 )
 
 ///////////////////////////////////////////////////////////////////////////////
-// PUBLIC METHODS
+// TYPES
 
-func (c *Client) UserInfo(ctx context.Context, endpoint string, token *oauth2.Token) (*oidc.UserInfo, error) {
-	var response oidc.UserInfo
-	if err := c.DoWithContext(ctx, client.NewRequest(), &response,
-		client.OptReqEndpoint(endpoint),
-		client.OptToken(client.Token{Scheme: client.Bearer, Value: token.AccessToken}),
-	); err != nil {
-		return nil, err
+type CLI struct {
+	auth.AuthCommands
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// LIFECYCLE
+
+func main() {
+	if err := cmd.Main(CLI{}, "Identity, Authentication and Authorization Server", version.Version()); err != nil {
+		fmt.Fprintln(os.Stderr, "Error:", err)
+		os.Exit(-1)
 	}
-	return types.Ptr(response), nil
 }

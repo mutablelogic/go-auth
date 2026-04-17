@@ -22,6 +22,9 @@ import (
 	pg "github.com/mutablelogic/go-pg"
 )
 
+///////////////////////////////////////////////////////////////////////////////
+// PUBLIC METHODS
+
 // Normalize database errors and check for known database errors, converting them to
 // auth errors as appropriate
 func dbErr(err error) error {

@@ -42,9 +42,16 @@ func (cmd *RefreshCommand) Run(ctx server.Cmd) error {
 	authClient, endpoint, err := clientFor(ctx)
 	if err != nil {
 		return err
-	} else if cmd.Endpoint == "" {
-		cmd.Endpoint = endpoint
 	}
+
+	if cmd.Endpoint == "" {
+		if stored_endpoint := ctx.GetString(endpointStoreKeyPrefix); endpoint != "" {
+			cmd.Endpoint = stored_endpoint
+		} else {
+			cmd.Endpoint = endpoint
+		}
+	}
+
 	refreshed, err := refreshStoredToken(ctx, authClient, cmd.Endpoint, cmd.ClientID, cmd.ClientSecret)
 	if err != nil {
 		return err

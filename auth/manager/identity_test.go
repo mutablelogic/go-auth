@@ -34,6 +34,9 @@ import (
 	tracetest "go.opentelemetry.io/otel/sdk/trace/tracetest"
 )
 
+///////////////////////////////////////////////////////////////////////////////
+// PRIVATE METHODS
+
 type testCreateHook struct{}
 
 func (testCreateHook) OnUserCreate(ctx context.Context, identity schema.IdentityInsert, meta schema.UserMeta) (schema.UserMeta, error) {
@@ -68,6 +71,9 @@ func newIdentityTestManagerWithOpts(t *testing.T, opts ...manager.Opt) *manager.
 	schemaName := "auth_test_identity_" + strings.ReplaceAll(uuid.NewString(), "-", "_")
 	return newCustomSchemaManagerWithOpts(t, schemaName, opts...)
 }
+
+///////////////////////////////////////////////////////////////////////////////
+// TESTS
 
 func Test_identity_001(t *testing.T) {
 	t.Run("ListIdentities", func(t *testing.T) {

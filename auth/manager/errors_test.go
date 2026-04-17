@@ -27,6 +27,9 @@ import (
 	require "github.com/stretchr/testify/require"
 )
 
+///////////////////////////////////////////////////////////////////////////////
+// TESTS
+
 func Test_dbErr_001(t *testing.T) {
 	t.Run("Nil", func(t *testing.T) {
 		assert := assert.New(t)
