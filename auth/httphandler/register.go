@@ -7,9 +7,10 @@ import (
 	// Packages
 	auth "github.com/mutablelogic/go-auth/auth/httphandler/auth"
 	manager "github.com/mutablelogic/go-auth/auth/manager"
-	middleware "github.com/mutablelogic/go-auth/auth/middleware"
+	"github.com/mutablelogic/go-auth/auth/middleware"
 	oidc "github.com/mutablelogic/go-auth/auth/oidc"
 	httprequest "github.com/mutablelogic/go-server/pkg/httprequest"
+	httprouter "github.com/mutablelogic/go-server/pkg/httprouter"
 	jsonschema "github.com/mutablelogic/go-server/pkg/jsonschema"
 )
 
@@ -24,22 +25,13 @@ type HTTPRouter interface {
 // PUBLIC METHODS
 
 // RegisterAuthHandlers registers auth handlers with the provided router.
-func RegisterAuthHandlers(router HTTPRouter, manager *manager.Manager) error {
-	authenticated := middleware.AuthN(manager)
-	return errors.Join(
-		router.RegisterPath(UserInfoHandler(manager, authenticated)),
-	)
-}
-
-// RegisterManagerHandlers registers auth handlers with the provided router.
-func RegisterManagerHandlers(router HTTPRouter, manager *manager.Manager, auth bool) error {
-	authenticated := func(fn http.HandlerFunc) http.HandlerFunc { return fn }
-	if auth {
-		authenticated = middleware.AuthN(manager)
+func RegisterAuthHandlers(manager *manager.Manager) func(*httprouter.Router) error {
+	return func(router *httprouter.Router) error {
+		authenticated := middleware.AuthN(manager)
+		return errors.Join(
+			router.RegisterPath(UserInfoHandler(manager, authenticated)),
+		)
 	}
-	return errors.Join(
-		router.RegisterPath(UserInfoHandler(manager, authenticated)),
-	)
 }
 
 ///////////////////////////////////////////////////////////////////////////////

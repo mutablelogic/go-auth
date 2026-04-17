@@ -16,11 +16,12 @@ package auth
 
 import (
 	"fmt"
+	"net/url"
 	"strings"
 
 	// Packages
-
 	server "github.com/mutablelogic/go-server"
+	types "github.com/mutablelogic/go-server/pkg/types"
 )
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -41,14 +42,25 @@ func (cmd *RevokeCommand) Run(ctx server.Cmd) error {
 		return err
 	}
 
+	// Set the endpoint
 	if cmd.Endpoint == "" {
-		if stored_endpoint := ctx.GetString(endpointStoreKeyPrefix); endpoint != "" {
+		cmd.Endpoint = endpoint
+		if stored_endpoint := ctx.GetString(endpointStoreKeyPrefix); stored_endpoint != "" {
 			cmd.Endpoint = stored_endpoint
-		} else {
-			cmd.Endpoint = endpoint
 		}
 	}
 
+	// Check the endpoint
+	url, err := url.Parse(cmd.Endpoint)
+	if err != nil {
+		return fmt.Errorf("invalid endpoint URL: %w", err)
+	} else if url.Scheme != types.SchemeSecure && url.Scheme != types.SchemeInsecure {
+		return fmt.Errorf("endpoint URL must have http or https scheme")
+	} else if url.Host == "" {
+		return fmt.Errorf("endpoint URL must have a host")
+	}
+
+	// Get the token
 	token, err := storedToken(ctx, cmd.Endpoint)
 	if err != nil {
 		return err

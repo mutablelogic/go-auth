@@ -15,13 +15,10 @@
 package auth
 
 import (
-	"errors"
 	"net/http"
 
 	// Packages
-	managerpkg "github.com/mutablelogic/go-auth/auth/manager"
-	middleware "github.com/mutablelogic/go-auth/auth/middleware"
-	server "github.com/mutablelogic/go-server"
+
 	openapi "github.com/mutablelogic/go-server/pkg/openapi/schema"
 )
 
@@ -34,7 +31,7 @@ type Register interface {
 
 ///////////////////////////////////////////////////////////////////////////////
 // PUBLIC METHODS
-
+/*
 // RegisterAuthHandlers registers auth handlers with the provided router.
 func RegisterAuthHandlers(manager *managerpkg.Manager, router server.HTTPRouter) error {
 	var result error
@@ -43,11 +40,11 @@ func RegisterAuthHandlers(manager *managerpkg.Manager, router server.HTTPRouter)
 	register := func(path string, handler http.HandlerFunc, spec *openapi.PathItem) {
 		result = errors.Join(result, router.(Register).RegisterFunc(path, handler, true, spec))
 	}
-	registerProtectedAlways := func(path string, handler http.HandlerFunc, spec *openapi.PathItem) {
-		register(path, authenticated(handler), spec)
-	}
+	//	registerProtectedAlways := func(path string, handler http.HandlerFunc, spec *openapi.PathItem) {
+	//		register(path, authenticated(handler), spec)
+	//	}
 
-	registerProtectedAlways(UserInfoHandler(manager))
+	//registerProtectedAlways(UserInfoHandler(manager))
 	register(AuthorizationHandler(manager))
 	register(AuthCodeHandler(manager))
 	register(RevokeHandler(manager))
@@ -60,3 +57,4 @@ func RegisterAuthHandlers(manager *managerpkg.Manager, router server.HTTPRouter)
 
 	return result
 }
+*/

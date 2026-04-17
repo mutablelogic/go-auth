@@ -28,6 +28,7 @@ type AuthCommands struct {
 	Refresh   RefreshCommand   `cmd:"" help:"Refresh a stored OAuth token for an endpoint." group:"AUTH"`
 	Revoke    RevokeCommand    `cmd:"" help:"Revoke and remove a stored OAuth token for an endpoint." group:"AUTH"`
 	UserInfo  UserInfoCommand  `cmd:"" name:"userinfo" help:"Fetch userinfo using the stored OAuth token for an endpoint." group:"AUTH"`
+	Discover  DiscoverCommand  `cmd:"" help:"Discover the authorization metadata for an endpoint." group:"AUTH"`
 }
 
 ///////////////////////////////////////////////////////////////////////////////
