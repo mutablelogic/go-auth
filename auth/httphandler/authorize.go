@@ -60,8 +60,7 @@ func authorize(ctx context.Context, manager *manager.Manager, w http.ResponseWri
 		return httpresponse.Error(w, auth.HTTPError(err))
 	}
 
-	// Get the provider
-	identity_provider, err := authorizationProvider(manager, strings.TrimSpace(req.Provider))
+	identity_provider, err := authorizationProvider(manager, req.Provider)
 	if err != nil {
 		return httpresponse.Error(w, auth.HTTPError(err))
 	}
@@ -81,8 +80,6 @@ func authorize(ctx context.Context, manager *manager.Manager, w http.ResponseWri
 
 	// Redirect the user to the provider's authorization URL
 	http.Redirect(w, r, response.RedirectURL, http.StatusFound)
-
-	// Return success
 	return nil
 }
 
@@ -115,12 +112,13 @@ func providerAuthorizationPath(r *http.Request, providerPath string) string {
 	if providerPath == "" {
 		return "/"
 	}
-	basePath := "/"
+	currentPath := "/"
 	if r != nil && r.URL != nil {
-		currentPath := strings.TrimSpace(r.URL.Path)
-		if strings.HasSuffix(currentPath, oidc.AuthorizationPath) {
-			basePath = strings.TrimSuffix(currentPath, oidc.AuthorizationPath)
-		}
+		currentPath = strings.TrimSpace(r.URL.Path)
+	}
+	basePath := strings.TrimSuffix(currentPath, oidc.AuthorizationPath)
+	if basePath == "" || basePath == currentPath {
+		basePath = "/"
 	}
 	uri, err := url.JoinPath(basePath, providerPath)
 	if err != nil {

@@ -69,7 +69,8 @@ func (m *Manager) OIDCIssuer() (string, error) {
 	return "", auth.ErrBadParameter.With("issuer is not configured")
 }
 
-func (m *Manager) OIDCConfig(r *http.Request) (oidc.OIDCConfiguration, error) {
+// OIDCConfig returns the OIDC configuration for this server, including the issuer URL
+func (m *Manager) OIDCConfig() (oidc.OIDCConfiguration, error) {
 	issuer, err := m.OIDCIssuer()
 	if err != nil {
 		return oidc.OIDCConfiguration{}, err

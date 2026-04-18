@@ -6,6 +6,7 @@ import (
 
 	// Packages
 	auth "github.com/mutablelogic/go-auth"
+	autherr "github.com/mutablelogic/go-auth"
 	manager "github.com/mutablelogic/go-auth/auth/manager"
 	middleware "github.com/mutablelogic/go-auth/auth/middleware"
 	oidc "github.com/mutablelogic/go-auth/auth/oidc"
@@ -32,10 +33,12 @@ func RegisterAuthHandlers(manager *manager.Manager) func(*httprouter.Router) err
 		authenticated := middleware.AuthN(manager)
 		return errors.Join(
 			router.RegisterPath(ConfigHandler(manager)),
+			router.RegisterPath(OIDCConfigHandler(manager)),
 			router.RegisterPath(JWKSHandler(manager)),
 			router.RegisterPath(ProtectedResourceHandler(manager)),
 			router.RegisterPath(UserInfoHandler(manager, authenticated)),
 			router.RegisterPath(AuthorizationHandler(manager)),
+			router.RegisterPath(ExchangeHandler(manager)),
 		)
 	}
 }
@@ -60,7 +63,25 @@ func RegisterProviderHandlers(manager *manager.Manager) func(*httprouter.Router)
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-// PUBLIC METHODS
+// HANDLER METHODS
+
+func ConfigHandler(manager *manager.Manager) (string, *jsonschema.Schema, httprequest.PathItem) {
+	return "config", nil, httprequest.NewPathItem(
+		"Configuration Endpoint",
+		"Returns the identity provider configuration details.",
+		"Auth",
+	).Get(
+		func(w http.ResponseWriter, r *http.Request) {
+			config, err := manager.AuthConfig()
+			if err != nil {
+				_ = httpresponse.Error(w, autherr.HTTPError(err))
+				return
+			}
+			_ = httpresponse.JSON(w, http.StatusOK, httprequest.Indent(r), config)
+		},
+		"Configuration endpoint",
+	)
+}
 
 func AuthorizationHandler(manager *manager.Manager) (string, *jsonschema.Schema, httprequest.PathItem) {
 	return oidc.AuthorizationPath, nil, httprequest.NewPathItem(
@@ -75,14 +96,27 @@ func AuthorizationHandler(manager *manager.Manager) (string, *jsonschema.Schema,
 	)
 }
 
-func ConfigHandler(manager *manager.Manager) (string, *jsonschema.Schema, httprequest.PathItem) {
+func ExchangeHandler(manager *manager.Manager) (string, *jsonschema.Schema, httprequest.PathItem) {
+	return oidc.AuthCodePath, nil, httprequest.NewPathItem(
+		"Authorization code exchange",
+		"Exchanges a registered-provider authorization code and returns a signed local token plus userinfo.",
+		"Auth",
+	).Post(
+		func(w http.ResponseWriter, r *http.Request) {
+			_ = exchange(r.Context(), manager, w, r)
+		},
+		"Exchange authorization code",
+	)
+}
+
+func OIDCConfigHandler(manager *manager.Manager) (string, *jsonschema.Schema, httprequest.PathItem) {
 	return oidc.ConfigPath, nil, httprequest.NewPathItem(
 		"OpenID Connect Configuration",
 		"Returns the OpenID Connect configuration for this server.",
 		"Auth",
 	).Get(
 		func(w http.ResponseWriter, r *http.Request) {
-			config, err := manager.OIDCConfig(r)
+			config, err := manager.OIDCConfig()
 			if err != nil {
 				_ = httpresponse.Error(w, httpresponse.ErrInternalError.With(err))
 				return

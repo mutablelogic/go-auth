@@ -121,7 +121,7 @@ func refreshStoredToken(ctx server.Cmd, authClient *auth.Client, endpoint, clien
 	if err != nil {
 		return nil, err
 	}
-	if err := storeToken(ctx, endpoint, issuer, refreshed); err != nil {
+	if err := storeToken(ctx, endpoint, issuer, storedProvider(ctx, endpoint), refreshed); err != nil {
 		return nil, err
 	}
 	if err := storeClientCredentials(ctx, nil, issuer, clientID, clientSecret); err != nil {

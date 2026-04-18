@@ -94,7 +94,7 @@ func exchangeRegisteredAuthorizationCodeGrant(ctx context.Context, mgr *managerp
 	}
 	identity, err := provider.ExchangeAuthorizationCode(ctx, providerpkg.ExchangeRequest{
 		Code:         req.Code,
-		RedirectURL:  req.RedirectURL,
+		RedirectURL:  req.RedirectURI,
 		CodeVerifier: req.CodeVerifier,
 		Nonce:        req.Nonce,
 	})
@@ -147,7 +147,7 @@ func authorizationCodeRequestFromForm(values map[string][]string) schema.Authori
 	req := schema.AuthorizationCodeRequest{
 		Provider:     strings.TrimSpace(firstFormValue(values, "provider")),
 		Code:         strings.TrimSpace(firstFormValue(values, "code")),
-		RedirectURL:  strings.TrimSpace(firstFormValue(values, "redirect_uri")),
+		RedirectURI:  strings.TrimSpace(firstFormValue(values, "redirect_uri")),
 		CodeVerifier: strings.TrimSpace(firstFormValue(values, "code_verifier")),
 		Nonce:        strings.TrimSpace(firstFormValue(values, "nonce")),
 	}
@@ -201,12 +201,4 @@ func loginTokenClaims(issuer string, user *schema.User, session *schema.Session)
 		claims["scopes"] = user.Scopes
 	}
 	return claims
-}
-
-func sessionIDFromClaims(claims map[string]any) (schema.SessionID, error) {
-	value, ok := claims["sid"].(string)
-	if !ok || strings.TrimSpace(value) == "" {
-		return schema.SessionID{}, httpresponse.Err(http.StatusBadRequest).With("token missing sid claim")
-	}
-	return schema.SessionIDFromString(value)
 }

@@ -61,7 +61,7 @@ func exchangeCode(ctx context.Context, mgr *managerpkg.Manager, w http.ResponseW
 		}
 		identity, err := provider.ExchangeAuthorizationCode(ctx, providerpkg.ExchangeRequest{
 			Code:         req.Code,
-			RedirectURL:  req.RedirectURL,
+			RedirectURL:  req.RedirectURI,
 			CodeVerifier: req.CodeVerifier,
 			Nonce:        req.Nonce,
 		})

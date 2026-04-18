@@ -28,7 +28,7 @@ import (
 type AuthorizationCodeRequest struct {
 	Provider     string  `json:"provider"`
 	Code         string  `json:"code"`
-	RedirectURL  string  `json:"redirect_url"`
+	RedirectURI  string  `json:"redirect_uri"`
 	CodeVerifier string  `json:"code_verifier,omitempty"`
 	Nonce        string  `json:"nonce,omitempty"`
 	Meta         MetaMap `json:"meta,omitempty"`
@@ -101,8 +101,8 @@ func (req *AuthorizationCodeRequest) Validate() error {
 		return auth.ErrInvalidProvider.With("provider is required")
 	} else if req.Code == "" {
 		return auth.ErrBadParameter.With("code is required")
-	} else if req.RedirectURL == "" {
-		return auth.ErrBadParameter.With("redirect_url is required")
+	} else if req.RedirectURI == "" {
+		return auth.ErrBadParameter.With("redirect_uri is required")
 	}
 	return nil
 }

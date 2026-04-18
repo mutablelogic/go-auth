@@ -88,15 +88,15 @@ func Test_auth_001(t *testing.T) {
 	t.Run("AuthorizationCodeRequestValidate", func(t *testing.T) {
 		assert := assert.New(t)
 
-		req := AuthorizationCodeRequest{Provider: "local", Code: "code-123", RedirectURL: "https://client.example.com/callback"}
+		req := AuthorizationCodeRequest{Provider: "local", Code: "code-123", RedirectURI: "https://client.example.com/callback"}
 		assert.NoError(req.Validate())
 
-		err := (&AuthorizationCodeRequest{Code: "code-123", RedirectURL: "https://client.example.com/callback"}).Validate()
+		err := (&AuthorizationCodeRequest{Code: "code-123", RedirectURI: "https://client.example.com/callback"}).Validate()
 		assert.Error(err)
 		assert.ErrorIs(err, auth.ErrInvalidProvider)
 		assert.True(strings.Contains(err.Error(), "provider is required"))
 
-		err = (&AuthorizationCodeRequest{Provider: "local", RedirectURL: "https://client.example.com/callback"}).Validate()
+		err = (&AuthorizationCodeRequest{Provider: "local", RedirectURI: "https://client.example.com/callback"}).Validate()
 		assert.Error(err)
 		assert.ErrorIs(err, auth.ErrBadParameter)
 		assert.True(strings.Contains(err.Error(), "code is required"))
@@ -104,6 +104,6 @@ func Test_auth_001(t *testing.T) {
 		err = (&AuthorizationCodeRequest{Provider: "local", Code: "code-123"}).Validate()
 		assert.Error(err)
 		assert.ErrorIs(err, auth.ErrBadParameter)
-		assert.True(strings.Contains(err.Error(), "redirect_url is required"))
+		assert.True(strings.Contains(err.Error(), "redirect_uri is required"))
 	})
 }
