@@ -12,7 +12,7 @@ Returns the public upstream provider configuration keyed by provider name. Only 
 
 ### `GET /auth/authorize`
 
-Starts a browser authorization flow. Without `provider`, it issues a local testing authorization code and redirects back to the callback. With `provider`, it redirects to the configured upstream provider.
+Starts a browser authorization flow. If `provider` is specified, it redirects to that configured provider. If `provider` is omitted and exactly one provider is configured, it redirects to that provider's authorization flow. For the built-in local provider, this continues through the local browser flow, which later issues a local testing authorization code and redirects back to the callback. If multiple providers are configured, `provider` is required.
 
 ### `POST /auth/code`
 

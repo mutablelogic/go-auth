@@ -111,7 +111,7 @@ func ConfigHandler(manager *manager.Manager, doc *opts.MarkdownDoc) (string, *js
 func AuthorizationHandler(manager *manager.Manager, doc *opts.MarkdownDoc) (string, *jsonschema.Schema, httprequest.PathItem) {
 	return oidc.AuthorizationPath, nil, httprequest.NewPathItem(
 		"OpenID Authorization Endpoint",
-		"Starts a local browser-based authorization flow, or redirects to a configured upstream provider when an explicit provider is requested.",
+		"Selects a provider-specific browser authorization flow and redirects the client to the resulting local or upstream provider URL.",
 		"Auth",
 	).Get(
 		func(w http.ResponseWriter, r *http.Request) {
