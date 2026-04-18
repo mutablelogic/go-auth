@@ -7,9 +7,13 @@ import (
 	// Packages
 	autherr "github.com/mutablelogic/go-auth"
 	auth "github.com/mutablelogic/go-auth/auth/manager"
+	manager "github.com/mutablelogic/go-auth/auth/manager"
+	oidc "github.com/mutablelogic/go-auth/auth/oidc"
 	schema "github.com/mutablelogic/go-auth/auth/schema"
 	httprequest "github.com/mutablelogic/go-server/pkg/httprequest"
 	httpresponse "github.com/mutablelogic/go-server/pkg/httpresponse"
+	jsonschema "github.com/mutablelogic/go-server/pkg/jsonschema"
+	opts "github.com/mutablelogic/go-server/pkg/openapi"
 )
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -19,15 +23,35 @@ type RevokeRequest struct {
 	Token string `json:"token,omitempty" jsonschema:"Previously issued local bearer token to revoke. The token must resolve to a local session." example:"eyJhbGciOiJSUzI1NiIsImtpZCI6ImxvY2FsLW1haW4ifQ..." required:""`
 }
 
-///////////////////////////////////////////////////////////////////////////////
-// PUBLIC METHODS
-
 func (req RevokeRequest) Validate() error {
 	if req.Token == "" {
 		return httpresponse.Err(http.StatusBadRequest).With("token is required")
 	}
 	// Return success
 	return nil
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// PUBLIC METHODS
+
+func RevokeHandler(manager *manager.Manager, doc *opts.MarkdownDoc) (string, *jsonschema.Schema, httprequest.PathItem) {
+	return oidc.AuthRevokePath, nil, httprequest.NewPathItem(
+		"Session revocation",
+		"Revokes a locally signed session token using either a JSON or form-encoded payload with the same token field.",
+		"Auth",
+	).Post(
+		func(w http.ResponseWriter, r *http.Request) {
+			_ = revoke(r.Context(), manager, w, r)
+		},
+		"Revoke session token",
+		opts.WithDescription(doc.Section(3, "POST /auth/revoke").Body),
+		opts.WithJSONRequest(opts.NamedSchema("RevokeRequest", jsonschema.MustFor[RevokeRequest]())),
+		opts.WithFormRequest(opts.NamedSchema("RevokeRequest", jsonschema.MustFor[RevokeRequest]())),
+		opts.WithNoContentResponse(http.StatusNoContent, "The local session token was revoked successfully."),
+		opts.WithErrorResponse(http.StatusBadRequest, "Missing or invalid token payload, token format, or session identifier."),
+		opts.WithErrorResponse(http.StatusNotFound, "The token resolved to a session that does not exist."),
+		opts.WithErrorResponse(http.StatusInternalServerError, "The server could not revoke the local session."),
+	)
 }
 
 ///////////////////////////////////////////////////////////////////////////////

@@ -169,6 +169,7 @@ func (cmd *AuthServer) WithAuthManager(ctx server.Cmd, conn pg.PoolConn, fn func
 	cmd.RunServer.Register(
 		authhandler.RegisterAuthHandlers(manager),
 		authhandler.RegisterProviderHandlers(manager),
+		authhandler.RegisterManagerHandlers(manager),
 	)
 
 	// Next callback in the chain

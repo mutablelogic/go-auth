@@ -108,7 +108,7 @@ func (p *Provider) BeginAuthorization(ctx context.Context, req providerpkg.Autho
 		ClientSecret: p.clientSecret,
 		RedirectURL:  req.RedirectURL,
 		Endpoint:     provider.Endpoint(),
-		Scopes:       req.Scopes,
+		Scopes:       req.ScopeList(),
 	}
 	options := make([]oauth2.AuthCodeOption, 0, 4)
 	if nonce := strings.TrimSpace(req.Nonce); nonce != "" {

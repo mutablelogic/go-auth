@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package manager
+package httphandler
 
 import (
 	"context"
@@ -20,7 +20,7 @@ import (
 
 	// Packages
 	authpkg "github.com/mutablelogic/go-auth"
-	coremanager "github.com/mutablelogic/go-auth/auth/manager"
+	manager "github.com/mutablelogic/go-auth/auth/manager"
 	schema "github.com/mutablelogic/go-auth/auth/schema"
 	httprequest "github.com/mutablelogic/go-server/pkg/httprequest"
 	httpresponse "github.com/mutablelogic/go-server/pkg/httpresponse"
@@ -32,15 +32,15 @@ import (
 // PUBLIC METHODS
 
 // ScopeHandler returns a path and pathitem for the scope endpoint.
-func ScopeHandler(mgr *coremanager.Manager, doc *opts.MarkdownDoc) (string, *jsonschema.Schema, httprequest.PathItem) {
+func ScopeHandler(manager *manager.Manager, auth func(http.HandlerFunc) http.HandlerFunc, doc *opts.MarkdownDoc) (string, *jsonschema.Schema, httprequest.PathItem) {
 	return "scope", nil, httprequest.NewPathItem(
 		"Scope operations",
 		"Operations on scopes",
 		"Scope",
 	).Get(
-		func(w http.ResponseWriter, r *http.Request) {
-			_ = listScope(r.Context(), mgr, w, r)
-		},
+		auth(func(w http.ResponseWriter, r *http.Request) {
+			_ = listScope(r.Context(), manager, w, r)
+		}),
 		"List scopes",
 		opts.WithDescription(doc.Section(3, "GET /{prefix}/scope").Body),
 		opts.WithQuery(jsonschema.MustFor[schema.ScopeListRequest]()),
@@ -53,12 +53,12 @@ func ScopeHandler(mgr *coremanager.Manager, doc *opts.MarkdownDoc) (string, *jso
 ///////////////////////////////////////////////////////////////////////////////
 // PRIVATE METHODS
 
-func listScope(ctx context.Context, mgr *coremanager.Manager, w http.ResponseWriter, r *http.Request) error {
+func listScope(ctx context.Context, manager *manager.Manager, w http.ResponseWriter, r *http.Request) error {
 	var req schema.ScopeListRequest
 	if err := httprequest.Query(r.URL.Query(), &req); err != nil {
 		return httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest), err.Error())
 	}
-	scopes, err := mgr.ListScopes(ctx, req)
+	scopes, err := manager.ListScopes(ctx, req)
 	if err != nil {
 		return httpresponse.Error(w, authpkg.HTTPError(err))
 	}

@@ -55,7 +55,7 @@ func TestBeginAuthorizationAndExchange(t *testing.T) {
 	resp, err := provider.BeginAuthorization(context.Background(), providerpkg.AuthorizationRequest{
 		RedirectURL:         "http://127.0.0.1:8085/callback",
 		State:               "state-123",
-		Scopes:              []string{oidc.ScopeOpenID, oidc.ScopeEmail, oidc.ScopeProfile},
+		Scope:               oidc.ScopeOpenID + " " + oidc.ScopeEmail + " " + oidc.ScopeProfile,
 		Nonce:               "nonce-123",
 		CodeChallenge:       "challenge-123",
 		CodeChallengeMethod: "S256",

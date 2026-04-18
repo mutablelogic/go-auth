@@ -1,4 +1,4 @@
-# Auth & Identity Provider Handlers
+# Authentication & Identity Provider Handlers
 
 Registers the public auth, OIDC, and protected-resource endpoints exposed by the auth server.
 

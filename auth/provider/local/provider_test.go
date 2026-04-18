@@ -105,9 +105,8 @@ func TestProviderAccessors(t *testing.T) {
 	require.Equal(t, "http://localhost:8084/api", provider.PublicConfig().Issuer)
 
 	var nilProvider *Provider
-	handler, spec := nilProvider.HTTPHandler()
-	require.Nil(t, handler)
-	require.Nil(t, spec)
+	pathItem := nilProvider.HTTPHandler()
+	require.Nil(t, pathItem)
 }
 
 func TestProviderBeginAuthorizationValidation(t *testing.T) {
@@ -142,7 +141,7 @@ func TestProviderBeginAuthorizationIncludesOptionalValues(t *testing.T) {
 		RedirectURL:         "http://127.0.0.1:8085/callback",
 		ProviderURL:         "/auth/provider/local?foo=bar",
 		State:               "state-123",
-		Scopes:              []string{"openid", "email"},
+		Scope:               "openid email",
 		Nonce:               "nonce-123",
 		CodeChallenge:       "challenge-123",
 		CodeChallengeMethod: "S256",

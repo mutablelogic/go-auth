@@ -7,7 +7,6 @@ import (
 
 	// Packages
 	auth "github.com/mutablelogic/go-auth"
-	autherr "github.com/mutablelogic/go-auth"
 	manager "github.com/mutablelogic/go-auth/auth/manager"
 	middleware "github.com/mutablelogic/go-auth/auth/middleware"
 	oidc "github.com/mutablelogic/go-auth/auth/oidc"
@@ -23,8 +22,11 @@ import (
 ///////////////////////////////////////////////////////////////////////////////
 // GLOBALS
 
-//go:embed AUTH.md
+//go:embed AUTHN.md
 var AuthDoc []byte
+
+//go:embed AUTHZ.md
+var ManagerDoc []byte
 
 ///////////////////////////////////////////////////////////////////////////////
 // PUBLIC METHODS
@@ -84,28 +86,26 @@ func RegisterProviderHandlers(manager *manager.Manager) func(*httprouter.Router)
 	}
 }
 
-///////////////////////////////////////////////////////////////////////////////
-// HANDLER METHODS
+// RegisterManagerHandlers registers provider-specific handlers with the provided router.
+func RegisterManagerHandlers(manager *manager.Manager) func(*httprouter.Router) error {
+	return func(router *httprouter.Router) error {
+		// Parse the markdown documentation
+		doc := opts.ParseMarkdown(AuthDoc)
 
-func ConfigHandler(manager *manager.Manager, doc *opts.MarkdownDoc) (string, *jsonschema.Schema, httprequest.PathItem) {
-	return "config", nil, httprequest.NewPathItem(
-		"Public provider configuration",
-		"Returns the upstream provider details that are safe to expose to clients that need to start an authentication flow.",
-		"Auth",
-	).Get(
-		func(w http.ResponseWriter, r *http.Request) {
-			config, err := manager.AuthConfig()
-			if err != nil {
-				_ = httpresponse.Error(w, autherr.HTTPError(err))
-				return
-			}
-			_ = httpresponse.JSON(w, http.StatusOK, httprequest.Indent(r), config)
-		},
-		"Get public auth configuration",
-		opts.WithDescription(doc.Section(3, "GET /auth/config").Body),
-		opts.WithJSONResponse(http.StatusOK, jsonschema.MustFor[schema.PublicClientConfigurations]()),
-		opts.WithErrorResponse(http.StatusNotFound, "No upstream providers are configured."),
-	)
+		// Add top-level and tag descriptions to the spec
+		router.Spec().Info.Description = doc.Section(1, "Auth & Identity Provider Handlers").Body
+
+		// Register the tag group
+		router.Spec().AddTagGroup("Authorization", "Scope")
+
+		// Create an authenticated handler wrapper
+		authenticated := middleware.AuthN(manager)
+
+		// Register the paths
+		return errors.Join(
+			router.RegisterPath(ScopeHandler(manager, authenticated, doc)),
+		)
+	}
 }
 
 func AuthorizationHandler(manager *manager.Manager, doc *opts.MarkdownDoc) (string, *jsonschema.Schema, httprequest.PathItem) {
@@ -150,26 +150,6 @@ func ExchangeHandler(manager *manager.Manager, doc *opts.MarkdownDoc) (string, *
 		opts.WithJSONResponse(http.StatusOK, jsonschema.MustFor[oauth2.Token]()),
 		opts.WithErrorResponse(http.StatusBadRequest, "Missing or invalid grant_type, exchange parameters, authorization code, or refresh token."),
 		opts.WithErrorResponse(http.StatusInternalServerError, "The server could not issue a local token after a successful exchange."),
-	)
-}
-
-func RevokeHandler(manager *manager.Manager, doc *opts.MarkdownDoc) (string, *jsonschema.Schema, httprequest.PathItem) {
-	return oidc.AuthRevokePath, nil, httprequest.NewPathItem(
-		"Session revocation",
-		"Revokes a locally signed session token using either a JSON or form-encoded payload with the same token field.",
-		"Auth",
-	).Post(
-		func(w http.ResponseWriter, r *http.Request) {
-			_ = revoke(r.Context(), manager, w, r)
-		},
-		"Revoke session token",
-		opts.WithDescription(doc.Section(3, "POST /auth/revoke").Body),
-		opts.WithJSONRequest(opts.NamedSchema("RevokeRequest", jsonschema.MustFor[RevokeRequest]())),
-		opts.WithFormRequest(opts.NamedSchema("RevokeRequest", jsonschema.MustFor[RevokeRequest]())),
-		opts.WithNoContentResponse(http.StatusNoContent, "The local session token was revoked successfully."),
-		opts.WithErrorResponse(http.StatusBadRequest, "Missing or invalid token payload, token format, or session identifier."),
-		opts.WithErrorResponse(http.StatusNotFound, "The token resolved to a session that does not exist."),
-		opts.WithErrorResponse(http.StatusInternalServerError, "The server could not revoke the local session."),
 	)
 }
 
