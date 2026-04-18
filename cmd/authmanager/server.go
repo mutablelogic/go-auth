@@ -34,7 +34,8 @@ import (
 // TYPES
 
 type ServerCommands struct {
-	Run AuthServer `cmd:"" name:"run" help:"Run the authentication server." group:"SERVER"`
+	Run       AuthServer    `cmd:"" name:"run" help:"Run the authentication server." group:"SERVER"`
+	Bootstrap BootstrapCert `cmd:"" name:"bootstrap" help:"Bootstrap by importing a root certificate PEM bundle." group:"SERVER"`
 }
 
 type AuthServer struct {
@@ -46,8 +47,29 @@ type AuthServer struct {
 	GoogleProviderFlags `embed:"" prefix:"google."`
 }
 
+type BootstrapCert struct {
+	BootstrapFlags `embed:""`
+	PostgresFlags  `embed:"" prefix:"pg."`
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 // COMMANDS
+
+func (cmd *BootstrapCert) Run(ctx server.Cmd) error {
+	ctx.Logger().DebugContext(ctx.Context(), "Connecting to database", "name", ctx.Name(), "version", ctx.Version())
+	pool, err := cmd.PostgresFlags.Connect(ctx)
+	if err != nil {
+		return err
+	} else if pool == nil {
+		return fmt.Errorf("No database connection URL provided")
+	}
+	defer pool.Close()
+
+	return cmd.WithCertManager(ctx, pool, func(certmanager *cert.Manager) error {
+		ctx.Logger().InfoContext(ctx.Context(), "Imported root certificate from PEM bundle")
+		return nil
+	})
+}
 
 func (cmd *AuthServer) Run(ctx server.Cmd) error {
 	ctx.Logger().DebugContext(ctx.Context(), "Connecting to database", "name", ctx.Name(), "version", ctx.Version())
@@ -64,6 +86,9 @@ func (cmd *AuthServer) Run(ctx server.Cmd) error {
 		return cmd.WithCertManager(ctx, pool, func(certmanager *cert.Manager) error {
 			return cmd.WithLDAPManager(ctx, pool, func(ldapmanager *ldap.Manager) error {
 				errgroup, errctx := errgroup.WithContext(ctx.Context())
+
+				// Log the startup message
+				ctx.Logger().InfoContext(ctx.Context(), "Started Auth manager", "name", ctx.Name(), "version", ctx.Version())
 
 				// Run the auth manager
 				if authmanager != nil {
@@ -135,6 +160,26 @@ func (cmd *AuthServer) WithCertManager(ctx server.Cmd, conn pg.PoolConn, fn func
 	}
 
 	// TODO: Register the HTTP handler routes
+
+	// Next callback in the chain
+	return fn(manager)
+}
+
+func (cmd *BootstrapCert) WithCertManager(ctx server.Cmd, conn pg.PoolConn, fn func(manager *cert.Manager) error) error {
+	opts, err := cmd.BootstrapFlags.Options(ctx)
+	if err != nil {
+		return err
+	}
+	if opts == nil {
+		return fn(nil)
+	}
+
+	// Create the cert manager
+	ctx.Logger().DebugContext(ctx.Context(), "Bootstrapping Certificate manager")
+	manager, err := cert.New(ctx.Context(), conn, opts...)
+	if err != nil {
+		return err
+	}
 
 	// Next callback in the chain
 	return fn(manager)

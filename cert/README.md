@@ -58,32 +58,33 @@ Notable lifecycle rules:
 
 ### Prerequisites
 
-- A built `certmanager` binary from `./cmd/certmanager`
+- A built `authmanager` binary from `./cmd/authmanager`
 - A PostgreSQL database reachable via `PG_URL` or `--pg.url`
-- At least one storage passphrase supplied with `CERTMANAGER_PASSPHRASES` or `--storage-passphrase`
+- At least one storage passphrase supplied with `CERT_PASSPHRASE` or `--passphrase`
 - A root PEM bundle if you are bootstrapping a new PKI
 
 ### Build the CLI
 
 ```bash
-make cmd/certmanager
+make cmd/authmanager
 ```
 
-The binary is written to `build/certmanager`.
+The binary is written to `build/authmanager`.
 
 ### Bootstrap and run the server
 
 Generate a traditional RSA private key and self-signed root certificate with OpenSSL:
 
 ```bash
-openssl genrsa -traditional -aes256 -out root.key.pem 4096
+openssl genrsa -aes256 -out root.key.pem 4096
 
-export ROOTKEY_PASSPHRASE='<passphrase>'
+# Enter passphrase, at least 8 characters
+export CERT_PASSPHRASE='<passphrase>'
 openssl req \
   -x509 \
   -new \
   -key root.key.pem \
-  -passin env:ROOTKEY_PASSPHRASE \
+  -passin env:CERT_PASSPHRASE \
   -sha256 \
   -days 3650 \
   -out root.crt.pem \
@@ -91,18 +92,15 @@ openssl req \
 
 cat root.crt.pem root.key.pem > root.bundle.pem
 
-certmanager bootstrap \
+authmanager bootstrap root.bundle.pem \
   --pg.url="postgres://user:password@localhost/authdb" \
-  --certificate-pem root.bundle.pem
-  --certificate-passphrase="$ROOTKEY_PASSPHRASE"
+  --passphrase="$CERT_PASSPHRASE"
 ```
-
-If the PEM bundle contains an unencrypted private key, `CERTMANAGER_CERTIFICATE_PASSPHRASE` or `--certificate-passphrase` can be omitted.
 
 ### Start the server
 
 ```bash
-certmanager --http.addr='localhost:8084' run
+authmanager --http.addr='localhost:8084' run --passphrase="$CERT_PASSPHRASE"
 ```
 
 For multi-tenancy use cases, you can use `--pg.schema` to isolate in a separate PostgreSQL schemas within the
@@ -110,43 +108,43 @@ same database (or use different databases with different `PG_URL` values). The m
 
 ## CLI usage
 
-The `certmanager` binary doubles as a CLI client. Set `CERTMANAGER_ADDR` to the host and port of the running server so you do not need to repeat `--http.addr` on every command:
+The `authmanager` binary doubles as a CLI client. Set `AUTHMANAGER_ADDR` to the host and port of the running server so you do not need to repeat `--http.addr` on every command:
 
 ```bash
-export CERTMANAGER_ADDR=localhost:8084
+export AUTHMANAGER_ADDR=localhost:8084
 ```
 
 Create an intermediate CA, issue a leaf certificate from it, inspect the PEM chain, and renew the leaf certificate:
 
 ```bash
 # Create an intermediate CA named "issuer-ca" with a 1 year expiry and "platform" tag
-certmanager ca-create issuer-ca \
+authmanager ca-create issuer-ca \
   --expiry=8760h \
   --organization='Example Org' \
   --tag=platform
 
 # Create a leaf certificate named "api.example.test" signed by "issuer-ca" with a 90 day expiry, two SAN entries, and an "edge" tag
-certmanager cert-create api.example.test issuer-ca \
+authmanager cert-create api.example.test issuer-ca \
   --expiry=2160h \
   --san=api.example.test \
   --san=127.0.0.1 \
   --tag=edge
 
 # Get the certificate chain for "api.example.test" in PEM format
-certmanager cert api.example.test \
+authmanager cert api.example.test \
   --chain
 
 # Get the private key for "api.example.test"
-certmanager cert api.example.test \
+authmanager cert api.example.test \
   --private
 
 # Renew "api.example.test" with a new 90 day expiry and postal code subject field, preserving SAN and tags
-certmanager cert-renew api.example.test \
+authmanager cert-renew api.example.test \
   --expiry=2160h \
   --postal-code=10967
 
 # Update "api.example.test" to disable it and replace tags with "dont-use"
-certmanager cert-update api.example.test \
+authmanager cert-update api.example.test \
   --disable \
   --tag=dont-use
 ```
@@ -160,25 +158,25 @@ Renewal issues a new serial, preserves the existing SAN and tags, and disables t
 
 | Path | Description |
 |---|---|
-| `cmd/certmanager/` | Binary entrypoint that assembles server commands, OpenAPI commands, and the certificate manager CLI |
+| `cmd/authmanager/` | Binary entrypoint that assembles server commands, OpenAPI commands, and the certificate manager CLI |
 | `cert/manager/` | Core certificate lifecycle logic: schema bootstrap, root import, issuance, renewal, metadata updates, and private key access |
-| `pkg/cert/` | Certificate and key generation helpers used when creating roots, intermediate CAs, and leaf certificates |
+| `cert/cert` | Certificate and key generation helpers used when creating roots, intermediate CAs, and leaf certificates |
 | `crypto/` | Cryptographic helpers used for storage passphrases, key wrapping, and private key protection |
 | `cert/schema/` | Shared request, response, and metadata models used by the manager, handlers, client, and CLI |
 | `cert/httphandler/` | HTTP routes that expose the manager over the network |
 | `cert/httpclient/` | Typed client for calling those HTTP routes |
-| `pkg/cert/cmd/` | Client-side CLI commands and PEM-oriented output formatting |
-
+| `cert/cmd/` | Client-side CLI commands and PEM-oriented output formatting |
+  
 ### Component diagram
 
 ```mermaid
 flowchart TD
-  CLI["<b>CLI Binary</b> (cmd/certmanager)"]
-  Cmd["<b>CLI Commands</b> (pkg/cert/cmd)"]
+  CLI["<b>CLI Binary</b> (cmd/authmanager)"]
+  Cmd["<b>CLI Commands</b> (cert/cmd)"]
   Client["<b>HTTP Client</b> (cert/httpclient)"]
   Handlers["<b>HTTP Handlers</b> (cert/httphandler)"]
   Manager["<b>Manager</b> (cert/manager)"]
-  Cert["<b>Certificate Helpers</b> (pkg/cert)"]
+  Cert["<b>Certificate Helpers</b> (cert/cert)"]
   Crypto["<b>Crypto</b> (crypto)"]
   Schema["<b>Schema</b> (cert/schema)"]
   PG[("<b>PostgreSQL</b>")]

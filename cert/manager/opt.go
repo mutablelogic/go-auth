@@ -17,7 +17,6 @@ package manager
 import (
 	"bytes"
 	"crypto/rsa"
-	"crypto/tls"
 	"crypto/x509"
 	"encoding/pem"
 	"fmt"
@@ -104,28 +103,11 @@ func WithPassphrase(version uint64, passphrase string) Opt {
 	}
 }
 
-// WithRoot imports an existing PEM bundle containing a root certificate and
-// matching RSA private key.
-func WithRoot(pemValue string) Opt {
+// WithRoot imports root certificate and matching RSA private key.
+func WithRoot(key *rsa.PrivateKey, cert *x509.Certificate) Opt {
 	return func(o *opt) error {
-		certPEM, keyPEM, err := readPemBlocks([]byte(pemValue))
-		if err != nil {
-			return err
-		}
-		keypair, err := tls.X509KeyPair(certPEM, keyPEM)
-		if err != nil {
-			return err
-		}
-		leaf, err := x509.ParseCertificate(keypair.Certificate[0])
-		if err != nil {
-			return err
-		}
-		key, ok := keypair.PrivateKey.(*rsa.PrivateKey)
-		if !ok {
-			return fmt.Errorf("private key is not RSA")
-		}
 		o.rootkey = key
-		o.rootcert = leaf
+		o.rootcert = cert
 		return nil
 	}
 }
