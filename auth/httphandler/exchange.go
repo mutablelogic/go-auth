@@ -22,11 +22,23 @@ import (
 // TYPES
 
 type ExchangeRequest struct {
-	GrantType string `json:"grant_type,omitempty"`
+	GrantType string `json:"grant_type" jsonschema:"OAuth 2.0 grant type. Use authorization_code for provider code exchange or refresh_token to refresh an existing local session." example:"authorization_code" required:""`
+	schema.AuthorizationCodeRequest
+	RefreshTokenExchangeRequest
+}
+
+type AuthorizationCodeExchangeRequest struct {
+	GrantType string `json:"grant_type" jsonschema:"OAuth 2.0 grant type for exchanging a provider-issued authorization code." enum:"authorization_code" example:"authorization_code" required:""`
+	schema.AuthorizationCodeRequest
+}
+
+type RefreshTokenGrantRequest struct {
+	GrantType string `json:"grant_type" jsonschema:"OAuth 2.0 grant type for refreshing an existing local session." enum:"refresh_token" example:"refresh_token" required:""`
+	RefreshTokenExchangeRequest
 }
 
 type RefreshTokenExchangeRequest struct {
-	RefreshToken string `json:"refresh_token,omitempty"`
+	Token string `json:"refresh_token,omitempty" jsonschema:"Previously issued local refresh token. Required when grant_type is refresh_token." example:"eyJhbGciOiJSUzI1NiIsImtpZCI6ImxvY2FsLW1haW4ifQ..."`
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -43,7 +55,7 @@ func (req ExchangeRequest) Validate() error {
 }
 
 func (req RefreshTokenExchangeRequest) Validate() error {
-	if req.RefreshToken == "" {
+	if req.Token == "" {
 		return httpresponse.Err(http.StatusBadRequest).With("refresh_token is required")
 	}
 	// Return success
@@ -124,7 +136,7 @@ func exchange(ctx context.Context, manager *auth.Manager, w http.ResponseWriter,
 		if err != nil {
 			return httpresponse.Error(w, autherr.HTTPError(err))
 		}
-		claims, err := manager.OIDCVerify(req.RefreshToken, config.Issuer)
+		claims, err := manager.OIDCVerify(req.Token, config.Issuer)
 		if err != nil {
 			return httpresponse.Error(w, autherr.HTTPError(err))
 		}

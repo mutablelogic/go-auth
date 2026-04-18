@@ -26,7 +26,7 @@ import (
 	"time"
 
 	// Packages
-	authhandler "github.com/mutablelogic/go-auth/auth/httphandler/auth"
+	authhandler "github.com/mutablelogic/go-auth/auth/httphandler"
 	managerhandler "github.com/mutablelogic/go-auth/auth/httphandler/manager"
 	manager "github.com/mutablelogic/go-auth/auth/manager"
 	schema "github.com/mutablelogic/go-auth/auth/schema"
@@ -107,7 +107,7 @@ func (server *RunServer) Run(ctx server.Cmd) error {
 		server.RunServer.Register(func(router *httprouter.Router) error {
 			var result error
 			result = errors.Join(result, managerhandler.RegisterManagerHandlers(manager, router, server.Auth))
-			result = errors.Join(result, authhandler.RegisterAuthHandlers(manager, router))
+			result = errors.Join(result, authhandler.RegisterAuthHandlers(manager)(router))
 			if server.UI {
 				result = errors.Join(result, registerUIHandlers(router))
 			}

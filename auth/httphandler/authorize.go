@@ -19,7 +19,7 @@ import (
 // TYPES
 
 type AuthRequest struct {
-	Provider string `json:"provider,omitempty"`
+	Provider string `json:"provider,omitempty" jsonschema:"Optional provider key. Required only when multiple providers are configured and the client must choose one explicitly." example:"google"`
 	provider.AuthorizationRequest
 }
 
@@ -60,6 +60,7 @@ func authorize(ctx context.Context, manager *manager.Manager, w http.ResponseWri
 		return httpresponse.Error(w, auth.HTTPError(err))
 	}
 
+	// Get the identity provider for the request
 	identity_provider, err := authorizationProvider(manager, req.Provider)
 	if err != nil {
 		return httpresponse.Error(w, auth.HTTPError(err))

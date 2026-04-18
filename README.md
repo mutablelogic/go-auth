@@ -147,7 +147,7 @@ After a successful `login`, the resulting token is stored locally and used autom
 |---|---|
 | `cmd/authserver/` | Server binary — CLI flags, provider wiring, HTTP server setup |
 | `auth/manager/` | Core domain logic — users, groups, scopes, sessions, identities, token signing |
-| `auth/httphandler/auth/` | OIDC/OAuth endpoints — authorize, token exchange, revoke, userinfo, JWKS |
+| `auth/httphandler/` | OIDC/OAuth endpoints — authorize, token exchange, revoke, userinfo, JWKS |
 | `auth/httphandler/manager/` | REST management API — CRUD for users, groups, scopes |
 | `auth/middleware/` | JWT authentication middleware — validates tokens and injects user/session into context |
 | `auth/provider/` | Identity provider interface and implementations (Google, local browser flow) |
@@ -166,7 +166,7 @@ After a successful `login`, the resulting token is stored locally and used autom
 flowchart TD
     Browser["<b>Browser / Client</b>"]
     AdminUI["<b>Admin UI</b> (WASM + Carbon)"]
-    AuthEP["<b>Auth Endpoints</b> (auth/httphandler/auth)"]
+    AuthEP["<b>Auth Endpoints</b> (auth/httphandler)"]
     MgrEP["<b>Manager Endpoints</b> (auth/httphandler/manager)"]
     Middleware["<b>Auth Middleware</b> (auth/middleware)"]
     Manager["<b>Manager</b> (auth/manager)"]

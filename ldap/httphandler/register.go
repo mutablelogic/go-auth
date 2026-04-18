@@ -23,11 +23,11 @@ import (
 	middleware "github.com/mutablelogic/go-auth/auth/middleware"
 	schema "github.com/mutablelogic/go-auth/auth/schema"
 	ldap "github.com/mutablelogic/go-auth/ldap/manager"
-	markdown "github.com/mutablelogic/go-auth/pkg/markdown"
 	server "github.com/mutablelogic/go-server"
 	httprequest "github.com/mutablelogic/go-server/pkg/httprequest"
 	httprouter "github.com/mutablelogic/go-server/pkg/httprouter"
 	jsonschema "github.com/mutablelogic/go-server/pkg/jsonschema"
+	opts "github.com/mutablelogic/go-server/pkg/openapi"
 )
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -50,7 +50,7 @@ var doc string
 // RegisterHandlers registers LDAP manager resource handlers with the provided router.
 func RegisterHandlers(manager *ldap.Manager, auth middleware.TokenVerifier, router server.HTTPRouter) error {
 	r := router.(Register)
-	doc := markdown.Parse(doc)
+	doc := opts.ParseMarkdown([]byte(doc))
 
 	// Add description
 	router.Spec().Info.Description = doc.Section(1, "LDAP Manager").Body

@@ -21,7 +21,6 @@ import (
 
 	// Packages
 	coremanager "github.com/mutablelogic/go-auth/auth/manager"
-	markdown "github.com/mutablelogic/go-auth/pkg/markdown"
 	schema "github.com/mutablelogic/go-auth/auth/schema"
 	pg "github.com/mutablelogic/go-pg"
 	httprequest "github.com/mutablelogic/go-server/pkg/httprequest"
@@ -35,7 +34,7 @@ import (
 // PUBLIC METHODS
 
 // ChangesHandler returns a path and pathitem for the changes SSE endpoint.
-func ChangesHandler(mgr *coremanager.Manager, doc *markdown.Document) (string, *jsonschema.Schema, httprequest.PathItem) {
+func ChangesHandler(mgr *coremanager.Manager, doc *opts.MarkdownDoc) (string, *jsonschema.Schema, httprequest.PathItem) {
 	return "changes", nil, httprequest.NewPathItem(
 		"Change notifications",
 		"Streams table change notifications as server-sent events.",

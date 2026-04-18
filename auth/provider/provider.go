@@ -48,14 +48,14 @@ type Provider interface {
 // TYPES
 
 type AuthorizationRequest struct {
-	RedirectURL         string   `json:"redirect_uri,omitempty"`
-	ProviderURL         string   `json:"provider_url,omitempty"`
-	State               string   `json:"state,omitempty"`
-	Scopes              []string `json:"scope,omitempty"`
-	Nonce               string   `json:"nonce,omitempty"`
-	CodeChallenge       string   `json:"code_challenge,omitempty"`
-	CodeChallengeMethod string   `json:"code_challenge_method,omitempty"`
-	LoginHint           string   `json:"login_hint,omitempty"`
+	RedirectURL         string   `json:"redirect_uri" jsonschema:"Client callback URI that receives the authorization result." format:"uri" example:"http://127.0.0.1:8085/callback" required:""`
+	ProviderURL         string   `json:"-"`
+	State               string   `json:"state" jsonschema:"Opaque client state value that is forwarded through the authorization flow." example:"b1c2d3e4f5" required:""`
+	Scopes              []string `json:"scope,omitempty" jsonschema:"Optional requested scopes for the selected provider." example:"[\"openid\",\"email\",\"profile\"]"`
+	Nonce               string   `json:"nonce,omitempty" jsonschema:"Optional nonce forwarded to OIDC-capable providers." example:"n-0S6_WzA2Mj"`
+	CodeChallenge       string   `json:"code_challenge" jsonschema:"PKCE code challenge derived from the client verifier." example:"E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM" required:""`
+	CodeChallengeMethod string   `json:"code_challenge_method,omitempty" jsonschema:"PKCE code challenge method. Defaults to S256 when omitted." default:"S256" example:"S256"`
+	LoginHint           string   `json:"login_hint,omitempty" jsonschema:"Optional login hint forwarded to the provider. The local provider uses this as the suggested email address." example:"user@example.com"`
 }
 
 type AuthorizationResponse struct {

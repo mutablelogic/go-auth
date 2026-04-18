@@ -20,7 +20,6 @@ import (
 
 	// Packages
 	managerpkg "github.com/mutablelogic/go-auth/cert/manager"
-	markdown "github.com/mutablelogic/go-auth/pkg/markdown"
 	schema "github.com/mutablelogic/go-auth/cert/schema"
 	httprequest "github.com/mutablelogic/go-server/pkg/httprequest"
 	httpresponse "github.com/mutablelogic/go-server/pkg/httpresponse"
@@ -32,7 +31,7 @@ import (
 // PUBLIC METHODS
 
 // CAHandler returns a path and pathitem for certificate authority creation that can be used for dynamic registration.
-func CAHandler(manager *managerpkg.Manager, doc *markdown.Document) (string, *jsonschema.Schema, httprequest.PathItem) {
+func CAHandler(manager *managerpkg.Manager, doc *opts.MarkdownDoc) (string, *jsonschema.Schema, httprequest.PathItem) {
 	return "ca", nil, httprequest.NewPathItem(
 		"Certificate authority operations",               // Summary
 		"Operations on managed certificate authorities.", // Description
@@ -52,7 +51,7 @@ func CAHandler(manager *managerpkg.Manager, doc *markdown.Document) (string, *js
 }
 
 // CAByNameRenewHandler returns a path and pathitem for renewing the latest CA version with the provided name.
-func CAByNameRenewHandler(manager *managerpkg.Manager, doc *markdown.Document) (string, *jsonschema.Schema, httprequest.PathItem) {
+func CAByNameRenewHandler(manager *managerpkg.Manager, doc *opts.MarkdownDoc) (string, *jsonschema.Schema, httprequest.PathItem) {
 	return "ca/{name}/renew", nil, httprequest.NewPathItem(
 		"Certificate authority renewal by name",
 		"Renews the latest certificate authority version with the supplied name.",
@@ -73,7 +72,7 @@ func CAByNameRenewHandler(manager *managerpkg.Manager, doc *markdown.Document) (
 }
 
 // CAByKeyRenewHandler returns a path and pathitem for renewing an explicit CA version.
-func CAByKeyRenewHandler(manager *managerpkg.Manager, doc *markdown.Document) (string, *jsonschema.Schema, httprequest.PathItem) {
+func CAByKeyRenewHandler(manager *managerpkg.Manager, doc *opts.MarkdownDoc) (string, *jsonschema.Schema, httprequest.PathItem) {
 	return "ca/{name}/{serial}/renew", nil, httprequest.NewPathItem(
 		"Certificate authority renewal by version",
 		"Renews the specified certificate authority version.",

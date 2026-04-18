@@ -21,7 +21,6 @@ import (
 	// Packages
 	authpkg "github.com/mutablelogic/go-auth"
 	manager "github.com/mutablelogic/go-auth/auth/manager"
-	markdown "github.com/mutablelogic/go-auth/pkg/markdown"
 	httprequest "github.com/mutablelogic/go-server/pkg/httprequest"
 	httpresponse "github.com/mutablelogic/go-server/pkg/httpresponse"
 	jsonschema "github.com/mutablelogic/go-server/pkg/jsonschema"
@@ -31,7 +30,7 @@ import (
 ///////////////////////////////////////////////////////////////////////////////
 // PUBLIC METHODS
 
-func ConfigHandler(mgr *manager.Manager, doc *markdown.Document) (string, *jsonschema.Schema, httprequest.PathItem) {
+func ConfigHandler(mgr *manager.Manager, doc *opts.MarkdownDoc) (string, *jsonschema.Schema, httprequest.PathItem) {
 	return "config", nil, httprequest.NewPathItem(
 		"Public configuration",
 		"Returns the upstream authentication provider details that are safe to expose to clients.",

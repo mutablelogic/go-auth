@@ -22,7 +22,6 @@ import (
 
 	// Packages
 	ldap "github.com/mutablelogic/go-auth/ldap/manager"
-	markdown "github.com/mutablelogic/go-auth/pkg/markdown"
 	schema "github.com/mutablelogic/go-auth/ldap/schema"
 	httprequest "github.com/mutablelogic/go-server/pkg/httprequest"
 	httpresponse "github.com/mutablelogic/go-server/pkg/httpresponse"
@@ -33,7 +32,7 @@ import (
 ///////////////////////////////////////////////////////////////////////////////
 // PUBLIC METHODS
 
-func GroupHandler(manager *ldap.Manager, doc *markdown.Document) (string, *jsonschema.Schema, httprequest.PathItem) {
+func GroupHandler(manager *ldap.Manager, doc *opts.MarkdownDoc) (string, *jsonschema.Schema, httprequest.PathItem) {
 	return "group", nil, httprequest.NewPathItem(
 		"Group operations",
 		"Operations on LDAP groups",
@@ -50,7 +49,7 @@ func GroupHandler(manager *ldap.Manager, doc *markdown.Document) (string, *jsons
 	)
 }
 
-func GroupResourceHandler(manager *ldap.Manager, doc *markdown.Document) (string, *jsonschema.Schema, httprequest.PathItem) {
+func GroupResourceHandler(manager *ldap.Manager, doc *opts.MarkdownDoc) (string, *jsonschema.Schema, httprequest.PathItem) {
 	return "group/{cn}", nil, httprequest.NewPathItem(
 		"Group resource operations",
 		"Operations on a specific LDAP group",
@@ -116,7 +115,7 @@ func GroupResourceHandler(manager *ldap.Manager, doc *markdown.Document) (string
 	)
 }
 
-func GroupUserResourceHandler(manager *ldap.Manager, doc *markdown.Document) (string, *jsonschema.Schema, httprequest.PathItem) {
+func GroupUserResourceHandler(manager *ldap.Manager, doc *opts.MarkdownDoc) (string, *jsonschema.Schema, httprequest.PathItem) {
 	return "group/{cn}/user", nil, httprequest.NewPathItem(
 		"Group membership operations",
 		"Operations on users belonging to a specific LDAP group",

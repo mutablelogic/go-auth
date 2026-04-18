@@ -22,7 +22,6 @@ import (
 	authpkg "github.com/mutablelogic/go-auth"
 	coremanager "github.com/mutablelogic/go-auth/auth/manager"
 	schema "github.com/mutablelogic/go-auth/auth/schema"
-	markdown "github.com/mutablelogic/go-auth/pkg/markdown"
 	httprequest "github.com/mutablelogic/go-server/pkg/httprequest"
 	httpresponse "github.com/mutablelogic/go-server/pkg/httpresponse"
 	jsonschema "github.com/mutablelogic/go-server/pkg/jsonschema"
@@ -33,7 +32,7 @@ import (
 // PUBLIC METHODS
 
 // GroupHandler returns a path and pathitem for the group collection endpoint.
-func GroupHandler(mgr *coremanager.Manager, doc *markdown.Document) (string, *jsonschema.Schema, httprequest.PathItem) {
+func GroupHandler(mgr *coremanager.Manager, doc *opts.MarkdownDoc) (string, *jsonschema.Schema, httprequest.PathItem) {
 	return "group", nil, httprequest.NewPathItem(
 		"Group operations",
 		"Operations on groups",
@@ -62,7 +61,7 @@ func GroupHandler(mgr *coremanager.Manager, doc *markdown.Document) (string, *js
 }
 
 // GroupItemHandler returns a path and pathitem for the group resource endpoint.
-func GroupItemHandler(mgr *coremanager.Manager, doc *markdown.Document) (string, *jsonschema.Schema, httprequest.PathItem) {
+func GroupItemHandler(mgr *coremanager.Manager, doc *opts.MarkdownDoc) (string, *jsonschema.Schema, httprequest.PathItem) {
 	return "group/{group}", nil, httprequest.NewPathItem(
 		"Group operations",
 		"Operations on a specific group",

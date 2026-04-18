@@ -22,7 +22,6 @@ import (
 	authpkg "github.com/mutablelogic/go-auth"
 	coremanager "github.com/mutablelogic/go-auth/auth/manager"
 	schema "github.com/mutablelogic/go-auth/auth/schema"
-	"github.com/mutablelogic/go-auth/pkg/markdown"
 	httprequest "github.com/mutablelogic/go-server/pkg/httprequest"
 	httpresponse "github.com/mutablelogic/go-server/pkg/httpresponse"
 	jsonschema "github.com/mutablelogic/go-server/pkg/jsonschema"
@@ -33,7 +32,7 @@ import (
 // PUBLIC METHODS
 
 // UserGroupHandler returns a path and pathitem for the user group membership endpoint.
-func UserGroupHandler(mgr *coremanager.Manager, doc *markdown.Document) (string, *jsonschema.Schema, httprequest.PathItem) {
+func UserGroupHandler(mgr *coremanager.Manager, doc *opts.MarkdownDoc) (string, *jsonschema.Schema, httprequest.PathItem) {
 	return "user/{user}/group", nil, httprequest.NewPathItem(
 		"User group membership operations",
 		"Batch add or remove group memberships for a specific user",

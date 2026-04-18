@@ -21,12 +21,12 @@ import (
 	// Packages
 	authpkg "github.com/mutablelogic/go-auth"
 	managerpkg "github.com/mutablelogic/go-auth/cert/manager"
-	markdown "github.com/mutablelogic/go-auth/pkg/markdown"
 	pg "github.com/mutablelogic/go-pg"
 	server "github.com/mutablelogic/go-server"
 	httprequest "github.com/mutablelogic/go-server/pkg/httprequest"
 	httpresponse "github.com/mutablelogic/go-server/pkg/httpresponse"
 	jsonschema "github.com/mutablelogic/go-server/pkg/jsonschema"
+	opts "github.com/mutablelogic/go-server/pkg/openapi"
 )
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -52,7 +52,7 @@ func RegisterCertManagerHandlers(manager *managerpkg.Manager, router server.HTTP
 	r := router.(Register)
 	// TODO: Wrap path items with authentication and authorization if authEnabled is true
 
-	doc := markdown.Parse(doc)
+	doc := opts.ParseMarkdown([]byte(doc))
 
 	// Add Group Header and Certificate Management description
 	router.Spec().AddTag("Certificate Authority", doc.Section(2, "Certificate Authority").Body)

@@ -22,11 +22,11 @@ import (
 	managerpkg "github.com/mutablelogic/go-auth/auth/manager"
 	middleware "github.com/mutablelogic/go-auth/auth/middleware"
 	schema "github.com/mutablelogic/go-auth/auth/schema"
-	markdown "github.com/mutablelogic/go-auth/pkg/markdown"
 	server "github.com/mutablelogic/go-server"
 	httprequest "github.com/mutablelogic/go-server/pkg/httprequest"
 	httprouter "github.com/mutablelogic/go-server/pkg/httprouter"
 	jsonschema "github.com/mutablelogic/go-server/pkg/jsonschema"
+	opts "github.com/mutablelogic/go-server/pkg/openapi"
 )
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -49,7 +49,7 @@ var doc string
 // RegisterManagerHandlers registers manager resource handlers with the provided router.
 func RegisterManagerHandlers(manager *managerpkg.Manager, router server.HTTPRouter, auth bool) error {
 	r := router.(Register)
-	doc := markdown.Parse(doc)
+	doc := opts.ParseMarkdown([]byte(doc))
 
 	// Add description
 	router.Spec().Info.Description = doc.Section(1, "Auth Manager").Body

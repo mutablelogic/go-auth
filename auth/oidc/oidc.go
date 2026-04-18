@@ -35,15 +35,15 @@ import (
 // BaseConfiguration contains the fields shared by OIDC and
 // OAuth authorization server metadata documents.
 type BaseConfiguration struct {
-	Issuer                   string   `json:"issuer"`
-	AuthorizationEndpoint    string   `json:"authorization_endpoint,omitempty"`
-	TokenEndpoint            string   `json:"token_endpoint,omitempty"`
-	RegistrationEndpoint     string   `json:"registration_endpoint,omitempty"`
-	RevocationEndpoint       string   `json:"revocation_endpoint,omitempty"`
-	ResponseTypes            []string `json:"response_types_supported,omitempty"`
-	GrantTypesSupported      []string `json:"grant_types_supported,omitempty"`
-	ScopesSupported          []string `json:"scopes_supported,omitempty"`
-	CodeChallengeMethods     []string `json:"code_challenge_methods_supported,omitempty"`
+	Issuer                   string   `json:"issuer" jsonschema:"Issuer URL for locally signed tokens and discovery metadata." format:"uri" example:"http://127.0.0.1:8084"`
+	AuthorizationEndpoint    string   `json:"authorization_endpoint,omitempty" jsonschema:"Authorization endpoint for browser-based sign-in flows." format:"uri" example:"http://127.0.0.1:8084/auth/authorize"`
+	TokenEndpoint            string   `json:"token_endpoint,omitempty" jsonschema:"Token endpoint for exchanging authorization codes and refresh tokens." format:"uri" example:"http://127.0.0.1:8084/auth/code"`
+	RegistrationEndpoint     string   `json:"registration_endpoint,omitempty" jsonschema:"Dynamic client registration endpoint, when supported." format:"uri"`
+	RevocationEndpoint       string   `json:"revocation_endpoint,omitempty" jsonschema:"Token revocation endpoint for invalidating locally issued session tokens." format:"uri" example:"http://127.0.0.1:8084/auth/revoke"`
+	ResponseTypes            []string `json:"response_types_supported,omitempty" jsonschema:"OAuth and OIDC response types supported by the authorization endpoint."`
+	GrantTypesSupported      []string `json:"grant_types_supported,omitempty" jsonschema:"OAuth grant types supported by the token endpoint."`
+	ScopesSupported          []string `json:"scopes_supported,omitempty" jsonschema:"Scopes that clients may request during authorization."`
+	CodeChallengeMethods     []string `json:"code_challenge_methods_supported,omitempty" jsonschema:"PKCE code challenge methods accepted by the authorization endpoint."`
 	TokenEndpointAuthMethods []string `json:"-"`
 	NonceSupported           bool     `json:"-"`
 }
@@ -51,12 +51,12 @@ type BaseConfiguration struct {
 // OIDCConfiguration represents the OpenID Connect discovery document.
 type OIDCConfiguration struct {
 	BaseConfiguration
-	UserInfoEndpoint                  string   `json:"userinfo_endpoint,omitempty"`
-	JwksURI                           string   `json:"jwks_uri"`
-	SigningAlgorithms                 []string `json:"id_token_signing_alg_values_supported"`
-	SubjectTypes                      []string `json:"subject_types_supported"`
-	ClaimsSupported                   []string `json:"claims_supported"`
-	TokenEndpointAuthMethodsSupported []string `json:"token_endpoint_auth_methods_supported,omitempty"`
+	UserInfoEndpoint                  string   `json:"userinfo_endpoint,omitempty" jsonschema:"UserInfo endpoint for retrieving client-facing claims for a local bearer token." format:"uri" example:"http://127.0.0.1:8084/auth/userinfo"`
+	JwksURI                           string   `json:"jwks_uri" jsonschema:"JSON Web Key Set endpoint for verifying locally signed tokens." format:"uri" example:"http://127.0.0.1:8084/.well-known/jwks.json"`
+	SigningAlgorithms                 []string `json:"id_token_signing_alg_values_supported" jsonschema:"Signing algorithms used for locally issued ID and access tokens."`
+	SubjectTypes                      []string `json:"subject_types_supported" jsonschema:"OIDC subject identifier types supported by this issuer."`
+	ClaimsSupported                   []string `json:"claims_supported" jsonschema:"Claims that may appear in locally issued tokens and userinfo responses."`
+	TokenEndpointAuthMethodsSupported []string `json:"token_endpoint_auth_methods_supported,omitempty" jsonschema:"Client authentication methods accepted by the token endpoint, when applicable."`
 }
 
 // OAuthConfiguration represents OAuth 2.0 Authorization Server Metadata.
