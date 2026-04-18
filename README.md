@@ -255,7 +255,7 @@ func (loginHooks) OnIdentityLink(_ context.Context, identity schema.IdentityInse
 }
 
 mgr, err := manager.New(ctx, conn,
-    manager.WithPrivateKey(key),
+    manager.WithSigner("local-main", key),
     manager.WithHooks(loginHooks{}),
 )
 ```

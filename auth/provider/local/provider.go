@@ -20,7 +20,6 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"fmt"
-	"net/http"
 	"net/url"
 	"strings"
 
@@ -28,7 +27,7 @@ import (
 	oidc "github.com/mutablelogic/go-auth/auth/oidc"
 	provider "github.com/mutablelogic/go-auth/auth/provider"
 	schema "github.com/mutablelogic/go-auth/auth/schema"
-	openapi "github.com/mutablelogic/go-server/pkg/openapi/schema"
+	httprequest "github.com/mutablelogic/go-server/pkg/httprequest"
 	types "github.com/mutablelogic/go-server/pkg/types"
 )
 
@@ -83,14 +82,16 @@ func (p *Provider) PublicConfig() schema.PublicClientConfiguration {
 	}
 }
 
-func (p *Provider) HTTPHandler() (http.HandlerFunc, *openapi.PathItem) {
-	if p == nil {
-		return nil, nil
-	}
-	return http.HandlerFunc(p.ServeHTTP), &openapi.PathItem{
-		Summary:     "Local provider browser flow",
-		Description: "Renders and processes the built-in local provider login form.",
-	}
+func (p *Provider) HTTPHandler() httprequest.PathItem {
+	return httprequest.NewPathItem(
+		"Local provider browser flow",
+		"Renders and processes the built-in local provider login form.",
+		"Identity Provider",
+	).Get(
+		p.ServeHTTP, "Local provider browser flow",
+	).Post(
+		p.ServeHTTP, "Local provider browser flow",
+	)
 }
 
 func (p *Provider) BeginAuthorization(_ context.Context, req provider.AuthorizationRequest) (*provider.AuthorizationResponse, error) {

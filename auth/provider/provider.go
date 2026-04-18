@@ -16,11 +16,10 @@ package provider
 
 import (
 	"context"
-	"net/http"
 
 	// Packages
 	schema "github.com/mutablelogic/go-auth/auth/schema"
-	openapi "github.com/mutablelogic/go-server/pkg/openapi/schema"
+	httprequest "github.com/mutablelogic/go-server/pkg/httprequest"
 )
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -35,8 +34,7 @@ type Provider interface {
 	PublicConfig() schema.PublicClientConfiguration
 
 	// HTTPHandler returns the provider-owned browser handler for caller-defined mounts.
-	// The OpenAPI path item may be nil.
-	HTTPHandler() (http.HandlerFunc, *openapi.PathItem)
+	HTTPHandler() httprequest.PathItem
 
 	// BeginAuthorization starts the browser authorization flow.
 	BeginAuthorization(context.Context, AuthorizationRequest) (*AuthorizationResponse, error)
@@ -50,14 +48,14 @@ type Provider interface {
 // TYPES
 
 type AuthorizationRequest struct {
-	RedirectURL         string
-	ProviderURL         string
-	State               string
-	Scopes              []string
-	Nonce               string
-	CodeChallenge       string
-	CodeChallengeMethod string
-	LoginHint           string
+	RedirectURL         string   `json:"redirect_uri,omitempty"`
+	ProviderURL         string   `json:"provider_url,omitempty"`
+	State               string   `json:"state,omitempty"`
+	Scopes              []string `json:"scope,omitempty"`
+	Nonce               string   `json:"nonce,omitempty"`
+	CodeChallenge       string   `json:"code_challenge,omitempty"`
+	CodeChallengeMethod string   `json:"code_challenge_method,omitempty"`
+	LoginHint           string   `json:"login_hint,omitempty"`
 }
 
 type AuthorizationResponse struct {

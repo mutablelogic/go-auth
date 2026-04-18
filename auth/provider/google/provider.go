@@ -17,7 +17,6 @@ package google
 import (
 	"context"
 	"fmt"
-	"net/http"
 	"strings"
 
 	// Packages
@@ -25,7 +24,7 @@ import (
 	oidc "github.com/mutablelogic/go-auth/auth/oidc"
 	providerpkg "github.com/mutablelogic/go-auth/auth/provider"
 	schema "github.com/mutablelogic/go-auth/auth/schema"
-	openapi "github.com/mutablelogic/go-server/pkg/openapi/schema"
+	httprequest "github.com/mutablelogic/go-server/pkg/httprequest"
 	oauth2 "golang.org/x/oauth2"
 )
 
@@ -86,8 +85,8 @@ func (p *Provider) PublicConfig() schema.PublicClientConfiguration {
 	}
 }
 
-func (p *Provider) HTTPHandler() (http.HandlerFunc, *openapi.PathItem) {
-	return nil, nil
+func (p *Provider) HTTPHandler() httprequest.PathItem {
+	return nil
 }
 
 func (p *Provider) BeginAuthorization(ctx context.Context, req providerpkg.AuthorizationRequest) (*providerpkg.AuthorizationResponse, error) {

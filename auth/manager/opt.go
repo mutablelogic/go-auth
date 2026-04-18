@@ -17,12 +17,14 @@ package manager
 import (
 	"context"
 	"crypto/rsa"
-	"fmt"
+	"strings"
 	"time"
 
 	// Packages
+	"github.com/mutablelogic/go-auth"
 	providerpkg "github.com/mutablelogic/go-auth/auth/provider"
 	schema "github.com/mutablelogic/go-auth/auth/schema"
+	"github.com/mutablelogic/go-server/pkg/types"
 	trace "go.opentelemetry.io/otel/trace"
 )
 
@@ -51,7 +53,9 @@ const (
 
 // opt combines all configuration options for Manager.
 type opt struct {
-	privateKey   *rsa.PrivateKey
+	signer       string
+	keys         map[string]*rsa.PrivateKey
+	issuer       string
 	schema       string
 	channel      string
 	sessionttl   time.Duration
@@ -78,6 +82,7 @@ func (o *opt) apply(opts ...Opt) error {
 }
 
 func (o *opt) defaults() {
+	o.keys = make(map[string]*rsa.PrivateKey)
 	o.schema = schema.DefaultSchema
 	o.sessionttl = schema.DefaultSessionTTL
 	o.cleanupint = DefaultCleanupInterval
@@ -87,13 +92,35 @@ func (o *opt) defaults() {
 ///////////////////////////////////////////////////////////////////////////////
 // PUBLIC METHODS
 
-// WithPrivateKey stores the RSA private key for later token-signing use.
-func WithPrivateKey(key *rsa.PrivateKey) Opt {
+// WithSigner stores the RSA private key for later token-signing use.
+// The supplied key ID is used in the "kid" header of signed tokens and must be unique among all configured keys.
+// The last configured key becomes the default signing key used for new tokens and JWKS responses.
+func WithSigner(kid string, key *rsa.PrivateKey) Opt {
 	return func(o *opt) error {
 		if key == nil {
-			return fmt.Errorf("private key is required")
+			return auth.ErrBadParameter.With("private key is required")
 		}
-		o.privateKey = key
+		if !types.IsIdentifier(kid) {
+			return auth.ErrBadParameter.Withf("Invalid Key ID %q", kid)
+		} else if _, exists := o.keys[kid]; exists {
+			return auth.ErrBadParameter.Withf("Key ID %q already configured", kid)
+		} else {
+			o.keys[kid] = key
+			o.signer = kid
+		}
+		return nil
+	}
+}
+
+// WithIssuer stores the canonical issuer used for this server's OIDC metadata
+// and locally-signed token verification.
+func WithIssuer(issuer string) Opt {
+	return func(o *opt) error {
+		issuer = strings.TrimSpace(issuer)
+		if issuer == "" {
+			return auth.ErrBadParameter.With("issuer is required")
+		}
+		o.issuer = issuer
 		return nil
 	}
 }
@@ -101,12 +128,12 @@ func WithPrivateKey(key *rsa.PrivateKey) Opt {
 func WithProvider(provider providerpkg.Provider) Opt {
 	return func(o *opt) error {
 		if provider == nil {
-			return fmt.Errorf("provider is required")
+			return auth.ErrBadParameter.With("provider is required")
 		}
 		if o.providers == nil {
 			o.providers = make(map[string]providerpkg.Provider)
 		} else if _, exists := o.providers[provider.Key()]; exists {
-			return fmt.Errorf("provider key %q already configured", provider.Key())
+			return auth.ErrBadParameter.Withf("provider key %q already configured", provider.Key())
 		}
 		o.providers[provider.Key()] = provider
 		return nil
@@ -117,7 +144,7 @@ func WithProvider(provider providerpkg.Provider) Opt {
 func WithSchema(name string) Opt {
 	return func(o *opt) error {
 		if name == "" {
-			return fmt.Errorf("schema name cannot be empty")
+			return auth.ErrBadParameter.With("schema name cannot be empty")
 		}
 		o.schema = name
 		return nil
@@ -129,23 +156,18 @@ func WithSchema(name string) Opt {
 func WithNotificationChannel(name string) Opt {
 	return func(o *opt) error {
 		if name == "" {
-			return fmt.Errorf("notification channel cannot be empty")
+			return auth.ErrBadParameter.With("notification channel cannot be empty")
 		}
 		o.channel = name
 		return nil
 	}
 }
 
-// WithNotifyChannel is kept as a compatibility alias.
-func WithNotifyChannel(name string) Opt {
-	return WithNotificationChannel(name)
-}
-
 // WithSessionTTL sets the session time-to-live duration.
 func WithSessionTTL(ttl time.Duration) Opt {
 	return func(o *opt) error {
 		if ttl <= 0 {
-			return fmt.Errorf("session TTL must be positive")
+			return auth.ErrBadParameter.With("session TTL must be positive")
 		}
 		o.sessionttl = ttl
 		return nil
@@ -157,10 +179,10 @@ func WithSessionTTL(ttl time.Duration) Opt {
 func WithCleanup(interval time.Duration, limit int) Opt {
 	return func(o *opt) error {
 		if interval < 0 {
-			return fmt.Errorf("cleanup interval must not be negative")
+			return auth.ErrBadParameter.With("cleanup interval must not be negative")
 		}
 		if limit < 0 {
-			return fmt.Errorf("cleanup limit must not be negative")
+			return auth.ErrBadParameter.With("cleanup limit must not be negative")
 		}
 		if interval == 0 {
 			interval = DefaultCleanupInterval
@@ -179,7 +201,7 @@ func WithCleanup(interval time.Duration, limit int) Opt {
 func WithHooks(hooks any) Opt {
 	return func(o *opt) error {
 		if hooks == nil {
-			return fmt.Errorf("hooks are required")
+			return auth.ErrBadParameter.With("hooks are required")
 		}
 		o.hooks = hooks
 		return nil
@@ -190,7 +212,7 @@ func WithHooks(hooks any) Opt {
 func WithTracer(tracer trace.Tracer) Opt {
 	return func(o *opt) error {
 		if tracer == nil {
-			return fmt.Errorf("tracer is required")
+			return auth.ErrBadParameter.With("tracer is required")
 		}
 		o.tracer = tracer
 		return nil

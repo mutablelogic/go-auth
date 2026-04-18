@@ -15,8 +15,10 @@
 package manager
 
 import (
+	"maps"
 	"net/http"
 	"net/url"
+	"slices"
 
 	// Packages
 	auth "github.com/mutablelogic/go-auth"
@@ -37,6 +39,11 @@ type HTTPHandler struct {
 ///////////////////////////////////////////////////////////////////////////////
 // PUBLIC METHODS
 
+// ProviderKeys returns the keys of all registered providers.
+func (m *Manager) ProviderKeys() []string {
+	return slices.Collect(maps.Keys(m.providers))
+}
+
 // Provider returns a registered provider by key.
 func (m *Manager) Provider(key string) (provider.Provider, error) {
 	if !types.IsIdentifier(key) {
@@ -56,33 +63,5 @@ func (m *Manager) ProviderPath(key string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return ProviderPath(provider.Key())
-}
-
-// HTTPHandlers returns all provider-owned browser handlers.
-func (m *Manager) HTTPHandlers() []HTTPHandler {
-	handlers := make([]HTTPHandler, 0, len(m.providers))
-	for _, provider := range m.providers {
-		if provider == nil {
-			continue
-		}
-
-		if handler, spec := provider.HTTPHandler(); handler == nil {
-			continue
-		} else if path, err := ProviderPath(provider.Key()); err != nil {
-			continue
-		} else {
-			handlers = append(handlers, HTTPHandler{
-				Path:    path,
-				Handler: handler,
-				Spec:    spec,
-			})
-		}
-	}
-	return handlers
-}
-
-// ProviderPath returns the mount path for a provider browser handler key.
-func ProviderPath(key string) (string, error) {
-	return url.JoinPath("auth", "provider", key)
+	return url.JoinPath("auth", "provider", provider.Key())
 }

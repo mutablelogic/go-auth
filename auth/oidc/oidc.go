@@ -17,16 +17,16 @@ package oidc
 import (
 	"context"
 	"crypto/rsa"
-	"fmt"
 	"net/url"
+	"sort"
 	"time"
 
 	// Packages
 	coreoidc "github.com/coreos/go-oidc/v3/oidc"
-	auth "github.com/mutablelogic/go-auth"
 	jwt "github.com/golang-jwt/jwt/v5"
 	jwa "github.com/lestrrat-go/jwx/v2/jwa"
 	jwk "github.com/lestrrat-go/jwx/v2/jwk"
+	auth "github.com/mutablelogic/go-auth"
 )
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -80,7 +80,6 @@ const (
 	AuthRevokePath        = "auth/revoke"
 	UserInfoPath          = "auth/userinfo"
 	SigningAlgorithm      = "RS256"
-	KeyID                 = "dev-main-2026-03"
 )
 
 const (
@@ -100,7 +99,7 @@ func IssueToken(key *rsa.PrivateKey, claims jwt.MapClaims) (string, error) {
 	}
 
 	if issuer, ok := claims["iss"].(string); !ok || issuer == "" {
-		return "", fmt.Errorf("claims must include a non-empty iss")
+		return "", auth.ErrConflict.With("claims must include a non-empty iss")
 	}
 
 	// Set iat, nbf, and exp if not already set.
@@ -182,24 +181,93 @@ func UserInfoURL(issuer string) string {
 }
 
 // SignToken serializes claims into a JWT signed with the supplied RSA private
-// key. If key is nil, it returns an unsecured JWT using the "none" algorithm.
+// key without setting a kid header. If key is nil, it returns an unsecured JWT
+// using the "none" algorithm.
 func SignToken(key *rsa.PrivateKey, claims jwt.Claims) (string, error) {
+	return SignTokenWithKeyID("", key, claims)
+}
+
+// SignTokenWithKeyID serializes claims into a JWT signed with the supplied RSA
+// private key and uses kid for the JWT kid header.
+func SignTokenWithKeyID(kid string, key *rsa.PrivateKey, claims jwt.Claims) (string, error) {
 	if claims == nil {
-		return "", fmt.Errorf("claims are required")
+		return "", auth.ErrConflict.With("claims are required")
 	}
 	if key == nil {
 		return jwt.NewWithClaims(jwt.SigningMethodNone, claims).SignedString(jwt.UnsafeAllowNoneSignatureType)
 	}
 	token := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)
-	token.Header["kid"] = KeyID
+	if kid != "" {
+		token.Header["kid"] = kid
+	}
 	return token.SignedString(key)
 }
 
 // PublicJWKSet returns a JWKS document containing the public signing key for
-// the supplied RSA private key.
+// the supplied RSA private key without assigning a kid.
 func PublicJWKSet(key *rsa.PrivateKey) (jwk.Set, error) {
+	publicKey, err := publicJWK("", key)
+	if err != nil {
+		return nil, err
+	}
+	set := jwk.NewSet()
+	if err := set.AddKey(publicKey); err != nil {
+		return nil, err
+	}
+	return set, nil
+}
+
+// PublicJWKSetForKeys returns a JWKS document containing the supplied public
+// signing keys. When activeKeyID is present, it is added first.
+func PublicJWKSetForKeys(activeKeyID string, keys map[string]*rsa.PrivateKey) (jwk.Set, error) {
+	if len(keys) == 0 {
+		return nil, auth.ErrConflict.With("private key is required")
+	}
+
+	set := jwk.NewSet()
+	seen := make(map[string]struct{}, len(keys))
+	appendKey := func(kid string, key *rsa.PrivateKey) error {
+		publicKey, err := publicJWK(kid, key)
+		if err != nil {
+			return err
+		}
+		if err := set.AddKey(publicKey); err != nil {
+			return err
+		}
+		seen[kid] = struct{}{}
+		return nil
+	}
+
+	if activeKeyID != "" {
+		key, ok := keys[activeKeyID]
+		if !ok {
+			return nil, auth.ErrBadParameter.Withf("signing key %q is not configured", activeKeyID)
+		}
+		if err := appendKey(activeKeyID, key); err != nil {
+			return nil, err
+		}
+	}
+
+	keyIDs := make([]string, 0, len(keys))
+	for kid := range keys {
+		if _, ok := seen[kid]; ok {
+			continue
+		}
+		keyIDs = append(keyIDs, kid)
+	}
+	sort.Strings(keyIDs)
+	for _, kid := range keyIDs {
+		if err := appendKey(kid, keys[kid]); err != nil {
+			return nil, err
+		}
+	}
+
+	return set, nil
+}
+
+func publicJWK(kid string, key *rsa.PrivateKey) (jwk.Key, error) {
 	if key == nil {
-		return nil, fmt.Errorf("private key is required")
+		return nil, auth.ErrConflict.With("private key is required")
 	}
 	parsed, err := jwk.FromRaw(&key.PublicKey)
 	if err != nil {
@@ -215,14 +283,12 @@ func PublicJWKSet(key *rsa.PrivateKey) (jwk.Set, error) {
 	if err := publicKey.Set(jwk.AlgorithmKey, jwa.SignatureAlgorithm(SigningAlgorithm)); err != nil {
 		return nil, err
 	}
-	if err := publicKey.Set(jwk.KeyIDKey, KeyID); err != nil {
-		return nil, err
+	if kid != "" {
+		if err := publicKey.Set(jwk.KeyIDKey, kid); err != nil {
+			return nil, err
+		}
 	}
-	set := jwk.NewSet()
-	if err := set.AddKey(publicKey); err != nil {
-		return nil, err
-	}
-	return set, nil
+	return publicKey, nil
 }
 
 // ExtractIssuer returns the iss claim from a JWT payload without verifying the
@@ -236,6 +302,20 @@ func ExtractIssuer(token string) (string, error) {
 		return "", auth.ErrBadParameter.With("JWT missing iss claim")
 	}
 	return claims.Issuer, nil
+}
+
+// ExtractKeyID returns the kid header from a JWT payload without verifying the
+// signature.
+func ExtractKeyID(token string) (string, error) {
+	parsed, _, err := jwt.NewParser().ParseUnverified(token, jwt.MapClaims{})
+	if err != nil {
+		return "", auth.ErrBadParameter.Withf("parse JWT: %v", err)
+	}
+	kid, _ := parsed.Header["kid"].(string)
+	if kid == "" {
+		return "", auth.ErrBadParameter.With("JWT missing kid header")
+	}
+	return kid, nil
 }
 
 // VerifyToken verifies a JWT using OIDC discovery based on its issuer and

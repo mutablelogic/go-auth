@@ -369,7 +369,7 @@ func progressiveMetadataCandidates(raw, wellKnownPath string) []string {
 	}
 
 	for {
-		path, err := url.JoinPath("/", append([]string{wellKnownPath}, parts...)...)
+		path, err := url.JoinPath("/", append(parts, wellKnownPath)...)
 		if err != nil {
 			break
 		}

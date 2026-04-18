@@ -156,7 +156,7 @@ func newHTTPTestManager(t *testing.T) *managerpkg.Manager {
 	require.NoError(t, err)
 
 	managerOpts := []managerpkg.Opt{
-		managerpkg.WithPrivateKey(key),
+		managerpkg.WithSigner("local-main", key),
 		managerpkg.WithProvider(mustLocalProvider(t, "http://localhost:8084/api", key)),
 		managerpkg.WithSessionTTL(15 * time.Minute),
 	}

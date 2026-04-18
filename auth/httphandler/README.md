@@ -198,7 +198,7 @@ Example shape:
 {
   "keys": [
     {
-      "kid": "dev-main-2026-03",
+       "kid": "local-main",
       "kty": "RSA",
       "alg": "RS256",
       "use": "sig"

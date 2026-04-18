@@ -67,8 +67,10 @@ func (cmd *AuthorizeCommand) Run(ctx server.Cmd) error {
 	// Set the endpoint
 	if cmd.Endpoint == "" {
 		cmd.Endpoint = endpoint
-		if stored_endpoint := ctx.GetString(endpointStoreKeyPrefix); stored_endpoint != "" {
-			cmd.Endpoint = stored_endpoint
+		if strings.TrimSpace(cmd.Provider) == "" {
+			if stored_endpoint := ctx.GetString(endpointStoreKeyPrefix); stored_endpoint != "" {
+				cmd.Endpoint = stored_endpoint
+			}
 		}
 	}
 
@@ -82,32 +84,35 @@ func (cmd *AuthorizeCommand) Run(ctx server.Cmd) error {
 		return fmt.Errorf("endpoint URL must have a host")
 	}
 
-	// Retrieve stored token for the endpoint, if it exists and is valid, return it immediately
-	token, err := storedToken(ctx, cmd.Endpoint)
-	if err != nil {
-		return err
-	}
+	// Reuse a stored token only when no explicit provider was requested. An
+	// explicit provider hint is expected to force a fresh browser flow.
+	if strings.TrimSpace(cmd.Provider) == "" {
+		token, err := storedToken(ctx, cmd.Endpoint)
+		if err != nil {
+			return err
+		}
 
-	// If the stored token is valid, return it immediately without going through the authorization flow
-	if token != nil {
-		if token.Valid() {
-			data, err := json.MarshalIndent(token, "", "  ")
+		// If the stored token is valid, return it immediately without going through the authorization flow.
+		if token != nil {
+			if token.Valid() {
+				data, err := json.MarshalIndent(token, "", "  ")
+				if err != nil {
+					return fmt.Errorf("marshal stored token: %w", err)
+				}
+				fmt.Println(string(data))
+				return nil
+			}
+			refreshed, err := refreshStoredToken(ctx, auth_client, cmd.Endpoint, cmd.ClientID, cmd.ClientSecret)
 			if err != nil {
-				return fmt.Errorf("marshal stored token: %w", err)
+				return err
+			}
+			data, err := json.MarshalIndent(refreshed, "", "  ")
+			if err != nil {
+				return fmt.Errorf("marshal refreshed token: %w", err)
 			}
 			fmt.Println(string(data))
 			return nil
 		}
-		refreshed, err := refreshStoredToken(ctx, auth_client, cmd.Endpoint, cmd.ClientID, cmd.ClientSecret)
-		if err != nil {
-			return err
-		}
-		data, err := json.MarshalIndent(refreshed, "", "  ")
-		if err != nil {
-			return fmt.Errorf("marshal refreshed token: %w", err)
-		}
-		fmt.Println(string(data))
-		return nil
 	}
 
 	// Attempt to get the protected resource metadata

@@ -399,7 +399,7 @@ func newMiddlewareTestManager(t *testing.T) (*manager.Manager, string) {
 	issuer := "http://localhost:8084/api"
 	localProvider, err := localprovider.New(issuer, key)
 	require.NoError(t, err)
-	mgr, err := manager.New(context.Background(), c, manager.WithPrivateKey(key), manager.WithProvider(localProvider))
+	mgr, err := manager.New(context.Background(), c, manager.WithSigner("local-main", key), manager.WithProvider(localProvider))
 	require.NoError(t, err)
 	return mgr, issuer
 }

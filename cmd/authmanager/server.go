@@ -36,6 +36,7 @@ import (
 type ServerCommands struct {
 	Run       AuthServer    `cmd:"" name:"run" help:"Run the authentication server." group:"SERVER"`
 	Bootstrap BootstrapCert `cmd:"" name:"bootstrap" help:"Bootstrap by importing a root certificate PEM bundle." group:"SERVER"`
+	cmd.OpenAPICommands
 }
 
 type AuthServer struct {
@@ -43,6 +44,7 @@ type AuthServer struct {
 	PostgresFlags       `embed:"" prefix:"pg."`
 	LDAPFlags           `embed:"" prefix:"ldap."`
 	CertFlags           `embed:"" prefix:"cert."`
+	AuthFlags           `embed:"" prefix:"auth."`
 	LocalProviderFlags  `embed:"" prefix:"local."`
 	GoogleProviderFlags `embed:"" prefix:"google."`
 }
@@ -82,13 +84,24 @@ func (cmd *AuthServer) Run(ctx server.Cmd) error {
 	defer pool.Close()
 
 	// Create an auth manager in the inner context
-	return cmd.WithAuthManager(ctx, pool, true, func(authmanager *auth.Manager) error {
+	return cmd.WithAuthManager(ctx, pool, func(authmanager *auth.Manager) error {
 		return cmd.WithCertManager(ctx, pool, func(certmanager *cert.Manager) error {
 			return cmd.WithLDAPManager(ctx, pool, func(ldapmanager *ldap.Manager) error {
 				errgroup, errctx := errgroup.WithContext(ctx.Context())
 
 				// Log the startup message
-				ctx.Logger().InfoContext(ctx.Context(), "Started Auth manager", "name", ctx.Name(), "version", ctx.Version())
+				ctx.Logger().InfoContext(ctx.Context(), "Started", "name", ctx.Name(), "version", ctx.Version())
+				if authmanager != nil {
+					if issuer, err := authmanager.OIDCIssuer(); err == nil {
+						ctx.Logger().InfoContext(ctx.Context(), "OIDC Issuer", "issuer", issuer)
+					}
+					if signers, err := authmanager.OIDCJWKSet(); err == nil && signers.Len() > 0 {
+						ctx.Logger().InfoContext(ctx.Context(), "OIDC Signers", "signers", signers.Keys(ctx.Context()))
+					}
+					if providers := authmanager.ProviderKeys(); len(providers) > 0 {
+						ctx.Logger().InfoContext(ctx.Context(), "Identity Providers", "providers", providers)
+					}
+				}
 
 				// Run the auth manager
 				if authmanager != nil {
@@ -121,15 +134,33 @@ func (cmd *AuthServer) Run(ctx server.Cmd) error {
 ///////////////////////////////////////////////////////////////////////////////
 // PUBLIC METHODS - AUTH MANAGER
 
-func (cmd *AuthServer) WithAuthManager(ctx server.Cmd, conn pg.PoolConn, enabled bool, fn func(manager *auth.Manager) error) error {
-	// Skip if enabled is false
-	if enabled == false {
+func (cmd *AuthServer) WithAuthManager(ctx server.Cmd, conn pg.PoolConn, fn func(manager *auth.Manager) error) error {
+	// Get auth server options
+	opts, signer, err := cmd.AuthFlags.Options(ctx)
+	if err != nil {
+		return err
+	}
+	if opts == nil {
 		return fn(nil)
+	}
+
+	// Add google provider
+	if provider, err := cmd.GoogleProviderFlags.NewProvider(); err != nil {
+		return err
+	} else if provider != nil {
+		opts = append(opts, auth.WithProvider(provider))
+	}
+
+	// Add local provider - without signing
+	if provider, err := cmd.LocalProviderFlags.NewProvider(signer, cmd.Issuer.String()); err != nil {
+		return err
+	} else if provider != nil {
+		opts = append(opts, auth.WithProvider(provider))
 	}
 
 	// Create the auth manager
 	ctx.Logger().DebugContext(ctx.Context(), "Creating Auth manager")
-	manager, err := auth.New(ctx.Context(), conn)
+	manager, err := auth.New(ctx.Context(), conn, opts...)
 	if err != nil {
 		return err
 	}
@@ -137,6 +168,7 @@ func (cmd *AuthServer) WithAuthManager(ctx server.Cmd, conn pg.PoolConn, enabled
 	// Register the HTTP handler routes
 	cmd.RunServer.Register(
 		authhandler.RegisterAuthHandlers(manager),
+		authhandler.RegisterProviderHandlers(manager),
 	)
 
 	// Next callback in the chain

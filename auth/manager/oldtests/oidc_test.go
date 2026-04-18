@@ -132,7 +132,7 @@ func TestAuthConfigRequiresConfiguredClients(t *testing.T) {
 }
 func TestManagerOIDCVerifySuccessAndIssuerMismatch(t *testing.T) {
 	key := mustRSAKey(t)
-	mgr := newTestManagerWithOpts(t, manager.WithPrivateKey(key))
+	mgr := newTestManagerWithOpts(t, manager.WithSigner("test-main", key))
 
 	token, err := mgr.OIDCSign(jwt.MapClaims{"iss": "https://issuer.example.test/api"})
 	require.NoError(t, err)
@@ -149,11 +149,11 @@ func TestManagerOIDCVerifySuccessAndIssuerMismatch(t *testing.T) {
 func TestOIDCJWKSet(t *testing.T) {
 	key := mustRSAKey(t)
 
-	jwks, err := oidc.PublicJWKSet(key)
+	jwks, err := oidc.PublicJWKSetForKeys("test-main", map[string]*rsa.PrivateKey{"test-main": key})
 	require.NoError(t, err)
 
 	require.Equal(t, 1, jwks.Len())
-	entry, ok := jwks.LookupKeyID(oidc.KeyID)
+	entry, ok := jwks.LookupKeyID("test-main")
 	require.True(t, ok)
 	alg, ok := entry.Get("alg")
 	require.True(t, ok)

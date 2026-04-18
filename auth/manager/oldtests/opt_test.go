@@ -108,16 +108,18 @@ func Test_opt_001(t *testing.T) {
 		assert.Equal(DefaultCleanupLimit, options.cleanuplimit)
 	})
 
-	t.Run("WithPrivateKey", func(t *testing.T) {
+	t.Run("WithSigner", func(t *testing.T) {
 		assert := assert.New(t)
 		require := require.New(t)
 
 		options := new(opt)
+		options.defaults()
 		key, err := authcrypto.GeneratePrivateKey()
 		require.NoError(err)
-		assert.NoError(WithPrivateKey(key)(options))
-		assert.Same(key, options.privateKey)
-		assert.EqualError(WithPrivateKey(nil)(options), "private key is required")
+		assert.NoError(WithSigner("test-main", key)(options))
+		assert.Same(key, options.keys["test-main"])
+		assert.Equal("test-main", options.signer)
+		assert.EqualError(WithSigner("test-main", nil)(options), "bad parameter: private key is required")
 	})
 
 	t.Run("WithSchema", func(t *testing.T) {
@@ -135,9 +137,7 @@ func Test_opt_001(t *testing.T) {
 		options := new(opt)
 		assert.NoError(WithNotificationChannel("backend.table_change")(options))
 		assert.Equal("backend.table_change", options.channel)
-		assert.EqualError(WithNotificationChannel("")(options), "notification channel cannot be empty")
-		assert.NoError(WithNotifyChannel("compat.table_change")(options))
-		assert.Equal("compat.table_change", options.channel)
+		assert.EqualError(WithNotificationChannel("")(options), "bad parameter: notification channel cannot be empty")
 	})
 
 	t.Run("WithHooks", func(t *testing.T) {

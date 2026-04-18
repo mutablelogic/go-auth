@@ -15,6 +15,8 @@
 package oidc_test
 
 import (
+	"crypto/rsa"
+	"encoding/json"
 	"fmt"
 	"net/url"
 	"testing"
@@ -43,12 +45,29 @@ func TestSign(t *testing.T) {
 
 	parsed, err := jwt.Parse(token, func(token *jwt.Token) (any, error) {
 		assert.Equal(t, oidc.SigningAlgorithm, token.Method.Alg())
-		assert.Equal(t, oidc.KeyID, token.Header["kid"])
+		_, exists := token.Header["kid"]
+		assert.False(t, exists)
 		return &key.PublicKey, nil
 	})
 	require.NoError(t, err)
 	assert.True(t, parsed.Valid)
-	assert.Equal(t, oidc.KeyID, parsed.Header["kid"])
+	_, exists := parsed.Header["kid"]
+	assert.False(t, exists)
+}
+
+func TestSignWithKeyID(t *testing.T) {
+	key, err := authcrypto.GeneratePrivateKey()
+	require.NoError(t, err)
+
+	token, err := oidc.SignTokenWithKeyID("secondary", key, jwt.MapClaims{
+		"iss": "https://issuer.example.com",
+		"sub": "alice",
+	})
+	require.NoError(t, err)
+
+	kid, err := oidc.ExtractKeyID(token)
+	require.NoError(t, err)
+	assert.Equal(t, "secondary", kid)
 }
 
 func TestSignWithoutKeyUsesNoneAlgorithm(t *testing.T) {
@@ -99,7 +118,10 @@ func TestPublicJWKSet(t *testing.T) {
 	require.NoError(t, err)
 
 	require.Equal(t, 1, jwks.Len())
-	entry, ok := jwks.LookupKeyID(oidc.KeyID)
+	raw, err := json.Marshal(jwks)
+	require.NoError(t, err)
+	assert.NotContains(t, string(raw), `"kid"`)
+	entry, ok := jwks.Key(0)
 	require.True(t, ok)
 
 	alg, ok := entry.Get(jwk.AlgorithmKey)
@@ -118,6 +140,24 @@ func TestPublicJWKSet(t *testing.T) {
 	assert.Equal(t, "RSA", fmt.Sprint(kty))
 	assert.NotEmpty(t, n)
 	assert.NotEmpty(t, e)
+}
+
+func TestPublicJWKSetForKeys(t *testing.T) {
+	primary, err := authcrypto.GeneratePrivateKey()
+	require.NoError(t, err)
+	secondary, err := authcrypto.GeneratePrivateKey()
+	require.NoError(t, err)
+
+	jwks, err := oidc.PublicJWKSetForKeys("secondary", map[string]*rsa.PrivateKey{
+		"primary":   primary,
+		"secondary": secondary,
+	})
+	require.NoError(t, err)
+	require.Equal(t, 2, jwks.Len())
+	_, ok := jwks.LookupKeyID("primary")
+	require.True(t, ok)
+	_, ok = jwks.LookupKeyID("secondary")
+	require.True(t, ok)
 }
 
 func TestConfigURL(t *testing.T) {

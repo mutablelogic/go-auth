@@ -39,7 +39,7 @@ type GoogleProviderFlags struct {
 func (flags GoogleProviderFlags) NewProvider() (provider.Provider, error) {
 	clientID := strings.TrimSpace(flags.ClientID)
 	clientSecret := strings.TrimSpace(flags.ClientSecret)
-	if clientID == "" || clientSecret == "" {
+	if clientID == "" {
 		return nil, nil
 	}
 	return googleprovider.New(clientID, clientSecret)

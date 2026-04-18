@@ -42,7 +42,7 @@ func TestMain(m *testing.M) {
 			shared = nil
 		}, nil
 	},
-		manager.WithPrivateKey(key),
+		manager.WithSigner("test-main", key),
 		manager.WithProvider(provider),
 		manager.WithSessionTTL(DefaultSessionTTL),
 	)
