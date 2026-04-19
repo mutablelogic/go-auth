@@ -104,19 +104,29 @@ func RegisterProviderHandlers(manager *manager.Manager) func(*httprouter.Router)
 func RegisterManagerHandlers(manager *manager.Manager) func(*httprouter.Router) error {
 	return func(router *httprouter.Router) error {
 		// Parse the markdown documentation
-		doc := opts.ParseMarkdown(AuthDoc)
+		doc := opts.ParseMarkdown(ManagerDoc)
 
 		// Add top-level and tag descriptions to the spec
-		router.Spec().Info.Description = doc.Section(1, "Auth & Identity Provider Handlers").Body
+		router.Spec().Info.Description = doc.Section(1, "Authorization Management Handlers").Body
 
 		// Register the tag group
-		router.Spec().AddTagGroup("Authorization", "Scope")
+		router.Spec().AddTagGroup("Authorization", "User", "Group", "Scope", "Changes")
+		router.Spec().AddTag("User", doc.Section(2, "User").Body)
+		router.Spec().AddTag("Group", doc.Section(2, "Group").Body)
+		router.Spec().AddTag("Scope", doc.Section(2, "Scope").Body)
+		router.Spec().AddTag("Changes", doc.Section(2, "Changes").Body)
 
 		// Create an authenticated handler wrapper
 		authenticated := middleware.AuthN(manager)
 
 		// Register the paths
 		return errors.Join(
+			router.RegisterPath(UserHandler(manager, doc)),
+			router.RegisterPath(UserResourceHandler(manager, doc)),
+			router.RegisterPath(UserGroupHandler(manager, doc)),
+			router.RegisterPath(GroupHandler(manager, doc)),
+			router.RegisterPath(GroupItemHandler(manager, doc)),
+			router.RegisterPath(ChangesHandler(manager, doc)),
 			router.RegisterPath(ScopeHandler(manager, authenticated, doc)),
 		)
 	}

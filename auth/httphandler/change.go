@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package manager
+package httphandler
 
 import (
 	"context"
@@ -20,7 +20,7 @@ import (
 	"net/http"
 
 	// Packages
-	coremanager "github.com/mutablelogic/go-auth/auth/manager"
+	managerpkg "github.com/mutablelogic/go-auth/auth/manager"
 	schema "github.com/mutablelogic/go-auth/auth/schema"
 	pg "github.com/mutablelogic/go-pg"
 	httprequest "github.com/mutablelogic/go-server/pkg/httprequest"
@@ -34,7 +34,7 @@ import (
 // PUBLIC METHODS
 
 // ChangesHandler returns a path and pathitem for the changes SSE endpoint.
-func ChangesHandler(mgr *coremanager.Manager, doc *opts.MarkdownDoc) (string, *jsonschema.Schema, httprequest.PathItem) {
+func ChangesHandler(mgr *managerpkg.Manager, doc *opts.MarkdownDoc) (string, *jsonschema.Schema, httprequest.PathItem) {
 	return "changes", nil, httprequest.NewPathItem(
 		"Change notifications",
 		"Streams table change notifications as server-sent events.",
@@ -54,7 +54,7 @@ func ChangesHandler(mgr *coremanager.Manager, doc *opts.MarkdownDoc) (string, *j
 ///////////////////////////////////////////////////////////////////////////////
 // PRIVATE METHODS
 
-func streamChanges(ctx context.Context, mgr *coremanager.Manager, w http.ResponseWriter, r *http.Request) error {
+func streamChanges(ctx context.Context, mgr *managerpkg.Manager, w http.ResponseWriter, r *http.Request) error {
 	if mimetype, err := types.AcceptContentType(r); err != nil || mimetype != types.ContentTypeTextStream {
 		return httpresponse.Error(w, httpresponse.Err(http.StatusNotAcceptable), types.ContentTypeTextStream)
 	}

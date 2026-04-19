@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package manager
+package httphandler
 
 import (
 	"context"
@@ -20,7 +20,7 @@ import (
 
 	// Packages
 	authpkg "github.com/mutablelogic/go-auth"
-	coremanager "github.com/mutablelogic/go-auth/auth/manager"
+	managerpkg "github.com/mutablelogic/go-auth/auth/manager"
 	schema "github.com/mutablelogic/go-auth/auth/schema"
 	httprequest "github.com/mutablelogic/go-server/pkg/httprequest"
 	httpresponse "github.com/mutablelogic/go-server/pkg/httpresponse"
@@ -32,7 +32,7 @@ import (
 // PUBLIC METHODS
 
 // UserHandler returns a path and pathitem for the user collection endpoint.
-func UserHandler(mgr *coremanager.Manager, doc *opts.MarkdownDoc) (string, *jsonschema.Schema, httprequest.PathItem) {
+func UserHandler(mgr *managerpkg.Manager, doc *opts.MarkdownDoc) (string, *jsonschema.Schema, httprequest.PathItem) {
 	return "user", nil, httprequest.NewPathItem(
 		"User operations",
 		"Operations on users",
@@ -61,7 +61,7 @@ func UserHandler(mgr *coremanager.Manager, doc *opts.MarkdownDoc) (string, *json
 }
 
 // UserResourceHandler returns a path and pathitem for the user resource endpoint.
-func UserResourceHandler(mgr *coremanager.Manager, doc *opts.MarkdownDoc) (string, *jsonschema.Schema, httprequest.PathItem) {
+func UserResourceHandler(mgr *managerpkg.Manager, doc *opts.MarkdownDoc) (string, *jsonschema.Schema, httprequest.PathItem) {
 	return "user/{user}", nil, httprequest.NewPathItem(
 		"User operations",
 		"Operations on a specific user",
@@ -117,7 +117,7 @@ func UserResourceHandler(mgr *coremanager.Manager, doc *opts.MarkdownDoc) (strin
 ///////////////////////////////////////////////////////////////////////////////
 // PRIVATE METHODS
 
-func createUser(ctx context.Context, mgr *coremanager.Manager, w http.ResponseWriter, r *http.Request) error {
+func createUser(ctx context.Context, mgr *managerpkg.Manager, w http.ResponseWriter, r *http.Request) error {
 	var req schema.UserMeta
 	if err := httprequest.Read(r, &req); err != nil {
 		return httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest), err.Error())
@@ -129,7 +129,7 @@ func createUser(ctx context.Context, mgr *coremanager.Manager, w http.ResponseWr
 	return httpresponse.JSON(w, http.StatusCreated, httprequest.Indent(r), user)
 }
 
-func listUser(ctx context.Context, mgr *coremanager.Manager, w http.ResponseWriter, r *http.Request) error {
+func listUser(ctx context.Context, mgr *managerpkg.Manager, w http.ResponseWriter, r *http.Request) error {
 	var req schema.UserListRequest
 	if err := httprequest.Query(r.URL.Query(), &req); err != nil {
 		return httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest), err.Error())
@@ -141,7 +141,7 @@ func listUser(ctx context.Context, mgr *coremanager.Manager, w http.ResponseWrit
 	return httpresponse.JSON(w, http.StatusOK, httprequest.Indent(r), users)
 }
 
-func getUser(ctx context.Context, mgr *coremanager.Manager, w http.ResponseWriter, r *http.Request, user schema.UserID) error {
+func getUser(ctx context.Context, mgr *managerpkg.Manager, w http.ResponseWriter, r *http.Request, user schema.UserID) error {
 	response, err := mgr.GetUser(ctx, user)
 	if err != nil {
 		return httpresponse.Error(w, authpkg.HTTPError(err))
@@ -149,7 +149,7 @@ func getUser(ctx context.Context, mgr *coremanager.Manager, w http.ResponseWrite
 	return httpresponse.JSON(w, http.StatusOK, httprequest.Indent(r), response)
 }
 
-func updateUser(ctx context.Context, mgr *coremanager.Manager, w http.ResponseWriter, r *http.Request, user schema.UserID) error {
+func updateUser(ctx context.Context, mgr *managerpkg.Manager, w http.ResponseWriter, r *http.Request, user schema.UserID) error {
 	var req schema.UserMeta
 	if err := httprequest.Read(r, &req); err != nil {
 		return httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest), err.Error())
@@ -161,7 +161,7 @@ func updateUser(ctx context.Context, mgr *coremanager.Manager, w http.ResponseWr
 	return httpresponse.JSON(w, http.StatusOK, httprequest.Indent(r), response)
 }
 
-func deleteUser(ctx context.Context, mgr *coremanager.Manager, w http.ResponseWriter, _ *http.Request, user schema.UserID) error {
+func deleteUser(ctx context.Context, mgr *managerpkg.Manager, w http.ResponseWriter, _ *http.Request, user schema.UserID) error {
 	_, err := mgr.DeleteUser(ctx, user)
 	if err != nil {
 		return httpresponse.Error(w, authpkg.HTTPError(err))

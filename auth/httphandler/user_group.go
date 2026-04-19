@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package manager
+package httphandler
 
 import (
 	"context"
@@ -20,7 +20,7 @@ import (
 
 	// Packages
 	authpkg "github.com/mutablelogic/go-auth"
-	coremanager "github.com/mutablelogic/go-auth/auth/manager"
+	managerpkg "github.com/mutablelogic/go-auth/auth/manager"
 	schema "github.com/mutablelogic/go-auth/auth/schema"
 	httprequest "github.com/mutablelogic/go-server/pkg/httprequest"
 	httpresponse "github.com/mutablelogic/go-server/pkg/httpresponse"
@@ -32,7 +32,7 @@ import (
 // PUBLIC METHODS
 
 // UserGroupHandler returns a path and pathitem for the user group membership endpoint.
-func UserGroupHandler(mgr *coremanager.Manager, doc *opts.MarkdownDoc) (string, *jsonschema.Schema, httprequest.PathItem) {
+func UserGroupHandler(mgr *managerpkg.Manager, doc *opts.MarkdownDoc) (string, *jsonschema.Schema, httprequest.PathItem) {
 	return "user/{user}/group", nil, httprequest.NewPathItem(
 		"User group membership operations",
 		"Batch add or remove group memberships for a specific user",
@@ -77,7 +77,7 @@ func UserGroupHandler(mgr *coremanager.Manager, doc *opts.MarkdownDoc) (string, 
 ///////////////////////////////////////////////////////////////////////////////
 // PRIVATE METHODS
 
-func addUserGroup(ctx context.Context, mgr *coremanager.Manager, w http.ResponseWriter, r *http.Request, user schema.UserID) error {
+func addUserGroup(ctx context.Context, mgr *managerpkg.Manager, w http.ResponseWriter, r *http.Request, user schema.UserID) error {
 	var req schema.UserGroupList
 	if err := httprequest.Read(r, &req); err != nil {
 		return httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest), err.Error())
@@ -89,7 +89,7 @@ func addUserGroup(ctx context.Context, mgr *coremanager.Manager, w http.Response
 	return httpresponse.JSON(w, http.StatusOK, httprequest.Indent(r), response)
 }
 
-func removeUserGroup(ctx context.Context, mgr *coremanager.Manager, w http.ResponseWriter, r *http.Request, user schema.UserID) error {
+func removeUserGroup(ctx context.Context, mgr *managerpkg.Manager, w http.ResponseWriter, r *http.Request, user schema.UserID) error {
 	var req schema.UserGroupList
 	if err := httprequest.Read(r, &req); err != nil {
 		return httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest), err.Error())

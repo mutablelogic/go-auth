@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package manager
+package httphandler
 
 import (
 	"context"
@@ -20,7 +20,7 @@ import (
 
 	// Packages
 	authpkg "github.com/mutablelogic/go-auth"
-	coremanager "github.com/mutablelogic/go-auth/auth/manager"
+	managerpkg "github.com/mutablelogic/go-auth/auth/manager"
 	schema "github.com/mutablelogic/go-auth/auth/schema"
 	httprequest "github.com/mutablelogic/go-server/pkg/httprequest"
 	httpresponse "github.com/mutablelogic/go-server/pkg/httpresponse"
@@ -32,7 +32,7 @@ import (
 // PUBLIC METHODS
 
 // GroupHandler returns a path and pathitem for the group collection endpoint.
-func GroupHandler(mgr *coremanager.Manager, doc *opts.MarkdownDoc) (string, *jsonschema.Schema, httprequest.PathItem) {
+func GroupHandler(mgr *managerpkg.Manager, doc *opts.MarkdownDoc) (string, *jsonschema.Schema, httprequest.PathItem) {
 	return "group", nil, httprequest.NewPathItem(
 		"Group operations",
 		"Operations on groups",
@@ -61,7 +61,7 @@ func GroupHandler(mgr *coremanager.Manager, doc *opts.MarkdownDoc) (string, *jso
 }
 
 // GroupItemHandler returns a path and pathitem for the group resource endpoint.
-func GroupItemHandler(mgr *coremanager.Manager, doc *opts.MarkdownDoc) (string, *jsonschema.Schema, httprequest.PathItem) {
+func GroupItemHandler(mgr *managerpkg.Manager, doc *opts.MarkdownDoc) (string, *jsonschema.Schema, httprequest.PathItem) {
 	return "group/{group}", nil, httprequest.NewPathItem(
 		"Group operations",
 		"Operations on a specific group",
@@ -117,7 +117,7 @@ func GroupItemHandler(mgr *coremanager.Manager, doc *opts.MarkdownDoc) (string, 
 ///////////////////////////////////////////////////////////////////////////////
 // PRIVATE METHODS
 
-func createGroup(ctx context.Context, mgr *coremanager.Manager, w http.ResponseWriter, r *http.Request) error {
+func createGroup(ctx context.Context, mgr *managerpkg.Manager, w http.ResponseWriter, r *http.Request) error {
 	var req schema.GroupInsert
 	if err := httprequest.Read(r, &req); err != nil {
 		return httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest), err.Error())
@@ -129,7 +129,7 @@ func createGroup(ctx context.Context, mgr *coremanager.Manager, w http.ResponseW
 	return httpresponse.JSON(w, http.StatusCreated, httprequest.Indent(r), group)
 }
 
-func listGroup(ctx context.Context, mgr *coremanager.Manager, w http.ResponseWriter, r *http.Request) error {
+func listGroup(ctx context.Context, mgr *managerpkg.Manager, w http.ResponseWriter, r *http.Request) error {
 	var req schema.GroupListRequest
 	if err := httprequest.Query(r.URL.Query(), &req); err != nil {
 		return httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest), err.Error())
@@ -141,7 +141,7 @@ func listGroup(ctx context.Context, mgr *coremanager.Manager, w http.ResponseWri
 	return httpresponse.JSON(w, http.StatusOK, httprequest.Indent(r), groups)
 }
 
-func getGroup(ctx context.Context, mgr *coremanager.Manager, w http.ResponseWriter, r *http.Request, group string) error {
+func getGroup(ctx context.Context, mgr *managerpkg.Manager, w http.ResponseWriter, r *http.Request, group string) error {
 	response, err := mgr.GetGroup(ctx, group)
 	if err != nil {
 		return httpresponse.Error(w, authpkg.HTTPError(err))
@@ -149,7 +149,7 @@ func getGroup(ctx context.Context, mgr *coremanager.Manager, w http.ResponseWrit
 	return httpresponse.JSON(w, http.StatusOK, httprequest.Indent(r), response)
 }
 
-func updateGroup(ctx context.Context, mgr *coremanager.Manager, w http.ResponseWriter, r *http.Request, group string) error {
+func updateGroup(ctx context.Context, mgr *managerpkg.Manager, w http.ResponseWriter, r *http.Request, group string) error {
 	var req schema.GroupMeta
 	if err := httprequest.Read(r, &req); err != nil {
 		return httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest), err.Error())
@@ -161,7 +161,7 @@ func updateGroup(ctx context.Context, mgr *coremanager.Manager, w http.ResponseW
 	return httpresponse.JSON(w, http.StatusOK, httprequest.Indent(r), response)
 }
 
-func deleteGroup(ctx context.Context, mgr *coremanager.Manager, w http.ResponseWriter, _ *http.Request, group string) error {
+func deleteGroup(ctx context.Context, mgr *managerpkg.Manager, w http.ResponseWriter, _ *http.Request, group string) error {
 	_, err := mgr.DeleteGroup(ctx, group)
 	if err != nil {
 		return httpresponse.Error(w, authpkg.HTTPError(err))
