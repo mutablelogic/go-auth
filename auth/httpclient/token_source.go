@@ -53,8 +53,8 @@ var _ oauth2.TokenSource = (*TokenSource)(nil)
 func (c *Client) NewTokenSource(store TokenStore, clientID string) *TokenSource {
 	return &TokenSource{
 		store:      store,
-		endpoint:   strings.TrimSpace(c.Endpoint),
-		clientID:   strings.TrimSpace(clientID),
+		endpoint:   c.Endpoint,
+		clientID:   clientID,
 		authClient: c,
 	}
 }

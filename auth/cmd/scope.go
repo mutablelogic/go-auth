@@ -12,33 +12,38 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package main
+package auth
 
 import (
 	"fmt"
-	"os"
 
 	// Packages
-	auth "github.com/mutablelogic/go-auth/auth/cmd"
-	cmd "github.com/mutablelogic/go-server/pkg/cmd"
-	version "github.com/mutablelogic/go-server/pkg/version"
+	auth "github.com/mutablelogic/go-auth/auth/httpclient"
+	schema "github.com/mutablelogic/go-auth/auth/schema"
+	server "github.com/mutablelogic/go-server"
 )
 
 ///////////////////////////////////////////////////////////////////////////////
 // TYPES
 
-type CLI struct {
-	auth.AuthCommands
-	auth.ManagerCommands
-	ServerCommands
+type ScopeCommands struct {
+	Scopes ListScopesCommand `cmd:"" name:"scopes" help:"Get Scopes." group:"USER MANAGER"`
+}
+
+type ListScopesCommand struct {
+	schema.ScopeListRequest
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-// LIFECYCLE
+// COMMANDS
 
-func main() {
-	if err := cmd.Main(CLI{}, "Identity, Authentication and Authorization Server", version.Version()); err != nil {
-		fmt.Fprintln(os.Stderr, "Error:", err)
-		os.Exit(-1)
-	}
+func (cmd *ListScopesCommand) Run(ctx server.Cmd) error {
+	return withManager(ctx, func(client *auth.ManagerClient, endpoint string) error {
+		scopes, err := client.ListScopes(ctx.Context(), cmd.ScopeListRequest)
+		if err != nil {
+			return err
+		}
+		fmt.Println(scopes)
+		return nil
+	})
 }
