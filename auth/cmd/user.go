@@ -12,13 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package manager
+package auth
 
 import (
 	"fmt"
 
 	// Packages
-	manager "github.com/mutablelogic/go-auth/pkg/httpclient/manager"
+	auth "github.com/mutablelogic/go-auth/auth/httpclient"
 	schema "github.com/mutablelogic/go-auth/auth/schema"
 	server "github.com/mutablelogic/go-server"
 )
@@ -27,16 +27,17 @@ import (
 // TYPES
 
 type UserCommands struct {
-	Users      ListUsersCommand  `cmd:"" name:"users" help:"Get Users." group:"USER MANAGER"`
-	User       GetUserCommand    `cmd:"" name:"user" help:"Get User." group:"USER MANAGER"`
-	UpdateUser UpdateUserCommand `cmd:"" name:"user-update" help:"Update User." group:"USER MANAGER"`
-	DeleteUser DeleteUserCommand `cmd:"" name:"user-delete" help:"Delete User." group:"USER MANAGER"`
+	Users ListUsersCommand `cmd:"" name:"users" help:"Get Users." group:"USER MANAGER"`
+	// User       GetUserCommand    `cmd:"" name:"user" help:"Get User." group:"USER MANAGER"`
+	// UpdateUser UpdateUserCommand `cmd:"" name:"user-update" help:"Update User." group:"USER MANAGER"`
+	// DeleteUser DeleteUserCommand `cmd:"" name:"user-delete" help:"Delete User." group:"USER MANAGER"`
 }
 
 type ListUsersCommand struct {
 	schema.UserListRequest
 }
 
+/*
 type GetUserCommand struct {
 	UserID schema.UserID `arg:"" name:"user" help:"User UUID"`
 }
@@ -49,13 +50,14 @@ type UpdateUserCommand struct {
 type DeleteUserCommand struct {
 	GetUserCommand
 }
+*/
 
 ///////////////////////////////////////////////////////////////////////////////
 // COMMANDS
 
 func (cmd *ListUsersCommand) Run(ctx server.Cmd) error {
-	return WithClient(ctx, func(manager *manager.Client, endpoint string) error {
-		users, err := manager.ListUsers(ctx.Context(), cmd.UserListRequest)
+	return withManager(ctx, func(client *auth.ManagerClient, endpoint string) error {
+		users, err := client.ListUsers(ctx.Context(), cmd.UserListRequest)
 		if err != nil {
 			return err
 		}
@@ -64,9 +66,10 @@ func (cmd *ListUsersCommand) Run(ctx server.Cmd) error {
 	})
 }
 
+/*
 func (cmd *GetUserCommand) Run(ctx server.Cmd) error {
-	return WithClient(ctx, func(manager *manager.Client, endpoint string) error {
-		user, err := manager.GetUser(ctx.Context(), cmd.UserID)
+	return withManager(ctx, func(client *auth.ManagerClient, endpoint string) error {
+		user, err := client.GetUser(ctx.Context(), cmd.UserID)
 		if err != nil {
 			return err
 		}
@@ -95,3 +98,4 @@ func (cmd *DeleteUserCommand) Run(ctx server.Cmd) error {
 		return nil
 	})
 }
+*/

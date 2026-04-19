@@ -22,53 +22,65 @@ import (
 	schema "github.com/mutablelogic/go-auth/auth/schema"
 	server "github.com/mutablelogic/go-server"
 	tui "github.com/mutablelogic/go-server/pkg/tui"
+	types "github.com/mutablelogic/go-server/pkg/types"
 )
 
 ///////////////////////////////////////////////////////////////////////////////
 // TYPES
 
-type ScopeCommands struct {
-	Scopes ListScopesCommand `cmd:"" name:"scopes" help:"Get Scopes." group:"USER MANAGER"`
+type ProviderCommands struct {
+	Providers ListProvidersCommand `cmd:"" name:"providers" help:"Get Providers." group:"USER MANAGER"`
 }
 
-type ListScopesCommand struct {
-	schema.ScopeListRequest
-}
+type ListProvidersCommand struct{}
 
 ///////////////////////////////////////////////////////////////////////////////
 // COMMANDS
 
-func (cmd *ListScopesCommand) Run(ctx server.Cmd) error {
+func (cmd *ListProvidersCommand) Run(ctx server.Cmd) error {
 	return withManager(ctx, func(client *auth.ManagerClient, endpoint string) error {
-		scopes, err := client.ListScopes(ctx.Context(), cmd.ScopeListRequest)
+		providers, err := client.Config(ctx.Context())
 		if err != nil {
 			return err
 		}
 
-		scopeRows := make([]scopeRow, len(scopes.Body))
-		for i, scope := range scopes.Body {
-			scopeRows[i] = scopeRow(scope)
+		providerRows := make([]providerRow, 0, len(providers))
+		for key, provider := range providers {
+			providerRows = append(providerRows, providerRow{
+				Key:      key,
+				Provider: provider,
+			})
 		}
 
-		// Write out the scope table, and the summary
-		tui.TableFor[scopeRow]().Write(os.Stdout, scopeRows...)
-		tui.TableSummary("scopes", scopes.Count, scopes.Offset, scopes.Limit).Write(os.Stdout)
+		// Write out the provider table, and the summary
+		tui.TableFor[providerRow]().Write(os.Stdout, providerRows...)
+		tui.TableSummary("providers", uint(len(providerRows)), 0, nil).Write(os.Stdout)
 
 		// Return success
 		return nil
 	})
 }
 
-type scopeRow string
-
-func (r scopeRow) Header() []string {
-	return []string{"Scope"}
+type providerRow struct {
+	Key      string
+	Provider schema.PublicClientConfiguration
 }
 
-func (r scopeRow) Cell(i int) string {
-	return string(r)
+func (r providerRow) Header() []string {
+	return []string{"Provider", "Config"}
 }
 
-func (r scopeRow) Width(i int) int {
+func (r providerRow) Cell(i int) string {
+	switch i {
+	case 0:
+		return r.Key
+	case 1:
+		return types.Stringify(r.Provider)
+	default:
+		return ""
+	}
+}
+
+func (r providerRow) Width(i int) int {
 	return 0
 }

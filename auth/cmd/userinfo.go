@@ -22,7 +22,7 @@ import (
 
 	// Packages
 	auth "github.com/mutablelogic/go-auth/auth/httpclient"
-	"github.com/mutablelogic/go-auth/auth/oidc"
+	oidc "github.com/mutablelogic/go-auth/auth/oidc"
 	server "github.com/mutablelogic/go-server"
 	types "github.com/mutablelogic/go-server/pkg/types"
 	oauth2 "golang.org/x/oauth2"

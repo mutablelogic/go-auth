@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package httpclient
+package transport
 
 import (
 	"context"
@@ -22,6 +22,7 @@ import (
 	"time"
 
 	// Packages
+	auth "github.com/djthorpe/go-auth/pkg/httpclient/auth"
 	oidc "github.com/mutablelogic/go-auth/auth/oidc"
 	oauth2 "golang.org/x/oauth2"
 )
@@ -29,8 +30,16 @@ import (
 ///////////////////////////////////////////////////////////////////////////////
 // INTERFACES
 
+// TokenStore persists OAuth tokens for a specific auth server endpoint.
 type TokenStore interface {
+	// StoreToken stores the token for the given endpoint and issuer. The issuer is
+	// used to construct the token refresh request and may be different from the
+	// endpoint if the auth server has a different issuer URL. If the token is nil,
+	// any existing token for the endpoint should be deleted.
 	StoreToken(endpoint, issuer string, token *oauth2.Token) error
+
+	// Token retrieves the token and issuer for the given endpoint. If no token is
+	// found, it returns nil for both the token and issuer.
 	Token(endpoint string) (*oauth2.Token, string, error)
 }
 
@@ -41,7 +50,7 @@ type TokenSource struct {
 	store      TokenStore
 	endpoint   string
 	clientID   string
-	authClient *Client
+	authClient *auth.Client
 	mu         sync.Mutex
 }
 
@@ -50,12 +59,12 @@ var _ oauth2.TokenSource = (*TokenSource)(nil)
 ///////////////////////////////////////////////////////////////////////////////
 // LIFECYCLE
 
-func (c *Client) NewTokenSource(store TokenStore, clientID string) *TokenSource {
+func NewTokenSource(client *auth.Client, store TokenStore, clientID string) *TokenSource {
 	return &TokenSource{
 		store:      store,
-		endpoint:   c.Endpoint,
+		endpoint:   client.Endpoint,
 		clientID:   clientID,
-		authClient: c,
+		authClient: client,
 	}
 }
 
@@ -100,7 +109,8 @@ func (s *TokenSource) token(forceRefresh bool) (*oauth2.Token, error) {
 	return &clone, nil
 }
 
-func refreshStoredToken(store TokenStore, endpoint, clientID string, authClient *Client, force bool) (*oauth2.Token, error) {
+// TODO: FIX THIS FUNCTION!!!
+func refreshStoredToken(store TokenStore, endpoint, clientID string, authClient *auth.Client, force bool) (*oauth2.Token, error) {
 	endpoint = strings.TrimSpace(endpoint)
 	clientID = strings.TrimSpace(clientID)
 

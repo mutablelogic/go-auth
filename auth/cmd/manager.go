@@ -15,8 +15,6 @@
 package auth
 
 import (
-	"fmt"
-
 	// Packages
 	auth "github.com/mutablelogic/go-auth/auth/httpclient"
 	server "github.com/mutablelogic/go-server"
@@ -26,7 +24,9 @@ import (
 // TYPES
 
 type ManagerCommands struct {
+	ProviderCommands
 	ScopeCommands
+	UserCommands
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -40,15 +40,12 @@ func managerClientFor(ctx server.Cmd) (*auth.ManagerClient, string, error) {
 	}
 
 	// Create a manager client
-	client, err := auth.Manager(endpoint, opts...)
+	client, err := auth.Manager(endpoint, NewTokenStore(ctx), opts...)
 	if err != nil {
 		return nil, "", err
 	}
 
-	// Create a new token source
-	tokens := client.NewTokenSource(NewTokenStore(ctx), "")
-	fmt.Println(tokens)
-
+	// Return the client and endpoint
 	return client, endpoint, nil
 }
 
