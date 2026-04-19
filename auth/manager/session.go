@@ -18,9 +18,9 @@ import (
 	"context"
 
 	// Packages
+	uuid "github.com/google/uuid"
 	auth "github.com/mutablelogic/go-auth"
 	schema "github.com/mutablelogic/go-auth/auth/schema"
-	uuid "github.com/google/uuid"
 	otel "github.com/mutablelogic/go-client/pkg/otel"
 	pg "github.com/mutablelogic/go-pg"
 	types "github.com/mutablelogic/go-server/pkg/types"
@@ -32,7 +32,9 @@ import (
 
 // GetSession returns a session by ID.
 func (m *Manager) GetSession(ctx context.Context, id schema.SessionID) (_ *schema.Session, err error) {
-	ctx, endSpan := otel.StartSpan(m.tracer, ctx, "manager.GetSession", attribute.String("session", id.String()))
+	ctx, endSpan := otel.StartSpan(m.tracer, ctx, "GetSession",
+		attribute.String("session", id.String()),
+	)
 	defer func() { endSpan(err) }()
 
 	var session schema.Session
@@ -46,7 +48,9 @@ func (m *Manager) GetSession(ctx context.Context, id schema.SessionID) (_ *schem
 // RevokeSession marks a session as revoked and returns the updated session
 // record.
 func (m *Manager) RevokeSession(ctx context.Context, id schema.SessionID) (_ *schema.Session, err error) {
-	ctx, endSpan := otel.StartSpan(m.tracer, ctx, "manager.RevokeSession", attribute.String("session", id.String()))
+	ctx, endSpan := otel.StartSpan(m.tracer, ctx, "RevokeSession",
+		attribute.String("session", id.String()),
+	)
 	defer func() { endSpan(err) }()
 
 	var session schema.Session
@@ -60,14 +64,17 @@ func (m *Manager) RevokeSession(ctx context.Context, id schema.SessionID) (_ *sc
 // RefreshSession validates an existing session, extends its expiry according
 // to the manager refresh policy, and returns the owning user together with the
 // refreshed session record.
-func (m *Manager) RefreshSession(ctx context.Context, id schema.SessionID) (_ *schema.User, _ *schema.Session, err error) {
-	ctx, endSpan := otel.StartSpan(m.tracer, ctx, "manager.RefreshSession", attribute.String("session", id.String()))
+func (m *Manager) RefreshSession(ctx context.Context, id schema.SessionID, refreshCounter uint64) (_ *schema.User, _ *schema.Session, err error) {
+	ctx, endSpan := otel.StartSpan(m.tracer, ctx, "RefreshSession",
+		attribute.String("session", id.String()),
+		attribute.Int64("refresh_counter", int64(refreshCounter)),
+	)
 	defer func() { endSpan(err) }()
 
 	var session schema.Session
 
 	// Update the session expiry
-	if err = m.PoolConn.With("expires_in", types.Ptr(m.sessionttl)).Get(ctx, &session, refreshSessionSelector(id)); err != nil {
+	if err = m.PoolConn.With("expires_in", types.Ptr(m.sessionttl)).Get(ctx, &session, refreshSessionSelector{ID: id, RefreshCounter: refreshCounter}); err != nil {
 		err = dbErr(err)
 		return nil, nil, err
 	}
@@ -85,7 +92,9 @@ func (m *Manager) RefreshSession(ctx context.Context, id schema.SessionID) (_ *s
 // CleanupSessions deletes revoked or expired sessions and returns the deleted
 // session rows.
 func (m *Manager) CleanupSessions(ctx context.Context) (_ []schema.Session, err error) {
-	ctx, endSpan := otel.StartSpan(m.tracer, ctx, "manager.CleanupSessions", attribute.Int("cleanup_limit", m.cleanuplimit))
+	ctx, endSpan := otel.StartSpan(m.tracer, ctx, "CleanupSessions",
+		attribute.Int("cleanup_limit", m.cleanuplimit),
+	)
 	defer func() { endSpan(err) }()
 
 	var result cleanupSessionList
@@ -99,7 +108,10 @@ func (m *Manager) CleanupSessions(ctx context.Context) (_ []schema.Session, err 
 ///////////////////////////////////////////////////////////////////////////////
 // PRIVATE TYPES
 
-type refreshSessionSelector schema.SessionID
+type refreshSessionSelector struct {
+	ID             schema.SessionID
+	RefreshCounter uint64
+}
 type revokeSessionSelector schema.SessionID
 type cleanupSessionSelector int
 type cleanupSessionList []schema.Session
@@ -107,8 +119,9 @@ type cleanupSessionList []schema.Session
 ///////////////////////////////////////////////////////////////////////////////
 // PRIVATE METHODS
 
-func (id refreshSessionSelector) Select(bind *pg.Bind, op pg.Op) (string, error) {
-	bind.Set("id", uuid.UUID(id))
+func (s refreshSessionSelector) Select(bind *pg.Bind, op pg.Op) (string, error) {
+	bind.Set("id", uuid.UUID(s.ID))
+	bind.Set("refresh_counter", s.RefreshCounter)
 	switch op {
 	case pg.Get:
 		return bind.Query("session.refresh"), nil

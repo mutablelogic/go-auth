@@ -21,7 +21,7 @@ import (
 	"strings"
 
 	// Packages
-	auth "github.com/mutablelogic/go-auth/auth/httpclient"
+	auth "github.com/mutablelogic/go-auth/auth/transport"
 	server "github.com/mutablelogic/go-server"
 	oauth2 "golang.org/x/oauth2"
 )

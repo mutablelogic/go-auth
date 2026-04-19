@@ -35,7 +35,7 @@ import (
 func UserHandler(manager *manager.Manager, auth bool, doc *opts.MarkdownDoc) (string, *jsonschema.Schema, httprequest.PathItem) {
 	return "user", nil, httprequest.NewPathItem(
 		"User operations",
-		"Operations on users",
+		docBody(doc, 2, "User", "Operations on users"),
 		"User",
 	).Get(
 		func(w http.ResponseWriter, r *http.Request) {
@@ -64,7 +64,7 @@ func UserHandler(manager *manager.Manager, auth bool, doc *opts.MarkdownDoc) (st
 func UserResourceHandler(manager *manager.Manager, auth bool, doc *opts.MarkdownDoc) (string, *jsonschema.Schema, httprequest.PathItem) {
 	return "user/{user}", nil, httprequest.NewPathItem(
 		"User operations",
-		"Operations on a specific user",
+		docBody(doc, 2, "User", "Operations on a specific user"),
 		"User",
 	).Get(
 		func(w http.ResponseWriter, r *http.Request) {

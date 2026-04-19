@@ -20,8 +20,8 @@ import (
 	"time"
 
 	// Packages
-	auth "github.com/mutablelogic/go-auth"
 	uuid "github.com/google/uuid"
+	auth "github.com/mutablelogic/go-auth"
 	pg "github.com/mutablelogic/go-pg"
 	types "github.com/mutablelogic/go-server/pkg/types"
 )
@@ -34,22 +34,26 @@ type SessionID uuid.UUID
 
 // SessionMeta contains the mutable fields for a session.
 type SessionMeta struct {
-	ExpiresIn *time.Duration `json:"expires_in,omitempty"`
-	RevokedAt *time.Time     `json:"revoked_at,omitempty" format:"date-time" readonly:""`
+	ExpiresIn        *time.Duration `json:"expires_in,omitempty"`
+	RefreshExpiresIn *time.Duration `json:"refresh_expires_in,omitempty"`
+	RevokedAt        *time.Time     `json:"revoked_at,omitempty" format:"date-time" readonly:""`
 }
 
 // SessionInsert contains the fields required to create a new session.
 type SessionInsert struct {
-	User      UserID         `json:"user" format:"uuid"`
-	ExpiresIn *time.Duration `json:"expires_in"`
+	User             UserID         `json:"user" format:"uuid"`
+	ExpiresIn        *time.Duration `json:"expires_in"`
+	RefreshExpiresIn *time.Duration `json:"refresh_expires_in,omitempty"`
 }
 
 // Session represents a stored session row.
 type Session struct {
-	ID        SessionID `json:"id" format:"uuid" readonly:""`
-	User      UserID    `json:"user" format:"uuid" readonly:""`
-	ExpiresAt time.Time `json:"expires_at" format:"date-time" readonly:""`
-	CreatedAt time.Time `json:"created_at" format:"date-time" readonly:""`
+	ID               SessionID `json:"id" format:"uuid" readonly:""`
+	User             UserID    `json:"user" format:"uuid" readonly:""`
+	ExpiresAt        time.Time `json:"expires_at" format:"date-time" readonly:""`
+	RefreshExpiresAt time.Time `json:"refresh_expires_at" format:"date-time" readonly:""`
+	RefreshCounter   uint64    `json:"refresh_counter" readonly:""`
+	CreatedAt        time.Time `json:"created_at" format:"date-time" readonly:""`
 	SessionMeta
 }
 
@@ -126,12 +130,15 @@ func (id SessionID) Select(bind *pg.Bind, op pg.Op) (string, error) {
 // PUBLIC METHODS - READER
 
 // Scan reads a full session row into the receiver.
-// Expected column order: id, user, expires_at, created_at, revoked_at.
+// Expected column order: id, user, expires_at, refresh_expires_at,
+// refresh_counter, created_at, revoked_at.
 func (s *Session) Scan(row pg.Row) error {
 	return row.Scan(
 		&s.ID,
 		&s.User,
 		&s.ExpiresAt,
+		&s.RefreshExpiresAt,
+		&s.RefreshCounter,
 		&s.CreatedAt,
 		&s.RevokedAt,
 	)
@@ -155,15 +162,23 @@ func (s SessionInsert) Insert(bind *pg.Bind) (string, error) {
 	if *s.ExpiresIn <= 0 {
 		return "", auth.ErrBadParameter.With("expires_in must be greater than zero")
 	}
+	refreshExpiresIn := s.RefreshExpiresIn
+	if refreshExpiresIn == nil {
+		refreshExpiresIn = s.ExpiresIn
+	}
+	if refreshExpiresIn == nil || *refreshExpiresIn <= 0 {
+		return "", auth.ErrBadParameter.With("refresh_expires_in must be greater than zero")
+	}
 	bind.Set("user", s.User)
 	bind.Set("expires_in", s.ExpiresIn)
+	bind.Set("refresh_expires_in", refreshExpiresIn)
 	return bind.Query("session.insert"), nil
 }
 
 // Update delegates mutable session fields to SessionMeta so SessionInsert can
 // satisfy the writer interface used by the query helpers.
 func (s SessionInsert) Update(bind *pg.Bind) error {
-	return SessionMeta{ExpiresIn: s.ExpiresIn}.Update(bind)
+	return SessionMeta{ExpiresIn: s.ExpiresIn, RefreshExpiresIn: s.RefreshExpiresIn}.Update(bind)
 }
 
 // Insert is not supported for SessionMeta because it does not contain the
@@ -181,6 +196,12 @@ func (s SessionMeta) Update(bind *pg.Bind) error {
 			return auth.ErrBadParameter.With("expires_in must be greater than zero")
 		}
 		bind.Append("patch", "expires_at = NOW() + "+bind.Set("expires_in", s.ExpiresIn))
+	}
+	if s.RefreshExpiresIn != nil {
+		if *s.RefreshExpiresIn <= 0 {
+			return auth.ErrBadParameter.With("refresh_expires_in must be greater than zero")
+		}
+		bind.Append("patch", "refresh_expires_at = NOW() + "+bind.Set("refresh_expires_in", s.RefreshExpiresIn))
 	}
 	if s.RevokedAt != nil {
 		if s.RevokedAt.IsZero() {

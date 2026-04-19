@@ -15,10 +15,9 @@
 package manager
 
 import (
-	"net/http"
-
 	// Packages
 	auth "github.com/mutablelogic/go-auth/auth/httpclient"
+	authtransport "github.com/mutablelogic/go-auth/auth/transport"
 	manager "github.com/mutablelogic/go-auth/pkg/httpclient/manager"
 	client "github.com/mutablelogic/go-client"
 	server "github.com/mutablelogic/go-server"
@@ -49,9 +48,7 @@ func withClient(ctx server.Cmd, authenticated bool, fn func(*manager.Client, str
 		return err
 	}
 	if authenticated {
-		opts = append(opts, client.OptTransport(func(parent http.RoundTripper) http.RoundTripper {
-			return newAuthTransport(parent, ctx, authClient)
-		}))
+		opts = append(opts, client.OptTransport(authtransport.TokenTransport(endpoint, NewCmdTokenStore(ctx), authClient, "")))
 	}
 	client, err := manager.New(endpoint, opts...)
 	if err != nil {

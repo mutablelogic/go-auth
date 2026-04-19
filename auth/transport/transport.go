@@ -15,26 +15,102 @@
 package transport
 
 import (
+	"fmt"
 	"net/http"
 	"strings"
 
 	// Packages
-	transport "github.com/mutablelogic/go-client/pkg/transport"
+	oauth2 "golang.org/x/oauth2"
 )
 
-// TokenTransport returns a transport wrapper which injects the stored bearer
-// token for the specified endpoint into every outgoing request.
-func TokenTransport(endpoint string, tokenstore TokenStore) func(http.RoundTripper) http.RoundTripper {
+///////////////////////////////////////////////////////////////////////////////
+// TYPES
+
+type authTransport struct {
+	http.RoundTripper
+	tokens *TokenSource
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// LIFECYCLE
+
+// TokenTransport returns a transport wrapper which injects a stored bearer token,
+// refreshes it when needed, and retries once after a 401 with a refreshed token.
+func TokenTransport(endpoint string, tokenstore TokenStore, refresher TokenRefresher, clientID string) func(http.RoundTripper) http.RoundTripper {
 	return func(parent http.RoundTripper) http.RoundTripper {
-		return transport.NewToken(parent, func() string {
-			if tokenstore == nil || endpoint == "" {
-				return ""
-			}
-			token, _, err := tokenstore.Token(endpoint)
-			if err != nil || token == nil || strings.TrimSpace(token.AccessToken) == "" {
-				return ""
-			}
-			return token.Type() + " " + token.AccessToken
-		})
+		if parent == nil {
+			parent = http.DefaultTransport
+		}
+		return &authTransport{
+			RoundTripper: parent,
+			tokens:       NewTokenSource(endpoint, refresher, tokenstore, clientID),
+		}
 	}
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// PUBLIC METHODS - ROUNDTRIPPER
+
+func (t *authTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	if req == nil {
+		return t.RoundTripper.RoundTrip(req)
+	}
+	if t == nil || t.tokens == nil {
+		return t.RoundTripper.RoundTrip(req)
+	}
+
+	token, err := t.tokens.Token()
+	if err != nil {
+		return nil, err
+	}
+	reqWithToken, err := cloneRequestWithAuthorization(req, token, false)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := t.RoundTripper.RoundTrip(reqWithToken)
+	if err != nil || resp == nil || resp.StatusCode != http.StatusUnauthorized {
+		return resp, err
+	}
+
+	refreshed, refreshErr := t.tokens.Refresh()
+	if refreshErr != nil || refreshed == nil || strings.TrimSpace(refreshed.AccessToken) == "" || sameAccessToken(token, refreshed) {
+		return resp, nil
+	}
+	retryReq, err := cloneRequestWithAuthorization(req, refreshed, true)
+	if err != nil {
+		return resp, nil
+	}
+	_ = resp.Body.Close()
+	return t.RoundTripper.RoundTrip(retryReq)
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// PRIVATE METHODS
+
+func cloneRequestWithAuthorization(req *http.Request, token *oauth2.Token, replayBody bool) (*http.Request, error) {
+	if req == nil {
+		return nil, fmt.Errorf("request is required")
+	}
+	clone := req.Clone(req.Context())
+	if replayBody && req.Body != nil && req.Body != http.NoBody {
+		if req.GetBody == nil {
+			return nil, fmt.Errorf("request body cannot be replayed")
+		}
+		body, err := req.GetBody()
+		if err != nil {
+			return nil, err
+		}
+		clone.Body = body
+	}
+	if token != nil && strings.TrimSpace(token.AccessToken) != "" {
+		token.SetAuthHeader(clone)
+	}
+	return clone, nil
+}
+
+func sameAccessToken(current, refreshed *oauth2.Token) bool {
+	if current == nil || refreshed == nil {
+		return false
+	}
+	return strings.TrimSpace(current.AccessToken) == strings.TrimSpace(refreshed.AccessToken)
 }

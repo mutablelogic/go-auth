@@ -15,7 +15,6 @@
 package httpclient
 
 import (
-
 	// Packages
 	authtransport "github.com/mutablelogic/go-auth/auth/transport"
 	client "github.com/mutablelogic/go-client"
@@ -38,7 +37,11 @@ func Manager(url string, tokenstore authtransport.TokenStore, opts ...client.Cli
 
 	// Add the token store as a client option
 	if tokenstore != nil {
-		opts = append(opts, client.OptTransport(authtransport.TokenTransport(url, tokenstore)))
+		refreshClient, err := New(url, opts...)
+		if err != nil {
+			return nil, err
+		}
+		opts = append(opts, client.OptTransport(authtransport.TokenTransport(url, tokenstore, refreshClient, "")))
 	}
 
 	// Create the base  (auth) client

@@ -37,7 +37,7 @@ import (
 func ChangesHandler(mgr *managerpkg.Manager, auth bool, doc *opts.MarkdownDoc) (string, *jsonschema.Schema, httprequest.PathItem) {
 	return "changes", nil, httprequest.NewPathItem(
 		"Change notifications",
-		"Streams table change notifications as server-sent events.",
+		docBody(doc, 2, "Changes", "Streams table change notifications as server-sent events."),
 		"Changes",
 	).Get(
 		func(w http.ResponseWriter, r *http.Request) {

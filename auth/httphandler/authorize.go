@@ -16,6 +16,7 @@ package httphandler
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/url"
 	"strings"
@@ -77,12 +78,12 @@ func authorize(ctx context.Context, manager *manager.Manager, w http.ResponseWri
 	// Get the identity provider for the request
 	identity_provider, err := authorizationProvider(manager, req.Provider)
 	if err != nil {
-		return httpresponse.Error(w, auth.HTTPError(err))
+		return authorizeError(w, r, req, err)
 	}
 
 	// Get the HTTP handler URL for the provider
 	if url, err := manager.ProviderPath(identity_provider.Key()); err != nil {
-		return httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest).With(err))
+		return authorizeError(w, r, req, err)
 	} else {
 		req.ProviderURL = providerAuthorizationPath(r, url)
 	}
@@ -90,7 +91,7 @@ func authorize(ctx context.Context, manager *manager.Manager, w http.ResponseWri
 	// Begin the authorization flow with the provider
 	response, err := identity_provider.BeginAuthorization(ctx, req.AuthorizationRequest)
 	if err != nil {
-		return httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest).With(err))
+		return authorizeError(w, r, req, err)
 	}
 
 	// Redirect the user to the provider's authorization URL
@@ -120,6 +121,54 @@ func authorizationProvider(manager *manager.Manager, key string) (provider.Provi
 
 	// Return an error if multiple providers are configured and no key is specified
 	return nil, auth.ErrInvalidProvider.With("provider is required when multiple providers are configured")
+}
+
+func authorizeError(w http.ResponseWriter, r *http.Request, req AuthRequest, err error) error {
+	redirectURL := strings.TrimSpace(req.RedirectURL)
+	state := strings.TrimSpace(req.State)
+	if redirectURL == "" || state == "" {
+		return httpresponse.Error(w, auth.HTTPError(err))
+	}
+	uri, parseErr := url.Parse(redirectURL)
+	if parseErr != nil || uri.Scheme == "" || uri.Host == "" {
+		return httpresponse.Error(w, auth.HTTPError(err))
+	}
+	values := uri.Query()
+	values.Set("error", authorizeErrorCode(err))
+	values.Set("error_description", authorizeErrorDescription(err))
+	values.Set("state", state)
+	uri.RawQuery = values.Encode()
+	http.Redirect(w, r, uri.String(), http.StatusFound)
+	return nil
+}
+
+func authorizeErrorCode(err error) string {
+	if err == nil {
+		return "server_error"
+	}
+	var authErr auth.Err
+	if errors.As(err, &authErr) {
+		switch authErr {
+		case auth.ErrBadParameter, auth.ErrInvalidProvider:
+			return "invalid_request"
+		case auth.ErrForbidden:
+			return "access_denied"
+		case auth.ErrNotFound, auth.ErrServiceUnavailable, auth.ErrInternalServerError, auth.ErrNotImplemented, auth.ErrConflict:
+			return "server_error"
+		}
+	}
+	return "server_error"
+}
+
+func authorizeErrorDescription(err error) string {
+	if err == nil {
+		return "authorization request failed"
+	}
+	var authErr auth.Err
+	if errors.As(err, &authErr) {
+		return strings.TrimPrefix(err.Error(), authErr.Error()+": ")
+	}
+	return err.Error()
 }
 
 func providerAuthorizationPath(r *http.Request, providerPath string) string {

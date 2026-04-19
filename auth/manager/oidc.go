@@ -90,7 +90,7 @@ func (m *Manager) OIDCConfig() (oidc.OIDCConfiguration, error) {
 		JwksURI:           oidc.JWKSURL(issuer),
 		SigningAlgorithms: []string{oidc.SigningAlgorithm},
 		SubjectTypes:      []string{"public"},
-		ClaimsSupported:   []string{"iss", "sub", "sid", "aud", "exp", "iat", "nbf", "email", "email_verified", "name", "groups", "scopes", "user", "session"},
+		ClaimsSupported:   []string{"iss", "sub", "sid", "aud", "exp", "iat", "nbf", "token_use", "refresh_counter", "email", "email_verified", "name", "groups", "scopes", "user", "session"},
 	}, nil
 }
 

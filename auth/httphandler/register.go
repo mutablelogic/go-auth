@@ -132,7 +132,7 @@ func RegisterManagerHandlers(manager *manager.Manager, auth bool) func(*httprout
 func AuthorizationHandler(manager *manager.Manager, doc *opts.MarkdownDoc) (string, *jsonschema.Schema, httprequest.PathItem) {
 	return oidc.AuthorizationPath, nil, httprequest.NewPathItem(
 		"OpenID Authorization Endpoint",
-		"Selects a provider-specific browser authorization flow and redirects the client to the resulting local or upstream provider URL.",
+		docBody(doc, 2, "Auth", "Selects a provider-specific browser authorization flow and redirects the client to the resulting local or upstream provider URL."),
 		"Auth",
 	).Get(
 		func(w http.ResponseWriter, r *http.Request) {
@@ -150,7 +150,7 @@ func AuthorizationHandler(manager *manager.Manager, doc *opts.MarkdownDoc) (stri
 func ExchangeHandler(manager *manager.Manager, doc *opts.MarkdownDoc) (string, *jsonschema.Schema, httprequest.PathItem) {
 	return oidc.AuthCodePath, nil, httprequest.NewPathItem(
 		"Authorization code exchange",
-		"Handles authorization_code and refresh_token grants and returns locally signed bearer tokens in an OAuth token response.",
+		docBody(doc, 2, "Auth", "Handles authorization_code and refresh_token grants and returns locally signed bearer tokens in an OAuth token response."),
 		"Auth",
 	).Post(
 		func(w http.ResponseWriter, r *http.Request) {
@@ -177,7 +177,7 @@ func ExchangeHandler(manager *manager.Manager, doc *opts.MarkdownDoc) (string, *
 func OIDCConfigHandler(manager *manager.Manager, doc *opts.MarkdownDoc) (string, *jsonschema.Schema, httprequest.PathItem) {
 	return oidc.ConfigPath, nil, httprequest.NewPathItem(
 		"OpenID Connect Configuration",
-		"Returns the OpenID Connect discovery document for locally issued tokens and supported OAuth features.",
+		docBody(doc, 2, "Auth", "Returns the OpenID Connect discovery document for locally issued tokens and supported OAuth features."),
 		"Auth",
 	).Get(
 		func(w http.ResponseWriter, r *http.Request) {
@@ -198,7 +198,7 @@ func OIDCConfigHandler(manager *manager.Manager, doc *opts.MarkdownDoc) (string,
 func UserInfoHandler(manager *manager.Manager, doc *opts.MarkdownDoc) (string, *jsonschema.Schema, httprequest.PathItem) {
 	return oidc.UserInfoPath, nil, httprequest.NewPathItem(
 		"Authenticated User Information",
-		"Returns the client-facing identity claims for the authenticated bearer token issued by this server.",
+		docBody(doc, 2, "Auth", "Returns the client-facing identity claims for the authenticated bearer token issued by this server."),
 		"Auth",
 	).Get(
 		func(w http.ResponseWriter, r *http.Request) {
@@ -221,7 +221,7 @@ func UserInfoHandler(manager *manager.Manager, doc *opts.MarkdownDoc) (string, *
 func JWKSHandler(manager *manager.Manager, doc *opts.MarkdownDoc) (string, *jsonschema.Schema, httprequest.PathItem) {
 	return oidc.JWKSPath, nil, httprequest.NewPathItem(
 		"JSON Web Key Set",
-		"Returns the public JSON Web Key Set used to verify bearer tokens issued by this server.",
+		docBody(doc, 2, "Auth", "Returns the public JSON Web Key Set used to verify bearer tokens issued by this server."),
 		"Auth",
 	).Get(
 		func(w http.ResponseWriter, r *http.Request) {
@@ -242,7 +242,7 @@ func JWKSHandler(manager *manager.Manager, doc *opts.MarkdownDoc) (string, *json
 func ProtectedResourceHandler(manager *manager.Manager, doc *opts.MarkdownDoc) (string, *jsonschema.Schema, httprequest.PathItem) {
 	return oidc.ProtectedResourcePath, nil, httprequest.NewPathItem(
 		"OAuth Protected Resource Metadata",
-		"Returns OAuth protected-resource metadata describing this server as a bearer-token resource.",
+		docBody(doc, 2, "Auth", "Returns OAuth protected-resource metadata describing this server as a bearer-token resource."),
 		"Auth",
 	).Get(
 		func(w http.ResponseWriter, r *http.Request) {

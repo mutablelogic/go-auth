@@ -43,7 +43,7 @@ func TestWithIssuer(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, "https://issuer.example.test/api", issuer)
 
-		cfg, err := mgr.OIDCConfig(nil)
+		cfg, err := mgr.OIDCConfig()
 		require.NoError(t, err)
 		assert.Equal(t, "https://issuer.example.test/api", cfg.Issuer)
 	})

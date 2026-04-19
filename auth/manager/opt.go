@@ -59,6 +59,7 @@ type opt struct {
 	schema       string
 	channel      string
 	sessionttl   time.Duration
+	refreshttl   time.Duration
 	cleanupint   time.Duration
 	cleanuplimit int
 	providers    map[string]providerpkg.Provider
@@ -85,6 +86,7 @@ func (o *opt) defaults() {
 	o.keys = make(map[string]*rsa.PrivateKey)
 	o.schema = schema.DefaultSchema
 	o.sessionttl = schema.DefaultSessionTTL
+	o.refreshttl = schema.DefaultRefreshTTL
 	o.cleanupint = DefaultCleanupInterval
 	o.cleanuplimit = DefaultCleanupLimit
 }
@@ -163,13 +165,18 @@ func WithNotificationChannel(name string) Opt {
 	}
 }
 
-// WithSessionTTL sets the session time-to-live duration.
-func WithSessionTTL(ttl time.Duration) Opt {
+// WithTTL sets the session and refresh token time-to-live durations.
+func WithTTL(sessionTTL, refreshTTL time.Duration) Opt {
 	return func(o *opt) error {
-		if ttl <= 0 {
+		if sessionTTL <= 0 {
 			return auth.ErrBadParameter.With("session TTL must be positive")
+		} else if refreshTTL <= 0 {
+			return auth.ErrBadParameter.With("refresh TTL must be positive")
+		} else if sessionTTL >= refreshTTL {
+			return auth.ErrBadParameter.With("session TTL must be less than refresh TTL")
 		}
-		o.sessionttl = ttl
+		o.sessionttl = sessionTTL
+		o.refreshttl = refreshTTL
 		return nil
 	}
 }

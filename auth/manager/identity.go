@@ -19,9 +19,9 @@ import (
 	"errors"
 
 	// Packages
+	uuid "github.com/google/uuid"
 	auth "github.com/mutablelogic/go-auth"
 	schema "github.com/mutablelogic/go-auth/auth/schema"
-	uuid "github.com/google/uuid"
 	otel "github.com/mutablelogic/go-client/pkg/otel"
 	pg "github.com/mutablelogic/go-pg"
 	types "github.com/mutablelogic/go-server/pkg/types"
@@ -33,7 +33,7 @@ import (
 
 // CreateIdentity inserts a new identity row for an existing user.
 func (m *Manager) CreateIdentity(ctx context.Context, user uuid.UUID, identity schema.IdentityInsert) (_ *schema.Identity, err error) {
-	ctx, endSpan := otel.StartSpan(m.tracer, ctx, "manager.CreateIdentity",
+	ctx, endSpan := otel.StartSpan(m.tracer, ctx, "CreateIdentity",
 		attribute.String("user", schema.UserID(user).String()),
 		attribute.String("identity", identity.RedactedString()),
 	)
@@ -51,7 +51,9 @@ func (m *Manager) CreateIdentity(ctx context.Context, user uuid.UUID, identity s
 
 // GetIdentity retrieves a single identity by its (provider, sub) primary key.
 func (m *Manager) GetIdentity(ctx context.Context, key schema.IdentityKey) (_ *schema.Identity, err error) {
-	ctx, endSpan := otel.StartSpan(m.tracer, ctx, "manager.GetIdentity", attribute.String("key", key.RedactedString()))
+	ctx, endSpan := otel.StartSpan(m.tracer, ctx, "GetIdentity",
+		attribute.String("key", key.RedactedString()),
+	)
 	defer func() { endSpan(err) }()
 
 	var identity schema.Identity
@@ -65,7 +67,7 @@ func (m *Manager) GetIdentity(ctx context.Context, key schema.IdentityKey) (_ *s
 // UpdateIdentity refreshes the mutable fields (email, claims) on an existing
 // identity row identified by (provider, sub). modified_at is always updated.
 func (m *Manager) UpdateIdentity(ctx context.Context, key schema.IdentityKey, meta schema.IdentityMeta) (_ *schema.Identity, err error) {
-	ctx, endSpan := otel.StartSpan(m.tracer, ctx, "manager.UpdateIdentity",
+	ctx, endSpan := otel.StartSpan(m.tracer, ctx, "UpdateIdentity",
 		attribute.String("key", key.RedactedString()),
 		attribute.String("meta", meta.RedactedString()),
 	)
@@ -82,7 +84,7 @@ func (m *Manager) UpdateIdentity(ctx context.Context, key schema.IdentityKey, me
 // DeleteIdentity removes an identity row identified by its (provider, sub)
 // primary key and returns the deleted row.
 func (m *Manager) DeleteIdentity(ctx context.Context, key schema.IdentityKey) (_ *schema.Identity, err error) {
-	ctx, endSpan := otel.StartSpan(m.tracer, ctx, "manager.DeleteIdentity", attribute.String("key", key.RedactedString()))
+	ctx, endSpan := otel.StartSpan(m.tracer, ctx, "DeleteIdentity", attribute.String("key", key.RedactedString()))
 	defer func() { endSpan(err) }()
 
 	var identity schema.Identity
@@ -94,7 +96,7 @@ func (m *Manager) DeleteIdentity(ctx context.Context, key schema.IdentityKey) (_
 }
 
 func (m *Manager) ListIdentities(ctx context.Context, req schema.IdentityListRequest) (_ *schema.IdentityList, err error) {
-	ctx, endSpan := otel.StartSpan(m.tracer, ctx, "manager.ListIdentities", attribute.String("request", req.String()))
+	ctx, endSpan := otel.StartSpan(m.tracer, ctx, "ListIdentities", attribute.String("request", req.String()))
 	defer func() { endSpan(err) }()
 
 	result := schema.IdentityList{OffsetLimit: req.OffsetLimit}
@@ -110,7 +112,7 @@ func (m *Manager) LoginWithIdentity(ctx context.Context, meta schema.IdentityIns
 	if createMeta != nil {
 		attrs = append(attrs, attribute.String("create_meta", schema.MetaMap(createMeta).RedactedString()))
 	}
-	ctx, endSpan := otel.StartSpan(m.tracer, ctx, "manager.LoginWithIdentity", attrs...)
+	ctx, endSpan := otel.StartSpan(m.tracer, ctx, "LoginWithIdentity", attrs...)
 	defer func() { endSpan(err) }()
 
 	if meta.Provider == "" {
@@ -201,8 +203,9 @@ func (m *Manager) LoginWithIdentity(ctx context.Context, meta schema.IdentityIns
 
 		// Create a new session for the user.
 		if err := conn.Insert(ctx, &session, schema.SessionInsert{
-			User:      user,
-			ExpiresIn: types.Ptr(m.sessionttl),
+			User:             user,
+			ExpiresIn:        types.Ptr(m.sessionttl),
+			RefreshExpiresIn: types.Ptr(m.refreshttl),
 		}); err != nil {
 			return err
 		} else {

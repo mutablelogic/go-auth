@@ -20,8 +20,8 @@ import (
 	"time"
 
 	// Packages
-	auth "github.com/mutablelogic/go-auth"
 	uuid "github.com/google/uuid"
+	auth "github.com/mutablelogic/go-auth"
 	pg "github.com/mutablelogic/go-pg"
 	assert "github.com/stretchr/testify/assert"
 	require "github.com/stretchr/testify/require"
@@ -108,15 +108,19 @@ func Test_session_schema_001(t *testing.T) {
 		sessionID := SessionID(uuid.New())
 		userID := UserID(uuid.New())
 		expiresAt := time.Now().UTC().Add(time.Hour)
+		refreshExpiresAt := time.Now().UTC().Add(24 * time.Hour)
+		refreshCounter := uint64(7)
 		createdAt := time.Now().UTC().Add(-time.Hour)
 		revokedAt := time.Now().UTC()
 
 		var session Session
-		err := session.Scan(mockRow{values: []any{sessionID, userID, expiresAt, createdAt, &revokedAt}})
+		err := session.Scan(mockRow{values: []any{sessionID, userID, expiresAt, refreshExpiresAt, refreshCounter, createdAt, &revokedAt}})
 		require.NoError(err)
 		assert.Equal(sessionID, session.ID)
 		assert.Equal(userID, session.User)
 		assert.Equal(expiresAt, session.ExpiresAt)
+		assert.Equal(refreshExpiresAt, session.RefreshExpiresAt)
+		assert.Equal(refreshCounter, session.RefreshCounter)
 		assert.Equal(createdAt, session.CreatedAt)
 		require.NotNil(session.RevokedAt)
 		assert.Equal(revokedAt, *session.RevokedAt)
@@ -128,15 +132,29 @@ func Test_session_schema_001(t *testing.T) {
 		require := require.New(t)
 
 		ttl := time.Minute
-		insert := SessionInsert{User: UserID(uuid.New()), ExpiresIn: &ttl}
+		refreshTTL := 24 * time.Hour
+		insert := SessionInsert{User: UserID(uuid.New()), ExpiresIn: &ttl, RefreshExpiresIn: &refreshTTL}
 		bind := pg.NewBind("schema", DefaultSchema)
 		query, err := insert.Insert(bind)
 		require.NoError(err)
 		assert.NotEmpty(query)
+		assert.Equal(&refreshTTL, bind.Get("refresh_expires_in"))
 
 		patchBind := pg.NewBind()
 		require.NoError(insert.Update(patchBind))
 		assert.True(patchBind.Has("patch"))
+	})
+
+	t.Run("SessionInsertDefaultsRefreshTTL", func(t *testing.T) {
+		assert := assert.New(t)
+		require := require.New(t)
+
+		ttl := time.Minute
+		insert := SessionInsert{User: UserID(uuid.New()), ExpiresIn: &ttl}
+		bind := pg.NewBind("schema", DefaultSchema)
+		_, err := insert.Insert(bind)
+		require.NoError(err)
+		assert.Equal(&ttl, bind.Get("refresh_expires_in"))
 	})
 
 	t.Run("SessionInsertValidation", func(t *testing.T) {
@@ -160,6 +178,15 @@ func Test_session_schema_001(t *testing.T) {
 		assert.ErrorIs(err, auth.ErrBadParameter)
 	})
 
+	t.Run("SessionInsertRejectsInvalidRefreshTTL", func(t *testing.T) {
+		assert := assert.New(t)
+		ttl := time.Minute
+		invalid := time.Duration(0)
+		_, err := (SessionInsert{User: UserID(uuid.New()), ExpiresIn: &ttl, RefreshExpiresIn: &invalid}).Insert(pg.NewBind("schema", DefaultSchema))
+		assert.Error(err)
+		assert.ErrorIs(err, auth.ErrBadParameter)
+	})
+
 	t.Run("SessionMetaInsertUnsupported", func(t *testing.T) {
 		assert := assert.New(t)
 		_, err := (SessionMeta{}).Insert(pg.NewBind())
@@ -172,13 +199,15 @@ func Test_session_schema_001(t *testing.T) {
 		require := require.New(t)
 
 		ttl := time.Minute
+		refreshTTL := 24 * time.Hour
 		revokedAt := time.Now().UTC()
 		bind := pg.NewBind()
-		require.NoError((SessionMeta{ExpiresIn: &ttl, RevokedAt: &revokedAt}).Update(bind))
+		require.NoError((SessionMeta{ExpiresIn: &ttl, RefreshExpiresIn: &refreshTTL, RevokedAt: &revokedAt}).Update(bind))
 		assert.True(bind.Has("patch"))
 		patch, ok := bind.Get("patch").(string)
 		require.True(ok)
 		assert.Contains(patch, "expires_at = NOW() + ")
+		assert.Contains(patch, "refresh_expires_at = NOW() + ")
 		assert.Contains(patch, "revoked_at = ")
 
 		zero := time.Time{}
@@ -193,6 +222,14 @@ func Test_session_schema_001(t *testing.T) {
 		assert := assert.New(t)
 		invalid := time.Duration(0)
 		err := (SessionMeta{ExpiresIn: &invalid}).Update(pg.NewBind())
+		assert.Error(err)
+		assert.ErrorIs(err, auth.ErrBadParameter)
+	})
+
+	t.Run("SessionMetaUpdateInvalidRefreshTTL", func(t *testing.T) {
+		assert := assert.New(t)
+		invalid := time.Duration(0)
+		err := (SessionMeta{RefreshExpiresIn: &invalid}).Update(pg.NewBind())
 		assert.Error(err)
 		assert.ErrorIs(err, auth.ErrBadParameter)
 	})

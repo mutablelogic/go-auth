@@ -28,6 +28,7 @@ import (
 
 	// Packages
 	auth "github.com/mutablelogic/go-auth/auth/httpclient"
+	authtransport "github.com/mutablelogic/go-auth/auth/transport"
 	managerclient "github.com/mutablelogic/go-auth/pkg/httpclient/manager"
 	clientpkg "github.com/mutablelogic/go-client"
 	assert "github.com/stretchr/testify/assert"
@@ -149,7 +150,7 @@ func TestAuthTransportPreemptiveRefresh(t *testing.T) {
 
 	authClient, err := auth.New(server.URL)
 	require.NoError(err)
-	httpClient := &http.Client{Transport: newAuthTransport(nil, cmd, authClient)}
+	httpClient := &http.Client{Transport: authtransport.TokenTransport(server.URL, NewCmdTokenStore(cmd), authClient, "")(nil)}
 
 	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, server.URL+"/protected", nil)
 	require.NoError(err)
@@ -193,7 +194,7 @@ func TestAuthTransportAllowsNonReplayableInitialRequest(t *testing.T) {
 
 	authClient, err := auth.New(server.URL)
 	require.NoError(err)
-	httpClient := &http.Client{Transport: newAuthTransport(nil, cmd, authClient)}
+	httpClient := &http.Client{Transport: authtransport.TokenTransport(server.URL, NewCmdTokenStore(cmd), authClient, "")(nil)}
 
 	req, err := http.NewRequestWithContext(context.Background(), http.MethodDelete, server.URL+"/protected", strings.NewReader(""))
 	require.NoError(err)
@@ -257,7 +258,7 @@ func TestAuthTransportRefreshesAfterUnauthorized(t *testing.T) {
 
 	authClient, err := auth.New(server.URL)
 	require.NoError(err)
-	httpClient := &http.Client{Transport: newAuthTransport(nil, cmd, authClient)}
+	httpClient := &http.Client{Transport: authtransport.TokenTransport(server.URL, NewCmdTokenStore(cmd), authClient, "")(nil)}
 
 	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, server.URL+"/protected", nil)
 	require.NoError(err)

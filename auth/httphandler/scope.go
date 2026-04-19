@@ -35,7 +35,7 @@ import (
 func ScopeHandler(manager *manager.Manager, auth bool, doc *opts.MarkdownDoc) (string, *jsonschema.Schema, httprequest.PathItem) {
 	return "scope", nil, httprequest.NewPathItem(
 		"Scope operations",
-		"Operations on scopes",
+		docBody(doc, 2, "Scope", "Operations on scopes"),
 		"Scope",
 	).Get(
 		func(w http.ResponseWriter, r *http.Request) {

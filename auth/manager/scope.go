@@ -28,7 +28,9 @@ import (
 // PUBLIC METHODS
 
 func (m *Manager) ListScopes(ctx context.Context, req schema.ScopeListRequest) (_ *schema.ScopeList, err error) {
-	ctx, endSpan := otel.StartSpan(m.tracer, ctx, "manager.ListScopes", attribute.String("request", req.String()))
+	ctx, endSpan := otel.StartSpan(m.tracer, ctx, "ListScopes",
+		attribute.String("request", req.String()),
+	)
 	defer func() { endSpan(err) }()
 
 	result := schema.ScopeList{OffsetLimit: req.OffsetLimit}

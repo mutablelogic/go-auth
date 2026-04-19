@@ -27,16 +27,20 @@ import (
 	manager "github.com/mutablelogic/go-auth/auth/manager"
 	localprovider "github.com/mutablelogic/go-auth/auth/provider/local"
 	schema "github.com/mutablelogic/go-auth/auth/schema"
-	authtest "github.com/mutablelogic/go-auth/auth/test"
 	authcrypto "github.com/mutablelogic/go-auth/crypto"
+	pg "github.com/mutablelogic/go-pg"
+	test "github.com/mutablelogic/go-pg/pkg/test"
 	assert "github.com/stretchr/testify/assert"
 	require "github.com/stretchr/testify/require"
 )
 
-var conn authtest.Conn
+var conn test.Conn
 
 func TestMain(m *testing.M) {
-	authtest.Main(m, &conn)
+	test.Main(m, func(pool pg.PoolConn) (func(), error) {
+		conn = test.Conn{PoolConn: pool}
+		return nil, nil
+	})
 }
 
 func Test_auth_001(t *testing.T) {
@@ -69,14 +73,11 @@ func Test_auth_001(t *testing.T) {
 		claims := map[string]any{"sub": uuid.UUID(user.ID).String(), "sid": uuid.UUID(session.ID).String()}
 
 		ctx := withAuthContext(context.Background(), claims, user, session)
-		gotClaims, ok := ClaimsFromContext(ctx)
-		assert.True(ok)
+		gotClaims := ClaimsFromContext(ctx)
 		assert.Equal(claims, gotClaims)
-		gotUser, ok := UserFromContext(ctx)
-		assert.True(ok)
+		gotUser := UserFromContext(ctx)
 		assert.Equal(user, gotUser)
-		gotSession, ok := SessionFromContext(ctx)
-		assert.True(ok)
+		gotSession := SessionFromContext(ctx)
 		assert.Equal(session, gotSession)
 	})
 
@@ -110,6 +111,21 @@ func Test_auth_001(t *testing.T) {
 		err = validateClaimBindings(map[string]any{"sub": uuid.UUID(user.ID).String(), "sid": uuid.NewString()}, user, &schema.Session{ID: session.ID, User: user.ID})
 		assert.Error(err)
 		assert.Contains(err.Error(), "sid does not match")
+	})
+
+	t.Run("ValidateTokenUse", func(t *testing.T) {
+		assert := assert.New(t)
+
+		assert.NoError(validateTokenUse(map[string]any{}))
+		assert.NoError(validateTokenUse(map[string]any{"token_use": "access"}))
+
+		err := validateTokenUse(map[string]any{"token_use": "refresh"})
+		assert.Error(err)
+		assert.Contains(err.Error(), `token_use must be "access"`)
+
+		err = validateTokenUse(map[string]any{"token_use": 123})
+		assert.Error(err)
+		assert.Contains(err.Error(), "token_use claim is invalid")
 	})
 
 	t.Run("DecodeClaimMissing", func(t *testing.T) {
@@ -189,14 +205,14 @@ func Test_auth_001(t *testing.T) {
 		token := mustSignToken(t, mgr, issuer, user, session)
 
 		handler := NewMiddleware(mgr)(func(w http.ResponseWriter, r *http.Request) {
-			claims, ok := ClaimsFromContext(r.Context())
-			require.True(ok)
+			claims := ClaimsFromContext(r.Context())
+			require.NotNil(claims)
 			assert.Equal(uuid.UUID(user.ID).String(), claims["sub"])
-			gotUser, ok := UserFromContext(r.Context())
-			require.True(ok)
+			gotUser := UserFromContext(r.Context())
+			require.NotNil(gotUser)
 			assert.Equal(user.ID, gotUser.ID)
-			gotSession, ok := SessionFromContext(r.Context())
-			require.True(ok)
+			gotSession := SessionFromContext(r.Context())
+			require.NotNil(gotSession)
 			assert.Equal(session.ID, gotSession.ID)
 			w.WriteHeader(http.StatusNoContent)
 		})
@@ -265,6 +281,62 @@ func Test_auth_001(t *testing.T) {
 
 		require.Equal(http.StatusUnauthorized, res.Code)
 		assert.Contains(res.Body.String(), "session is expired")
+	})
+
+	t.Run("NewMiddlewareRejectsRefreshToken", func(t *testing.T) {
+		assert := assert.New(t)
+		require := require.New(t)
+
+		mgr, issuer := newMiddlewareTestManager(t)
+		user := &schema.User{ID: schema.UserID(uuid.New()), UserMeta: schema.UserMeta{Name: "Test User", Email: "test@example.com", Status: ptr(schema.UserStatusActive)}}
+		session := &schema.Session{ID: schema.SessionID(uuid.New()), User: user.ID, ExpiresAt: time.Now().Add(15 * time.Minute), RefreshExpiresAt: time.Now().Add(24 * time.Hour), RefreshCounter: 1, CreatedAt: time.Now()}
+		claims := jwt.MapClaims{
+			"iss":             issuer,
+			"sub":             uuid.UUID(user.ID).String(),
+			"sid":             uuid.UUID(session.ID).String(),
+			"iat":             time.Now().UTC().Unix(),
+			"nbf":             time.Now().UTC().Unix(),
+			"exp":             session.RefreshExpiresAt.UTC().Unix(),
+			"token_use":       "refresh",
+			"refresh_counter": session.RefreshCounter,
+		}
+		token, err := mgr.OIDCSign(claims)
+		require.NoError(err)
+
+		handler := NewMiddleware(mgr)(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusNoContent) })
+		req := httptest.NewRequest(http.MethodGet, "/", nil)
+		req.Header.Set("Authorization", "Bearer "+token)
+		res := httptest.NewRecorder()
+
+		handler(res, req)
+
+		require.Equal(http.StatusUnauthorized, res.Code)
+		assert.Contains(res.Body.String(), "token token_use must be")
+		assert.Contains(res.Header().Get("WWW-Authenticate"), `Bearer error="invalid_token"`)
+		assert.Contains(res.Header().Get("WWW-Authenticate"), `error_description="Bad Request: token token_use must be \"access\""`)
+	})
+
+	t.Run("NewMiddlewareAllowsLegacyTokenWithoutTokenUse", func(t *testing.T) {
+		assert := assert.New(t)
+		require := require.New(t)
+
+		mgr, issuer := newMiddlewareTestManager(t)
+		user := &schema.User{ID: schema.UserID(uuid.New()), UserMeta: schema.UserMeta{Name: "Test User", Email: "test@example.com", Status: ptr(schema.UserStatusActive)}}
+		session := &schema.Session{ID: schema.SessionID(uuid.New()), User: user.ID, ExpiresAt: time.Now().Add(15 * time.Minute), CreatedAt: time.Now()}
+		token := mustSignToken(t, mgr, issuer, user, session)
+
+		handler := NewMiddleware(mgr)(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusNoContent)
+		})
+
+		req := httptest.NewRequest(http.MethodGet, "/", nil)
+		req.Header.Set("Authorization", "Bearer "+token)
+		res := httptest.NewRecorder()
+
+		handler(res, req)
+
+		require.Equal(http.StatusNoContent, res.Code)
+		assert.Empty(res.Body.String())
 	})
 
 	t.Run("NewMiddlewareRejectsExpiredUser", func(t *testing.T) {

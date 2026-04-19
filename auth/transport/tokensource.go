@@ -22,7 +22,6 @@ import (
 	"time"
 
 	// Packages
-	auth "github.com/djthorpe/go-auth/pkg/httpclient/auth"
 	oidc "github.com/mutablelogic/go-auth/auth/oidc"
 	oauth2 "golang.org/x/oauth2"
 )
@@ -43,15 +42,20 @@ type TokenStore interface {
 	Token(endpoint string) (*oauth2.Token, string, error)
 }
 
+// TokenRefresher exchanges a stored refresh token for a fresh OAuth token.
+type TokenRefresher interface {
+	RefreshToken(ctx context.Context, config *oauth2.Config, token *oauth2.Token) (*oauth2.Token, error)
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 // TYPES
 
 type TokenSource struct {
-	store      TokenStore
-	endpoint   string
-	clientID   string
-	authClient *auth.Client
-	mu         sync.Mutex
+	store     TokenStore
+	endpoint  string
+	clientID  string
+	refresher TokenRefresher
+	mu        sync.Mutex
 }
 
 var _ oauth2.TokenSource = (*TokenSource)(nil)
@@ -59,12 +63,12 @@ var _ oauth2.TokenSource = (*TokenSource)(nil)
 ///////////////////////////////////////////////////////////////////////////////
 // LIFECYCLE
 
-func NewTokenSource(client *auth.Client, store TokenStore, clientID string) *TokenSource {
+func NewTokenSource(endpoint string, refresher TokenRefresher, store TokenStore, clientID string) *TokenSource {
 	return &TokenSource{
-		store:      store,
-		endpoint:   client.Endpoint,
-		clientID:   clientID,
-		authClient: client,
+		store:     store,
+		endpoint:  strings.TrimSpace(endpoint),
+		clientID:  clientID,
+		refresher: refresher,
 	}
 }
 
@@ -85,6 +89,9 @@ func (s *TokenSource) Refresh() (*oauth2.Token, error) {
 func (s *TokenSource) token(forceRefresh bool) (*oauth2.Token, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s == nil || s.store == nil || s.endpoint == "" {
+		return nil, nil
+	}
 
 	token, _, err := s.store.Token(s.endpoint)
 	if err != nil || token == nil {
@@ -94,7 +101,7 @@ func (s *TokenSource) token(forceRefresh bool) (*oauth2.Token, error) {
 		clone := *token
 		return &clone, nil
 	}
-	refreshed, err := refreshStoredToken(s.store, s.endpoint, s.clientID, s.authClient, forceRefresh)
+	refreshed, err := refreshStoredToken(s.store, s.endpoint, s.clientID, s.refresher, forceRefresh)
 	if err != nil {
 		if !forceRefresh && token.Valid() {
 			clone := *token
@@ -109,8 +116,7 @@ func (s *TokenSource) token(forceRefresh bool) (*oauth2.Token, error) {
 	return &clone, nil
 }
 
-// TODO: FIX THIS FUNCTION!!!
-func refreshStoredToken(store TokenStore, endpoint, clientID string, authClient *auth.Client, force bool) (*oauth2.Token, error) {
+func refreshStoredToken(store TokenStore, endpoint, clientID string, refresher TokenRefresher, force bool) (*oauth2.Token, error) {
 	endpoint = strings.TrimSpace(endpoint)
 	clientID = strings.TrimSpace(clientID)
 
@@ -124,7 +130,7 @@ func refreshStoredToken(store TokenStore, endpoint, clientID string, authClient 
 	if token == nil {
 		return nil, nil
 	}
-	if authClient == nil {
+	if refresher == nil {
 		return nil, fmt.Errorf("auth client is required")
 	}
 	issuer = strings.TrimSpace(issuer)
@@ -144,7 +150,7 @@ func refreshStoredToken(store TokenStore, endpoint, clientID string, authClient 
 		clone.Expiry = clone.Expiry.Add(-time.Until(clone.Expiry) - time.Second)
 		token = &clone
 	}
-	refreshed, err := authClient.RefreshToken(context.Background(), oauthConfig, token)
+	refreshed, err := refresher.RefreshToken(context.Background(), oauthConfig, token)
 	if err != nil {
 		return nil, err
 	}

@@ -39,7 +39,7 @@ func (m *Manager) CreateUser(ctx context.Context, meta schema.UserMeta, identity
 	if identity != nil {
 		attrs = append(attrs, attribute.String("identity", identity.RedactedString()))
 	}
-	ctx, endSpan := otel.StartSpan(m.tracer, ctx, "manager.CreateUser", attrs...)
+	ctx, endSpan := otel.StartSpan(m.tracer, ctx, "CreateUser", attrs...)
 	defer func() { endSpan(err) }()
 
 	var user schema.User
@@ -67,7 +67,9 @@ func (m *Manager) CreateUser(ctx context.Context, meta schema.UserMeta, identity
 }
 
 func (m *Manager) GetUser(ctx context.Context, user schema.UserID) (_ *schema.User, err error) {
-	ctx, endSpan := otel.StartSpan(m.tracer, ctx, "manager.GetUser", attribute.String("user", user.String()))
+	ctx, endSpan := otel.StartSpan(m.tracer, ctx, "GetUser",
+		attribute.String("user", user.String()),
+	)
 	defer func() { endSpan(err) }()
 
 	var result schema.User
@@ -79,7 +81,7 @@ func (m *Manager) GetUser(ctx context.Context, user schema.UserID) (_ *schema.Us
 }
 
 func (m *Manager) UpdateUser(ctx context.Context, user schema.UserID, meta schema.UserMeta) (_ *schema.User, err error) {
-	ctx, endSpan := otel.StartSpan(m.tracer, ctx, "manager.UpdateUser",
+	ctx, endSpan := otel.StartSpan(m.tracer, ctx, "UpdateUser",
 		attribute.String("user", user.String()),
 		attribute.String("meta", meta.RedactedString()),
 	)
@@ -121,7 +123,7 @@ func (m *Manager) UpdateUser(ctx context.Context, user schema.UserID, meta schem
 }
 
 func (m *Manager) AddUserGroups(ctx context.Context, user schema.UserID, groups []string) (_ *schema.User, err error) {
-	ctx, endSpan := otel.StartSpan(m.tracer, ctx, "manager.AddUserGroups",
+	ctx, endSpan := otel.StartSpan(m.tracer, ctx, "AddUserGroups",
 		attribute.String("user", user.String()),
 		attribute.String("groups", types.Stringify(groups)),
 	)
@@ -164,7 +166,7 @@ func (m *Manager) AddUserGroups(ctx context.Context, user schema.UserID, groups 
 }
 
 func (m *Manager) RemoveUserGroups(ctx context.Context, user schema.UserID, groups []string) (_ *schema.User, err error) {
-	ctx, endSpan := otel.StartSpan(m.tracer, ctx, "manager.RemoveUserGroups",
+	ctx, endSpan := otel.StartSpan(m.tracer, ctx, "RemoveUserGroups",
 		attribute.String("user", user.String()),
 		attribute.String("groups", types.Stringify(groups)),
 	)
@@ -207,7 +209,9 @@ func (m *Manager) RemoveUserGroups(ctx context.Context, user schema.UserID, grou
 }
 
 func (m *Manager) DeleteUser(ctx context.Context, user schema.UserID) (_ *schema.User, err error) {
-	ctx, endSpan := otel.StartSpan(m.tracer, ctx, "manager.DeleteUser", attribute.String("user", user.String()))
+	ctx, endSpan := otel.StartSpan(m.tracer, ctx, "DeleteUser",
+		attribute.String("user", user.String()),
+	)
 	defer func() { endSpan(err) }()
 
 	var result schema.User
@@ -219,7 +223,9 @@ func (m *Manager) DeleteUser(ctx context.Context, user schema.UserID) (_ *schema
 }
 
 func (m *Manager) ListUsers(ctx context.Context, req schema.UserListRequest) (_ *schema.UserList, err error) {
-	ctx, endSpan := otel.StartSpan(m.tracer, ctx, "manager.ListUsers", attribute.String("request", req.RedactedString()))
+	ctx, endSpan := otel.StartSpan(m.tracer, ctx, "ListUsers",
+		attribute.String("request", req.RedactedString()),
+	)
 	defer func() { endSpan(err) }()
 
 	result := schema.UserList{OffsetLimit: req.OffsetLimit}

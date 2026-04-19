@@ -20,6 +20,7 @@ import (
 	"net/url"
 	"os"
 	"strings"
+	"time"
 
 	// Packages
 	autherr "github.com/mutablelogic/go-auth"
@@ -32,10 +33,12 @@ import (
 // TYPES
 
 type AuthFlags struct {
-	Enabled bool       `help:"Enable authentication" default:"true" negatable:""`
-	Schema  string     `help:"Database schema to use for authentication manager tables" env:"AUTH_SCHEMA"`
-	Issuer  *url.URL   `help:"Issuer URL to use in OIDC metadata and tokens. If not set, the server's base URL will be used." env:"AUTH_ISSUER"`
-	Signer  []*url.URL `help:"Private Key PEM files to use for signing tokens. Can be specified multiple times for multiple signers."`
+	Enabled    bool          `help:"Enable authentication" default:"true" negatable:""`
+	Schema     string        `help:"Database schema to use for authentication manager tables" env:"AUTH_SCHEMA"`
+	Issuer     *url.URL      `help:"Issuer URL to use in OIDC metadata and tokens. If not set, the server's base URL will be used." env:"AUTH_ISSUER"`
+	Signer     []*url.URL    `help:"Private Key PEM files to use for signing tokens. Can be specified multiple times for multiple signers."`
+	SessionTTL time.Duration `help:"Duration for which authentication sessions are valid. Defaults to 15 minutes." env:"AUTH_SESSION_TTL"`
+	RefreshTTL time.Duration `help:"Duration for which refresh tokens are valid. Defaults to 7 days." env:"AUTH_REFRESH_TTL"`
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -99,6 +102,11 @@ func (flags *AuthFlags) Options(ctx server.Cmd) ([]auth.Opt, *rsa.PrivateKey, er
 
 	// Identity Hook
 	opts = append(opts, auth.WithHooks(NewUserHook{Cmd: ctx}))
+
+	// TTL
+	if flags.SessionTTL != 0 || flags.RefreshTTL != 0 {
+		opts = append(opts, auth.WithTTL(flags.SessionTTL, flags.RefreshTTL))
+	}
 
 	// Return success
 	return opts, pk, nil

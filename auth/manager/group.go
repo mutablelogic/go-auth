@@ -49,7 +49,9 @@ func (g groupScopeSelector) Select(bind *pg.Bind, _ pg.Op) (string, error) {
 // PUBLIC METHODS
 
 func (m *Manager) CreateGroup(ctx context.Context, insert schema.GroupInsert) (_ *schema.Group, err error) {
-	ctx, endSpan := otel.StartSpan(m.tracer, ctx, "manager.CreateGroup", attribute.String("insert", insert.String()))
+	ctx, endSpan := otel.StartSpan(m.tracer, ctx, "CreateGroup",
+		attribute.String("insert", insert.String()),
+	)
 	defer func() { endSpan(err) }()
 
 	if schema.IsSystemGroup(insert.ID) {
@@ -65,7 +67,9 @@ func (m *Manager) CreateGroup(ctx context.Context, insert schema.GroupInsert) (_
 }
 
 func (m *Manager) GetGroup(ctx context.Context, name string) (_ *schema.Group, err error) {
-	ctx, endSpan := otel.StartSpan(m.tracer, ctx, "manager.GetGroup", attribute.String("name", name))
+	ctx, endSpan := otel.StartSpan(m.tracer, ctx, "GetGroup",
+		attribute.String("name", name),
+	)
 	defer func() { endSpan(err) }()
 
 	var result schema.Group
@@ -77,7 +81,7 @@ func (m *Manager) GetGroup(ctx context.Context, name string) (_ *schema.Group, e
 }
 
 func (m *Manager) UpdateGroup(ctx context.Context, name string, meta schema.GroupMeta) (_ *schema.Group, err error) {
-	ctx, endSpan := otel.StartSpan(m.tracer, ctx, "manager.UpdateGroup",
+	ctx, endSpan := otel.StartSpan(m.tracer, ctx, "UpdateGroup",
 		attribute.String("name", name),
 		attribute.String("meta", meta.String()),
 	)
@@ -96,7 +100,9 @@ func (m *Manager) UpdateGroup(ctx context.Context, name string, meta schema.Grou
 }
 
 func (m *Manager) DeleteGroup(ctx context.Context, name string) (_ *schema.Group, err error) {
-	ctx, endSpan := otel.StartSpan(m.tracer, ctx, "manager.DeleteGroup", attribute.String("name", name))
+	ctx, endSpan := otel.StartSpan(m.tracer, ctx, "DeleteGroup",
+		attribute.String("name", name),
+	)
 	defer func() { endSpan(err) }()
 
 	if schema.IsSystemGroup(name) {
@@ -112,7 +118,9 @@ func (m *Manager) DeleteGroup(ctx context.Context, name string) (_ *schema.Group
 }
 
 func (m *Manager) ListGroups(ctx context.Context, req schema.GroupListRequest) (_ *schema.GroupList, err error) {
-	ctx, endSpan := otel.StartSpan(m.tracer, ctx, "manager.ListGroups", attribute.String("request", req.String()))
+	ctx, endSpan := otel.StartSpan(m.tracer, ctx, "ListGroups",
+		attribute.String("request", req.String()),
+	)
 	defer func() { endSpan(err) }()
 
 	result := schema.GroupList{OffsetLimit: req.OffsetLimit}
@@ -123,13 +131,9 @@ func (m *Manager) ListGroups(ctx context.Context, req schema.GroupListRequest) (
 	return types.Ptr(result), nil
 }
 
-// AddGroupScope appends scope to the named group's scope list if not already
-// present. The operation is idempotent and atomic. It may be called on system
-// groups; the IsSystemGroup guard only applies to the public Update/Delete
-// methods.
 func (m *Manager) AddGroupScope(ctx context.Context, name, scope string) (_ *schema.Group, err error) {
 	scope = strings.TrimSpace(scope)
-	ctx, endSpan := otel.StartSpan(m.tracer, ctx, "manager.AddGroupScope",
+	ctx, endSpan := otel.StartSpan(m.tracer, ctx, "AddGroupScope",
 		attribute.String("name", name),
 		attribute.String("scope", scope),
 	)
@@ -148,11 +152,9 @@ func (m *Manager) AddGroupScope(ctx context.Context, name, scope string) (_ *sch
 	return types.Ptr(result), nil
 }
 
-// RemoveGroupScope removes scope from the named group's scope list. The
-// operation is idempotent and atomic.
 func (m *Manager) RemoveGroupScope(ctx context.Context, name, scope string) (_ *schema.Group, err error) {
 	scope = strings.TrimSpace(scope)
-	ctx, endSpan := otel.StartSpan(m.tracer, ctx, "manager.RemoveGroupScope",
+	ctx, endSpan := otel.StartSpan(m.tracer, ctx, "RemoveGroupScope",
 		attribute.String("name", name),
 		attribute.String("scope", scope),
 	)

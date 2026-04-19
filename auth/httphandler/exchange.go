@@ -16,6 +16,8 @@ package httphandler
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -30,6 +32,11 @@ import (
 	httpresponse "github.com/mutablelogic/go-server/pkg/httpresponse"
 	types "github.com/mutablelogic/go-server/pkg/types"
 	oauth2 "golang.org/x/oauth2"
+)
+
+const (
+	tokenUseAccess  = "access"
+	tokenUseRefresh = "refresh"
 )
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -125,14 +132,18 @@ func exchange(ctx context.Context, manager *auth.Manager, w http.ResponseWriter,
 		if err != nil {
 			return httpresponse.Error(w, autherr.HTTPError(err))
 		}
-		token, err := manager.OIDCSign(tokenClaims(config.Issuer, user, session))
+		accessToken, err := manager.OIDCSign(accessTokenClaims(config.Issuer, user, session))
+		if err != nil {
+			return httpresponse.Error(w, autherr.HTTPError(err))
+		}
+		refreshToken, err := manager.OIDCSign(refreshTokenClaims(config.Issuer, user, session))
 		if err != nil {
 			return httpresponse.Error(w, autherr.HTTPError(err))
 		}
 
 		return httpresponse.JSON(w, http.StatusOK, httprequest.Indent(r), oauth2.Token{
-			AccessToken:  token,
-			RefreshToken: token,
+			AccessToken:  accessToken,
+			RefreshToken: refreshToken,
 			TokenType:    "Bearer",
 			Expiry:       session.ExpiresAt,
 			ExpiresIn:    tokenExpiresIn(session.ExpiresAt),
@@ -156,21 +167,38 @@ func exchange(ctx context.Context, manager *auth.Manager, w http.ResponseWriter,
 		}
 
 		// Refresh the session and return a new access & refresh token
-		sessionID, err := schema.SessionIDFromString(claims["sid"].(string))
+		sessionValue, err := stringClaim(claims, "sid")
 		if err != nil {
 			return httpresponse.Error(w, autherr.HTTPError(err))
 		}
-		user, session, err := manager.RefreshSession(ctx, sessionID)
+		sessionID, err := schema.SessionIDFromString(sessionValue)
 		if err != nil {
 			return httpresponse.Error(w, autherr.HTTPError(err))
 		}
-		token, err := manager.OIDCSign(tokenClaims(config.Issuer, user, session))
+		if use, err := stringClaim(claims, "token_use"); err != nil {
+			return httpresponse.Error(w, autherr.HTTPError(err))
+		} else if use != tokenUseRefresh {
+			return httpresponse.Error(w, autherr.HTTPError(autherr.ErrBadParameter.With("refresh_token must be a refresh token")))
+		}
+		refreshCounter, err := uint64Claim(claims, "refresh_counter")
+		if err != nil {
+			return httpresponse.Error(w, autherr.HTTPError(err))
+		}
+		user, session, err := manager.RefreshSession(ctx, sessionID, refreshCounter)
+		if err != nil {
+			return httpresponse.Error(w, autherr.HTTPError(err))
+		}
+		accessToken, err := manager.OIDCSign(accessTokenClaims(config.Issuer, user, session))
+		if err != nil {
+			return httpresponse.Error(w, autherr.HTTPError(err))
+		}
+		refreshToken, err := manager.OIDCSign(refreshTokenClaims(config.Issuer, user, session))
 		if err != nil {
 			return httpresponse.Error(w, autherr.HTTPError(err))
 		}
 		return httpresponse.JSON(w, http.StatusOK, httprequest.Indent(r), oauth2.Token{
-			AccessToken:  token,
-			RefreshToken: token,
+			AccessToken:  accessToken,
+			RefreshToken: refreshToken,
 			TokenType:    "Bearer",
 			Expiry:       session.ExpiresAt,
 			ExpiresIn:    tokenExpiresIn(session.ExpiresAt),
@@ -189,18 +217,19 @@ func tokenExpiresIn(expiry time.Time) int64 {
 	return int64(remaining / time.Second)
 }
 
-func tokenClaims(issuer string, user *schema.User, session *schema.Session) jwt.MapClaims {
+func accessTokenClaims(issuer string, user *schema.User, session *schema.Session) jwt.MapClaims {
 	now := time.Now().UTC()
 	claims := jwt.MapClaims{
-		"iss":     issuer,
-		"aud":     issuer,
-		"sub":     uuid.UUID(user.ID).String(),
-		"sid":     uuid.UUID(session.ID).String(),
-		"iat":     now.Unix(),
-		"nbf":     now.Unix(),
-		"exp":     session.ExpiresAt.UTC().Unix(),
-		"user":    user,
-		"session": session,
+		"iss":       issuer,
+		"aud":       issuer,
+		"sub":       uuid.UUID(user.ID).String(),
+		"sid":       uuid.UUID(session.ID).String(),
+		"iat":       now.Unix(),
+		"nbf":       now.Unix(),
+		"exp":       session.ExpiresAt.UTC().Unix(),
+		"token_use": tokenUseAccess,
+		"user":      user,
+		"session":   session,
 	}
 	if user.Email != "" {
 		claims["email"] = user.Email
@@ -215,4 +244,63 @@ func tokenClaims(issuer string, user *schema.User, session *schema.Session) jwt.
 		claims["scopes"] = user.Scopes
 	}
 	return claims
+}
+
+func refreshTokenClaims(issuer string, user *schema.User, session *schema.Session) jwt.MapClaims {
+	now := time.Now().UTC()
+	return jwt.MapClaims{
+		"iss":             issuer,
+		"aud":             issuer,
+		"sub":             uuid.UUID(user.ID).String(),
+		"sid":             uuid.UUID(session.ID).String(),
+		"iat":             now.Unix(),
+		"nbf":             now.Unix(),
+		"exp":             session.RefreshExpiresAt.UTC().Unix(),
+		"token_use":       tokenUseRefresh,
+		"refresh_counter": session.RefreshCounter,
+	}
+}
+
+func stringClaim(claims map[string]any, key string) (string, error) {
+	value, ok := claims[key]
+	if !ok {
+		return "", autherr.ErrBadParameter.Withf("token missing %s claim", key)
+	}
+	text, ok := value.(string)
+	if !ok || text == "" {
+		return "", autherr.ErrBadParameter.Withf("token %s claim is invalid", key)
+	}
+	return text, nil
+}
+
+func uint64Claim(claims map[string]any, key string) (uint64, error) {
+	value, ok := claims[key]
+	if !ok {
+		return 0, autherr.ErrBadParameter.Withf("token missing %s claim", key)
+	}
+	switch value := value.(type) {
+	case uint64:
+		return value, nil
+	case int:
+		if value < 0 {
+			break
+		}
+		return uint64(value), nil
+	case int64:
+		if value < 0 {
+			break
+		}
+		return uint64(value), nil
+	case float64:
+		if value < 0 || value != float64(uint64(value)) {
+			break
+		}
+		return uint64(value), nil
+	case json.Number:
+		parsed, err := value.Int64()
+		if err == nil && parsed >= 0 {
+			return uint64(parsed), nil
+		}
+	}
+	return 0, autherr.ErrBadParameter.Withf("token %s claim is invalid: %v", key, fmt.Sprintf("%T", value))
 }

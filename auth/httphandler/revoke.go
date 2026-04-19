@@ -51,7 +51,7 @@ func (req RevokeRequest) Validate() error {
 func RevokeHandler(manager *manager.Manager, doc *opts.MarkdownDoc) (string, *jsonschema.Schema, httprequest.PathItem) {
 	return oidc.AuthRevokePath, nil, httprequest.NewPathItem(
 		"Session revocation",
-		"Revokes a locally signed session token using either a JSON or form-encoded payload with the same token field.",
+		docBody(doc, 2, "Auth", "Revokes a locally signed session token using either a JSON or form-encoded payload with the same token field."),
 		"Auth",
 	).Post(
 		func(w http.ResponseWriter, r *http.Request) {
@@ -91,7 +91,11 @@ func revoke(ctx context.Context, manager *auth.Manager, w http.ResponseWriter, r
 	}
 
 	// Get the session
-	session, err := schema.SessionIDFromString(claims["sid"].(string))
+	sessionValue, err := stringClaim(claims, "sid")
+	if err != nil {
+		return httpresponse.Error(w, autherr.HTTPError(err))
+	}
+	session, err := schema.SessionIDFromString(sessionValue)
 	if err != nil {
 		return httpresponse.Error(w, autherr.HTTPError(err))
 	}

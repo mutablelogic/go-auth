@@ -35,7 +35,7 @@ import (
 func GroupHandler(manager *manager.Manager, auth bool, doc *opts.MarkdownDoc) (string, *jsonschema.Schema, httprequest.PathItem) {
 	return "group", nil, httprequest.NewPathItem(
 		"Group operations",
-		"Operations on groups",
+		docBody(doc, 2, "Group", "Operations on groups"),
 		"Group",
 	).Get(
 		func(w http.ResponseWriter, r *http.Request) {
@@ -64,7 +64,7 @@ func GroupHandler(manager *manager.Manager, auth bool, doc *opts.MarkdownDoc) (s
 func GroupItemHandler(manager *manager.Manager, auth bool, doc *opts.MarkdownDoc) (string, *jsonschema.Schema, httprequest.PathItem) {
 	return "group/{group}", nil, httprequest.NewPathItem(
 		"Group operations",
-		"Operations on a specific group",
+		docBody(doc, 2, "Group", "Operations on a specific group"),
 		"Group",
 	).Get(
 		func(w http.ResponseWriter, r *http.Request) {

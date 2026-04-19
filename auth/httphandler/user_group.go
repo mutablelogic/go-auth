@@ -35,7 +35,7 @@ import (
 func UserGroupHandler(manager *manager.Manager, auth bool, doc *opts.MarkdownDoc) (string, *jsonschema.Schema, httprequest.PathItem) {
 	return "user/{user}/group", nil, httprequest.NewPathItem(
 		"User group membership operations",
-		"Batch add or remove group memberships for a specific user",
+		docBody(doc, 2, "User", "Batch add or remove group memberships for a specific user"),
 		"User",
 	).Post(
 		func(w http.ResponseWriter, r *http.Request) {

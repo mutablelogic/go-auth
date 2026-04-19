@@ -33,7 +33,7 @@ import (
 func ConfigHandler(manager *manager.Manager, doc *opts.MarkdownDoc) (string, *jsonschema.Schema, httprequest.PathItem) {
 	return "config", nil, httprequest.NewPathItem(
 		"Public provider configuration",
-		"Returns the upstream provider details that are safe to expose to clients that need to start an authentication flow.",
+		docBody(doc, 2, "Auth", "Returns the upstream provider details that are safe to expose to clients that need to start an authentication flow."),
 		"Auth",
 	).Get(
 		func(w http.ResponseWriter, r *http.Request) {

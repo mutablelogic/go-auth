@@ -21,6 +21,7 @@ import (
 	// Packages
 	manager "github.com/mutablelogic/go-auth/auth/manager"
 	localprovider "github.com/mutablelogic/go-auth/auth/provider/local"
+	schema "github.com/mutablelogic/go-auth/auth/schema"
 	authtest "github.com/mutablelogic/go-auth/auth/test"
 	authcrypto "github.com/mutablelogic/go-auth/crypto"
 )
@@ -58,6 +59,6 @@ func TestMain(m *testing.M) {
 	},
 		manager.WithSigner("test-main", key),
 		manager.WithProvider(provider),
-		manager.WithSessionTTL(DefaultSessionTTL),
+		manager.WithTTL(DefaultSessionTTL, schema.DefaultRefreshTTL),
 	)
 }
