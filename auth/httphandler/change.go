@@ -34,7 +34,7 @@ import (
 // PUBLIC METHODS
 
 // ChangesHandler returns a path and pathitem for the changes SSE endpoint.
-func ChangesHandler(mgr *managerpkg.Manager, doc *opts.MarkdownDoc) (string, *jsonschema.Schema, httprequest.PathItem) {
+func ChangesHandler(mgr *managerpkg.Manager, auth bool, doc *opts.MarkdownDoc) (string, *jsonschema.Schema, httprequest.PathItem) {
 	return "changes", nil, httprequest.NewPathItem(
 		"Change notifications",
 		"Streams table change notifications as server-sent events.",

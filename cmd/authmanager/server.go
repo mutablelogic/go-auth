@@ -169,8 +169,13 @@ func (cmd *AuthServer) WithAuthManager(ctx server.Cmd, conn pg.PoolConn, fn func
 	cmd.RunServer.Register(
 		authhandler.RegisterAuthHandlers(manager),
 		authhandler.RegisterProviderHandlers(manager),
-		authhandler.RegisterManagerHandlers(manager),
+		authhandler.RegisterManagerHandlers(manager, cmd.AuthFlags.Enabled),
 	)
+
+	// Warn if auth is disabled
+	if !cmd.AuthFlags.Enabled {
+		ctx.Logger().WarnContext(ctx.Context(), "Authentication is disabled")
+	}
 
 	// Next callback in the chain
 	return fn(manager)

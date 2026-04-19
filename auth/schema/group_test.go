@@ -115,7 +115,8 @@ func Test_group_schema_001(t *testing.T) {
 		query, err := (GroupListRequest{OffsetLimit: pg.OffsetLimit{Offset: 3, Limit: &limit}}).Select(bind, pg.List)
 		require.NoError(err)
 		assert.NotEmpty(query)
-		assert.Equal("", bind.Get("where"))
+		assert.Equal("WHERE group_row.id <> @system_group", bind.Get("where"))
+		assert.Equal(GroupSysAdmin, bind.Get("system_group"))
 		assert.Equal("ORDER BY group_row.id ASC", bind.Get("orderby"))
 	})
 

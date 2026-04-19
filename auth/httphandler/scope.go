@@ -32,21 +32,21 @@ import (
 // PUBLIC METHODS
 
 // ScopeHandler returns a path and pathitem for the scope endpoint.
-func ScopeHandler(manager *manager.Manager, auth func(http.HandlerFunc) http.HandlerFunc, doc *opts.MarkdownDoc) (string, *jsonschema.Schema, httprequest.PathItem) {
+func ScopeHandler(manager *manager.Manager, auth bool, doc *opts.MarkdownDoc) (string, *jsonschema.Schema, httprequest.PathItem) {
 	return "scope", nil, httprequest.NewPathItem(
 		"Scope operations",
 		"Operations on scopes",
 		"Scope",
 	).Get(
-		auth(func(w http.ResponseWriter, r *http.Request) {
+		func(w http.ResponseWriter, r *http.Request) {
 			_ = listScope(r.Context(), manager, w, r)
-		}),
+		},
 		"List scopes",
 		opts.WithDescription(doc.Section(3, "GET /{prefix}/scope").Body),
 		opts.WithQuery(jsonschema.MustFor[schema.ScopeListRequest]()),
 		opts.WithJSONResponse(200, jsonschema.MustFor[schema.ScopeList]()),
 		opts.WithErrorResponse(400, "Invalid filter or pagination parameters."),
-		opts.WithSecurity(schema.SecurityBearerAuth, schema.ScopeAuthGroupRead),
+		opts.WithSecurity(schema.SecurityBearerAuth, auth, schema.ScopeAuthGroupRead),
 	)
 }
 

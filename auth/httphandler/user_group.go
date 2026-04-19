@@ -20,7 +20,7 @@ import (
 
 	// Packages
 	authpkg "github.com/mutablelogic/go-auth"
-	managerpkg "github.com/mutablelogic/go-auth/auth/manager"
+	manager "github.com/mutablelogic/go-auth/auth/manager"
 	schema "github.com/mutablelogic/go-auth/auth/schema"
 	httprequest "github.com/mutablelogic/go-server/pkg/httprequest"
 	httpresponse "github.com/mutablelogic/go-server/pkg/httpresponse"
@@ -32,7 +32,7 @@ import (
 // PUBLIC METHODS
 
 // UserGroupHandler returns a path and pathitem for the user group membership endpoint.
-func UserGroupHandler(mgr *managerpkg.Manager, doc *opts.MarkdownDoc) (string, *jsonschema.Schema, httprequest.PathItem) {
+func UserGroupHandler(manager *manager.Manager, auth bool, doc *opts.MarkdownDoc) (string, *jsonschema.Schema, httprequest.PathItem) {
 	return "user/{user}/group", nil, httprequest.NewPathItem(
 		"User group membership operations",
 		"Batch add or remove group memberships for a specific user",
@@ -44,7 +44,7 @@ func UserGroupHandler(mgr *managerpkg.Manager, doc *opts.MarkdownDoc) (string, *
 				httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest), err.Error())
 				return
 			}
-			if err := addUserGroup(r.Context(), mgr, w, r, user); err != nil {
+			if err := addUserGroup(r.Context(), manager, w, r, user); err != nil {
 				httpresponse.Error(w, authpkg.HTTPError(err))
 			}
 		},
@@ -54,6 +54,7 @@ func UserGroupHandler(mgr *managerpkg.Manager, doc *opts.MarkdownDoc) (string, *
 		opts.WithJSONResponse(200, jsonschema.MustFor[schema.User]()),
 		opts.WithErrorResponse(400, "Invalid user ID, request body, or group identifiers."),
 		opts.WithErrorResponse(404, "User or group not found."),
+		opts.WithSecurity(schema.SecurityBearerAuth, auth, schema.ScopeAuthUserWrite, schema.ScopeAuthGroupRead),
 	).Delete(
 		func(w http.ResponseWriter, r *http.Request) {
 			user, err := schema.UserIDFromString(r.PathValue("user"))
@@ -61,7 +62,7 @@ func UserGroupHandler(mgr *managerpkg.Manager, doc *opts.MarkdownDoc) (string, *
 				httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest), err.Error())
 				return
 			}
-			if err := removeUserGroup(r.Context(), mgr, w, r, user); err != nil {
+			if err := removeUserGroup(r.Context(), manager, w, r, user); err != nil {
 				httpresponse.Error(w, authpkg.HTTPError(err))
 			}
 		},
@@ -71,30 +72,31 @@ func UserGroupHandler(mgr *managerpkg.Manager, doc *opts.MarkdownDoc) (string, *
 		opts.WithJSONResponse(200, jsonschema.MustFor[schema.User]()),
 		opts.WithErrorResponse(400, "Invalid user ID, request body, or group identifiers."),
 		opts.WithErrorResponse(404, "User or group not found."),
+		opts.WithSecurity(schema.SecurityBearerAuth, auth, schema.ScopeAuthUserWrite, schema.ScopeAuthGroupRead),
 	)
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 // PRIVATE METHODS
 
-func addUserGroup(ctx context.Context, mgr *managerpkg.Manager, w http.ResponseWriter, r *http.Request, user schema.UserID) error {
+func addUserGroup(ctx context.Context, manager *manager.Manager, w http.ResponseWriter, r *http.Request, user schema.UserID) error {
 	var req schema.UserGroupList
 	if err := httprequest.Read(r, &req); err != nil {
 		return httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest), err.Error())
 	}
-	response, err := mgr.AddUserGroups(ctx, user, []string(req))
+	response, err := manager.AddUserGroups(ctx, user, []string(req))
 	if err != nil {
 		return httpresponse.Error(w, authpkg.HTTPError(err))
 	}
 	return httpresponse.JSON(w, http.StatusOK, httprequest.Indent(r), response)
 }
 
-func removeUserGroup(ctx context.Context, mgr *managerpkg.Manager, w http.ResponseWriter, r *http.Request, user schema.UserID) error {
+func removeUserGroup(ctx context.Context, manager *manager.Manager, w http.ResponseWriter, r *http.Request, user schema.UserID) error {
 	var req schema.UserGroupList
 	if err := httprequest.Read(r, &req); err != nil {
 		return httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest), err.Error())
 	}
-	response, err := mgr.RemoveUserGroups(ctx, user, []string(req))
+	response, err := manager.RemoveUserGroups(ctx, user, []string(req))
 	if err != nil {
 		return httpresponse.Error(w, authpkg.HTTPError(err))
 	}

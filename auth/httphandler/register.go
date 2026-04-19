@@ -64,16 +64,13 @@ func RegisterAuthHandlers(manager *manager.Manager) func(*httprouter.Router) err
 			return err
 		}
 
-		// Create an authenticated handler wrapper
-		authenticated := middleware.AuthN(manager)
-
 		// Register the paths
 		return errors.Join(
 			router.RegisterPath(ConfigHandler(manager, doc)),
 			router.RegisterPath(OIDCConfigHandler(manager, doc)),
 			router.RegisterPath(JWKSHandler(manager, doc)),
 			router.RegisterPath(ProtectedResourceHandler(manager, doc)),
-			router.RegisterPath(UserInfoHandler(manager, authenticated, doc)),
+			router.RegisterPath(UserInfoHandler(manager, doc)),
 			router.RegisterPath(AuthorizationHandler(manager, doc)),
 			router.RegisterPath(ExchangeHandler(manager, doc)),
 			router.RegisterPath(RevokeHandler(manager, doc)),
@@ -101,7 +98,7 @@ func RegisterProviderHandlers(manager *manager.Manager) func(*httprouter.Router)
 }
 
 // RegisterManagerHandlers registers provider-specific handlers with the provided router.
-func RegisterManagerHandlers(manager *manager.Manager) func(*httprouter.Router) error {
+func RegisterManagerHandlers(manager *manager.Manager, auth bool) func(*httprouter.Router) error {
 	return func(router *httprouter.Router) error {
 		// Parse the markdown documentation
 		doc := opts.ParseMarkdown(ManagerDoc)
@@ -117,17 +114,17 @@ func RegisterManagerHandlers(manager *manager.Manager) func(*httprouter.Router) 
 		router.Spec().AddTag("Changes", doc.Section(2, "Changes").Body)
 
 		// Create an authenticated handler wrapper
-		authenticated := middleware.AuthN(manager)
+		//authenticated := middleware.AuthN(manager)
 
 		// Register the paths
 		return errors.Join(
-			router.RegisterPath(UserHandler(manager, doc)),
-			router.RegisterPath(UserResourceHandler(manager, doc)),
-			router.RegisterPath(UserGroupHandler(manager, doc)),
-			router.RegisterPath(GroupHandler(manager, doc)),
-			router.RegisterPath(GroupItemHandler(manager, doc)),
-			router.RegisterPath(ChangesHandler(manager, doc)),
-			router.RegisterPath(ScopeHandler(manager, authenticated, doc)),
+			router.RegisterPath(UserHandler(manager, auth, doc)),
+			router.RegisterPath(UserResourceHandler(manager, auth, doc)),
+			router.RegisterPath(UserGroupHandler(manager, auth, doc)),
+			router.RegisterPath(GroupHandler(manager, auth, doc)),
+			router.RegisterPath(GroupItemHandler(manager, auth, doc)),
+			router.RegisterPath(ChangesHandler(manager, auth, doc)),
+			router.RegisterPath(ScopeHandler(manager, auth, doc)),
 		)
 	}
 }
@@ -198,13 +195,13 @@ func OIDCConfigHandler(manager *manager.Manager, doc *opts.MarkdownDoc) (string,
 	)
 }
 
-func UserInfoHandler(manager *manager.Manager, auth func(http.HandlerFunc) http.HandlerFunc, doc *opts.MarkdownDoc) (string, *jsonschema.Schema, httprequest.PathItem) {
+func UserInfoHandler(manager *manager.Manager, doc *opts.MarkdownDoc) (string, *jsonschema.Schema, httprequest.PathItem) {
 	return oidc.UserInfoPath, nil, httprequest.NewPathItem(
 		"Authenticated User Information",
 		"Returns the client-facing identity claims for the authenticated bearer token issued by this server.",
 		"Auth",
 	).Get(
-		auth(func(w http.ResponseWriter, r *http.Request) {
+		func(w http.ResponseWriter, r *http.Request) {
 			user := middleware.UserFromContext(r.Context())
 			if user == nil {
 				_ = httpresponse.Error(w, httpresponse.ErrNotAuthorized)
@@ -212,10 +209,10 @@ func UserInfoHandler(manager *manager.Manager, auth func(http.HandlerFunc) http.
 			}
 			_ = httpresponse.JSON(w, http.StatusOK, httprequest.Indent(r), schema.NewUserInfo(user))
 
-		}),
+		},
 		"Get authenticated user info",
 		opts.WithDescription(doc.Section(3, "GET /auth/userinfo").Body),
-		opts.WithSecurity(schema.SecurityBearerAuth),
+		opts.WithSecurity(schema.SecurityBearerAuth, true),
 		opts.WithJSONResponse(http.StatusOK, jsonschema.MustFor[schema.UserInfo]()),
 		opts.WithErrorResponse(http.StatusUnauthorized, "A valid local bearer token is required to access the userinfo endpoint."),
 	)

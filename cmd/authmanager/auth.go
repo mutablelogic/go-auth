@@ -32,7 +32,7 @@ import (
 // TYPES
 
 type AuthFlags struct {
-	Enabled bool       `help:"Enable the authentication manager" env:"AUTH_ENABLED" default:"true" negatable:""`
+	Enabled bool       `help:"Enable authentication" default:"true" negatable:""`
 	Schema  string     `help:"Database schema to use for authentication manager tables" env:"AUTH_SCHEMA"`
 	Issuer  *url.URL   `help:"Issuer URL to use in OIDC metadata and tokens. If not set, the server's base URL will be used." env:"AUTH_ISSUER"`
 	Signer  []*url.URL `help:"Private Key PEM files to use for signing tokens. Can be specified multiple times for multiple signers."`
@@ -52,11 +52,6 @@ const (
 func (flags *AuthFlags) Options(ctx server.Cmd) ([]auth.Opt, *rsa.PrivateKey, error) {
 	opts := []auth.Opt{
 		auth.WithTracer(ctx.Tracer()),
-	}
-
-	// Enabled
-	if !flags.Enabled {
-		return nil, nil, nil
 	}
 
 	// Database schema
@@ -101,6 +96,9 @@ func (flags *AuthFlags) Options(ctx server.Cmd) ([]auth.Opt, *rsa.PrivateKey, er
 			}
 		}
 	}
+
+	// Identity Hook
+	opts = append(opts, auth.WithHooks(NewUserHook{Cmd: ctx}))
 
 	// Return success
 	return opts, pk, nil

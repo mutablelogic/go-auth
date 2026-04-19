@@ -28,7 +28,7 @@ import (
 // TYPES
 
 type ScopeCommands struct {
-	Scopes ListScopesCommand `cmd:"" name:"scopes" help:"Get Scopes." group:"USER MANAGER"`
+	Scopes ListScopesCommand `cmd:"" name:"scopes" help:"Get Scopes." group:"AUTH MANAGER"`
 }
 
 type ListScopesCommand struct {
@@ -58,6 +58,9 @@ func (cmd *ListScopesCommand) Run(ctx server.Cmd) error {
 		return nil
 	})
 }
+
+///////////////////////////////////////////////////////////////////////////////
+// TABLE OUTPUT
 
 type scopeRow string
 

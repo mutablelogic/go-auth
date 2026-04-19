@@ -16,6 +16,7 @@ package manager
 
 import (
 	"context"
+	"errors"
 	"strings"
 
 	// Packages
@@ -244,6 +245,9 @@ func replaceUserGroups(ctx context.Context, conn pg.Conn, user schema.UserID, gr
 	if err != nil {
 		return err
 	}
+	if err := ensureGroupsExist(ctx, conn, normalized); err != nil {
+		return err
+	}
 
 	if err := conn.Delete(ctx, nil, schema.UserGroupListRequest{User: user}); err != nil {
 		return err
@@ -254,6 +258,20 @@ func replaceUserGroups(ctx context.Context, conn pg.Conn, user schema.UserID, gr
 	}
 
 	return conn.Insert(ctx, nil, schema.UserGroupInsert{User: user, Groups: normalized})
+}
+
+func ensureGroupsExist(ctx context.Context, conn pg.Conn, groups []string) error {
+	for _, group := range groups {
+		var row schema.Group
+		if err := conn.Get(ctx, &row, schema.Group{ID: group}); err != nil {
+			err = dbErr(err)
+			if errors.Is(err, auth.ErrNotFound) {
+				return auth.ErrNotFound.Withf("group %q not found", group)
+			}
+			return err
+		}
+	}
+	return nil
 }
 
 func normalizeUserGroups(groups []string) ([]string, error) {

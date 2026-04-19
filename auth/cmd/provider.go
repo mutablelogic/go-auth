@@ -29,7 +29,7 @@ import (
 // TYPES
 
 type ProviderCommands struct {
-	Providers ListProvidersCommand `cmd:"" name:"providers" help:"Get Providers." group:"USER MANAGER"`
+	Providers ListProvidersCommand `cmd:"" name:"providers" help:"Get Providers." group:"AUTH MANAGER"`
 }
 
 type ListProvidersCommand struct{}

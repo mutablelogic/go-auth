@@ -27,6 +27,7 @@ type ManagerCommands struct {
 	ProviderCommands
 	ScopeCommands
 	UserCommands
+	GroupCommands
 }
 
 ///////////////////////////////////////////////////////////////////////////////

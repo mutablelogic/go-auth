@@ -147,7 +147,7 @@ func (group Group) Select(bind *pg.Bind, op pg.Op) (string, error) {
 }
 
 func (req GroupListRequest) Select(bind *pg.Bind, op pg.Op) (string, error) {
-	bind.Set("where", "")
+	bind.Set("where", "WHERE group_row.id <> "+bind.Set("system_group", GroupSysAdmin))
 	bind.Set("orderby", "ORDER BY group_row.id ASC")
 	req.OffsetLimit.Bind(bind, GroupListMax)
 

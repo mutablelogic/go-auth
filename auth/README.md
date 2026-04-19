@@ -4,9 +4,6 @@ A self-hosted authorization server written in Go, implementing the OAuth 2.0 aut
 
 > **Not production ready.** This project is under active development and has known gaps (see below). Do not use it to protect production systems.
 
-* For information on the related `certmanager` service for managing TLS certificates, see [cert/manager/README.md](cert/manager/README.md).
-* For information on the related `ldapmanager` service for managing LDAP directories, see [ldap/httphandler/README.md](ldap/httphandler/README.md).
-
 ## Motivation
 
 `go-auth` is designed to be embedded directly into a larger Go service or run as a standalone server, depending on what a deployment needs. It gives you full control over user data, token policy, and provider configuration within the same operational footprint as the rest of your stack.
