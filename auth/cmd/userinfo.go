@@ -19,15 +19,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/url"
-	"strings"
 
 	// Packages
 	auth "github.com/mutablelogic/go-auth/auth/httpclient"
 	oidc "github.com/mutablelogic/go-auth/auth/oidc"
-	otel "github.com/mutablelogic/go-client/pkg/otel"
 	server "github.com/mutablelogic/go-server"
 	types "github.com/mutablelogic/go-server/pkg/types"
-	attribute "go.opentelemetry.io/otel/attribute"
 	oauth2 "golang.org/x/oauth2"
 )
 
@@ -38,101 +35,67 @@ type UserInfoCommand struct {
 	Endpoint string `arg:"" optional:"" name:"endpoint" help:"Protected resource endpoint. Defaults to the stored endpoint or the global HTTP client endpoint."`
 }
 
-func (cmd UserInfoCommand) String() string {
-	return types.Stringify(cmd)
-}
-
-func (cmd UserInfoCommand) RedactedString() string {
-	return types.Stringify(cmd)
-}
-
 ///////////////////////////////////////////////////////////////////////////////
 // COMMANDS
 
-func (cmd *UserInfoCommand) Run(ctx server.Cmd) (err error) {
-	spanctx, endSpan := otel.StartSpan(ctx.Tracer(), ctx.Context(), "UserInfoCommand",
-		attribute.String("cmd", cmd.RedactedString()),
-	)
-	defer func() { endSpan(err) }()
-
-	authClient, endpoint, err := clientFor(ctx)
-	if err != nil {
-		return err
-	}
-
-	// Set the endpoint
-	if cmd.Endpoint == "" {
-		cmd.Endpoint = endpoint
-		if stored_endpoint := ctx.GetString(endpointStoreKeyPrefix); stored_endpoint != "" {
-			cmd.Endpoint = stored_endpoint
+func (cmd *UserInfoCommand) Run(globals server.Cmd) (err error) {
+	return withAuth(globals, "AuthorizeCommand", types.Stringify(cmd), func(ctx context.Context, authclient *auth.Client) error {
+		// Set the endpoint
+		if cmd.Endpoint == "" {
+			cmd.Endpoint = authclient.Endpoint
+			if stored_endpoint := globals.GetString(endpointStoreKeyPrefix); stored_endpoint != "" {
+				cmd.Endpoint = stored_endpoint
+			}
 		}
-	}
 
-	// Check the endpoint
-	url, err := url.Parse(cmd.Endpoint)
-	if err != nil {
-		return fmt.Errorf("invalid endpoint URL: %w", err)
-	} else if url.Scheme != types.SchemeSecure && url.Scheme != types.SchemeInsecure {
-		return fmt.Errorf("endpoint URL must have http or https scheme")
-	} else if url.Host == "" {
-		return fmt.Errorf("endpoint URL must have a host")
-	}
+		// Check the endpoint
+		url, err := url.Parse(cmd.Endpoint)
+		if err != nil {
+			return fmt.Errorf("invalid endpoint URL: %w", err)
+		} else if url.Scheme != types.SchemeSecure && url.Scheme != types.SchemeInsecure {
+			return fmt.Errorf("endpoint URL must have http or https scheme")
+		} else if url.Host == "" {
+			return fmt.Errorf("endpoint URL must have a host")
+		}
 
-	meta, err := discoverAuthMetadata(ctx, spanctx, authClient, cmd.Endpoint)
-	if err != nil {
-		return err
-	}
-
-	// Get the token
-	token, err := storedToken(ctx, cmd.Endpoint)
-	if err != nil {
-		return err
-	}
-	if token == nil {
-		return fmt.Errorf("no stored token for endpoint %q", cmd.Endpoint)
-	}
-	if !token.Valid() {
-		if token, err = refreshStoredTokenWithMetadata(ctx, spanctx, authClient, meta, cmd.Endpoint); err != nil {
+		meta, err := discoverAuthMetadata(globals, ctx, authclient, cmd.Endpoint)
+		if err != nil {
 			return err
 		}
-	}
 
-	// Get the user info
-	userinfo, err := userInfoForEndpointWithMetadata(ctx, spanctx, authClient, meta, cmd.Endpoint, token)
-	if err != nil {
-		return err
-	}
+		// Get the token
+		token, err := storedToken(globals, cmd.Endpoint)
+		if err != nil {
+			return err
+		}
+		if token == nil {
+			return fmt.Errorf("no stored token for endpoint %q", cmd.Endpoint)
+		}
+		if !token.Valid() {
+			if token, err = refreshStoredTokenWithMetadata(globals, ctx, authclient, meta, cmd.Endpoint); err != nil {
+				return err
+			}
+		}
 
-	data, err := json.MarshalIndent(userinfo, "", "  ")
-	if err != nil {
-		return fmt.Errorf("marshal userinfo: %w", err)
-	}
-	fmt.Println(string(data))
-	return nil
+		// Get the user info
+		userinfo, err := userInfoForEndpointWithMetadata(ctx, authclient, meta, token)
+		if err != nil {
+			return err
+		}
+
+		data, err := json.MarshalIndent(userinfo, "", "  ")
+		if err != nil {
+			return fmt.Errorf("marshal userinfo: %w", err)
+		}
+		fmt.Println(string(data))
+		return nil
+	})
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 // PRIVATE FUNCTIONS
 
-func userInfoForEndpoint(ctx server.Cmd, spanctx context.Context, authClient *auth.Client, endpoint string, token *oauth2.Token) (*oidc.UserInfo, error) {
-	if spanctx == nil && ctx != nil {
-		spanctx = ctx.Context()
-	}
-
-	meta, err := discoverAuthMetadata(ctx, spanctx, authClient, endpoint)
-	if err != nil {
-		return nil, err
-	}
-
-	return userInfoForEndpointWithMetadata(ctx, spanctx, authClient, meta, endpoint, token)
-}
-
-func userInfoForEndpointWithMetadata(ctx server.Cmd, spanctx context.Context, authClient *auth.Client, meta *auth.Config, endpoint string, token *oauth2.Token) (*oidc.UserInfo, error) {
-	if spanctx == nil && ctx != nil {
-		spanctx = ctx.Context()
-	}
-
-	endpoint = strings.TrimSpace(endpoint)
+func userInfoForEndpointWithMetadata(ctx context.Context, authClient *auth.Client, meta *auth.Config, token *oauth2.Token) (*oidc.UserInfo, error) {
 	if token == nil {
 		return nil, fmt.Errorf("token is required")
 	}
@@ -140,5 +103,5 @@ func userInfoForEndpointWithMetadata(ctx server.Cmd, spanctx context.Context, au
 	if err != nil {
 		return nil, err
 	}
-	return authClient.UserInfo(spanctx, serverMeta.Oidc.UserInfoEndpoint, token)
+	return authClient.UserInfo(ctx, serverMeta.Oidc.UserInfoEndpoint, token)
 }

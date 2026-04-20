@@ -29,11 +29,9 @@ import (
 	schema "github.com/mutablelogic/go-auth/auth/schema"
 	webcallback "github.com/mutablelogic/go-auth/auth/webcallback"
 	client "github.com/mutablelogic/go-client"
-	otel "github.com/mutablelogic/go-client/pkg/otel"
 	server "github.com/mutablelogic/go-server"
 	types "github.com/mutablelogic/go-server/pkg/types"
 	browser "github.com/pkg/browser"
-	attribute "go.opentelemetry.io/otel/attribute"
 	oauth2 "golang.org/x/oauth2"
 	errgroup "golang.org/x/sync/errgroup"
 )
@@ -72,188 +70,178 @@ const defaultRedirectURL = "http://localhost/"
 ///////////////////////////////////////////////////////////////////////////////
 // COMMANDS
 
-func (cmd *AuthorizeCommand) Run(ctx server.Cmd) (err error) {
-	// Otel span
-	spanctx, endSpan := otel.StartSpan(ctx.Tracer(), ctx.Context(), "AuthorizeCommand",
-		attribute.String("cmd", cmd.RedactedString()),
-	)
-	defer func() { endSpan(err) }()
-
-	// Get the auth client
-	auth_client, endpoint, err := clientFor(ctx)
-	if err != nil {
-		return err
-	}
-
-	// Set the endpoint
-	if cmd.Endpoint == "" {
-		cmd.Endpoint = endpoint
-		if strings.TrimSpace(cmd.Provider) == "" {
-			if stored_endpoint := ctx.GetString(endpointStoreKeyPrefix); stored_endpoint != "" {
-				cmd.Endpoint = stored_endpoint
-			}
-		}
-	}
-
-	// Check the endpoint
-	url, err := url.Parse(cmd.Endpoint)
-	if err != nil {
-		return fmt.Errorf("invalid endpoint URL: %w", err)
-	} else if url.Scheme != types.SchemeSecure && url.Scheme != types.SchemeInsecure {
-		return fmt.Errorf("endpoint URL must have http or https scheme")
-	} else if url.Host == "" {
-		return fmt.Errorf("endpoint URL must have a host")
-	}
-
-	// Reuse a stored token when it already belongs to the requested provider.
-	if token, err := storedToken(ctx, cmd.Endpoint); err != nil {
-		return err
-	} else if token != nil {
-		reuseStored := true
-		if provider := strings.TrimSpace(cmd.Provider); provider != "" {
-			if reuseStored, err = canReuseStoredTokenForProvider(ctx, spanctx, auth_client, cmd.Endpoint, provider); err != nil {
-				return err
-			}
-		}
-
-		if reuseStored {
-			// If the stored token is valid, return it immediately without going through the authorization flow.
-			if token.Valid() {
-				data, err := json.MarshalIndent(token, "", "  ")
-				if err != nil {
-					return fmt.Errorf("marshal stored token: %w", err)
+func (cmd *AuthorizeCommand) Run(globals server.Cmd) (err error) {
+	return withAuth(globals, "AuthorizeCommand", cmd.RedactedString(), func(ctx context.Context, authclient *auth.Client) error {
+		// Set the endpoint
+		if cmd.Endpoint == "" {
+			cmd.Endpoint = authclient.Endpoint
+			if strings.TrimSpace(cmd.Provider) == "" {
+				if stored_endpoint := globals.GetString(endpointStoreKeyPrefix); stored_endpoint != "" {
+					cmd.Endpoint = stored_endpoint
 				}
-				fmt.Println(string(data))
-				return nil
 			}
-			refreshed, err := refreshStoredToken(ctx, spanctx, auth_client, cmd.Endpoint)
-			if err != nil {
-				if shouldStartNewAuthorizationSession(err) {
-					if deleteErr := deleteStoredToken(ctx, cmd.Endpoint, ""); deleteErr != nil {
-						return deleteErr
-					}
-					ctx.Logger().Info("Stored token refresh failed; starting new authorization session", "endpoint", cmd.Endpoint, "provider", strings.TrimSpace(cmd.Provider))
-				} else {
+		}
+
+		// Check the endpoint
+		url, err := url.Parse(cmd.Endpoint)
+		if err != nil {
+			return fmt.Errorf("invalid endpoint URL: %w", err)
+		} else if url.Scheme != types.SchemeSecure && url.Scheme != types.SchemeInsecure {
+			return fmt.Errorf("endpoint URL must have http or https scheme")
+		} else if url.Host == "" {
+			return fmt.Errorf("endpoint URL must have a host")
+		}
+
+		// Reuse a stored token when it already belongs to the requested provider.
+		if token, err := storedToken(globals, cmd.Endpoint); err != nil {
+			return err
+		} else if token != nil {
+			reuseStored := true
+			if provider := strings.TrimSpace(cmd.Provider); provider != "" {
+				if reuseStored, err = canReuseStoredTokenForProvider(globals, ctx, authclient, cmd.Endpoint, provider); err != nil {
 					return err
 				}
-			} else {
-				data, err := json.MarshalIndent(refreshed, "", "  ")
-				if err != nil {
-					return fmt.Errorf("marshal refreshed token: %w", err)
+			}
+
+			if reuseStored {
+				// If the stored token is valid, return it immediately without going through the authorization flow.
+				if token.Valid() {
+					data, err := json.MarshalIndent(token, "", "  ")
+					if err != nil {
+						return fmt.Errorf("marshal stored token: %w", err)
+					}
+					fmt.Println(string(data))
+					return nil
 				}
-				fmt.Println(string(data))
-				return nil
+				refreshed, err := refreshStoredToken(globals, ctx, authclient, cmd.Endpoint)
+				if err != nil {
+					if shouldStartNewAuthorizationSession(err) {
+						if deleteErr := deleteStoredToken(globals, cmd.Endpoint, ""); deleteErr != nil {
+							return deleteErr
+						}
+						globals.Logger().InfoContext(ctx, "Stored token refresh failed; starting new authorization session", "endpoint", cmd.Endpoint, "provider", strings.TrimSpace(cmd.Provider))
+					} else {
+						return err
+					}
+				} else {
+					data, err := json.MarshalIndent(refreshed, "", "  ")
+					if err != nil {
+						return fmt.Errorf("marshal refreshed token: %w", err)
+					}
+					fmt.Println(string(data))
+					return nil
+				}
 			}
 		}
-	}
 
-	// Attempt to get the protected resource metadata
-	var meta *auth.Config
-	if err := auth_client.DoAuthWithContext(spanctx, nil, nil, client.OptReqEndpoint(cmd.Endpoint)); err != nil {
-		meta_, err := auth_client.DiscoverWithError(spanctx, err)
-		if err == nil && meta_ != nil {
-			meta = meta_
+		// Attempt to get the protected resource metadata
+		var meta *auth.Config
+		if err := authclient.DoAuthWithContext(ctx, nil, nil, client.OptReqEndpoint(cmd.Endpoint)); err != nil {
+			meta_, err := authclient.DiscoverWithError(ctx, err)
+			if err == nil && meta_ != nil {
+				meta = meta_
+			}
 		}
-	}
 
-	// If meta is empty, we try and discover from the endpoint directly
-	if meta == nil {
-		meta_, err := auth_client.Discover(spanctx, cmd.Endpoint)
-		if err != nil {
-			return fmt.Errorf("failed to discover auth server metadata: %w", err)
-		} else {
-			meta = meta_
+		// If meta is empty, we try and discover from the endpoint directly
+		if meta == nil {
+			meta_, err := authclient.Discover(ctx, cmd.Endpoint)
+			if err != nil {
+				return fmt.Errorf("failed to discover auth server metadata: %w", err)
+			} else {
+				meta = meta_
+			}
 		}
-	}
 
-	// Create the callback listener first so the resolved loopback URL, including
-	// any auto-selected port, is used consistently for registration and the auth flow.
-	redirectURL := strings.TrimSpace(cmd.Redirect)
-	if redirectURL == "" {
-		redirectURL = defaultRedirectURL
-	}
-	callback, err := webcallback.New(redirectURL)
-	if err != nil {
-		return err
-	}
-	redirectURL = callback.URL()
-
-	// Get the server metadata and client ID for the authorization flow, either from the command line, stored value,
-	// or dynamic registration
-	serverMeta, clientID, clientSecret, err := cmd.authorizationServerAndClientCredentials(ctx, spanctx, auth_client, meta, redirectURL)
-	if err != nil {
-		return err
-	}
-
-	// Generate the authorization code flow URL
-	config, err := serverMeta.AuthorizationCodeConfig()
-	if err != nil {
-		return err
-	}
-	scopes := cmd.authorizationScopes(meta, serverMeta)
-	flow, err := oidc.NewAuthorizationCodeFlow(config, clientID, redirectURL, scopes...)
-	if err != nil {
-		return err
-	}
-	flow.Provider = strings.TrimSpace(cmd.Provider)
-	flow.AuthorizationURL, err = authorizationURLWithHints(flow.AuthorizationURL, flow.Provider)
-	if err != nil {
-		return err
-	}
-
-	// In parallel, open the browser to the authorization URL and wait for the callback to be received,
-	// then exchange the code for a token and store it
-	g, groupCtx := errgroup.WithContext(spanctx)
-	g.Go(func() error {
-		result, err := callback.Run(groupCtx)
+		// Create the callback listener first so the resolved loopback URL, including
+		// any auto-selected port, is used consistently for registration and the auth flow.
+		redirectURL := strings.TrimSpace(cmd.Redirect)
+		if redirectURL == "" {
+			redirectURL = defaultRedirectURL
+		}
+		callback, err := webcallback.New(redirectURL)
 		if err != nil {
 			return err
 		}
-		code, err := flow.ValidateCallback(
-			result.Query.Get("code"),
-			result.Query.Get("state"),
-		)
+		redirectURL = callback.URL()
+
+		// Get the server metadata and client ID for the authorization flow, either from the command line, stored value,
+		// or dynamic registration
+		serverMeta, clientID, clientSecret, err := cmd.authorizationServerAndClientCredentials(globals, ctx, authclient, meta, redirectURL)
 		if err != nil {
 			return err
 		}
-		token, err := auth_client.ExchangeCode(groupCtx, flow, code, clientSecret)
+
+		// Generate the authorization code flow URL
+		config, err := serverMeta.AuthorizationCodeConfig()
 		if err != nil {
 			return err
 		}
-		if err := storeToken(ctx, cmd.Endpoint, flow.Issuer, flow.Provider, token); err != nil {
+		scopes := cmd.authorizationScopes(meta, serverMeta)
+		flow, err := oidc.NewAuthorizationCodeFlow(config, clientID, redirectURL, scopes...)
+		if err != nil {
 			return err
 		}
-		ctx.Logger().Debug("Stored authorization token", "issuer", flow.Issuer)
+		flow.Provider = strings.TrimSpace(cmd.Provider)
+		flow.AuthorizationURL, err = authorizationURLWithHints(flow.AuthorizationURL, flow.Provider)
+		if err != nil {
+			return err
+		}
+
+		// In parallel, open the browser to the authorization URL and wait for the callback to be received,
+		// then exchange the code for a token and store it
+		g, groupCtx := errgroup.WithContext(ctx)
+		g.Go(func() error {
+			result, err := callback.Run(groupCtx)
+			if err != nil {
+				return err
+			}
+			code, err := flow.ValidateCallback(
+				result.Query.Get("code"),
+				result.Query.Get("state"),
+			)
+			if err != nil {
+				return err
+			}
+			token, err := authclient.ExchangeCode(groupCtx, flow, code, clientSecret)
+			if err != nil {
+				return err
+			}
+			if err := storeToken(globals, cmd.Endpoint, flow.Issuer, flow.Provider, token); err != nil {
+				return err
+			}
+			globals.Logger().DebugContext(ctx, "Stored authorization token", "issuer", flow.Issuer)
+			return nil
+		})
+		g.Go(func() error {
+			globals.Logger().InfoContext(ctx, "Opening browser for authorization code flow", "url", flow.AuthorizationURL)
+			return browser.OpenURL(flow.AuthorizationURL)
+		})
+		if err := g.Wait(); err != nil {
+			return err
+		}
+
+		// Return success
 		return nil
 	})
-	g.Go(func() error {
-		ctx.Logger().Info("Opening browser for authorization code flow", "url", flow.AuthorizationURL)
-		return browser.OpenURL(flow.AuthorizationURL)
-	})
-	if err := g.Wait(); err != nil {
-		return err
-	}
-
-	// Return success
-	return nil
 }
 
-func (cmd *AuthorizeCommand) authorizationServerAndClientCredentials(ctx server.Cmd, spanctx context.Context, authClient *auth.Client, meta *auth.Config, redirectURL string) (*auth.ServerMetadata, string, string, error) {
+func (cmd *AuthorizeCommand) authorizationServerAndClientCredentials(globals server.Cmd, ctx context.Context, authClient *auth.Client, meta *auth.Config, redirectURL string) (*auth.ServerMetadata, string, string, error) {
 	// Retrieve client credentials from command line, stored values, or dynamic registration
 	clientID := strings.TrimSpace(cmd.ClientID)
 	if clientID == "" {
-		clientID = storedClientID(ctx, meta, cmd.Endpoint)
+		clientID = storedClientID(globals, meta, cmd.Endpoint)
 	}
 	clientSecret := strings.TrimSpace(cmd.ClientSecret)
 	if clientSecret == "" {
-		clientSecret = storedClientSecret(ctx, meta, cmd.Endpoint)
+		clientSecret = storedClientSecret(globals, meta, cmd.Endpoint)
 	}
 	if clientID != "" {
 		serverMeta, err := meta.AuthorizationServerForFlow()
 		if err != nil {
 			return nil, "", "", err
 		}
-		if err := storeClientCredentials(ctx, meta, cmd.Endpoint, clientID, clientSecret); err != nil {
+		if err := storeClientCredentials(globals, meta, cmd.Endpoint, clientID, clientSecret); err != nil {
 			return nil, "", "", err
 		}
 		return serverMeta, clientID, clientSecret, nil
@@ -275,7 +263,7 @@ func (cmd *AuthorizeCommand) authorizationServerAndClientCredentials(ctx server.
 	if redirectURL == "" {
 		redirectURL = defaultRedirectURL
 	}
-	registration, err := authClient.RegisterClient(spanctx, serverMeta, redirectURL)
+	registration, err := authClient.RegisterClient(ctx, serverMeta, redirectURL)
 	if err != nil {
 		return nil, "", "", fmt.Errorf("client ID is required or dynamic registration must succeed: %w", err)
 	}
@@ -284,7 +272,7 @@ func (cmd *AuthorizeCommand) authorizationServerAndClientCredentials(ctx server.
 		return nil, "", "", fmt.Errorf("registration did not return a client ID")
 	}
 	clientSecret = strings.TrimSpace(registration.ClientSecret)
-	if err := storeClientCredentials(ctx, meta, cmd.Endpoint, clientID, clientSecret); err != nil {
+	if err := storeClientCredentials(globals, meta, cmd.Endpoint, clientID, clientSecret); err != nil {
 		return nil, "", "", err
 	}
 

@@ -22,10 +22,8 @@ import (
 
 	// Packages
 	auth "github.com/mutablelogic/go-auth/auth/httpclient"
-	otel "github.com/mutablelogic/go-client/pkg/otel"
 	server "github.com/mutablelogic/go-server"
 	types "github.com/mutablelogic/go-server/pkg/types"
-	attribute "go.opentelemetry.io/otel/attribute"
 	oauth2 "golang.org/x/oauth2"
 )
 
@@ -36,85 +34,57 @@ type RefreshCommand struct {
 	Endpoint string `arg:"" optional:"" name:"endpoint" help:"Protected resource endpoint. Defaults to the stored endpoint or the global HTTP client endpoint."`
 }
 
-func (cmd RefreshCommand) String() string {
-	return types.Stringify(cmd)
-}
-
-func (cmd RefreshCommand) RedactedString() string {
-	return types.Stringify(cmd)
-}
-
 ///////////////////////////////////////////////////////////////////////////////
 // COMMANDS
 
-func (cmd *RefreshCommand) Run(ctx server.Cmd) (err error) {
-	spanctx, endSpan := otel.StartSpan(ctx.Tracer(), ctx.Context(), "RefreshCommand",
-		attribute.String("cmd", cmd.RedactedString()),
-	)
-	defer func() { endSpan(err) }()
-
-	authClient, endpoint, err := clientFor(ctx)
-	if err != nil {
-		return err
-	}
-
-	// Set the endpoint
-	if cmd.Endpoint == "" {
-		cmd.Endpoint = endpoint
-		if stored_endpoint := ctx.GetString(endpointStoreKeyPrefix); stored_endpoint != "" {
-			cmd.Endpoint = stored_endpoint
+func (cmd *RefreshCommand) Run(globals server.Cmd) (err error) {
+	return withAuth(globals, "RefreshCommand", types.Stringify(cmd), func(ctx context.Context, authclient *auth.Client) error {
+		// Set the endpoint
+		if cmd.Endpoint == "" {
+			cmd.Endpoint = authclient.Endpoint
+			if stored_endpoint := globals.GetString(endpointStoreKeyPrefix); stored_endpoint != "" {
+				cmd.Endpoint = stored_endpoint
+			}
 		}
-	}
 
-	// Check the endpoint
-	url, err := url.Parse(cmd.Endpoint)
-	if err != nil {
-		return fmt.Errorf("invalid endpoint URL: %w", err)
-	} else if url.Scheme != types.SchemeSecure && url.Scheme != types.SchemeInsecure {
-		return fmt.Errorf("endpoint URL must have http or https scheme")
-	} else if url.Host == "" {
-		return fmt.Errorf("endpoint URL must have a host")
-	}
+		// Check the endpoint
+		url, err := url.Parse(cmd.Endpoint)
+		if err != nil {
+			return fmt.Errorf("invalid endpoint URL: %w", err)
+		} else if url.Scheme != types.SchemeSecure && url.Scheme != types.SchemeInsecure {
+			return fmt.Errorf("endpoint URL must have http or https scheme")
+		} else if url.Host == "" {
+			return fmt.Errorf("endpoint URL must have a host")
+		}
 
-	// Do the refresh
-	refreshed, err := refreshStoredToken(ctx, spanctx, authClient, cmd.Endpoint)
-	if err != nil {
-		return err
-	}
+		// Do the refresh
+		refreshed, err := refreshStoredToken(globals, ctx, authclient, cmd.Endpoint)
+		if err != nil {
+			return err
+		}
 
-	// Print the refreshed token
-	fmt.Println(types.Stringify(refreshed))
-	return nil
+		// Print the refreshed token
+		fmt.Println(types.Stringify(refreshed))
+		return nil
+	})
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 // PRIVATE FUNCTIONS
 
 func refreshStoredToken(ctx server.Cmd, spanctx context.Context, authClient *auth.Client, endpoint string) (*oauth2.Token, error) {
-	if spanctx == nil && ctx != nil {
-		spanctx = ctx.Context()
-	}
-
 	meta, err := discoverAuthMetadata(ctx, spanctx, authClient, endpoint)
 	if err != nil {
 		return nil, err
 	}
-
 	return refreshStoredTokenWithMetadata(ctx, spanctx, authClient, meta, endpoint)
 }
 
 func refreshStoredTokenWithMetadata(ctx server.Cmd, spanctx context.Context, authClient *auth.Client, meta *auth.Config, endpoint string) (*oauth2.Token, error) {
-	if spanctx == nil && ctx != nil {
-		spanctx = ctx.Context()
-	}
-
-	endpoint = strings.TrimSpace(endpoint)
-
 	token, err := storedToken(ctx, endpoint)
 	if err != nil {
 		return nil, err
-	}
-	if token == nil {
+	} else if token == nil {
 		return nil, fmt.Errorf("no stored token for endpoint %q", endpoint)
 	}
 
@@ -122,6 +92,7 @@ func refreshStoredTokenWithMetadata(ctx server.Cmd, spanctx context.Context, aut
 	if err != nil {
 		return nil, err
 	}
+
 	config, err := serverMeta.AuthorizationCodeConfig()
 	if err != nil {
 		return nil, err
