@@ -16,6 +16,7 @@ package test
 
 import (
 	"context"
+	"sync"
 	"testing"
 
 	// Packages
@@ -25,16 +26,25 @@ import (
 )
 
 ///////////////////////////////////////////////////////////////////////////////
+// GLOBALS
+
+var (
+	shared      *manager.Manager
+	testCancels sync.Map
+)
+
+///////////////////////////////////////////////////////////////////////////////
 // LIFECYCLE
 
 // Main is the test main function for auth manager tests. It starts up a container and runs the tests,
 // providing a manager instance to each test.
 func Main(m *testing.M, setup func(*manager.Manager) (func(), error), opts ...manager.Opt) {
 	test.Main(m, func(pool pg.PoolConn) (func(), error) {
-		mgr, err := manager.New(context.Background(), pool, opts...)
+		mgr, err := manager.New(context.Background(), pool, "manager", "test", opts...)
 		if err != nil {
 			return nil, err
 		}
+		shared = mgr
 
 		teardown := func() {}
 		if setup != nil {
@@ -56,7 +66,31 @@ func Main(m *testing.M, setup func(*manager.Manager) (func(), error), opts ...ma
 			if err := <-runDone; err != nil {
 				panic(err)
 			}
+			shared = nil
 			teardown()
 		}, nil
 	})
+}
+
+// Begin returns the shared test manager and a per-test context.
+func Begin(t *testing.T) (*manager.Manager, context.Context) {
+	t.Helper()
+	if shared == nil {
+		t.Fatal("test manager is not initialized; call auth/test.Main from TestMain")
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	testCancels.Store(t, cancel)
+	t.Cleanup(func() {
+		if cancel, ok := testCancels.LoadAndDelete(t); ok {
+			cancel.(context.CancelFunc)()
+		}
+	})
+	return shared, ctx
+}
+
+// End releases the per-test context created by Begin.
+func End(t *testing.T) {
+	t.Helper()
+	// The context is canceled in t.Cleanup so test-level cleanup callbacks can
+	// still use it. End remains as a compatibility no-op for defer usage.
 }

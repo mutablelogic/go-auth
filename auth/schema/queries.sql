@@ -350,6 +350,98 @@ DELETE FROM ${"schema"}.session
 WHERE id = @id
 RETURNING id, "user", expires_at, refresh_expires_at, refresh_counter, created_at, revoked_at;
 
+-- apikey.insert
+WITH generated AS (
+  SELECT encode(gen_random_bytes(32), 'hex') AS token
+), inserted AS (
+  INSERT INTO ${"schema"}.apikey ("hash", "user", name, expires_at)
+  SELECT
+    digest(generated.token, ${'algorithm'}),
+    @user,
+    @name,
+    @expires_at
+  FROM generated
+  RETURNING "user", name, created_at, modified_at, expires_at
+)
+SELECT
+  inserted."user",
+  inserted.name,
+  inserted.created_at,
+  inserted.modified_at,
+  CASE
+    WHEN user_row.expires_at IS NULL THEN inserted.expires_at
+    WHEN inserted.expires_at IS NULL THEN user_row.expires_at
+    ELSE LEAST(inserted.expires_at, user_row.expires_at)
+  END AS expires_at,
+  user_row.status,
+  generated.token AS token
+FROM inserted
+JOIN ${"schema"}.user AS user_row ON user_row.id = inserted."user"
+JOIN generated ON true;
+
+-- apikey.select
+SELECT
+  apikey."user",
+  apikey.name,
+  apikey.created_at,
+  apikey.modified_at,
+  CASE
+    WHEN user_row.expires_at IS NULL THEN apikey.expires_at
+    WHEN apikey.expires_at IS NULL THEN user_row.expires_at
+    ELSE LEAST(apikey.expires_at, user_row.expires_at)
+  END AS expires_at,
+  user_row.status,
+  ''::text AS token
+FROM ${"schema"}.apikey AS apikey
+JOIN ${"schema"}.user AS user_row ON user_row.id = apikey."user"
+WHERE apikey."hash" = digest(@token, ${'algorithm'});
+
+-- apikey.user
+SELECT
+    user_row.id,
+    user_row.name,
+    user_row.email,
+  user_row.meta,
+  COALESCE(group_memberships.effective_meta, '{}'::jsonb) || COALESCE(user_row.meta, '{}'::jsonb) AS effective_meta,
+    user_row.status,
+    user_row.created_at,
+    user_row.expires_at,
+    user_row.modified_at,
+    COALESCE(identity_claims.claims, '{}'::jsonb) AS claims,
+    COALESCE(group_memberships.groups, '{}'::text[]) AS groups,
+  COALESCE(group_memberships.disabled_groups, '{}'::text[]) AS disabled_groups,
+    COALESCE(group_memberships.scopes, '{}'::text[]) AS scopes
+FROM ${"schema"}.user AS user_row
+JOIN ${"schema"}.apikey AS apikey ON apikey."user" = user_row.id
+LEFT JOIN LATERAL (
+    SELECT jsonb_object_agg(claim.key, claim.value) AS claims
+      FROM ${"schema"}.identity
+    CROSS JOIN LATERAL jsonb_each(identity.claims) AS claim(key, value)
+      WHERE identity."user" = user_row.id
+) AS identity_claims ON true
+LEFT JOIN LATERAL (
+    SELECT
+    array_agg(DISTINCT group_row.id ORDER BY group_row.id) FILTER (WHERE group_row.enabled) AS groups,
+    array_agg(DISTINCT group_row.id ORDER BY group_row.id) FILTER (WHERE NOT group_row.enabled) AS disabled_groups,
+    array_agg(DISTINCT scope ORDER BY scope) FILTER (WHERE group_row.enabled AND scope IS NOT NULL) AS scopes,
+    (
+      SELECT jsonb_object_agg(group_meta.key, group_meta.value ORDER BY group_meta.group_id, group_meta.key)
+      FROM (
+        SELECT group_row_meta.id AS group_id, meta_entry.key, meta_entry.value
+        FROM ${"schema"}.user_group AS user_group_meta
+        JOIN ${"schema"}."group" AS group_row_meta ON group_row_meta.id = user_group_meta."group"
+        CROSS JOIN LATERAL jsonb_each(COALESCE(group_row_meta.meta, '{}'::jsonb)) AS meta_entry(key, value)
+        WHERE user_group_meta."user" = user_row.id
+          AND group_row_meta.enabled
+      ) AS group_meta
+    ) AS effective_meta
+    FROM ${"schema"}.user_group AS user_group
+    JOIN ${"schema"}."group" AS group_row ON group_row.id = user_group."group"
+  LEFT JOIN LATERAL unnest(CASE WHEN group_row.enabled THEN group_row.scopes ELSE '{}'::text[] END) AS scope ON true
+  WHERE user_group."user" = user_row.id
+) AS group_memberships ON true
+WHERE apikey."hash" = digest(@token, ${'algorithm'});
+
 -- group.insert
 INSERT INTO ${"schema"}."group" (id, description, enabled, scopes, meta)
   VALUES (@id, @description, @enabled, @scopes, @meta)

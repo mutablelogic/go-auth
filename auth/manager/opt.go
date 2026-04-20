@@ -47,6 +47,15 @@ type IdentityLinkHook interface {
 	OnIdentityLink(context.Context, schema.IdentityInsert, *schema.User) error
 }
 
+// APIKeyHook manages the shape of API tokens - allowing for custom prefixes and validation logic.
+type APIKeyHook interface {
+	// Return the prefix to use for the API key token
+	OnKeyCreate(context.Context, schema.Key) (string, error)
+
+	// Return the token after stripping the prefix, or an error if the token is invalid
+	OnKeyValidate(context.Context, string) (string, error)
+}
+
 const (
 	DefaultCleanupInterval = time.Hour
 	DefaultCleanupLimit    = 100

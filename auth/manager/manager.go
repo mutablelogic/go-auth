@@ -21,7 +21,6 @@ import (
 	"sync"
 
 	// Packages
-
 	schema "github.com/mutablelogic/go-auth/auth/schema"
 	otel "github.com/mutablelogic/go-client/pkg/otel"
 	pg "github.com/mutablelogic/go-pg"
