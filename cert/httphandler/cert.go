@@ -20,7 +20,6 @@ import (
 
 	// Packages
 	managerpkg "github.com/mutablelogic/go-auth/cert/manager"
-	markdown "github.com/mutablelogic/go-auth/pkg/markdown"
 	schema "github.com/mutablelogic/go-auth/cert/schema"
 	httprequest "github.com/mutablelogic/go-server/pkg/httprequest"
 	httpresponse "github.com/mutablelogic/go-server/pkg/httpresponse"
@@ -33,7 +32,7 @@ import (
 // PUBLIC METHODS
 
 // CertHandler returns a path and pathitem for the certificate list endpoint.
-func CertHandler(manager *managerpkg.Manager, doc *markdown.Document) (string, *jsonschema.Schema, httprequest.PathItem) {
+func CertHandler(manager *managerpkg.Manager, doc *opts.MarkdownDoc) (string, *jsonschema.Schema, httprequest.PathItem) {
 	return "cert", nil, httprequest.NewPathItem(
 		"Certificate operations",
 		"Operations on managed certificates.",
@@ -51,7 +50,7 @@ func CertHandler(manager *managerpkg.Manager, doc *markdown.Document) (string, *
 }
 
 // CertByCAHandler returns a path and pathitem for certificate operations by name.
-func CertByCAHandler(manager *managerpkg.Manager, doc *markdown.Document) (string, *jsonschema.Schema, httprequest.PathItem) {
+func CertByCAHandler(manager *managerpkg.Manager, doc *opts.MarkdownDoc) (string, *jsonschema.Schema, httprequest.PathItem) {
 	return "cert/{name}", nil, httprequest.NewPathItem(
 		"Certificate operations by name",
 		"Fetches the latest certificate version by name or creates a leaf certificate signed by the latest certificate authority version with that name.",
@@ -93,7 +92,7 @@ func CertByCAHandler(manager *managerpkg.Manager, doc *markdown.Document) (strin
 }
 
 // CertByCAKeyHandler returns a path and pathitem for certificate operations by version.
-func CertByCAKeyHandler(manager *managerpkg.Manager, doc *markdown.Document) (string, *jsonschema.Schema, httprequest.PathItem) {
+func CertByCAKeyHandler(manager *managerpkg.Manager, doc *opts.MarkdownDoc) (string, *jsonschema.Schema, httprequest.PathItem) {
 	return "cert/{name}/{serial}", nil, httprequest.NewPathItem(
 		"Certificate operations by version",
 		"Fetches a specific certificate version or creates a leaf certificate signed by a specific certificate authority version.",
@@ -135,7 +134,7 @@ func CertByCAKeyHandler(manager *managerpkg.Manager, doc *markdown.Document) (st
 }
 
 // CertRenewByNameHandler returns a path and pathitem for renewing the latest certificate version with the provided name.
-func CertRenewByNameHandler(manager *managerpkg.Manager, doc *markdown.Document) (string, *jsonschema.Schema, httprequest.PathItem) {
+func CertRenewByNameHandler(manager *managerpkg.Manager, doc *opts.MarkdownDoc) (string, *jsonschema.Schema, httprequest.PathItem) {
 	return "cert/{name}/renew", nil, httprequest.NewPathItem(
 		"Certificate renewal by name",
 		"Renews the latest certificate version with the supplied name.",
@@ -156,7 +155,7 @@ func CertRenewByNameHandler(manager *managerpkg.Manager, doc *markdown.Document)
 }
 
 // CertRenewByKeyHandler returns a path and pathitem for renewing an explicit certificate version.
-func CertRenewByKeyHandler(manager *managerpkg.Manager, doc *markdown.Document) (string, *jsonschema.Schema, httprequest.PathItem) {
+func CertRenewByKeyHandler(manager *managerpkg.Manager, doc *opts.MarkdownDoc) (string, *jsonschema.Schema, httprequest.PathItem) {
 	return "cert/{name}/{serial}/renew", nil, httprequest.NewPathItem(
 		"Certificate renewal by version",
 		"Renews the specified certificate version.",

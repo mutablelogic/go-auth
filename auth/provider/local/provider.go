@@ -28,7 +28,9 @@ import (
 	oidc "github.com/mutablelogic/go-auth/auth/oidc"
 	provider "github.com/mutablelogic/go-auth/auth/provider"
 	schema "github.com/mutablelogic/go-auth/auth/schema"
-	openapi "github.com/mutablelogic/go-server/pkg/openapi/schema"
+	httprequest "github.com/mutablelogic/go-server/pkg/httprequest"
+	jsonschema "github.com/mutablelogic/go-server/pkg/jsonschema"
+	opts "github.com/mutablelogic/go-server/pkg/openapi"
 	types "github.com/mutablelogic/go-server/pkg/types"
 )
 
@@ -83,14 +85,30 @@ func (p *Provider) PublicConfig() schema.PublicClientConfiguration {
 	}
 }
 
-func (p *Provider) HTTPHandler() (http.HandlerFunc, *openapi.PathItem) {
+func (p *Provider) HTTPHandler() httprequest.PathItem {
 	if p == nil {
-		return nil, nil
+		return nil
 	}
-	return http.HandlerFunc(p.ServeHTTP), &openapi.PathItem{
-		Summary:     "Local provider browser flow",
-		Description: "Renders and processes the built-in local provider login form.",
-	}
+	return httprequest.NewPathItem(
+		"Local provider browser flow",
+		"Renders and processes the built-in local provider login form.",
+		"Identity Provider",
+	).Get(
+		p.ServeHTTP,
+		"Render local login form",
+		opts.WithDescription("Renders the built-in local provider login form. Query parameters are copied into hidden form fields so the submitted form can continue the local authorization flow."),
+		opts.WithQuery(jsonschema.MustFor[provider.AuthorizationRequest]()),
+		opts.WithResponse(http.StatusOK, types.ContentTypeHTML, jsonschema.MustFor[string](), "HTML login form for the built-in local identity provider."),
+	).Post(
+		p.ServeHTTP,
+		"Submit local login form",
+		opts.WithDescription("Validates the submitted email address, issues a short-lived local authorization code, and redirects back to redirect_uri with code and state query parameters. Validation failures re-render the HTML form with an error message."),
+		opts.WithFormRequest(jsonschema.MustFor[provider.AuthorizationRequest]()),
+		opts.WithNoContentResponse(http.StatusFound, "Redirects back to the client callback with code and state query parameters."),
+		opts.WithResponse(http.StatusOK, types.ContentTypeHTML, jsonschema.MustFor[string](), "HTML login form re-rendered with validation errors."),
+		opts.WithErrorResponse(http.StatusBadRequest, "Malformed form submission."),
+		opts.WithErrorResponse(http.StatusInternalServerError, "The local provider could not create an authorization code."),
+	)
 }
 
 func (p *Provider) BeginAuthorization(_ context.Context, req provider.AuthorizationRequest) (*provider.AuthorizationResponse, error) {
@@ -121,8 +139,8 @@ func (p *Provider) BeginAuthorization(_ context.Context, req provider.Authorizat
 	if loginHint := strings.TrimSpace(req.LoginHint); loginHint != "" {
 		values.Set("login_hint", loginHint)
 	}
-	if len(req.Scopes) > 0 {
-		values.Set("scope", strings.Join(req.Scopes, " "))
+	if scope := strings.TrimSpace(req.Scope); scope != "" {
+		values.Set("scope", scope)
 	}
 	uri := providerURL
 	if strings.Contains(uri, "?") {

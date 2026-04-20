@@ -16,6 +16,7 @@ package httpclient
 
 import (
 	// Packages
+	authtransport "github.com/mutablelogic/go-auth/auth/transport"
 	client "github.com/mutablelogic/go-client"
 )
 
@@ -31,8 +32,19 @@ type ManagerClient struct {
 // LIFECYCLE
 
 // Manager creates a new management HTTP client with the given base URL and options.
-func Manager(url string, opts ...client.ClientOpt) (*ManagerClient, error) {
+func Manager(url string, tokenstore authtransport.TokenStore, opts ...client.ClientOpt) (*ManagerClient, error) {
 	c := new(ManagerClient)
+
+	// Add the token store as a client option
+	if tokenstore != nil {
+		refreshClient, err := New(url, opts...)
+		if err != nil {
+			return nil, err
+		}
+		opts = append(opts, client.OptTransport(authtransport.TokenTransport(url, tokenstore, refreshClient, "")))
+	}
+
+	// Create the base  (auth) client
 	if client, err := New(url, opts...); err != nil {
 		return nil, err
 	} else {

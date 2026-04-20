@@ -1,79 +1,71 @@
-# Go parameters
-GO=$(shell command -v go)
-BUILDDIR=build
-COVERAGE_PROFILE=coverage.out
-WASM_DIRS=$(patsubst %/wasmbuild.yaml,%,$(wildcard wasm/*/wasmbuild.yaml))
-WASM_PKGS=$(patsubst wasm/%,$(BUILDDIR)/%.wasm,$(WASM_DIRS))
-CMD_DIRS=$(patsubst %/,%,$(wildcard cmd/*/))
-CMD_BINS=$(patsubst cmd/%,$(BUILDDIR)/%,$(CMD_DIRS))
-NPM_DIRS=$(patsubst %/package.json,%,$(wildcard npm/*/package.json))
-NPM=$(patsubst %, %/dist/bundle.js,$(NPM_DIRS))
-NPM_NODE_MODULES=$(patsubst %, %/node_modules,$(NPM_DIRS))
-GOWASM=$(shell command -v go)
-GOBIN=$(abspath $(BUILDDIR))
-GOFILES=$(shell find . -name '*.go' -not -path './build/*' -not -path './.git/*') go.mod go.sum
+# Executables
+GO ?= $(shell which go 2>/dev/null)
+DOCKER ?= $(shell which docker 2>/dev/null)
 
-# LDFLAGS
-LD_FLAGS=-s -w
+# Locations
+BUILD_DIR ?= build
 
-# All targets
-all: $(WASM_PKGS) $(NPM)
+# Set OS and Architecture
+ARCH ?= $(shell arch | tr A-Z a-z | sed 's/x86_64/amd64/' | sed 's/i386/amd64/' | sed 's/armv7l/arm/' | sed 's/aarch64/arm64/')
+OS ?= $(shell uname | tr A-Z a-z)
+VERSION ?= $(shell git describe --tags --always | sed 's/^v//')
 
-## BUILDING ###################################################################
+# Set build flags
+BUILD_MODULE = $(shell cat go.mod | head -1 | cut -d ' ' -f 2)
+BUILD_LD_FLAGS += -X $(BUILD_MODULE)/pkg/version.GitTag=$(shell git describe --tags --always)
+BUILD_LD_FLAGS += -X $(BUILD_MODULE)/pkg/version.GitBranch=$(shell git name-rev HEAD --name-only --always)
+BUILD_FLAGS = -ldflags "-s -w ${BUILD_LD_FLAGS}" 
 
-.PHONY: wasm 
-wasm: $(WASM_PKGS)
+# Docker
+DOCKER_REPO ?= ghcr.io/mutablelogic/go-auth
+DOCKER_SOURCE ?= ${BUILD_MODULE}
+DOCKER_TAG = ${DOCKER_REPO}-${OS}-${ARCH}:${VERSION}
 
-.PHONY: cmd
-cmd: $(CMD_BINS)
+###############################################################################
+# ALL
 
-$(CMD_BINS): $(GOFILES) | go-dep
-	@echo "Building $(patsubst $(BUILDDIR)/%,cmd/%,$@)"
-	@$(GO) build $(GO_BUILD_FLAGS) -ldflags "$(LD_FLAGS)" -o $@ ./$(patsubst $(BUILDDIR)/%,cmd/%,$@)
+.PHONY: all
+all: authmanager
 
-$(BUILDDIR)/authserver: $(BUILDDIR)/frontend.wasm
+###############################################################################
+# BUILD
 
-$(BUILDDIR)/authserver: GO_BUILD_FLAGS += -tags uiassets
-
-define cmd-alias-rule
-$(1): $(BUILDDIR)/$(notdir $(1))
-	@true
-endef
-
-$(foreach dir,$(CMD_DIRS),$(eval $(call cmd-alias-rule,$(dir))))
-
-# Rules for building
-define wasm-rule
-$(BUILDDIR)/$(notdir $(1)).wasm: $(shell find $(1) -type f) $(NPM) | wasmbuild gowasm-dep
-	@echo "Building $(1)"
-	@rm -rf $$@
-	@$(BUILDDIR)/wasmbuild build --go=${GOWASM} --go-flags='-ldflags "$(LD_FLAGS)"' -o $$@ ./$(1)
-endef
-
-$(foreach dir,$(WASM_DIRS),$(eval $(call wasm-rule,$(dir))))
+.PHONY: authmanager
+authmanager: wasmbuild
+	@echo Build authmanager GOOS=${OS} GOARCH=${ARCH}
+	@${BUILD_DIR}/wasmbuild build -o ${BUILD_DIR}/app.wasm ./auth/wasm/app
+	@GOOS=${OS} GOARCH=${ARCH} ${GO} build ${BUILD_FLAGS} -o ${BUILD_DIR}/authmanager ./cmd/authmanager
 
 .PHONY: wasmbuild
 wasmbuild: go-dep
-	@GOBIN=${GOBIN} ${GO} install github.com/djthorpe/go-wasmbuild/cmd/wasmbuild@latest
+	@GOBIN=$(abspath $(BUILD_DIR)) ${GO} install github.com/djthorpe/go-wasmbuild/cmd/wasmbuild@latest
 
-.PHONY: npm
-npm: $(NPM)
+###############################################################################
+# DOCKER
 
-define npm-install-rule
-$(1)/node_modules: $(1)/package.json $(wildcard $(1)/package-lock.json) | npm-dep
-	@echo "Installing $(1) dependencies"
-	@cd $(1) && if [ -f package-lock.json ]; then npm ci; else npm install; fi
-endef
+# Build the docker image
+.PHONY: docker
+docker: docker-dep 
+	@echo build docker image ${DOCKER_TAG} OS=${OS} ARCH=${ARCH} SOURCE=${DOCKER_SOURCE} VERSION=${VERSION}
+	@${DOCKER} build \
+		--tag ${DOCKER_TAG} \
+		--provenance=false \
+		--build-arg ARCH=${ARCH} \
+		--build-arg OS=${OS} \
+		--build-arg SOURCE=${DOCKER_SOURCE} \
+		--build-arg VERSION=${VERSION} \
+		-f etc/docker/Dockerfile .
 
-$(foreach dir,$(NPM_DIRS),$(eval $(call npm-install-rule,$(dir))))
+# Push docker container
+.PHONY: docker-push
+docker-push: docker-dep 
+	@echo push docker image: ${DOCKER_TAG}
+	@${DOCKER} push ${DOCKER_TAG}
 
-define npm-rule
-$(1)/dist/bundle.js: $(1)/node_modules $(1)/package.json $(filter-out $(1)/dist/bundle.js,$(wildcard $(1)/*.js) $(wildcard $(1)/*.mjs) $(wildcard $(1)/*.css) $(wildcard $(1)/assets/*.css) $(wildcard $(1)/assets/*/*.ttf)) $(wildcard $(1)/package-lock.json) | npm-dep
-	@echo "Building $(1)"
-	@cd $(1) && npm run build
-endef
-
-$(foreach dir,$(NPM_DIRS),$(eval $(call npm-rule,$(dir))))
+# Print out the version
+.PHONY: docker-version
+docker-version: docker-dep 
+	@echo "tag=${VERSION}"
 
 ## DEPENNDENCIES #############################################################
 
@@ -85,57 +77,18 @@ npm-dep:
 go-dep: mkdir
 	@command -v ${GO} >/dev/null 2>&1 || { echo 'Missing go compiler: ${GO}'; exit 1; }
 
-.PHONY: gowasm-dep
-gowasm-dep:
-	@command -v ${GOWASM} >/dev/null 2>&1 || { echo 'Missing wasm compiler: ${GOWASM}'; exit 1; }
-	@echo 'Using wasm compiler ${GOWASM}'
+.PHONY: docker-dep
+docker-dep:
+	@command -v ${DOCKER} >/dev/null 2>&1 || { echo "Missing docker binary"; exit 1; }
 
 ## TESTS ######################################################################
 
-.PHONY: unittests
-unittests: go-dep
+.PHONY: test
+test: unittest
+
+.PHONY: unittest
+unittest: go-dep
 	@$(GO) test ./...
-
-.PHONY: integrationtests 
-integrationtests: go-dep
-	@$(GO) test -tags=integration ./...
-
-.PHONY: coveragetests
-coveragetests: go-dep
-	@tmpfile=$$(mktemp); \
-	if $(GO) test -coverprofile=$(COVERAGE_PROFILE) ./... >$$tmpfile 2>&1; then \
-		printf 'Coverage profile: %s\n\n' '$(COVERAGE_PROFILE)'; \
-		printf '%-10s %-50s %s\n' 'Status' 'Package' 'Coverage'; \
-		printf '%-10s %-50s %s\n' '----------' '--------------------------------------------------' '--------'; \
-		awk ' \
-			function trim_prefix(pkg) { \
-				sub(/^github.com\/mutablelogic\/go-auth\/?/, "", pkg); \
-				return pkg == "" ? "." : pkg; \
-			} \
-			$$1 == "?" { \
-				printf "%-10s %-50s %s\n", "no-tests", trim_prefix($$2), "-"; \
-				next; \
-			} \
-			$$1 == "ok" { \
-				cov = "-"; \
-				for (i = 3; i <= NF; i++) if ($$i == "coverage:") cov = $$(i + 1); \
-				printf "%-10s %-50s %s\n", "ok", trim_prefix($$2), cov; \
-				next; \
-			} \
-			index($$1, "github.com/mutablelogic/go-auth") == 1 { \
-				cov = "-"; \
-				for (i = 2; i <= NF; i++) if ($$i == "coverage:") cov = $$(i + 1); \
-				printf "%-10s %-50s %s\n", "cover", trim_prefix($$1), cov; \
-			} \
-		' $$tmpfile; \
-		printf '\nTotal coverage: '; \
-		$(GO) tool cover -func=$(COVERAGE_PROFILE) | awk '/^total:/ { print $$3 }'; \
-	else \
-		cat $$tmpfile; \
-		rm -f $$tmpfile; \
-		exit 1; \
-	fi; \
-	rm -f $$tmpfile
 
 ## LICENSE ####################################################################
 
@@ -143,14 +96,14 @@ GOFILES_LICENSE=$(shell find . -name '*.go' -not -path './build/*' -not -path '.
 
 .PHONY: license
 license: go-dep
-	@${GO} install github.com/google/addlicense@latest
-	@addlicense -c "David Thorpe" -l apache -y 2026 $(GOFILES_LICENSE)
+	@GOBIN=$(abspath $(BUILD_DIR)) ${GO} install github.com/google/addlicense@latest
+	@${BUILD_DIR}/addlicense -c "David Thorpe" -l apache -y 2026 $(GOFILES_LICENSE)
 
 ## TIDY and CLEAN #############################################################
 
 .PHONY: mkdir
 mkdir:
-	@install -d $(BUILDDIR)
+	@install -d $(BUILD_DIR)
 
 .PHONY: tidy
 tidy: 
@@ -158,7 +111,5 @@ tidy:
 
 .PHONY: clean
 clean: tidy
-	@rm -fr $(BUILDDIR)
-	@rm -fr $(addsuffix /dist,$(NPM_DIRS))
-	@rm -f wasm/carbon-app/content/icon_names.go
+	@rm -fr $(BUILD_DIR)
 	$(GO) clean

@@ -23,7 +23,6 @@ import (
 
 	// Packages
 	ldap "github.com/mutablelogic/go-auth/ldap/manager"
-	markdown "github.com/mutablelogic/go-auth/pkg/markdown"
 	schema "github.com/mutablelogic/go-auth/ldap/schema"
 	httprequest "github.com/mutablelogic/go-server/pkg/httprequest"
 	httpresponse "github.com/mutablelogic/go-server/pkg/httpresponse"
@@ -34,7 +33,7 @@ import (
 ///////////////////////////////////////////////////////////////////////////////
 // PUBLIC METHODS
 
-func UserHandler(manager *ldap.Manager, doc *markdown.Document) (string, *jsonschema.Schema, httprequest.PathItem) {
+func UserHandler(manager *ldap.Manager, doc *opts.MarkdownDoc) (string, *jsonschema.Schema, httprequest.PathItem) {
 	return "user", nil, httprequest.NewPathItem(
 		"User operations",
 		"Operations on LDAP users",
@@ -51,7 +50,7 @@ func UserHandler(manager *ldap.Manager, doc *markdown.Document) (string, *jsonsc
 	)
 }
 
-func UserResourceHandler(manager *ldap.Manager, doc *markdown.Document) (string, *jsonschema.Schema, httprequest.PathItem) {
+func UserResourceHandler(manager *ldap.Manager, doc *opts.MarkdownDoc) (string, *jsonschema.Schema, httprequest.PathItem) {
 	return "user/{cn}", nil, httprequest.NewPathItem(
 		"User resource operations",
 		"Operations on a specific LDAP user",

@@ -17,7 +17,7 @@ package manager
 import (
 	"testing"
 
-	"github.com/mutablelogic/go-auth/pkg/markdown"
+	opts "github.com/mutablelogic/go-server/pkg/openapi"
 	assert "github.com/stretchr/testify/assert"
 )
 
@@ -25,7 +25,7 @@ func Test_class_001(t *testing.T) {
 	t.Run("ClassHandlerPath", func(t *testing.T) {
 		assert := assert.New(t)
 
-		path, _, pathitem := ClassHandler(nil, &markdown.Document{})
+		path, _, pathitem := ClassHandler(nil, &opts.MarkdownDoc{})
 
 		assert.Equal("class", path)
 		spec := pathitem.Spec(path, nil)
@@ -54,7 +54,7 @@ func Test_class_002(t *testing.T) {
 	t.Run("AttrHandlerPath", func(t *testing.T) {
 		assert := assert.New(t)
 
-		path, _, pathitem := AttrHandler(nil, &markdown.Document{})
+		path, _, pathitem := AttrHandler(nil, &opts.MarkdownDoc{})
 
 		assert.Equal("attr", path)
 		spec := pathitem.Spec(path, nil)

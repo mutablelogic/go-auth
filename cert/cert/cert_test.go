@@ -22,7 +22,7 @@ import (
 	"time"
 
 	// Packages
-	cert "github.com/mutablelogic/go-auth/pkg/cert"
+	cert "github.com/mutablelogic/go-auth/cert/cert"
 	schema "github.com/mutablelogic/go-auth/cert/schema"
 	types "github.com/mutablelogic/go-server/pkg/types"
 	assert "github.com/stretchr/testify/assert"

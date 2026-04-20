@@ -24,6 +24,7 @@ import (
 
 	// Packages
 	providerpkg "github.com/mutablelogic/go-auth/auth/provider"
+	types "github.com/mutablelogic/go-server/pkg/types"
 	assert "github.com/stretchr/testify/assert"
 	require "github.com/stretchr/testify/require"
 )
@@ -35,7 +36,10 @@ func TestProviderHandlerRedirectsToCallback(t *testing.T) {
 	issuer, privateKey := testConfig(t)
 	localProvider, err := New(issuer, privateKey)
 	require.NoError(err)
-	handler, spec := localProvider.HTTPHandler()
+	pathItem := localProvider.HTTPHandler()
+	require.NotNil(pathItem)
+	handler := pathItem.Handler()
+	spec := pathItem.Spec("/auth/provider/local", nil)
 	require.NotNil(handler)
 	require.NotNil(spec)
 
@@ -78,7 +82,10 @@ func TestProviderHandlerRequiresEmail(t *testing.T) {
 	issuer, privateKey := testConfig(t)
 	localProvider, err := New(issuer, privateKey)
 	require.NoError(err)
-	handler, spec := localProvider.HTTPHandler()
+	pathItem := localProvider.HTTPHandler()
+	require.NotNil(pathItem)
+	handler := pathItem.Handler()
+	spec := pathItem.Spec("/auth/provider/local", nil)
 	require.NotNil(handler)
 	require.NotNil(spec)
 
@@ -112,6 +119,44 @@ func TestProviderServeHTTPGetAndMethodNotAllowed(t *testing.T) {
 	badRes := httptest.NewRecorder()
 	provider.ServeHTTP(badRes, badReq)
 	require.Equal(t, http.StatusMethodNotAllowed, badRes.Code)
+}
+
+func TestProviderHTTPHandlerSpec(t *testing.T) {
+	issuer, privateKey := testConfig(t)
+	provider, err := New(issuer, privateKey)
+	require.NoError(t, err)
+
+	pathItem := provider.HTTPHandler()
+	require.NotNil(t, pathItem)
+	spec := pathItem.Spec("/auth/provider/local", nil)
+	require.NotNil(t, spec)
+	require.NotNil(t, spec.Get)
+	require.NotNil(t, spec.Post)
+
+	if spec.Get.Summary != "Render local login form" {
+		t.Fatalf("spec.Get.Summary = %q, want %q", spec.Get.Summary, "Render local login form")
+	}
+	if spec.Post.Summary != "Submit local login form" {
+		t.Fatalf("spec.Post.Summary = %q, want %q", spec.Post.Summary, "Submit local login form")
+	}
+	if len(spec.Get.Parameters) == 0 {
+		t.Fatal("expected GET operation to declare query parameters")
+	}
+	getHTML := spec.Get.Responses["200"].Content[types.ContentTypeHTML]
+	if getHTML.Schema == nil {
+		t.Fatal("expected GET 200 response to declare an HTML schema")
+	}
+	postForm := spec.Post.RequestBody.Content[types.ContentTypeForm]
+	if postForm.Schema == nil {
+		t.Fatal("expected POST operation to declare a form request schema")
+	}
+	if spec.Post.Responses["302"].Description == "" {
+		t.Fatal("expected POST operation to declare a redirect response")
+	}
+	postHTML := spec.Post.Responses["200"].Content[types.ContentTypeHTML]
+	if postHTML.Schema == nil {
+		t.Fatal("expected POST 200 response to declare an HTML schema")
+	}
 }
 
 func TestProviderSubmitFormValidationErrors(t *testing.T) {

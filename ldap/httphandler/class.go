@@ -22,7 +22,6 @@ import (
 	ldap "github.com/mutablelogic/go-auth/ldap/manager"
 	schemadef "github.com/mutablelogic/go-auth/ldap/parser/schema"
 	schema "github.com/mutablelogic/go-auth/ldap/schema"
-	markdown "github.com/mutablelogic/go-auth/pkg/markdown"
 	httprequest "github.com/mutablelogic/go-server/pkg/httprequest"
 	httpresponse "github.com/mutablelogic/go-server/pkg/httpresponse"
 	jsonschema "github.com/mutablelogic/go-server/pkg/jsonschema"
@@ -32,7 +31,7 @@ import (
 ///////////////////////////////////////////////////////////////////////////////
 // PUBLIC METHODS
 
-func ClassHandler(manager *ldap.Manager, doc *markdown.Document) (string, *jsonschema.Schema, httprequest.PathItem) {
+func ClassHandler(manager *ldap.Manager, doc *opts.MarkdownDoc) (string, *jsonschema.Schema, httprequest.PathItem) {
 	return "class", nil, httprequest.NewPathItem(
 		"Object class operations",
 		"Operations on LDAP object classes",
@@ -49,7 +48,7 @@ func ClassHandler(manager *ldap.Manager, doc *markdown.Document) (string, *jsons
 	)
 }
 
-func AttrHandler(manager *ldap.Manager, doc *markdown.Document) (string, *jsonschema.Schema, httprequest.PathItem) {
+func AttrHandler(manager *ldap.Manager, doc *opts.MarkdownDoc) (string, *jsonschema.Schema, httprequest.PathItem) {
 	return "attr", nil, httprequest.NewPathItem(
 		"Attribute type operations",
 		"Operations on LDAP attribute types",

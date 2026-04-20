@@ -17,6 +17,7 @@ package auth
 import (
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/url"
 	"strings"
@@ -24,9 +25,11 @@ import (
 	// Packages
 	auth "github.com/mutablelogic/go-auth/auth/httpclient"
 	oidc "github.com/mutablelogic/go-auth/auth/oidc"
+	schema "github.com/mutablelogic/go-auth/auth/schema"
 	webcallback "github.com/mutablelogic/go-auth/auth/webcallback"
 	client "github.com/mutablelogic/go-client"
 	server "github.com/mutablelogic/go-server"
+	types "github.com/mutablelogic/go-server/pkg/types"
 	browser "github.com/pkg/browser"
 	oauth2 "golang.org/x/oauth2"
 	errgroup "golang.org/x/sync/errgroup"
@@ -49,7 +52,9 @@ type AuthorizeCommand struct {
 
 const clientIDStoreKeyPrefix = "auth.client_id."
 const clientSecretStoreKeyPrefix = "auth.client_secret."
+const endpointStoreKeyPrefix = "auth.endpoint"
 const issuerStoreKeyPrefix = "auth.issuer."
+const providerStoreKeyPrefix = "auth.provider."
 const tokenStoreKeyPrefix = "auth.token."
 const defaultRedirectURL = "http://localhost/"
 
@@ -60,36 +65,68 @@ func (cmd *AuthorizeCommand) Run(ctx server.Cmd) error {
 	auth_client, endpoint, err := clientFor(ctx)
 	if err != nil {
 		return err
-	} else if cmd.Endpoint == "" {
+	}
+
+	// Set the endpoint
+	if cmd.Endpoint == "" {
 		cmd.Endpoint = endpoint
-	}
-
-	// Retrieve stored token for the endpoint, if it exists and is valid, return it immediately
-	token, err := storedToken(ctx, cmd.Endpoint)
-	if err != nil {
-		return err
-	}
-
-	// If the stored token is valid, return it immediately without going through the authorization flow
-	if token != nil {
-		if token.Valid() {
-			data, err := json.MarshalIndent(token, "", "  ")
-			if err != nil {
-				return fmt.Errorf("marshal stored token: %w", err)
+		if strings.TrimSpace(cmd.Provider) == "" {
+			if stored_endpoint := ctx.GetString(endpointStoreKeyPrefix); stored_endpoint != "" {
+				cmd.Endpoint = stored_endpoint
 			}
-			fmt.Println(string(data))
-			return nil
 		}
-		refreshed, err := refreshStoredToken(ctx, auth_client, cmd.Endpoint, cmd.ClientID, cmd.ClientSecret)
-		if err != nil {
-			return err
+	}
+
+	// Check the endpoint
+	url, err := url.Parse(cmd.Endpoint)
+	if err != nil {
+		return fmt.Errorf("invalid endpoint URL: %w", err)
+	} else if url.Scheme != types.SchemeSecure && url.Scheme != types.SchemeInsecure {
+		return fmt.Errorf("endpoint URL must have http or https scheme")
+	} else if url.Host == "" {
+		return fmt.Errorf("endpoint URL must have a host")
+	}
+
+	// Reuse a stored token when it already belongs to the requested provider.
+	if token, err := storedToken(ctx, cmd.Endpoint); err != nil {
+		return err
+	} else if token != nil {
+		reuseStored := true
+		if provider := strings.TrimSpace(cmd.Provider); provider != "" {
+			if reuseStored, err = canReuseStoredTokenForProvider(ctx, auth_client, cmd.Endpoint, provider); err != nil {
+				return err
+			}
 		}
-		data, err := json.MarshalIndent(refreshed, "", "  ")
-		if err != nil {
-			return fmt.Errorf("marshal refreshed token: %w", err)
+
+		if reuseStored {
+			// If the stored token is valid, return it immediately without going through the authorization flow.
+			if token.Valid() {
+				data, err := json.MarshalIndent(token, "", "  ")
+				if err != nil {
+					return fmt.Errorf("marshal stored token: %w", err)
+				}
+				fmt.Println(string(data))
+				return nil
+			}
+			refreshed, err := refreshStoredToken(ctx, auth_client, cmd.Endpoint, cmd.ClientID, cmd.ClientSecret)
+			if err != nil {
+				if shouldStartNewAuthorizationSession(err) {
+					if deleteErr := deleteStoredToken(ctx, cmd.Endpoint, ""); deleteErr != nil {
+						return deleteErr
+					}
+					ctx.Logger().Info("Stored token refresh failed; starting new authorization session", "endpoint", cmd.Endpoint, "provider", strings.TrimSpace(cmd.Provider))
+				} else {
+					return err
+				}
+			} else {
+				data, err := json.MarshalIndent(refreshed, "", "  ")
+				if err != nil {
+					return fmt.Errorf("marshal refreshed token: %w", err)
+				}
+				fmt.Println(string(data))
+				return nil
+			}
 		}
-		fmt.Println(string(data))
-		return nil
 	}
 
 	// Attempt to get the protected resource metadata
@@ -135,7 +172,7 @@ func (cmd *AuthorizeCommand) Run(ctx server.Cmd) error {
 	if err != nil {
 		return err
 	}
-	scopes := cmd.authorizationScopes(serverMeta)
+	scopes := cmd.authorizationScopes(meta, serverMeta)
 	flow, err := oidc.NewAuthorizationCodeFlow(config, clientID, redirectURL, scopes...)
 	if err != nil {
 		return err
@@ -165,7 +202,7 @@ func (cmd *AuthorizeCommand) Run(ctx server.Cmd) error {
 		if err != nil {
 			return err
 		}
-		if err := storeToken(ctx, cmd.Endpoint, flow.Issuer, token); err != nil {
+		if err := storeToken(ctx, cmd.Endpoint, flow.Issuer, flow.Provider, token); err != nil {
 			return err
 		}
 		ctx.Logger().Debug("Stored authorization token", "issuer", flow.Issuer)
@@ -211,6 +248,9 @@ func (cmd *AuthorizeCommand) authorizationServerAndClientCredentials(ctx server.
 		if flowErr != nil {
 			return nil, "", "", fmt.Errorf("client ID is required or dynamic registration must succeed: %w", err)
 		}
+		if authorizationServerRequiresClientID(meta, serverMeta) {
+			return nil, "", "", fmt.Errorf("client ID is required for authorization server %q", authorizationServerName(serverMeta))
+		}
 		return serverMeta, "", clientSecret, nil
 	}
 	redirectURL = strings.TrimSpace(redirectURL)
@@ -233,7 +273,7 @@ func (cmd *AuthorizeCommand) authorizationServerAndClientCredentials(ctx server.
 	return serverMeta, clientID, clientSecret, nil
 }
 
-func (cmd *AuthorizeCommand) authorizationScopes(serverMeta *auth.ServerMetadata) []string {
+func (cmd *AuthorizeCommand) authorizationScopes(meta *auth.Config, serverMeta *auth.ServerMetadata) []string {
 	if scopes := compactScopes(cmd.Scopes); len(scopes) > 0 {
 		return scopes
 	}
@@ -242,10 +282,68 @@ func (cmd *AuthorizeCommand) authorizationScopes(serverMeta *auth.ServerMetadata
 			return oidc.AuthorizationScopes(serverMeta.Oidc)
 		}
 		if strings.TrimSpace(serverMeta.OAuth.AuthorizationEndpoint) != "" {
-			return oidc.OAuthAuthorizationScopes(serverMeta.OAuth)
+			if scopes := oidc.OAuthAuthorizationScopes(serverMeta.OAuth); len(scopes) > 0 {
+				return scopes
+			}
+		}
+	}
+	if meta != nil {
+		if scopes := compactScopes(meta.ProtectedResourceMetadata.ScopesSupported); len(scopes) > 0 {
+			return scopes
 		}
 	}
 	return oidc.DefaultOIDCAuthorizationScopes
+}
+
+func authorizationServerRequiresClientID(meta *auth.Config, serverMeta *auth.ServerMetadata) bool {
+	if serverMeta == nil {
+		return false
+	}
+	config, err := serverMeta.AuthorizationCodeConfig()
+	if err != nil {
+		return false
+	}
+	if tokenEndpoint := strings.TrimSpace(config.TokenEndpoint); tokenEndpoint != "" {
+		if uri, err := url.Parse(tokenEndpoint); err == nil {
+			path := strings.TrimRight(uri.Path, "/")
+			if path == "/auth/code" || strings.HasSuffix(path, "/auth/code") {
+				return false
+			}
+		}
+	}
+	resource := strings.TrimSpace(meta.ProtectedResourceMetadata.Resource)
+	serverName := authorizationServerName(serverMeta)
+	if resource == "" || serverName == "" {
+		return true
+	}
+	resourceURL, resourceErr := url.Parse(resource)
+	serverURL, serverErr := url.Parse(serverName)
+	if resourceErr != nil || serverErr != nil {
+		return true
+	}
+	if resourceURL.Scheme == "" || resourceURL.Host == "" || serverURL.Scheme == "" || serverURL.Host == "" {
+		return true
+	}
+	return !strings.EqualFold(resourceURL.Host, serverURL.Host)
+}
+
+func authorizationServerName(serverMeta *auth.ServerMetadata) string {
+	if serverMeta == nil {
+		return ""
+	}
+	if issuer := strings.TrimSpace(serverMeta.Issuer); issuer != "" {
+		return issuer
+	}
+	if endpoint := strings.TrimSpace(serverMeta.OAuth.AuthorizationEndpoint); endpoint != "" {
+		return endpoint
+	}
+	if endpoint := strings.TrimSpace(serverMeta.Oidc.AuthorizationEndpoint); endpoint != "" {
+		return endpoint
+	}
+	if endpoint := strings.TrimSpace(serverMeta.OAuth.TokenEndpoint); endpoint != "" {
+		return endpoint
+	}
+	return strings.TrimSpace(serverMeta.Oidc.TokenEndpoint)
 }
 
 func compactScopes(scopes []string) []string {
@@ -273,22 +371,30 @@ func authorizationURLWithHints(rawURL, provider string) (string, error) {
 	return uri.String(), nil
 }
 
-func storeToken(ctx server.Cmd, endpoint, issuer string, token *oauth2.Token) error {
+func storeToken(ctx server.Cmd, endpoint, issuer, provider string, token *oauth2.Token) error {
 	if ctx == nil || token == nil {
 		return nil
 	}
 	endpoint = strings.TrimSpace(endpoint)
 	issuer = strings.TrimSpace(issuer)
+	provider = strings.TrimSpace(provider)
 	if issuer == "" {
 		return fmt.Errorf("issuer is required")
 	}
 	clone := *token
+	clone.ExpiresIn = 0
 	if err := ctx.Set(tokenStoreKey(issuer), clone); err != nil {
 		return fmt.Errorf("store token: %w", err)
 	}
 	if endpoint != "" {
+		if err := ctx.Set(endpointStoreKeyPrefix, endpoint); err != nil {
+			return fmt.Errorf("store endpoint: %w", err)
+		}
 		if err := ctx.Set(issuerStoreKey(endpoint), issuer); err != nil {
 			return fmt.Errorf("store token issuer: %w", err)
+		}
+		if err := ctx.Set(providerStoreKey(endpoint), provider); err != nil {
+			return fmt.Errorf("store token provider: %w", err)
 		}
 	}
 	return nil
@@ -311,6 +417,9 @@ func deleteStoredToken(ctx server.Cmd, endpoint, issuer string) error {
 	if endpoint != "" {
 		if err := ctx.Set(issuerStoreKey(endpoint), nil); err != nil {
 			return fmt.Errorf("delete token issuer: %w", err)
+		}
+		if err := ctx.Set(providerStoreKey(endpoint), nil); err != nil {
+			return fmt.Errorf("delete token provider: %w", err)
 		}
 	}
 	return nil
@@ -362,6 +471,95 @@ func decodeStoredToken(value any) (*oauth2.Token, error) {
 		}
 		return &decoded, nil
 	}
+}
+
+func canReuseStoredTokenForProvider(ctx server.Cmd, authClient *auth.Client, endpoint, provider string) (bool, error) {
+	if ctx == nil {
+		return false, nil
+	}
+	provider = strings.TrimSpace(provider)
+	if provider == "" {
+		return true, nil
+	}
+	if storedProvider := storedProvider(ctx, endpoint); storedProvider != "" {
+		return storedProvider == provider, nil
+	}
+	if provider != schema.ProviderKeyLocal {
+		token, err := storedToken(ctx, endpoint)
+		if err != nil {
+			return false, err
+		}
+		if token != nil && token.Valid() {
+			if err := ctx.Set(providerStoreKey(endpoint), provider); err != nil {
+				return false, fmt.Errorf("store token provider: %w", err)
+			}
+			return true, nil
+		}
+		return false, nil
+	}
+	if authClient == nil {
+		return false, nil
+	}
+	storedIssuer := strings.TrimSpace(ctx.GetString(issuerStoreKey(endpoint)))
+	if storedIssuer == "" {
+		return false, nil
+	}
+	requestedIssuer, err := providerIssuer(ctx, authClient, provider)
+	if err != nil {
+		return false, err
+	}
+	if requestedIssuer == "" {
+		return false, nil
+	}
+	return storedIssuer == requestedIssuer, nil
+}
+
+func storedProvider(ctx server.Cmd, endpoint string) string {
+	if ctx == nil {
+		return ""
+	}
+	return strings.TrimSpace(ctx.GetString(providerStoreKey(endpoint)))
+}
+
+func shouldStartNewAuthorizationSession(err error) bool {
+	if err == nil {
+		return false
+	}
+	var retrieveErr *oauth2.RetrieveError
+	if errors.As(err, &retrieveErr) {
+		if strings.EqualFold(strings.TrimSpace(retrieveErr.ErrorCode), "invalid_grant") {
+			return true
+		}
+		body := strings.ToLower(strings.TrimSpace(string(retrieveErr.Body)))
+		if strings.Contains(body, "token is expired") || strings.Contains(body, "invalid_grant") || strings.Contains(body, "session is revoked") {
+			return true
+		}
+	}
+	message := strings.ToLower(strings.TrimSpace(err.Error()))
+	return strings.Contains(message, "token is expired") || strings.Contains(message, "invalid_grant") || strings.Contains(message, "session is revoked")
+}
+
+func providerIssuer(ctx server.Cmd, authClient *auth.Client, provider string) (string, error) {
+	if ctx == nil || authClient == nil {
+		return "", nil
+	}
+	provider = strings.TrimSpace(provider)
+	if provider == "" {
+		return "", nil
+	}
+	var config schema.PublicClientConfigurations
+	if err := authClient.DoWithContext(ctx.Context(), nil, &config, client.OptPath("config")); err != nil {
+		return "", fmt.Errorf("fetch auth config: %w", err)
+	}
+	providerConfig, ok := config[provider]
+	if !ok {
+		return "", fmt.Errorf("provider %q is not configured", provider)
+	}
+	issuer := strings.TrimSpace(providerConfig.Issuer)
+	if issuer == "" {
+		return "", fmt.Errorf("provider %q issuer is not configured", provider)
+	}
+	return issuer, nil
 }
 
 func storedClientID(ctx server.Cmd, meta *auth.Config, endpoint string) string {
@@ -440,4 +638,12 @@ func issuerStoreKey(endpoint string) string {
 		endpoint = "default"
 	}
 	return issuerStoreKeyPrefix + base64.RawURLEncoding.EncodeToString([]byte(endpoint))
+}
+
+func providerStoreKey(endpoint string) string {
+	endpoint = strings.TrimSpace(endpoint)
+	if endpoint == "" {
+		endpoint = "default"
+	}
+	return providerStoreKeyPrefix + base64.RawURLEncoding.EncodeToString([]byte(endpoint))
 }

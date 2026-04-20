@@ -17,12 +17,14 @@ package auth
 import (
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"strings"
 
 	// Packages
 	auth "github.com/mutablelogic/go-auth/auth/httpclient"
-	authschema "github.com/mutablelogic/go-auth/auth/schema"
+	oidc "github.com/mutablelogic/go-auth/auth/oidc"
 	server "github.com/mutablelogic/go-server"
+	types "github.com/mutablelogic/go-server/pkg/types"
 	oauth2 "golang.org/x/oauth2"
 )
 
@@ -42,10 +44,27 @@ func (cmd *UserInfoCommand) Run(ctx server.Cmd) error {
 	authClient, endpoint, err := clientFor(ctx)
 	if err != nil {
 		return err
-	} else if cmd.Endpoint == "" {
-		cmd.Endpoint = endpoint
 	}
 
+	// Set the endpoint
+	if cmd.Endpoint == "" {
+		cmd.Endpoint = endpoint
+		if stored_endpoint := ctx.GetString(endpointStoreKeyPrefix); stored_endpoint != "" {
+			cmd.Endpoint = stored_endpoint
+		}
+	}
+
+	// Check the endpoint
+	url, err := url.Parse(cmd.Endpoint)
+	if err != nil {
+		return fmt.Errorf("invalid endpoint URL: %w", err)
+	} else if url.Scheme != types.SchemeSecure && url.Scheme != types.SchemeInsecure {
+		return fmt.Errorf("endpoint URL must have http or https scheme")
+	} else if url.Host == "" {
+		return fmt.Errorf("endpoint URL must have a host")
+	}
+
+	// Get the token
 	token, err := storedToken(ctx, cmd.Endpoint)
 	if err != nil {
 		return err
@@ -59,6 +78,7 @@ func (cmd *UserInfoCommand) Run(ctx server.Cmd) error {
 		}
 	}
 
+	// Get the user info
 	userinfo, err := userInfoForEndpoint(ctx, authClient, cmd.Endpoint, token)
 	if err != nil {
 		return err
@@ -75,7 +95,7 @@ func (cmd *UserInfoCommand) Run(ctx server.Cmd) error {
 ///////////////////////////////////////////////////////////////////////////////
 // PRIVATE FUNCTIONS
 
-func userInfoForEndpoint(ctx server.Cmd, authClient *auth.Client, endpoint string, token *oauth2.Token) (*authschema.UserInfo, error) {
+func userInfoForEndpoint(ctx server.Cmd, authClient *auth.Client, endpoint string, token *oauth2.Token) (*oidc.UserInfo, error) {
 	endpoint = strings.TrimSpace(endpoint)
 	if token == nil {
 		return nil, fmt.Errorf("token is required")
@@ -89,9 +109,5 @@ func userInfoForEndpoint(ctx server.Cmd, authClient *auth.Client, endpoint strin
 	if err != nil {
 		return nil, err
 	}
-	userinfo, err := authClient.UserInfo(ctx.Context(), serverMeta.Oidc.UserInfoEndpoint, token)
-	if err != nil {
-		return nil, err
-	}
-	return userinfo, nil
+	return authClient.UserInfo(ctx.Context(), serverMeta.Oidc.UserInfoEndpoint, token)
 }

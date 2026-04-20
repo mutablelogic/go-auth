@@ -15,6 +15,7 @@
 package manager
 
 import (
+	"crypto/rsa"
 	"net/http"
 	"strings"
 
@@ -29,31 +30,37 @@ import (
 ///////////////////////////////////////////////////////////////////////////////
 // PUBLIC METHODS
 
-// OIDCJWKSet returns the public JSON Web Key Set for the manager's signing key.
+// OIDCJWKSet returns the public JSON Web Key Set for the manager's configured
+// signing keys.
 func (m *Manager) OIDCJWKSet() (jwk.Set, error) {
-	return oidc.PublicJWKSet(m.privateKey)
+	return oidc.PublicJWKSetForKeys(m.signer, m.keys)
 }
 
-// OIDCSign signs the supplied claims with the manager's configured private key.
+// OIDCSign signs the supplied claims with the manager's active signing key.
 // It returns an error if no signing key has been configured.
 func (m *Manager) OIDCSign(claims jwt.Claims) (string, error) {
-	if m.privateKey == nil {
-		return "", auth.ErrBadParameter.With("private key is required for signing")
+	kid, key, err := m.signingKey()
+	if err != nil {
+		return "", err
 	}
-	return oidc.SignToken(m.privateKey, claims)
+	return oidc.SignTokenWithKeyID(kid, key, claims)
 }
 
-// OIDCVerify verifies a locally signed JWT using the manager's configured
-// signing key and expected issuer.
+// OIDCVerify verifies a locally signed JWT using the configured verification
+// key matching the token kid header and expected issuer.
 func (m *Manager) OIDCVerify(token, issuer string) (map[string]any, error) {
-	if m.privateKey == nil {
-		return nil, auth.ErrBadParameter.With("private key is required for verification")
+	key, err := m.verificationKey(token)
+	if err != nil {
+		return nil, err
 	}
-	return oidc.VerifySignedToken(&m.privateKey.PublicKey, token, issuer)
+	return oidc.VerifySignedToken(key, token, issuer)
 }
 
 // OIDCIssuer returns the canonical issuer for locally signed tokens.
 func (m *Manager) OIDCIssuer() (string, error) {
+	if issuer := strings.TrimSpace(m.issuer); issuer != "" {
+		return issuer, nil
+	}
 	if provider, ok := m.providers[schema.ProviderKeyLocal]; ok && provider != nil {
 		if issuer := strings.TrimSpace(provider.PublicConfig().Issuer); issuer != "" {
 			return issuer, nil
@@ -62,7 +69,8 @@ func (m *Manager) OIDCIssuer() (string, error) {
 	return "", auth.ErrBadParameter.With("issuer is not configured")
 }
 
-func (m *Manager) OIDCConfig(r *http.Request) (oidc.OIDCConfiguration, error) {
+// OIDCConfig returns the OIDC configuration for this server, including the issuer URL
+func (m *Manager) OIDCConfig() (oidc.OIDCConfiguration, error) {
 	issuer, err := m.OIDCIssuer()
 	if err != nil {
 		return oidc.OIDCConfiguration{}, err
@@ -82,7 +90,7 @@ func (m *Manager) OIDCConfig(r *http.Request) (oidc.OIDCConfiguration, error) {
 		JwksURI:           oidc.JWKSURL(issuer),
 		SigningAlgorithms: []string{oidc.SigningAlgorithm},
 		SubjectTypes:      []string{"public"},
-		ClaimsSupported:   []string{"iss", "sub", "sid", "aud", "exp", "iat", "nbf", "email", "email_verified", "name", "groups", "scopes", "user", "session"},
+		ClaimsSupported:   []string{"iss", "sub", "sid", "aud", "exp", "iat", "nbf", "token_use", "refresh_counter", "email", "email_verified", "name", "groups", "scopes", "user", "session"},
 	}, nil
 }
 
@@ -98,4 +106,28 @@ func (m *Manager) ProtectedResourceMetadata(r *http.Request) (oidc.ProtectedReso
 		BearerMethodsSupported: []string{"header"},
 		ResourceName:           "go-auth",
 	}, nil
+}
+
+func (m *Manager) signingKey() (string, *rsa.PrivateKey, error) {
+	kid := strings.TrimSpace(m.signer)
+	if kid == "" {
+		return "", nil, auth.ErrBadParameter.With("signing key is not configured")
+	}
+	key, ok := m.keys[kid]
+	if !ok || key == nil {
+		return "", nil, auth.ErrBadParameter.Withf("signing key %q is not configured", kid)
+	}
+	return kid, key, nil
+}
+
+func (m *Manager) verificationKey(token string) (*rsa.PublicKey, error) {
+	kid, err := oidc.ExtractKeyID(token)
+	if err != nil {
+		return nil, err
+	}
+	key, ok := m.keys[kid]
+	if !ok || key == nil {
+		return nil, auth.ErrBadParameter.Withf("JWT signing key %q is not configured", kid)
+	}
+	return &key.PublicKey, nil
 }

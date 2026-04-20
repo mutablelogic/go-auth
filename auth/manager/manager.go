@@ -92,27 +92,8 @@ func New(ctx context.Context, pool pg.PoolConn, opts ...Opt) (*Manager, error) {
 		}
 	}
 
-	// Set up notifications of table change if requested
-	if self.channel != "" {
-		if notifications, err := broadcaster.NewBroadcaster(pool, self.channel); err != nil {
-			return nil, err
-		} else {
-			self.notifications = notifications
-		}
-	}
-
 	// Return the manager
 	return self, nil
-}
-
-// Close releases any manager-owned resources such as notification listeners.
-func (m *Manager) Close() error {
-	if m == nil || m.notifications == nil {
-		return nil
-	}
-	err := m.notifications.Close()
-	m.notifications = nil
-	return err
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -166,4 +147,13 @@ func bootstrap(ctx context.Context, conn pg.Conn, schemaName string, includeNoti
 
 	// Return success
 	return nil
+}
+
+func (m *Manager) closeNotifications() error {
+	if m == nil || m.notifications == nil {
+		return nil
+	}
+	err := m.notifications.Close()
+	m.notifications = nil
+	return err
 }

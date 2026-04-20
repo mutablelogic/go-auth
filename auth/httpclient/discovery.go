@@ -68,12 +68,6 @@ func (c *Client) DiscoverWithError(ctx context.Context, err error) (*Config, err
 
 	c.appendDiscoveredServers(ctx, config, seen, authServerCandidates(authErr)...)
 	if len(config.AuthorizationServers) == 0 {
-		c.appendDiscoveredServers(ctx, config, seen, c.Endpoint)
-	}
-	if len(config.AuthorizationServers) == 0 {
-		c.appendDiscoveredServers(ctx, config, seen, interoperabilityIssuerCandidates(c.Endpoint)...)
-	}
-	if len(config.AuthorizationServers) == 0 {
 		return nil, fmt.Errorf("authorization server metadata is required")
 	}
 	return config, nil
@@ -369,7 +363,7 @@ func progressiveMetadataCandidates(raw, wellKnownPath string) []string {
 	}
 
 	for {
-		path, err := url.JoinPath("/", append([]string{wellKnownPath}, parts...)...)
+		path, err := url.JoinPath("/", append(parts, wellKnownPath)...)
 		if err != nil {
 			break
 		}

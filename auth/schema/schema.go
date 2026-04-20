@@ -28,9 +28,13 @@ var Objects string
 //go:embed queries.sql
 var Queries string
 
+//go:embed metrics.sql
+var Metrics string
+
 const (
 	DefaultSchema     = "auth"
-	DefaultSessionTTL = time.Minute * 15
+	DefaultSessionTTL = time.Minute * 15   // 15 minutes
+	DefaultRefreshTTL = time.Hour * 24 * 7 // 7 days
 )
 
 const (

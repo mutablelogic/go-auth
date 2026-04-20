@@ -29,9 +29,9 @@ import (
 	"time"
 
 	// Packages
-	cert "github.com/mutablelogic/go-auth/pkg/cert"
-	schema "github.com/mutablelogic/go-auth/ldap/schema"
 	ldap "github.com/go-ldap/ldap/v3"
+	cert "github.com/mutablelogic/go-auth/cert/cert"
+	schema "github.com/mutablelogic/go-auth/ldap/schema"
 	test "github.com/mutablelogic/go-pg/pkg/test"
 	httpresponse "github.com/mutablelogic/go-server/pkg/httpresponse"
 	assert "github.com/stretchr/testify/assert"

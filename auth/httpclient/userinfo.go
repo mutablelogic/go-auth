@@ -18,21 +18,22 @@ import (
 	"context"
 
 	// Packages
-	authschema "github.com/mutablelogic/go-auth/auth/schema"
+	oidc "github.com/mutablelogic/go-auth/auth/oidc"
 	client "github.com/mutablelogic/go-client"
+	types "github.com/mutablelogic/go-server/pkg/types"
 	oauth2 "golang.org/x/oauth2"
 )
 
 ///////////////////////////////////////////////////////////////////////////////
 // PUBLIC METHODS
 
-func (c *Client) UserInfo(ctx context.Context, endpoint string, token *oauth2.Token) (*authschema.UserInfo, error) {
-	var response authschema.UserInfo
+func (c *Client) UserInfo(ctx context.Context, endpoint string, token *oauth2.Token) (*oidc.UserInfo, error) {
+	var response oidc.UserInfo
 	if err := c.DoWithContext(ctx, client.NewRequest(), &response,
 		client.OptReqEndpoint(endpoint),
 		client.OptToken(client.Token{Scheme: client.Bearer, Value: token.AccessToken}),
 	); err != nil {
 		return nil, err
 	}
-	return &response, nil
+	return types.Ptr(response), nil
 }

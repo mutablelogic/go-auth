@@ -15,185 +15,98 @@
 package manager_test
 
 import (
-	"context"
-	"crypto/rsa"
-	"fmt"
 	"testing"
 
+	// Packages
 	jwt "github.com/golang-jwt/jwt/v5"
+	jwk "github.com/lestrrat-go/jwx/v2/jwk"
 	manager "github.com/mutablelogic/go-auth/auth/manager"
 	oidc "github.com/mutablelogic/go-auth/auth/oidc"
-	googleprovider "github.com/mutablelogic/go-auth/auth/provider/google"
 	localprovider "github.com/mutablelogic/go-auth/auth/provider/local"
-	schema "github.com/mutablelogic/go-auth/auth/schema"
 	authcrypto "github.com/mutablelogic/go-auth/crypto"
 	assert "github.com/stretchr/testify/assert"
 	require "github.com/stretchr/testify/require"
-	attribute "go.opentelemetry.io/otel/attribute"
-	sdktrace "go.opentelemetry.io/otel/sdk/trace"
-	tracetest "go.opentelemetry.io/otel/sdk/trace/tracetest"
 )
 
-func TestOIDCIssuerConfigured(t *testing.T) {
-	mgr := newTestManagerWithOpts(t, manager.WithProvider(mustLocalProvider(t, "https://issuer.example.test/api")))
+func TestWithIssuer(t *testing.T) {
+	t.Run("RejectsEmptyIssuer", func(t *testing.T) {
+		mgr, err := manager.New(t.Context(), shared.PoolConn, manager.WithIssuer("   "))
+		require.Error(t, err)
+		assert.Nil(t, mgr)
+		assert.EqualError(t, err, "bad parameter: issuer is required")
+	})
 
-	issuer, err := mgr.OIDCIssuer()
-	require.NoError(t, err)
-	assert.Equal(t, "https://issuer.example.test/api", issuer)
-}
+	t.Run("UsesExplicitIssuerWithoutLocalProvider", func(t *testing.T) {
+		mgr := newCustomSchemaManagerWithOpts(t, "auth_test_oidc_explicit_issuer", manager.WithIssuer("https://issuer.example.test/api"))
 
-func TestOIDCIssuerMissing(t *testing.T) {
-	mgr := newTestManager(t)
+		issuer, err := mgr.OIDCIssuer()
+		require.NoError(t, err)
+		assert.Equal(t, "https://issuer.example.test/api", issuer)
 
-	_, err := mgr.OIDCIssuer()
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "issuer is not configured")
-}
+		cfg, err := mgr.OIDCConfig()
+		require.NoError(t, err)
+		assert.Equal(t, "https://issuer.example.test/api", cfg.Issuer)
+	})
 
-func TestOIDCIssuerMissingWithoutLocalProvider(t *testing.T) {
-	mgr := newTestManagerWithOpts(t, mustGoogleProviderOpt(t, oidc.GoogleIssuer))
+	t.Run("ExplicitIssuerOverridesLocalProviderIssuer", func(t *testing.T) {
+		key, err := authcrypto.GeneratePrivateKey()
+		require.NoError(t, err)
 
-	_, err := mgr.OIDCIssuer()
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "issuer is not configured")
-}
+		provider, err := localprovider.New("https://provider.example.test/api", key)
+		require.NoError(t, err)
 
-func TestOIDCConfigUsesConfiguredIssuer(t *testing.T) {
-	mgr := newTestManagerWithOpts(t, manager.WithProvider(mustLocalProvider(t, "https://issuer.example.test/api")))
+		mgr := newCustomSchemaManagerWithOpts(
+			t,
+			"auth_test_oidc_issuer_override",
+			manager.WithIssuer("https://explicit.example.test/api"),
+			manager.WithProvider(provider),
+		)
 
-	cfg, err := mgr.OIDCConfig(nil)
-	require.NoError(t, err)
-	assert.Equal(t, "https://issuer.example.test/api", cfg.Issuer)
-	assert.Equal(t, oidc.AuthorizationURL("https://issuer.example.test/api"), cfg.AuthorizationEndpoint)
-	assert.Equal(t, oidc.AuthCodeURL("https://issuer.example.test/api"), cfg.TokenEndpoint)
-	assert.Equal(t, oidc.UserInfoURL("https://issuer.example.test/api"), cfg.UserInfoEndpoint)
-	assert.Equal(t, oidc.JWKSURL("https://issuer.example.test/api"), cfg.JwksURI)
-	assert.Equal(t, []string{oidc.ResponseTypeCode}, cfg.ResponseTypes)
-	assert.Equal(t, []string{"authorization_code", "refresh_token"}, cfg.GrantTypesSupported)
-	assert.Equal(t, []string{oidc.ScopeOpenID, oidc.ScopeEmail, oidc.ScopeProfile}, cfg.ScopesSupported)
-	assert.Equal(t, []string{oidc.CodeChallengeMethodS256}, cfg.CodeChallengeMethods)
-	assert.Contains(t, cfg.ClaimsSupported, "session")
-}
+		issuer, err := mgr.OIDCIssuer()
+		require.NoError(t, err)
+		assert.Equal(t, "https://explicit.example.test/api", issuer)
+	})
 
-func TestAuthConfigUsesPublicGoogleConfiguration(t *testing.T) {
-	mgr := newTestManagerWithOpts(t,
-		manager.WithProvider(mustLocalProvider(t, "https://issuer.example.test/api")),
-		mustGoogleProviderOpt(t, oidc.GoogleIssuer),
-	)
+	t.Run("UsesSpecificSignerByKeyID", func(t *testing.T) {
+		primaryKey, err := authcrypto.GeneratePrivateKey()
+		require.NoError(t, err)
+		secondaryKey, err := authcrypto.GeneratePrivateKey()
+		require.NoError(t, err)
 
-	cfg, err := mgr.AuthConfig()
-	require.NoError(t, err)
-	local, ok := cfg[schema.ProviderKeyLocal]
-	require.True(t, ok)
-	assert.Equal(t, "https://issuer.example.test/api", local.Issuer)
-	assert.Equal(t, "", local.ClientID)
-	google, ok := cfg["google"]
-	require.True(t, ok)
-	assert.Equal(t, oidc.GoogleIssuer, google.Issuer)
-	assert.Equal(t, "google-client-id", google.ClientID)
-}
+		mgr := newCustomSchemaManagerWithOpts(
+			t,
+			"auth_test_oidc_signers",
+			manager.WithIssuer("https://issuer.example.test/api"),
+			manager.WithSigner("primary", primaryKey),
+			manager.WithSigner("secondary", secondaryKey),
+		)
 
-func TestAuthConfigTracing(t *testing.T) {
-	exporter := tracetest.NewInMemoryExporter()
-	provider := sdktrace.NewTracerProvider(sdktrace.WithSyncer(exporter))
-	defer func() {
-		require.NoError(t, provider.Shutdown(context.Background()))
-	}()
+		token, err := mgr.OIDCSign(jwt.MapClaims{"iss": "https://issuer.example.test/api", "sub": "alice"})
+		require.NoError(t, err)
 
-	mgr := newTestManagerWithOpts(t,
-		manager.WithTracer(provider.Tracer("manager-authconfig-test")),
-		manager.WithProvider(mustLocalProvider(t, "https://issuer.example.test/api")),
-		mustGoogleProviderOpt(t, oidc.GoogleIssuer),
-	)
+		kid, err := oidc.ExtractKeyID(token)
+		require.NoError(t, err)
+		assert.Equal(t, "secondary", kid)
 
-	config, err := mgr.AuthConfig()
-	require.NoError(t, err)
-	require.Len(t, config, 2)
-	require.NoError(t, provider.ForceFlush(context.Background()))
+		claims, err := mgr.OIDCVerify(token, "https://issuer.example.test/api")
+		require.NoError(t, err)
+		assert.Equal(t, "alice", claims["sub"])
 
-	spans := exporter.GetSpans()
-	var authConfigSpan *tracetest.SpanStub
-	for i := range spans {
-		if spans[i].Name == "manager.AuthConfig" {
-			authConfigSpan = &spans[i]
-			break
-		}
-	}
-	require.NotNil(t, authConfigSpan)
-	assert.Contains(t, authConfigSpan.Attributes, attribute.Int("provider_count", 2))
-}
+		legacyToken, err := oidc.SignTokenWithKeyID("primary", primaryKey, jwt.MapClaims{"iss": "https://issuer.example.test/api", "sub": "bob"})
+		require.NoError(t, err)
 
-func TestAuthConfigRequiresConfiguredClients(t *testing.T) {
-	mgr := newTestManager(t)
+		claims, err = mgr.OIDCVerify(legacyToken, "https://issuer.example.test/api")
+		require.NoError(t, err)
+		assert.Equal(t, "bob", claims["sub"])
 
-	_, err := mgr.AuthConfig()
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "providers")
-}
-func TestManagerOIDCVerifySuccessAndIssuerMismatch(t *testing.T) {
-	key := mustRSAKey(t)
-	mgr := newTestManagerWithOpts(t, manager.WithPrivateKey(key))
-
-	token, err := mgr.OIDCSign(jwt.MapClaims{"iss": "https://issuer.example.test/api"})
-	require.NoError(t, err)
-
-	claims, err := mgr.OIDCVerify(token, "https://issuer.example.test/api")
-	require.NoError(t, err)
-	assert.Equal(t, "https://issuer.example.test/api", claims["iss"])
-
-	_, err = mgr.OIDCVerify(token, "https://wrong.example.test/api")
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "issuer")
-}
-
-func TestOIDCJWKSet(t *testing.T) {
-	key := mustRSAKey(t)
-
-	jwks, err := oidc.PublicJWKSet(key)
-	require.NoError(t, err)
-
-	require.Equal(t, 1, jwks.Len())
-	entry, ok := jwks.LookupKeyID(oidc.KeyID)
-	require.True(t, ok)
-	alg, ok := entry.Get("alg")
-	require.True(t, ok)
-	assert.Equal(t, oidc.SigningAlgorithm, fmt.Sprint(alg))
-}
-
-func TestPublicJWKSetRequiresKey(t *testing.T) {
-	_, err := oidc.PublicJWKSet(nil)
-	require.Error(t, err)
-}
-
-func TestManagerOIDCSignRequiresKey(t *testing.T) {
-	mgr := newTestManager(t)
-	_, err := mgr.OIDCSign(jwt.MapClaims{"iss": "https://issuer.example.com"})
-	require.Error(t, err)
-}
-
-func TestManagerOIDCJWKSetRequiresKey(t *testing.T) {
-	mgr := newTestManager(t)
-	_, err := mgr.OIDCJWKSet()
-	require.Error(t, err)
-}
-
-func mustRSAKey(t *testing.T) *rsa.PrivateKey {
-	t.Helper()
-	key, err := authcrypto.GeneratePrivateKey()
-	require.NoError(t, err)
-	return key
-}
-
-func mustLocalProvider(t *testing.T, issuer string) *localprovider.Provider {
-	t.Helper()
-	provider, err := localprovider.New(issuer, mustRSAKey(t))
-	require.NoError(t, err)
-	return provider
-}
-
-func mustGoogleProviderOpt(t *testing.T, issuer string) manager.Opt {
-	t.Helper()
-	provider, err := googleprovider.NewWithIssuer("google-client-id", "google-client-secret", issuer)
-	require.NoError(t, err)
-	return manager.WithProvider(provider)
+		jwks, err := mgr.OIDCJWKSet()
+		require.NoError(t, err)
+		_, ok := jwks.LookupKeyID("primary")
+		assert.True(t, ok)
+		entry, ok := jwks.LookupKeyID("secondary")
+		require.True(t, ok)
+		alg, ok := entry.Get(jwk.AlgorithmKey)
+		require.True(t, ok)
+		assert.Equal(t, oidc.SigningAlgorithm, alg.(interface{ String() string }).String())
+	})
 }

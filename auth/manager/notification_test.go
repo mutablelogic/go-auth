@@ -16,16 +16,54 @@ package manager_test
 
 import (
 	"context"
+	"errors"
+	"strings"
 	"testing"
 	"time"
 
 	// Packages
+	uuid "github.com/google/uuid"
 	manager "github.com/mutablelogic/go-auth/auth/manager"
 	schema "github.com/mutablelogic/go-auth/auth/schema"
 	pg "github.com/mutablelogic/go-pg"
 	assert "github.com/stretchr/testify/assert"
 	require "github.com/stretchr/testify/require"
 )
+
+func newNotificationTestManager(t *testing.T, opts ...manager.Opt) (*manager.Manager, string) {
+	t.Helper()
+	schemaName := "auth_test_notify_" + strings.ReplaceAll(uuid.NewString(), "-", "_")
+	m := newCustomSchemaManagerWithOpts(t, schemaName, opts...)
+
+	runCtx, cancel := context.WithCancel(context.Background())
+	runDone := make(chan error, 1)
+	go func() {
+		runDone <- m.Run(runCtx)
+	}()
+	t.Cleanup(func() {
+		cancel()
+		if err := <-runDone; err != nil {
+			t.Error(err)
+		}
+	})
+
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		readyCtx, readyCancel := context.WithCancel(context.Background())
+		err := m.ChangeNotification(readyCtx, func(schema.ChangeNotification) {})
+		readyCancel()
+		if err == nil {
+			return m, schemaName
+		}
+		if !errors.Is(err, pg.ErrNotAvailable) {
+			require.NoError(t, err)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	t.Fatal("notifications were not ready before timeout")
+	return nil, ""
+}
 
 func Test_notification_001(t *testing.T) {
 	t.Run("RequiresConfiguredChannel", func(t *testing.T) {
@@ -42,7 +80,7 @@ func Test_notification_001(t *testing.T) {
 	t.Run("RejectsNilCallback", func(t *testing.T) {
 		assert := assert.New(t)
 
-		m := newTestManagerWithOpts(t, manager.WithNotificationChannel("backend.table_change"))
+		m, _ := newNotificationTestManager(t, manager.WithNotificationChannel("backend.table_change"))
 		err := m.ChangeNotification(context.Background(), nil)
 
 		assert.ErrorIs(err, pg.ErrBadParameter)
@@ -52,7 +90,7 @@ func Test_notification_001(t *testing.T) {
 		assert := assert.New(t)
 		require := require.New(t)
 
-		m := newTestManagerWithOpts(t, manager.WithNotificationChannel("backend.table_change"))
+		m, schemaName := newNotificationTestManager(t, manager.WithNotificationChannel("backend.table_change"))
 		changes := make(chan schema.ChangeNotification, 1)
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
@@ -65,13 +103,13 @@ func Test_notification_001(t *testing.T) {
 		}))
 
 		require.NoError(m.Exec(context.Background(), `
-			INSERT INTO auth."group" (id, description)
+			INSERT INTO `+schemaName+`."group" (id, description)
 			VALUES ('notification-group', 'Notification Group')
 		`))
 
 		select {
 		case change := <-changes:
-			assert.Equal("auth", change.Schema)
+			assert.Equal(schemaName, change.Schema)
 			assert.Equal("group", change.Table)
 			assert.Equal("INSERT", change.Action)
 		case <-ctx.Done():
@@ -83,7 +121,7 @@ func Test_notification_001(t *testing.T) {
 		assert := assert.New(t)
 		require := require.New(t)
 
-		m := newTestManagerWithOpts(t, manager.WithNotificationChannel("backend.table_change"))
+		m, schemaName := newNotificationTestManager(t, manager.WithNotificationChannel("backend.table_change"))
 		first := make(chan schema.ChangeNotification, 1)
 		second := make(chan schema.ChangeNotification, 1)
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -103,7 +141,7 @@ func Test_notification_001(t *testing.T) {
 		}))
 
 		require.NoError(m.Exec(context.Background(), `
-			INSERT INTO auth."group" (id, description)
+			INSERT INTO `+schemaName+`."group" (id, description)
 			VALUES ('notification-broadcast-group', 'Notification Broadcast Group')
 		`))
 

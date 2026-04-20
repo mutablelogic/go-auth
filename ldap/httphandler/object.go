@@ -23,7 +23,6 @@ import (
 
 	// Packages
 	ldap "github.com/mutablelogic/go-auth/ldap/manager"
-	markdown "github.com/mutablelogic/go-auth/pkg/markdown"
 	schema "github.com/mutablelogic/go-auth/ldap/schema"
 	httprequest "github.com/mutablelogic/go-server/pkg/httprequest"
 	httpresponse "github.com/mutablelogic/go-server/pkg/httpresponse"
@@ -34,7 +33,7 @@ import (
 ///////////////////////////////////////////////////////////////////////////////
 // PUBLIC METHODS
 
-func ObjectHandler(manager *ldap.Manager, doc *markdown.Document) (string, *jsonschema.Schema, httprequest.PathItem) {
+func ObjectHandler(manager *ldap.Manager, doc *opts.MarkdownDoc) (string, *jsonschema.Schema, httprequest.PathItem) {
 	return "object", nil, httprequest.NewPathItem(
 		"Object operations",
 		"Operations on LDAP objects",
@@ -51,7 +50,7 @@ func ObjectHandler(manager *ldap.Manager, doc *markdown.Document) (string, *json
 	)
 }
 
-func ObjectResourceHandler(manager *ldap.Manager, doc *markdown.Document) (string, *jsonschema.Schema, httprequest.PathItem) {
+func ObjectResourceHandler(manager *ldap.Manager, doc *opts.MarkdownDoc) (string, *jsonschema.Schema, httprequest.PathItem) {
 	return "object/{dn}", nil, httprequest.NewPathItem(
 		"Object operations",
 		"Operations on a specific LDAP object",
@@ -117,7 +116,7 @@ func ObjectResourceHandler(manager *ldap.Manager, doc *markdown.Document) (strin
 	)
 }
 
-func ObjectBindHandler(manager *ldap.Manager, doc *markdown.Document) (string, *jsonschema.Schema, httprequest.PathItem) {
+func ObjectBindHandler(manager *ldap.Manager, doc *opts.MarkdownDoc) (string, *jsonschema.Schema, httprequest.PathItem) {
 	return "object/{dn}/bind", nil, httprequest.NewPathItem(
 		"Object bind operations",
 		"Authentication operations for a specific LDAP object",
@@ -141,7 +140,7 @@ func ObjectBindHandler(manager *ldap.Manager, doc *markdown.Document) (string, *
 	)
 }
 
-func ObjectPasswordHandler(manager *ldap.Manager, doc *markdown.Document) (string, *jsonschema.Schema, httprequest.PathItem) {
+func ObjectPasswordHandler(manager *ldap.Manager, doc *opts.MarkdownDoc) (string, *jsonschema.Schema, httprequest.PathItem) {
 	return "object/{dn}/password", nil, httprequest.NewPathItem(
 		"Object password operations",
 		"Password management operations for a specific LDAP object",

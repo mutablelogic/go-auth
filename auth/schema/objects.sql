@@ -35,9 +35,26 @@ CREATE TABLE IF NOT EXISTS ${"schema"}.session (
     "id"            UUID        NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
     "user"          UUID        NOT NULL REFERENCES ${"schema"}."user" (id) ON DELETE CASCADE,
     "expires_at"    TIMESTAMPTZ NOT NULL,
+    "refresh_expires_at" TIMESTAMPTZ NOT NULL,
+    "refresh_counter" BIGINT      NOT NULL DEFAULT 0,
     "created_at"    TIMESTAMPTZ NOT NULL DEFAULT now(),
     "revoked_at"    TIMESTAMPTZ NULL
 );
+
+-- auth.session.refresh_columns
+DO $$ BEGIN
+    ALTER TABLE ${"schema"}.session ADD COLUMN IF NOT EXISTS refresh_expires_at TIMESTAMPTZ;
+    ALTER TABLE ${"schema"}.session ADD COLUMN IF NOT EXISTS refresh_counter BIGINT;
+    UPDATE ${"schema"}.session
+    SET refresh_expires_at = COALESCE(refresh_expires_at, expires_at)
+    WHERE refresh_expires_at IS NULL;
+    UPDATE ${"schema"}.session
+    SET refresh_counter = COALESCE(refresh_counter, 0)
+    WHERE refresh_counter IS NULL;
+    ALTER TABLE ${"schema"}.session ALTER COLUMN refresh_expires_at SET NOT NULL;
+    ALTER TABLE ${"schema"}.session ALTER COLUMN refresh_counter SET NOT NULL;
+    ALTER TABLE ${"schema"}.session ALTER COLUMN refresh_counter SET DEFAULT 0;
+END $$;
 
 -- auth.session.user_index
 CREATE INDEX IF NOT EXISTS session_user_idx ON ${"schema"}.session ("user");

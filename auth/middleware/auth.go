@@ -62,6 +62,10 @@ func AuthN(verifier TokenVerifier) func(http.HandlerFunc) http.HandlerFunc {
 				writeUnauthorized(w, r, verifier, "invalid_token", err.Error())
 				return
 			}
+			if err := validateTokenUse(claims); err != nil {
+				writeUnauthorized(w, r, verifier, "invalid_token", err.Error())
+				return
+			}
 			session, err := sessionFromClaims(claims)
 			if err != nil {
 				writeUnauthorized(w, r, verifier, "invalid_token", err.Error())
@@ -140,6 +144,21 @@ func validateClaimBindings(claims map[string]any, user *schema.User, session *sc
 		return httpresponse.Err(http.StatusBadRequest).With("token missing sid claim")
 	} else if value != uuid.UUID(session.ID).String() {
 		return httpresponse.Err(http.StatusBadRequest).With("token sid does not match token session")
+	}
+	return nil
+}
+
+func validateTokenUse(claims map[string]any) error {
+	value, ok := claims["token_use"]
+	if !ok || value == nil {
+		return nil
+	}
+	use, ok := value.(string)
+	if !ok || strings.TrimSpace(use) == "" {
+		return httpresponse.Err(http.StatusBadRequest).With("token token_use claim is invalid")
+	}
+	if use != "access" {
+		return httpresponse.Err(http.StatusBadRequest).Withf("token token_use must be %q", "access")
 	}
 	return nil
 }

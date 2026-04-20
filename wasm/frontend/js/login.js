@@ -4,6 +4,7 @@
     const feedbackNode = document.getElementById("feedback");
     const redirectTarget = "wasm_exec.html";
     const flowStorageKey = "auth.authorization_flow";
+    const defaultLoginScope = "openid email profile";
 
     function redirectToApp() {
         window.location.assign(redirectTarget);
@@ -142,6 +143,7 @@
                     response_type: "code",
                     state,
                     nonce,
+                    scope: defaultLoginScope,
                     code_challenge: codeChallenge,
                     code_challenge_method: "S256",
                 }));
@@ -202,7 +204,7 @@
         const response = await window.AuthAPI.exchangeAuthorizationCode({
             provider: flow.provider,
             code,
-            redirect_url: flow.redirectURL,
+            redirect_uri: flow.redirectURL,
             code_verifier: flow.codeVerifier,
             nonce: flow.nonce,
         });

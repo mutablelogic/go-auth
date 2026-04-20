@@ -27,18 +27,18 @@ import (
 	"time"
 
 	// Packages
-	cert "github.com/mutablelogic/go-auth/pkg/cert"
+	cert "github.com/mutablelogic/go-auth/cert/cert"
 	managerpkg "github.com/mutablelogic/go-auth/cert/manager"
-	markdown "github.com/mutablelogic/go-auth/pkg/markdown"
 	schema "github.com/mutablelogic/go-auth/cert/schema"
 	test "github.com/mutablelogic/go-pg/pkg/test"
+	opts "github.com/mutablelogic/go-server/pkg/openapi"
 	types "github.com/mutablelogic/go-server/pkg/types"
 	assert "github.com/stretchr/testify/assert"
 	require "github.com/stretchr/testify/require"
 )
 
 var conn test.Conn
-var testDoc = markdown.Parse(doc)
+var testDoc = opts.ParseMarkdown([]byte(doc))
 
 func TestMain(m *testing.M) {
 	test.Main(m, &conn)

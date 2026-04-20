@@ -17,7 +17,7 @@ package manager
 import (
 	"testing"
 
-	"github.com/mutablelogic/go-auth/pkg/markdown"
+	opts "github.com/mutablelogic/go-server/pkg/openapi"
 	assert "github.com/stretchr/testify/assert"
 )
 
@@ -25,7 +25,7 @@ func Test_object_001(t *testing.T) {
 	t.Run("ObjectHandlerPath", func(t *testing.T) {
 		assert := assert.New(t)
 
-		path, _, pathitem := ObjectHandler(nil, &markdown.Document{})
+		path, _, pathitem := ObjectHandler(nil, &opts.MarkdownDoc{})
 
 		assert.Equal("object", path)
 		spec := pathitem.Spec(path, nil)
@@ -37,7 +37,7 @@ func Test_object_001(t *testing.T) {
 	t.Run("ObjectResourceHandlerPath", func(t *testing.T) {
 		assert := assert.New(t)
 
-		path, _, pathitem := ObjectResourceHandler(nil, &markdown.Document{})
+		path, _, pathitem := ObjectResourceHandler(nil, &opts.MarkdownDoc{})
 
 		assert.Equal("object/{dn}", path)
 		spec := pathitem.Spec(path, nil)
@@ -58,7 +58,7 @@ func Test_object_001(t *testing.T) {
 	t.Run("ObjectBindHandlerPath", func(t *testing.T) {
 		assert := assert.New(t)
 
-		path, _, pathitem := ObjectBindHandler(nil, &markdown.Document{})
+		path, _, pathitem := ObjectBindHandler(nil, &opts.MarkdownDoc{})
 
 		assert.Equal("object/{dn}/bind", path)
 		spec := pathitem.Spec(path, nil)
@@ -70,7 +70,7 @@ func Test_object_001(t *testing.T) {
 	t.Run("ObjectPasswordHandlerPath", func(t *testing.T) {
 		assert := assert.New(t)
 
-		path, _, pathitem := ObjectPasswordHandler(nil, &markdown.Document{})
+		path, _, pathitem := ObjectPasswordHandler(nil, &opts.MarkdownDoc{})
 
 		assert.Equal("object/{dn}/password", path)
 		spec := pathitem.Spec(path, nil)

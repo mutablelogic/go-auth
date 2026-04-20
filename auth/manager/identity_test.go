@@ -17,14 +17,15 @@ package manager_test
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
 	// Packages
+	uuid "github.com/google/uuid"
 	auth "github.com/mutablelogic/go-auth"
 	manager "github.com/mutablelogic/go-auth/auth/manager"
 	schema "github.com/mutablelogic/go-auth/auth/schema"
-	uuid "github.com/google/uuid"
 	pg "github.com/mutablelogic/go-pg"
 	assert "github.com/stretchr/testify/assert"
 	require "github.com/stretchr/testify/require"
@@ -32,6 +33,9 @@ import (
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	tracetest "go.opentelemetry.io/otel/sdk/trace/tracetest"
 )
+
+///////////////////////////////////////////////////////////////////////////////
+// PRIVATE METHODS
 
 type testCreateHook struct{}
 
@@ -60,6 +64,12 @@ type testLinkHook struct{ called *bool }
 func (h testLinkHook) OnIdentityLink(ctx context.Context, identity schema.IdentityInsert, existing *schema.User) error {
 	*h.called = true
 	return nil
+}
+
+func newIdentityTestManagerWithOpts(t *testing.T, opts ...manager.Opt) *manager.Manager {
+	t.Helper()
+	schemaName := "auth_test_identity_" + strings.ReplaceAll(uuid.NewString(), "-", "_")
+	return newCustomSchemaManagerWithOpts(t, schemaName, opts...)
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -154,7 +164,7 @@ func Test_identity_001(t *testing.T) {
 			require.NoError(provider.Shutdown(context.Background()))
 		}()
 
-		m := newTestManagerWithOpts(t, manager.WithTracer(provider.Tracer("manager-identity-test")))
+		m := newIdentityTestManagerWithOpts(t, manager.WithTracer(provider.Tracer("manager-identity-test")))
 
 		user, err := m.CreateUser(context.Background(), schema.UserMeta{
 			Name:  "Trace Identity User",
@@ -413,6 +423,9 @@ func Test_identity_001(t *testing.T) {
 		require.NotNil(session)
 		assert.Equal(user.ID, loggedIn.ID)
 		assert.Equal(loggedIn.ID, session.User)
+		assert.WithinDuration(time.Now().Add(DefaultSessionTTL), session.ExpiresAt, 5*time.Second)
+		assert.WithinDuration(time.Now().Add(schema.DefaultRefreshTTL), session.RefreshExpiresAt, 5*time.Second)
+		assert.Equal(uint64(0), session.RefreshCounter)
 		assert.Equal("login.identity@example.com", loggedIn.Email)
 		assert.Equal("New Name", loggedIn.Claims["name"])
 		assert.Equal("new@example.com", loggedIn.Claims["email"])
@@ -467,6 +480,9 @@ func Test_identity_001(t *testing.T) {
 		assert.Equal("New User", loggedIn.Name)
 		assert.Equal("New User", loggedIn.Claims["name"])
 		assert.Equal(loggedIn.ID, session.User)
+		assert.WithinDuration(time.Now().Add(DefaultSessionTTL), session.ExpiresAt, 5*time.Second)
+		assert.WithinDuration(time.Now().Add(schema.DefaultRefreshTTL), session.RefreshExpiresAt, 5*time.Second)
+		assert.Equal(uint64(0), session.RefreshCounter)
 
 		identity, err := m.GetIdentity(context.Background(), schema.IdentityKey{Provider: "https://accounts.google.com", Sub: "new-subject"})
 		require.NoError(err)
@@ -479,7 +495,7 @@ func Test_identity_001(t *testing.T) {
 		assert := assert.New(t)
 		require := require.New(t)
 
-		m := newTestManagerWithOpts(t, manager.WithHooks(testCreateHook{}))
+		m := newIdentityTestManagerWithOpts(t, manager.WithHooks(testCreateHook{}))
 
 		loggedIn, session, err := m.LoginWithIdentity(context.Background(), schema.IdentityInsert{
 			IdentityKey: schema.IdentityKey{
@@ -507,7 +523,7 @@ func Test_identity_001(t *testing.T) {
 		require := require.New(t)
 		expected := errors.New("signup blocked")
 
-		m := newTestManagerWithOpts(t, manager.WithHooks(testRejectCreateHook{err: expected}))
+		m := newIdentityTestManagerWithOpts(t, manager.WithHooks(testRejectCreateHook{err: expected}))
 
 		loggedIn, session, err := m.LoginWithIdentity(context.Background(), schema.IdentityInsert{
 			IdentityKey: schema.IdentityKey{
@@ -534,7 +550,7 @@ func Test_identity_001(t *testing.T) {
 		require := require.New(t)
 
 		called := false
-		m := newTestManagerWithOpts(t, manager.WithHooks(testCalledCreateHook{called: &called}))
+		m := newIdentityTestManagerWithOpts(t, manager.WithHooks(testCalledCreateHook{called: &called}))
 
 		user, err := m.CreateUser(context.Background(), schema.UserMeta{
 			Name:  "Existing Hook User",
@@ -574,7 +590,7 @@ func Test_identity_001(t *testing.T) {
 		require := require.New(t)
 
 		called := false
-		m := newTestManagerWithOpts(t, manager.WithHooks(testLinkHook{called: &called}))
+		m := newIdentityTestManagerWithOpts(t, manager.WithHooks(testLinkHook{called: &called}))
 
 		user, err := m.CreateUser(context.Background(), schema.UserMeta{
 			Name:  "Linked User",

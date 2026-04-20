@@ -285,15 +285,17 @@ WHERE provider = @provider
 RETURNING "user", provider, sub, email, claims, created_at, modified_at;
 
 -- session.insert
-INSERT INTO ${"schema"}.session ("user", expires_at)
-  VALUES (@user, NOW() + @expires_in)
-  RETURNING id, "user", expires_at, created_at, revoked_at;
+INSERT INTO ${"schema"}.session ("user", expires_at, refresh_expires_at)
+  VALUES (@user, NOW() + @expires_in, NOW() + @refresh_expires_in)
+  RETURNING id, "user", expires_at, refresh_expires_at, refresh_counter, created_at, revoked_at;
 
 -- session.select
 SELECT
     session.id,
     session."user",
     session.expires_at,
+    session.refresh_expires_at,
+    session.refresh_counter,
     session.created_at,
     session.revoked_at
 FROM ${"schema"}.session AS session
@@ -303,48 +305,50 @@ WHERE session.id = @id;
 UPDATE ${"schema"}.session
 SET ${patch}
 WHERE id = @id
-RETURNING id, "user", expires_at, created_at, revoked_at;
+RETURNING id, "user", expires_at, refresh_expires_at, refresh_counter, created_at, revoked_at;
 
 -- session.refresh
 UPDATE ${"schema"}.session AS session
-SET expires_at = NOW() + @expires_in
+SET expires_at = NOW() + @expires_in,
+    refresh_counter = session.refresh_counter + 1
 FROM ${"schema"}.user AS user_row
 WHERE session.id = @id
+  AND session.refresh_counter = @refresh_counter
   AND session."user" = user_row.id
   AND session.revoked_at IS NULL
-  AND session.expires_at > NOW()
+  AND session.refresh_expires_at > NOW()
   AND (user_row.expires_at IS NULL OR user_row.expires_at > NOW())
   AND (user_row.status IS NULL OR user_row.status = 'active')
-RETURNING session.id, session."user", session.expires_at, session.created_at, session.revoked_at;
+RETURNING session.id, session."user", session.expires_at, session.refresh_expires_at, session.refresh_counter, session.created_at, session.revoked_at;
 
 -- session.revoke
 UPDATE ${"schema"}.session
 SET revoked_at = NOW()
 WHERE id = @id
-RETURNING id, "user", expires_at, created_at, revoked_at;
+RETURNING id, "user", expires_at, refresh_expires_at, refresh_counter, created_at, revoked_at;
 
 -- session.cleanup
 WITH candidates AS (
   SELECT session.id
   FROM ${"schema"}.session AS session
   WHERE session.revoked_at IS NOT NULL
-     OR session.expires_at < NOW()
+     OR session.refresh_expires_at < NOW()
   ORDER BY session.created_at ASC, session.id ASC
   LIMIT @cleanup_limit
 ), deleted AS (
   DELETE FROM ${"schema"}.session AS session
   USING candidates
   WHERE session.id = candidates.id
-  RETURNING session.id, session."user", session.expires_at, session.created_at, session.revoked_at
+  RETURNING session.id, session."user", session.expires_at, session.refresh_expires_at, session.refresh_counter, session.created_at, session.revoked_at
 )
-SELECT id, "user", expires_at, created_at, revoked_at
+SELECT id, "user", expires_at, refresh_expires_at, refresh_counter, created_at, revoked_at
 FROM deleted
 ORDER BY created_at ASC, id ASC;
 
 -- session.delete
 DELETE FROM ${"schema"}.session
 WHERE id = @id
-RETURNING id, "user", expires_at, created_at, revoked_at;
+RETURNING id, "user", expires_at, refresh_expires_at, refresh_counter, created_at, revoked_at;
 
 -- group.insert
 INSERT INTO ${"schema"}."group" (id, description, enabled, scopes, meta)
