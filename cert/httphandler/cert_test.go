@@ -27,9 +27,9 @@ import (
 	"time"
 
 	// Packages
+	cert "github.com/mutablelogic/go-auth/cert/cert"
 	managerpkg "github.com/mutablelogic/go-auth/cert/manager"
 	schema "github.com/mutablelogic/go-auth/cert/schema"
-	cert "github.com/mutablelogic/go-auth/pkg/cert"
 	test "github.com/mutablelogic/go-pg/pkg/test"
 	opts "github.com/mutablelogic/go-server/pkg/openapi"
 	types "github.com/mutablelogic/go-server/pkg/types"

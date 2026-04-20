@@ -7,7 +7,6 @@ ARG OS
 ARG ARCH
 WORKDIR /usr/src/app
 COPY . .
-
 RUN OS=${OS} ARCH=${ARCH} make
 
 # Runtime stage
