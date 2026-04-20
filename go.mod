@@ -12,7 +12,7 @@ require (
 	github.com/lestrrat-go/jwx/v2 v2.1.6
 	github.com/mutablelogic/go-client v1.4.9
 	github.com/mutablelogic/go-pg v1.1.14
-	github.com/mutablelogic/go-server v1.6.28
+	github.com/mutablelogic/go-server v1.6.29
 	github.com/mutablelogic/go-tokenizer v0.0.3
 	github.com/pkg/browser v0.0.0-20240102092130-5ac0b6a4141c
 	github.com/stretchr/testify v1.11.1
