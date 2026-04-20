@@ -15,9 +15,13 @@
 package auth
 
 import (
+	"context"
+
 	// Packages
 	auth "github.com/mutablelogic/go-auth/auth/httpclient"
+	otel "github.com/mutablelogic/go-client/pkg/otel"
 	server "github.com/mutablelogic/go-server"
+	attribute "go.opentelemetry.io/otel/attribute"
 )
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -45,4 +49,19 @@ func clientFor(ctx server.Cmd) (*auth.Client, string, error) {
 		return nil, "", err
 	}
 	return auth, endpoint, nil
+}
+
+// withAuth is a helper function to create an auth client and an OTEL span, then call the provided function with it.
+func withAuth(ctx server.Cmd, name, args string, fn func(context.Context, *auth.Client) error) (err error) {
+	// Create a span for the command
+	spanctx, endSpan := otel.StartSpan(ctx.Tracer(), ctx.Context(), name,
+		attribute.String("cmd", args),
+	)
+	defer func() { endSpan(err) }()
+
+	client, _, err := clientFor(ctx)
+	if err != nil {
+		return err
+	}
+	return fn(spanctx, client)
 }

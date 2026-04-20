@@ -15,15 +15,16 @@
 package auth
 
 import (
+	"context"
 	"fmt"
 	"net/url"
 	"strings"
 
 	// Packages
-	otel "github.com/mutablelogic/go-client/pkg/otel"
+
+	auth "github.com/mutablelogic/go-auth/auth/httpclient"
 	server "github.com/mutablelogic/go-server"
 	types "github.com/mutablelogic/go-server/pkg/types"
-	attribute "go.opentelemetry.io/otel/attribute"
 )
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -44,74 +45,67 @@ func (cmd RevokeCommand) RedactedString() string {
 ///////////////////////////////////////////////////////////////////////////////
 // COMMANDS
 
-func (cmd *RevokeCommand) Run(ctx server.Cmd) (err error) {
-	spanctx, endSpan := otel.StartSpan(ctx.Tracer(), ctx.Context(), "RevokeCommand",
-		attribute.String("cmd", cmd.RedactedString()),
-	)
-	defer func() { endSpan(err) }()
+func (cmd *RevokeCommand) Run(globals server.Cmd) (err error) {
+	return withAuth(globals, "RevokeCommand", types.Stringify(cmd), func(ctx context.Context, authclient *auth.Client) error {
 
-	authClient, endpoint, err := clientFor(ctx)
-	if err != nil {
-		return err
-	}
-
-	// Set the endpoint
-	if cmd.Endpoint == "" {
-		cmd.Endpoint = endpoint
-		if stored_endpoint := ctx.GetString(endpointStoreKeyPrefix); stored_endpoint != "" {
-			cmd.Endpoint = stored_endpoint
+		// Set the endpoint
+		if cmd.Endpoint == "" {
+			cmd.Endpoint = authclient.Endpoint
+			if stored_endpoint := globals.GetString(endpointStoreKeyPrefix); stored_endpoint != "" {
+				cmd.Endpoint = stored_endpoint
+			}
 		}
-	}
 
-	// Check the endpoint
-	url, err := url.Parse(cmd.Endpoint)
-	if err != nil {
-		return fmt.Errorf("invalid endpoint URL: %w", err)
-	} else if url.Scheme != types.SchemeSecure && url.Scheme != types.SchemeInsecure {
-		return fmt.Errorf("endpoint URL must have http or https scheme")
-	} else if url.Host == "" {
-		return fmt.Errorf("endpoint URL must have a host")
-	}
-
-	// Get the token
-	token, err := storedToken(ctx, cmd.Endpoint)
-	if err != nil {
-		return err
-	}
-	if token == nil {
-		return fmt.Errorf("no stored token for endpoint %q", cmd.Endpoint)
-	}
-
-	issuer := strings.TrimSpace(ctx.GetString(issuerStoreKey(cmd.Endpoint)))
-	clientID := ""
-	clientSecret := ""
-	if issuer != "" {
-		clientID = strings.TrimSpace(ctx.GetString(clientIDStoreKey(nil, issuer)))
-		clientSecret = strings.TrimSpace(ctx.GetString(clientSecretStoreKey(nil, issuer)))
-	}
-
-	meta, err := discoverAuthMetadata(ctx, spanctx, authClient, cmd.Endpoint)
-	if err != nil {
-		return err
-	}
-	serverMeta, err := meta.AuthorizationServerForFlow()
-	if err != nil {
-		return err
-	}
-	config, err := serverMeta.AuthorizationCodeConfig()
-	if err != nil {
-		return err
-	}
-	if issuer == "" {
-		issuer = strings.TrimSpace(config.Issuer)
-		if issuer == "" {
-			issuer = strings.TrimSpace(serverMeta.Issuer)
+		// Check the endpoint
+		url, err := url.Parse(cmd.Endpoint)
+		if err != nil {
+			return fmt.Errorf("invalid endpoint URL: %w", err)
+		} else if url.Scheme != types.SchemeSecure && url.Scheme != types.SchemeInsecure {
+			return fmt.Errorf("endpoint URL must have http or https scheme")
+		} else if url.Host == "" {
+			return fmt.Errorf("endpoint URL must have a host")
 		}
-	}
-	if endpoint := strings.TrimSpace(config.RevocationEndpoint); endpoint != "" {
-		if err := authClient.RevokeToken(spanctx, endpoint, token, clientID, clientSecret); err != nil {
+
+		// Get the token
+		token, err := storedToken(globals, cmd.Endpoint)
+		if err != nil {
 			return err
 		}
-	}
-	return deleteStoredToken(ctx, cmd.Endpoint, issuer)
+		if token == nil {
+			return fmt.Errorf("no stored token for endpoint %q", cmd.Endpoint)
+		}
+
+		issuer := strings.TrimSpace(globals.GetString(issuerStoreKey(cmd.Endpoint)))
+		clientID := ""
+		clientSecret := ""
+		if issuer != "" {
+			clientID = strings.TrimSpace(globals.GetString(clientIDStoreKey(nil, issuer)))
+			clientSecret = strings.TrimSpace(globals.GetString(clientSecretStoreKey(nil, issuer)))
+		}
+
+		meta, err := discoverAuthMetadata(globals, ctx, authclient, cmd.Endpoint)
+		if err != nil {
+			return err
+		}
+		serverMeta, err := meta.AuthorizationServerForFlow()
+		if err != nil {
+			return err
+		}
+		config, err := serverMeta.AuthorizationCodeConfig()
+		if err != nil {
+			return err
+		}
+		if issuer == "" {
+			issuer = strings.TrimSpace(config.Issuer)
+			if issuer == "" {
+				issuer = strings.TrimSpace(serverMeta.Issuer)
+			}
+		}
+		if endpoint := strings.TrimSpace(config.RevocationEndpoint); endpoint != "" {
+			if err := authclient.RevokeToken(ctx, endpoint, token, clientID, clientSecret); err != nil {
+				return err
+			}
+		}
+		return deleteStoredToken(globals, cmd.Endpoint, issuer)
+	})
 }

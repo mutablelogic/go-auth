@@ -15,10 +15,9 @@
 package auth
 
 import (
-	// Packages
-
 	"context"
 
+	// Packages
 	auth "github.com/mutablelogic/go-auth/auth/httpclient"
 	otel "github.com/mutablelogic/go-client/pkg/otel"
 	server "github.com/mutablelogic/go-server"

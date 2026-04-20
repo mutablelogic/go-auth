@@ -24,10 +24,8 @@ import (
 	auth "github.com/mutablelogic/go-auth/auth/httpclient"
 	oidc "github.com/mutablelogic/go-auth/auth/oidc"
 	client "github.com/mutablelogic/go-client"
-	otel "github.com/mutablelogic/go-client/pkg/otel"
 	server "github.com/mutablelogic/go-server"
 	types "github.com/mutablelogic/go-server/pkg/types"
-	attribute "go.opentelemetry.io/otel/attribute"
 )
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -40,41 +38,36 @@ type DiscoverCommand struct {
 ///////////////////////////////////////////////////////////////////////////////
 // COMMANDS
 
-func (cmd *DiscoverCommand) Run(ctx server.Cmd) (err error) {
-	spanctx, endSpan := otel.StartSpan(ctx.Tracer(), ctx.Context(), "DiscoverCommand",
-		attribute.String("cmd", types.Stringify(cmd)),
-	)
-	defer func() { endSpan(err) }()
-
-	authClient, endpoint, err := clientFor(ctx)
-	if err != nil {
-		return err
-	}
-
-	// Set the endpoint
-	if cmd.Endpoint == "" {
-		cmd.Endpoint = endpoint
-		if stored_endpoint := ctx.GetString(endpointStoreKeyPrefix); stored_endpoint != "" {
-			cmd.Endpoint = stored_endpoint
+func (cmd *DiscoverCommand) Run(globals server.Cmd) (err error) {
+	return withAuth(globals, "AuthorizeCommand", types.Stringify(cmd), func(ctx context.Context, authclient *auth.Client) error {
+		// Set the endpoint
+		if cmd.Endpoint == "" {
+			cmd.Endpoint = authclient.Endpoint
+			if stored_endpoint := globals.GetString(endpointStoreKeyPrefix); stored_endpoint != "" {
+				cmd.Endpoint = stored_endpoint
+			}
 		}
-	}
 
-	// Check the endpoint
-	url, err := url.Parse(cmd.Endpoint)
-	if err != nil {
-		return fmt.Errorf("invalid endpoint URL: %w", err)
-	} else if url.Scheme != types.SchemeSecure && url.Scheme != types.SchemeInsecure {
-		return fmt.Errorf("endpoint URL must have http or https scheme")
-	} else if url.Host == "" {
-		return fmt.Errorf("endpoint URL must have a host")
-	}
+		// Check the endpoint
+		url, err := url.Parse(cmd.Endpoint)
+		if err != nil {
+			return fmt.Errorf("invalid endpoint URL: %w", err)
+		} else if url.Scheme != types.SchemeSecure && url.Scheme != types.SchemeInsecure {
+			return fmt.Errorf("endpoint URL must have http or https scheme")
+		} else if url.Host == "" {
+			return fmt.Errorf("endpoint URL must have a host")
+		}
 
-	config, err := discoverAuthMetadata(ctx, spanctx, authClient, cmd.Endpoint)
-	if err != nil {
-		return err
-	}
-	fmt.Println(types.Stringify(config))
-	return nil
+		// Discover the configuration
+		config, err := discoverAuthMetadata(globals, ctx, authclient, cmd.Endpoint)
+		if err != nil {
+			return err
+		}
+
+		// Output the configuration
+		fmt.Println(types.Stringify(config))
+		return nil
+	})
 }
 
 ///////////////////////////////////////////////////////////////////////////////
