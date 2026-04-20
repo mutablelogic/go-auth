@@ -18,15 +18,15 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync"
 
 	// Packages
-	auth "github.com/mutablelogic/go-auth"
+
 	schema "github.com/mutablelogic/go-auth/auth/schema"
 	otel "github.com/mutablelogic/go-client/pkg/otel"
 	pg "github.com/mutablelogic/go-pg"
 	broadcaster "github.com/mutablelogic/go-pg/pkg/broadcaster"
 	attribute "go.opentelemetry.io/otel/attribute"
-	trace "go.opentelemetry.io/otel/trace"
 )
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -34,6 +34,7 @@ import (
 
 // Manager wraps a database connection pool scoped to the application schema.
 type Manager struct {
+	sync.Mutex
 	opt
 	pg.PoolConn
 	notifications broadcaster.Broadcaster
@@ -45,10 +46,10 @@ type Manager struct {
 // New creates a Manager, ensures the schema exists, and bootstraps all
 // database objects from the embedded objects.sql. If schemaName is empty
 // the default schema is used.
-func New(ctx context.Context, pool pg.PoolConn, opts ...Opt) (*Manager, error) {
+func New(ctx context.Context, pool pg.PoolConn, name, version string, opts ...Opt) (*Manager, error) {
 	// Set default values
 	self := new(Manager)
-	self.defaults()
+	self.defaults(name, version)
 
 	// Check arguments
 	if pool == nil {
@@ -99,25 +100,14 @@ func New(ctx context.Context, pool pg.PoolConn, opts ...Opt) (*Manager, error) {
 ///////////////////////////////////////////////////////////////////////////////
 // LIFECYCLE
 
-// AuthConfig returns the shareable upstream provider configuration exposed by
-// /auth/config. The client secret remains server-side.
-func (m *Manager) AuthConfig() (_ schema.PublicClientConfigurations, err error) {
-	ctx, endSpan := otel.StartSpan(m.tracer, context.Background(), "manager.AuthConfig")
-	defer func() { endSpan(err) }()
+// Name returns the manager name
+func (m *Manager) Name() string {
+	return m.name
+}
 
-	config := make(schema.PublicClientConfigurations)
-	for key, provider := range m.providers {
-		if provider == nil {
-			continue
-		}
-		config[key] = provider.PublicConfig()
-	}
-	if len(config) == 0 {
-		err = auth.ErrNotFound.With("providers are not configured")
-		return nil, err
-	}
-	trace.SpanFromContext(ctx).SetAttributes(attribute.Int("provider_count", len(config)))
-	return config, nil
+// Version returns the manager version.
+func (m *Manager) Version() string {
+	return m.version
 }
 
 ///////////////////////////////////////////////////////////////////////////////

@@ -54,19 +54,20 @@ const (
 
 // opt combines all configuration options for Manager.
 type opt struct {
-	signer       string
-	keys         map[string]*rsa.PrivateKey
-	issuer       string
-	schema       string
-	channel      string
-	sessionttl   time.Duration
-	refreshttl   time.Duration
-	cleanupint   time.Duration
-	cleanuplimit int
-	providers    map[string]providerpkg.Provider
-	hooks        any
-	tracer       trace.Tracer
-	metrics      metric.Meter
+	name, version string
+	signer        string
+	keys          map[string]*rsa.PrivateKey
+	issuer        string
+	schema        string
+	channel       string
+	sessionttl    time.Duration
+	refreshttl    time.Duration
+	cleanupint    time.Duration
+	cleanuplimit  int
+	providers     map[string]providerpkg.Provider
+	hooks         any
+	tracer        trace.Tracer
+	metrics       metric.Meter
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -84,7 +85,9 @@ func (o *opt) apply(opts ...Opt) error {
 	return nil
 }
 
-func (o *opt) defaults() {
+func (o *opt) defaults(name, version string) {
+	o.name = name
+	o.version = version
 	o.keys = make(map[string]*rsa.PrivateKey)
 	o.schema = schema.DefaultSchema
 	o.sessionttl = schema.DefaultSessionTTL
@@ -129,6 +132,10 @@ func WithIssuer(issuer string) Opt {
 	}
 }
 
+// WithProvider adds an identity provider to the manager. The provider's Key()
+// value is used as the provider identifier in the "iss" claim of tokens issued
+// for identities from that provider and must be unique among all configured
+// providers.
 func WithProvider(provider providerpkg.Provider) Opt {
 	return func(o *opt) error {
 		if provider == nil {

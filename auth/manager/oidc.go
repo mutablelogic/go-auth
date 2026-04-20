@@ -15,6 +15,7 @@
 package manager
 
 import (
+	"context"
 	"crypto/rsa"
 	"net/http"
 	"strings"
@@ -25,10 +26,34 @@ import (
 	auth "github.com/mutablelogic/go-auth"
 	oidc "github.com/mutablelogic/go-auth/auth/oidc"
 	schema "github.com/mutablelogic/go-auth/auth/schema"
+	otel "github.com/mutablelogic/go-client/pkg/otel"
+	attribute "go.opentelemetry.io/otel/attribute"
+	trace "go.opentelemetry.io/otel/trace"
 )
 
 ///////////////////////////////////////////////////////////////////////////////
 // PUBLIC METHODS
+
+// AuthConfig returns the shareable upstream provider configuration exposed by
+// /auth/config. The client secret remains server-side.
+func (m *Manager) AuthConfig() (_ schema.PublicClientConfigurations, err error) {
+	ctx, endSpan := otel.StartSpan(m.tracer, context.Background(), "manager.AuthConfig")
+	defer func() { endSpan(err) }()
+
+	config := make(schema.PublicClientConfigurations)
+	for key, provider := range m.providers {
+		if provider == nil {
+			continue
+		}
+		config[key] = provider.PublicConfig()
+	}
+	if len(config) == 0 {
+		err = auth.ErrNotFound.With("providers are not configured")
+		return nil, err
+	}
+	trace.SpanFromContext(ctx).SetAttributes(attribute.Int("provider_count", len(config)))
+	return config, nil
+}
 
 // OIDCJWKSet returns the public JSON Web Key Set for the manager's configured
 // signing keys.
@@ -57,21 +82,17 @@ func (m *Manager) OIDCVerify(token, issuer string) (map[string]any, error) {
 }
 
 // OIDCIssuer returns the canonical issuer for locally signed tokens.
-func (m *Manager) OIDCIssuer() (string, error) {
+func (m *Manager) Issuer() (string, error) {
 	if issuer := strings.TrimSpace(m.issuer); issuer != "" {
 		return issuer, nil
+	} else {
+		return "", auth.ErrBadParameter.With("issuer is not configured")
 	}
-	if provider, ok := m.providers[schema.ProviderKeyLocal]; ok && provider != nil {
-		if issuer := strings.TrimSpace(provider.PublicConfig().Issuer); issuer != "" {
-			return issuer, nil
-		}
-	}
-	return "", auth.ErrBadParameter.With("issuer is not configured")
 }
 
 // OIDCConfig returns the OIDC configuration for this server, including the issuer URL
 func (m *Manager) OIDCConfig() (oidc.OIDCConfiguration, error) {
-	issuer, err := m.OIDCIssuer()
+	issuer, err := m.Issuer()
 	if err != nil {
 		return oidc.OIDCConfiguration{}, err
 	}
@@ -96,7 +117,7 @@ func (m *Manager) OIDCConfig() (oidc.OIDCConfiguration, error) {
 
 // ProtectedResourceMetadata returns OAuth protected-resource metadata for this server.
 func (m *Manager) ProtectedResourceMetadata(r *http.Request) (oidc.ProtectedResourceMetadata, error) {
-	issuer, err := m.OIDCIssuer()
+	issuer, err := m.Issuer()
 	if err != nil {
 		return oidc.ProtectedResourceMetadata{}, err
 	}
@@ -104,7 +125,7 @@ func (m *Manager) ProtectedResourceMetadata(r *http.Request) (oidc.ProtectedReso
 		Resource:               issuer,
 		AuthorizationServers:   []string{issuer},
 		BearerMethodsSupported: []string{"header"},
-		ResourceName:           "go-auth",
+		ResourceName:           m.Name(),
 	}, nil
 }
 
