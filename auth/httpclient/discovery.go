@@ -437,6 +437,12 @@ func (c *Client) discoverFromIssuer(ctx context.Context, issuer string) (*Server
 			break
 		}
 	}
+	if _, ok := meta.authorizationCodeBaseConfig(); ok {
+		if issuer := strings.TrimSpace(meta.Oidc.Issuer); issuer != "" {
+			meta.Issuer = issuer
+		}
+		return types.Ptr(meta), nil
+	}
 
 	for _, endpoint := range metadataCandidates(meta.Issuer, oidc.OAuthConfigPath, oidc.OAuthConfigURL(meta.Issuer)) {
 		if err := c.DoWithContext(ctx, nil, &meta.OAuth, client.OptReqEndpoint(endpoint)); err == nil {

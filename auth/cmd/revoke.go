@@ -30,9 +30,7 @@ import (
 // TYPES
 
 type RevokeCommand struct {
-	Endpoint     string `arg:"" optional:"" name:"endpoint" help:"Protected resource endpoint. Defaults to the stored endpoint or the global HTTP client endpoint."`
-	ClientID     string `name:"client-id" help:"OAuth client ID. Defaults to the stored client ID for the issuer."`
-	ClientSecret string `name:"client-secret" help:"OAuth client secret. Defaults to the stored client secret for the issuer when required by the provider."`
+	Endpoint string `arg:"" optional:"" name:"endpoint" help:"Protected resource endpoint. Defaults to the stored endpoint or the global HTTP client endpoint."`
 }
 
 func (cmd RevokeCommand) String() string {
@@ -40,11 +38,7 @@ func (cmd RevokeCommand) String() string {
 }
 
 func (cmd RevokeCommand) RedactedString() string {
-	r := cmd
-	if strings.TrimSpace(r.ClientSecret) != "" {
-		r.ClientSecret = "[redacted]"
-	}
-	return types.Stringify(r)
+	return types.Stringify(cmd)
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -89,12 +83,10 @@ func (cmd *RevokeCommand) Run(ctx server.Cmd) (err error) {
 	}
 
 	issuer := strings.TrimSpace(ctx.GetString(issuerStoreKey(cmd.Endpoint)))
-	clientID := strings.TrimSpace(cmd.ClientID)
-	clientSecret := strings.TrimSpace(cmd.ClientSecret)
-	if clientID == "" && issuer != "" {
+	clientID := ""
+	clientSecret := ""
+	if issuer != "" {
 		clientID = strings.TrimSpace(ctx.GetString(clientIDStoreKey(nil, issuer)))
-	}
-	if clientSecret == "" && issuer != "" {
 		clientSecret = strings.TrimSpace(ctx.GetString(clientSecretStoreKey(nil, issuer)))
 	}
 
