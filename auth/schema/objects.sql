@@ -41,23 +41,21 @@ CREATE TABLE IF NOT EXISTS ${"schema"}.session (
     "revoked_at"    TIMESTAMPTZ NULL
 );
 
--- auth.session.refresh_columns
-DO $$ BEGIN
-    ALTER TABLE ${"schema"}.session ADD COLUMN IF NOT EXISTS refresh_expires_at TIMESTAMPTZ;
-    ALTER TABLE ${"schema"}.session ADD COLUMN IF NOT EXISTS refresh_counter BIGINT;
-    UPDATE ${"schema"}.session
-    SET refresh_expires_at = COALESCE(refresh_expires_at, expires_at)
-    WHERE refresh_expires_at IS NULL;
-    UPDATE ${"schema"}.session
-    SET refresh_counter = COALESCE(refresh_counter, 0)
-    WHERE refresh_counter IS NULL;
-    ALTER TABLE ${"schema"}.session ALTER COLUMN refresh_expires_at SET NOT NULL;
-    ALTER TABLE ${"schema"}.session ALTER COLUMN refresh_counter SET NOT NULL;
-    ALTER TABLE ${"schema"}.session ALTER COLUMN refresh_counter SET DEFAULT 0;
-END $$;
-
 -- auth.session.user_index
 CREATE INDEX IF NOT EXISTS session_user_idx ON ${"schema"}.session ("user");
+
+-- auth.apikey
+CREATE TABLE IF NOT EXISTS ${"schema"}.apikey (
+    "hash"        BYTEA       NOT NULL PRIMARY KEY,
+    "user"        UUID        NOT NULL REFERENCES ${"schema"}."user" (id) ON DELETE CASCADE,
+    "name"        TEXT        NOT NULL DEFAULT '',
+    "created_at"  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    "modified_at" TIMESTAMPTZ NOT NULL DEFAULT now(),
+    "expires_at"  TIMESTAMPTZ NULL
+);
+
+-- auth.apikey.user_index
+CREATE INDEX IF NOT EXISTS apikey_user_idx ON ${"schema"}.apikey ("user");
 
 -- auth.group
 CREATE TABLE IF NOT EXISTS ${"schema"}.group (
@@ -135,6 +133,15 @@ DO $$ BEGIN
     DROP TRIGGER IF EXISTS session_table_changes_notify ON ${"schema"}.session;
     CREATE TRIGGER session_table_changes_notify
     AFTER INSERT OR UPDATE OR DELETE ON ${"schema"}.session
+    FOR EACH STATEMENT
+    EXECUTE FUNCTION ${"schema"}.notify_table();
+END $$;
+
+-- auth.notify.apikey.trigger
+DO $$ BEGIN
+    DROP TRIGGER IF EXISTS apikey_table_changes_notify ON ${"schema"}.apikey;
+    CREATE TRIGGER apikey_table_changes_notify
+    AFTER INSERT OR UPDATE OR DELETE ON ${"schema"}.apikey
     FOR EACH STATEMENT
     EXECUTE FUNCTION ${"schema"}.notify_table();
 END $$;
