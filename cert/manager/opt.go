@@ -84,9 +84,6 @@ func WithSchema(name string) Opt {
 // WithTracer sets the OpenTelemetry tracer used for manager spans.
 func WithTracer(tracer trace.Tracer) Opt {
 	return func(o *opt) error {
-		if tracer == nil {
-			return fmt.Errorf("tracer is required")
-		}
 		o.tracer = tracer
 		return nil
 	}
