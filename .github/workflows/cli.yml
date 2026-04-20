@@ -25,7 +25,7 @@ jobs:
           - os: ubuntu-24.04
             goos: linux
             goarch: amd64
-          - os: windows-latest
+          - os: ubuntu-24.04
             goos: windows
             goarch: amd64
 
@@ -48,26 +48,12 @@ jobs:
           echo "VERSION=$(git describe --tags --always | sed 's/^v//')" >> "$GITHUB_ENV"
           echo "GIT_BRANCH=$(git name-rev HEAD --name-only --always)" >> "$GITHUB_ENV"
 
-      - name: Build Client (Unix)
-        if: matrix.goos != 'windows'
+      - name: Build Client
         env:
           OS: ${{ matrix.goos }}
           ARCH: ${{ matrix.goarch }}
         shell: bash
         run: make client
-
-      - name: Build Client (Windows)
-        if: matrix.goos == 'windows'
-        env:
-          GOOS: ${{ matrix.goos }}
-          GOARCH: ${{ matrix.goarch }}
-        shell: bash
-        run: |
-          go build \
-            -tags client \
-            -ldflags "-s -w -X github.com/mutablelogic/go-server/pkg/version.GitTag=${VERSION} -X github.com/mutablelogic/go-server/pkg/version.GitBranch=${GIT_BRANCH}" \
-            -o build/authmanager \
-            ./cmd/authmanager
 
       - name: Rename binary for release
         shell: bash
