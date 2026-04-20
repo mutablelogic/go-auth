@@ -1,3 +1,6 @@
+-- auth.extension.pgcrypto
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
 -- auth.user_status
 DO $$ BEGIN
   CREATE TYPE ${"schema"}.USER_STATUS AS ENUM ('new', 'active', 'inactive', 'suspended', 'deleted');
@@ -46,9 +49,10 @@ CREATE INDEX IF NOT EXISTS session_user_idx ON ${"schema"}.session ("user");
 
 -- auth.apikey
 CREATE TABLE IF NOT EXISTS ${"schema"}.apikey (
-    "hash"        BYTEA       NOT NULL PRIMARY KEY,
+    "id"          UUID        NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
+    "hash"        BYTEA       NOT NULL CONSTRAINT apikey_hash_key UNIQUE,
     "user"        UUID        NOT NULL REFERENCES ${"schema"}."user" (id) ON DELETE CASCADE,
-    "name"        TEXT        NOT NULL DEFAULT '',
+    "name"        TEXT        NOT NULL,
     "created_at"  TIMESTAMPTZ NOT NULL DEFAULT now(),
     "modified_at" TIMESTAMPTZ NOT NULL DEFAULT now(),
     "expires_at"  TIMESTAMPTZ NULL
@@ -56,6 +60,9 @@ CREATE TABLE IF NOT EXISTS ${"schema"}.apikey (
 
 -- auth.apikey.user_index
 CREATE INDEX IF NOT EXISTS apikey_user_idx ON ${"schema"}.apikey ("user");
+
+-- auth.apikey.user_name_unique_index
+CREATE UNIQUE INDEX IF NOT EXISTS apikey_user_name_idx ON ${"schema"}.apikey ("user", "name");
 
 -- auth.group
 CREATE TABLE IF NOT EXISTS ${"schema"}.group (

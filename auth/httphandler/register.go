@@ -36,11 +36,8 @@ import (
 ///////////////////////////////////////////////////////////////////////////////
 // GLOBALS
 
-//go:embed AUTHN.md
-var AuthDoc []byte
-
-//go:embed AUTHZ.md
-var ManagerDoc []byte
+//go:embed README.md
+var HandlerDoc []byte
 
 ///////////////////////////////////////////////////////////////////////////////
 // PUBLIC METHODS
@@ -49,7 +46,7 @@ var ManagerDoc []byte
 func RegisterAuthHandlers(manager *manager.Manager) func(*httprouter.Router) error {
 	return func(router *httprouter.Router) error {
 		// Parse the markdown documentation
-		doc := opts.ParseMarkdown(AuthDoc)
+		doc := opts.ParseMarkdown(HandlerDoc)
 
 		// Add top-level and tag descriptions to the spec
 		router.Spec().Info.Description = doc.Section(1, "Auth & Identity Provider Handlers").Body
@@ -101,17 +98,18 @@ func RegisterProviderHandlers(manager *manager.Manager) func(*httprouter.Router)
 func RegisterManagerHandlers(manager *manager.Manager, auth bool) func(*httprouter.Router) error {
 	return func(router *httprouter.Router) error {
 		// Parse the markdown documentation
-		doc := opts.ParseMarkdown(ManagerDoc)
+		doc := opts.ParseMarkdown(HandlerDoc)
 
 		// Add top-level and tag descriptions to the spec
 		router.Spec().Info.Description = doc.Section(1, "Authorization Management Handlers").Body
 
 		// Register the tag group
-		router.Spec().AddTagGroup("Authorization", "User", "Group", "Scope", "Changes")
+		router.Spec().AddTagGroup("Authorization", "User", "Group", "Scope", "Changes", "API Keys")
 		router.Spec().AddTag("User", doc.Section(2, "User").Body)
 		router.Spec().AddTag("Group", doc.Section(2, "Group").Body)
 		router.Spec().AddTag("Scope", doc.Section(2, "Scope").Body)
 		router.Spec().AddTag("Changes", doc.Section(2, "Changes").Body)
+		router.Spec().AddTag("API Keys", doc.Section(2, "API Keys").Body)
 
 		// Create an authenticated handler wrapper
 		//authenticated := middleware.AuthN(manager)
@@ -125,6 +123,7 @@ func RegisterManagerHandlers(manager *manager.Manager, auth bool) func(*httprout
 			router.RegisterPath(GroupItemHandler(manager, auth, doc)),
 			router.RegisterPath(ChangesHandler(manager, auth, doc)),
 			router.RegisterPath(ScopeHandler(manager, auth, doc)),
+			router.RegisterPath(KeyHandler(manager, auth, doc)),
 		)
 	}
 }

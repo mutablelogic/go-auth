@@ -46,12 +46,20 @@ const (
 
 	// ScopeAuthGroupWrite grants permission to create, update, and delete groups.
 	ScopeAuthGroupWrite = "auth:group:write"
+
+	// ScopeAuthKeyRead grants permission to list and get API keys.
+	ScopeAuthKeyRead = "auth:key:read"
+
+	// ScopeAuthKeyWrite grants permission to create, update, and delete API keys.
+	ScopeAuthKeyWrite = "auth:key:write"
 )
 
 var (
 	// GroupSysAdminScopes is the fixed set of scopes assigned to GroupSysAdmin at startup.
 	GroupSysAdminScopes = []string{
-		ScopeAuthUserRead, ScopeAuthUserWrite, ScopeAuthGroupRead, ScopeAuthGroupWrite,
+		ScopeAuthUserRead, ScopeAuthUserWrite,
+		ScopeAuthGroupRead, ScopeAuthGroupWrite,
+		ScopeAuthKeyRead, ScopeAuthKeyWrite,
 	}
 )
 

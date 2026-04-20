@@ -15,10 +15,13 @@
 package manager_test
 
 import (
+	"context"
+	"strings"
 	"testing"
 	"time"
 
 	// Packages
+	auth "github.com/mutablelogic/go-auth"
 	manager "github.com/mutablelogic/go-auth/auth/manager"
 	localprovider "github.com/mutablelogic/go-auth/auth/provider/local"
 	schema "github.com/mutablelogic/go-auth/auth/schema"
@@ -36,7 +39,22 @@ var (
 const (
 	DefaultIssuer     = "https://issuer/"
 	DefaultSessionTTL = 15 * time.Minute
+	apiKeyPrefix      = "test_"
 )
+
+type apiKeyHooks struct{}
+
+func (apiKeyHooks) OnKeyCreate(_ context.Context, _ schema.Key) (string, error) {
+	return apiKeyPrefix, nil
+}
+
+func (apiKeyHooks) OnKeyValidate(_ context.Context, token string) (string, error) {
+	token = strings.TrimSpace(token)
+	if !strings.HasPrefix(token, apiKeyPrefix) {
+		return "", auth.ErrBadParameter.With("token prefix is invalid")
+	}
+	return strings.TrimPrefix(token, apiKeyPrefix), nil
+}
 
 ///////////////////////////////////////////////////////////////////////////////
 // LIFECYCLE
@@ -51,14 +69,15 @@ func TestMain(m *testing.M) {
 		panic(err)
 	}
 
-	authtest.Main(m, func(mgr *manager.Manager) (func(), error) {
-		shared = mgr
+	authtest.Main(m, func(manager *manager.Manager) (func(), error) {
+		shared = manager
 		return func() {
 			shared = nil
 		}, nil
 	},
 		manager.WithSigner("test-main", key),
 		manager.WithProvider(provider),
+		manager.WithHooks(apiKeyHooks{}),
 		manager.WithTTL(DefaultSessionTTL, schema.DefaultRefreshTTL),
 	)
 }

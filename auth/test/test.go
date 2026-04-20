@@ -16,6 +16,7 @@ package test
 
 import (
 	"context"
+	"sync"
 	"testing"
 
 	// Packages
@@ -25,16 +26,52 @@ import (
 )
 
 ///////////////////////////////////////////////////////////////////////////////
+// GLOBALS
+
+var (
+	shared      *manager.Manager
+	testCancels cancelRegistry
+)
+
+type cancelRegistry struct {
+	mu      sync.Mutex
+	cancels map[*testing.T]context.CancelFunc
+}
+
+func (r *cancelRegistry) Store(t *testing.T, cancel context.CancelFunc) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.cancels == nil {
+		r.cancels = make(map[*testing.T]context.CancelFunc)
+	}
+	r.cancels[t] = cancel
+}
+
+func (r *cancelRegistry) LoadAndDelete(t *testing.T) (context.CancelFunc, bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.cancels == nil {
+		return nil, false
+	}
+	cancel, ok := r.cancels[t]
+	if ok {
+		delete(r.cancels, t)
+	}
+	return cancel, ok
+}
+
+///////////////////////////////////////////////////////////////////////////////
 // LIFECYCLE
 
 // Main is the test main function for auth manager tests. It starts up a container and runs the tests,
 // providing a manager instance to each test.
 func Main(m *testing.M, setup func(*manager.Manager) (func(), error), opts ...manager.Opt) {
 	test.Main(m, func(pool pg.PoolConn) (func(), error) {
-		mgr, err := manager.New(context.Background(), pool, opts...)
+		mgr, err := manager.New(context.Background(), pool, "manager", "test", opts...)
 		if err != nil {
 			return nil, err
 		}
+		shared = mgr
 
 		teardown := func() {}
 		if setup != nil {
@@ -50,13 +87,46 @@ func Main(m *testing.M, setup func(*manager.Manager) (func(), error), opts ...ma
 		go func() {
 			runDone <- mgr.Run(runCtx)
 		}()
-
 		return func() {
 			cancel()
 			if err := <-runDone; err != nil {
 				panic(err)
 			}
+			shared = nil
 			teardown()
 		}, nil
 	})
+}
+
+// Begin returns the shared test manager and a per-test context.
+func Begin(t *testing.T) (*manager.Manager, context.Context) {
+	t.Helper()
+	if shared == nil {
+		t.Fatal("test manager is not initialized; call auth/test.Main from TestMain")
+	}
+	base := context.Background()
+	baseCancel := func() {}
+	if deadline, ok := t.Deadline(); ok {
+		base, baseCancel = context.WithDeadline(base, deadline)
+	}
+	ctx, cancel := context.WithCancel(base)
+	stop := func() {
+		cancel()
+		baseCancel()
+	}
+	testCancels.Store(t, context.CancelFunc(stop))
+	t.Cleanup(func() {
+		if cancel, ok := testCancels.LoadAndDelete(t); ok {
+			cancel()
+		}
+	})
+	return shared, ctx
+}
+
+// End releases the per-test context created by Begin.
+func End(t *testing.T) {
+	t.Helper()
+	if cancel, ok := testCancels.LoadAndDelete(t); ok {
+		cancel()
+	}
 }
