@@ -12,21 +12,23 @@ with environment variables and CLI flags.
 
 ## Quick Start
 
-Run the container:
+Run the container, in order to add users, groups, and scopes to the system:
 
 ```bash
 export PG_URL='postgres://user@host.docker.internal/database?sslmode=prefer'
 docker run --rm  --name go-auth \
   -e PG_URL -e PG_PASSWORD \
-  -e ADDR=0.0.0.0:8084 \
-  -p 8084:8084 \
-  ghcr.io/mutablelogic/go-auth:latest
+  -p 80:80 \
+  ghcr.io/mutablelogic/go-auth run --no-auth.enabled --local.enabled
 ```
+
+Then you can login with the local provider at `http://localhost:80` (to which you only need to add an email address) and start managing users, groups, and scopes. The local provider supports browser-based login flows but does not have a password-based API, so you must create users with the CLI or UI before you can authenticate.
+
+After you've added the scopes, users and groups, you can enable authentication on the management endpoints and add more providers as needed. See the sections below for details on all available configuration options.
 
 Notes:
 
 - `PG_URL` is required. The service will not start without a PostgreSQL connection.
-- The image entrypoint is `authmanager` and the default command is `run`, so you only need to pass environment variables unless you want to add extra CLI flags.
 
 ## Auth Parameters
 
