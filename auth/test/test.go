@@ -30,8 +30,35 @@ import (
 
 var (
 	shared      *manager.Manager
-	testCancels sync.Map
+	testCancels cancelRegistry
 )
+
+type cancelRegistry struct {
+	mu      sync.Mutex
+	cancels map[*testing.T]context.CancelFunc
+}
+
+func (r *cancelRegistry) Store(t *testing.T, cancel context.CancelFunc) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.cancels == nil {
+		r.cancels = make(map[*testing.T]context.CancelFunc)
+	}
+	r.cancels[t] = cancel
+}
+
+func (r *cancelRegistry) LoadAndDelete(t *testing.T) (context.CancelFunc, bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.cancels == nil {
+		return nil, false
+	}
+	cancel, ok := r.cancels[t]
+	if ok {
+		delete(r.cancels, t)
+	}
+	return cancel, ok
+}
 
 ///////////////////////////////////////////////////////////////////////////////
 // LIFECYCLE
@@ -60,7 +87,6 @@ func Main(m *testing.M, setup func(*manager.Manager) (func(), error), opts ...ma
 		go func() {
 			runDone <- mgr.Run(runCtx)
 		}()
-
 		return func() {
 			cancel()
 			if err := <-runDone; err != nil {
@@ -78,11 +104,20 @@ func Begin(t *testing.T) (*manager.Manager, context.Context) {
 	if shared == nil {
 		t.Fatal("test manager is not initialized; call auth/test.Main from TestMain")
 	}
-	ctx, cancel := context.WithCancel(context.Background())
-	testCancels.Store(t, cancel)
+	base := context.Background()
+	baseCancel := func() {}
+	if deadline, ok := t.Deadline(); ok {
+		base, baseCancel = context.WithDeadline(base, deadline)
+	}
+	ctx, cancel := context.WithCancel(base)
+	stop := func() {
+		cancel()
+		baseCancel()
+	}
+	testCancels.Store(t, context.CancelFunc(stop))
 	t.Cleanup(func() {
 		if cancel, ok := testCancels.LoadAndDelete(t); ok {
-			cancel.(context.CancelFunc)()
+			cancel()
 		}
 	})
 	return shared, ctx
@@ -91,6 +126,7 @@ func Begin(t *testing.T) (*manager.Manager, context.Context) {
 // End releases the per-test context created by Begin.
 func End(t *testing.T) {
 	t.Helper()
-	// The context is canceled in t.Cleanup so test-level cleanup callbacks can
-	// still use it. End remains as a compatibility no-op for defer usage.
+	if cancel, ok := testCancels.LoadAndDelete(t); ok {
+		cancel()
+	}
 }

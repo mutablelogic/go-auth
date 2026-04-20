@@ -28,7 +28,6 @@ import (
 
 func Test_apikey_001(t *testing.T) {
 	manager, ctx := test.Begin(t)
-	defer test.End(t)
 	require.NotNil(t, manager)
 
 	// Create a user
@@ -244,7 +243,6 @@ func Test_apikey_001(t *testing.T) {
 
 func Test_apikey_002(t *testing.T) {
 	manager, ctx := test.Begin(t)
-	defer test.End(t)
 	require.NotNil(t, manager)
 
 	userExpiresAt := time.Now().Add(-1 * time.Hour).UTC().Truncate(time.Microsecond)
@@ -275,7 +273,6 @@ func Test_apikey_002(t *testing.T) {
 
 func Test_apikey_003(t *testing.T) {
 	manager, ctx := test.Begin(t)
-	defer test.End(t)
 	require.NotNil(t, manager)
 
 	status := schema.UserStatusSuspended
