@@ -20,8 +20,10 @@ import (
 	"strings"
 
 	// Packages
+	otel "github.com/mutablelogic/go-client/pkg/otel"
 	server "github.com/mutablelogic/go-server"
 	types "github.com/mutablelogic/go-server/pkg/types"
+	attribute "go.opentelemetry.io/otel/attribute"
 )
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -33,10 +35,27 @@ type RevokeCommand struct {
 	ClientSecret string `name:"client-secret" help:"OAuth client secret. Defaults to the stored client secret for the issuer when required by the provider."`
 }
 
+func (cmd RevokeCommand) String() string {
+	return types.Stringify(cmd)
+}
+
+func (cmd RevokeCommand) RedactedString() string {
+	r := cmd
+	if strings.TrimSpace(r.ClientSecret) != "" {
+		r.ClientSecret = "[redacted]"
+	}
+	return types.Stringify(r)
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 // COMMANDS
 
-func (cmd *RevokeCommand) Run(ctx server.Cmd) error {
+func (cmd *RevokeCommand) Run(ctx server.Cmd) (err error) {
+	spanctx, endSpan := otel.StartSpan(ctx.Tracer(), ctx.Context(), "RevokeCommand",
+		attribute.String("cmd", cmd.RedactedString()),
+	)
+	defer func() { endSpan(err) }()
+
 	authClient, endpoint, err := clientFor(ctx)
 	if err != nil {
 		return err
@@ -79,7 +98,7 @@ func (cmd *RevokeCommand) Run(ctx server.Cmd) error {
 		clientSecret = strings.TrimSpace(ctx.GetString(clientSecretStoreKey(nil, issuer)))
 	}
 
-	meta, err := discoverAuthMetadata(ctx, authClient, cmd.Endpoint)
+	meta, err := discoverAuthMetadata(ctx, spanctx, authClient, cmd.Endpoint)
 	if err != nil {
 		return err
 	}
@@ -98,7 +117,7 @@ func (cmd *RevokeCommand) Run(ctx server.Cmd) error {
 		}
 	}
 	if endpoint := strings.TrimSpace(config.RevocationEndpoint); endpoint != "" {
-		if err := authClient.RevokeToken(ctx.Context(), endpoint, token, clientID, clientSecret); err != nil {
+		if err := authClient.RevokeToken(spanctx, endpoint, token, clientID, clientSecret); err != nil {
 			return err
 		}
 	}

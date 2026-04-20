@@ -15,6 +15,7 @@
 package auth
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -28,9 +29,11 @@ import (
 	schema "github.com/mutablelogic/go-auth/auth/schema"
 	webcallback "github.com/mutablelogic/go-auth/auth/webcallback"
 	client "github.com/mutablelogic/go-client"
+	otel "github.com/mutablelogic/go-client/pkg/otel"
 	server "github.com/mutablelogic/go-server"
 	types "github.com/mutablelogic/go-server/pkg/types"
 	browser "github.com/pkg/browser"
+	attribute "go.opentelemetry.io/otel/attribute"
 	oauth2 "golang.org/x/oauth2"
 	errgroup "golang.org/x/sync/errgroup"
 )
@@ -47,6 +50,14 @@ type AuthorizeCommand struct {
 	Scopes       []string `name:"scope" help:"OAuth scopes to request. Repeat the flag to specify multiple scopes. Defaults to advertised OIDC scopes or openid email profile."`
 }
 
+func (cmd AuthorizeCommand) RedactedString() string {
+	r := cmd
+	if strings.TrimSpace(r.ClientSecret) != "" {
+		r.ClientSecret = "[redacted]"
+	}
+	return types.Stringify(r)
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 // GLOBALS
 
@@ -61,7 +72,14 @@ const defaultRedirectURL = "http://localhost/"
 ///////////////////////////////////////////////////////////////////////////////
 // COMMANDS
 
-func (cmd *AuthorizeCommand) Run(ctx server.Cmd) error {
+func (cmd *AuthorizeCommand) Run(ctx server.Cmd) (err error) {
+	// Otel span
+	spanctx, endSpan := otel.StartSpan(ctx.Tracer(), ctx.Context(), "AuthorizeCommand",
+		attribute.String("cmd", cmd.RedactedString()),
+	)
+	defer func() { endSpan(err) }()
+
+	// Get the auth client
 	auth_client, endpoint, err := clientFor(ctx)
 	if err != nil {
 		return err
@@ -93,7 +111,7 @@ func (cmd *AuthorizeCommand) Run(ctx server.Cmd) error {
 	} else if token != nil {
 		reuseStored := true
 		if provider := strings.TrimSpace(cmd.Provider); provider != "" {
-			if reuseStored, err = canReuseStoredTokenForProvider(ctx, auth_client, cmd.Endpoint, provider); err != nil {
+			if reuseStored, err = canReuseStoredTokenForProvider(ctx, spanctx, auth_client, cmd.Endpoint, provider); err != nil {
 				return err
 			}
 		}
@@ -108,7 +126,7 @@ func (cmd *AuthorizeCommand) Run(ctx server.Cmd) error {
 				fmt.Println(string(data))
 				return nil
 			}
-			refreshed, err := refreshStoredToken(ctx, auth_client, cmd.Endpoint, cmd.ClientID, cmd.ClientSecret)
+			refreshed, err := refreshStoredToken(ctx, spanctx, auth_client, cmd.Endpoint, cmd.ClientID, cmd.ClientSecret)
 			if err != nil {
 				if shouldStartNewAuthorizationSession(err) {
 					if deleteErr := deleteStoredToken(ctx, cmd.Endpoint, ""); deleteErr != nil {
@@ -131,8 +149,8 @@ func (cmd *AuthorizeCommand) Run(ctx server.Cmd) error {
 
 	// Attempt to get the protected resource metadata
 	var meta *auth.Config
-	if err := auth_client.DoAuthWithContext(ctx.Context(), nil, nil, client.OptReqEndpoint(cmd.Endpoint)); err != nil {
-		meta_, err := auth_client.DiscoverWithError(ctx.Context(), err)
+	if err := auth_client.DoAuthWithContext(spanctx, nil, nil, client.OptReqEndpoint(cmd.Endpoint)); err != nil {
+		meta_, err := auth_client.DiscoverWithError(spanctx, err)
 		if err == nil && meta_ != nil {
 			meta = meta_
 		}
@@ -140,7 +158,7 @@ func (cmd *AuthorizeCommand) Run(ctx server.Cmd) error {
 
 	// If meta is empty, we try and discover from the endpoint directly
 	if meta == nil {
-		meta_, err := auth_client.Discover(ctx.Context(), cmd.Endpoint)
+		meta_, err := auth_client.Discover(spanctx, cmd.Endpoint)
 		if err != nil {
 			return fmt.Errorf("failed to discover auth server metadata: %w", err)
 		} else {
@@ -162,7 +180,7 @@ func (cmd *AuthorizeCommand) Run(ctx server.Cmd) error {
 
 	// Get the server metadata and client ID for the authorization flow, either from the command line, stored value,
 	// or dynamic registration
-	serverMeta, clientID, clientSecret, err := cmd.authorizationServerAndClientCredentials(ctx, auth_client, meta, redirectURL)
+	serverMeta, clientID, clientSecret, err := cmd.authorizationServerAndClientCredentials(ctx, spanctx, auth_client, meta, redirectURL)
 	if err != nil {
 		return err
 	}
@@ -185,7 +203,7 @@ func (cmd *AuthorizeCommand) Run(ctx server.Cmd) error {
 
 	// In parallel, open the browser to the authorization URL and wait for the callback to be received,
 	// then exchange the code for a token and store it
-	g, groupCtx := errgroup.WithContext(ctx.Context())
+	g, groupCtx := errgroup.WithContext(spanctx)
 	g.Go(func() error {
 		result, err := callback.Run(groupCtx)
 		if err != nil {
@@ -220,7 +238,7 @@ func (cmd *AuthorizeCommand) Run(ctx server.Cmd) error {
 	return nil
 }
 
-func (cmd *AuthorizeCommand) authorizationServerAndClientCredentials(ctx server.Cmd, authClient *auth.Client, meta *auth.Config, redirectURL string) (*auth.ServerMetadata, string, string, error) {
+func (cmd *AuthorizeCommand) authorizationServerAndClientCredentials(ctx server.Cmd, spanctx context.Context, authClient *auth.Client, meta *auth.Config, redirectURL string) (*auth.ServerMetadata, string, string, error) {
 	// Retrieve client credentials from command line, stored values, or dynamic registration
 	clientID := strings.TrimSpace(cmd.ClientID)
 	if clientID == "" {
@@ -257,7 +275,7 @@ func (cmd *AuthorizeCommand) authorizationServerAndClientCredentials(ctx server.
 	if redirectURL == "" {
 		redirectURL = defaultRedirectURL
 	}
-	registration, err := authClient.RegisterClient(ctx.Context(), serverMeta, redirectURL)
+	registration, err := authClient.RegisterClient(spanctx, serverMeta, redirectURL)
 	if err != nil {
 		return nil, "", "", fmt.Errorf("client ID is required or dynamic registration must succeed: %w", err)
 	}
@@ -473,7 +491,7 @@ func decodeStoredToken(value any) (*oauth2.Token, error) {
 	}
 }
 
-func canReuseStoredTokenForProvider(ctx server.Cmd, authClient *auth.Client, endpoint, provider string) (bool, error) {
+func canReuseStoredTokenForProvider(ctx server.Cmd, spanctx context.Context, authClient *auth.Client, endpoint, provider string) (bool, error) {
 	if ctx == nil {
 		return false, nil
 	}
@@ -504,7 +522,7 @@ func canReuseStoredTokenForProvider(ctx server.Cmd, authClient *auth.Client, end
 	if storedIssuer == "" {
 		return false, nil
 	}
-	requestedIssuer, err := providerIssuer(ctx, authClient, provider)
+	requestedIssuer, err := providerIssuer(ctx, spanctx, authClient, provider)
 	if err != nil {
 		return false, err
 	}
@@ -539,7 +557,7 @@ func shouldStartNewAuthorizationSession(err error) bool {
 	return strings.Contains(message, "token is expired") || strings.Contains(message, "invalid_grant") || strings.Contains(message, "session is revoked")
 }
 
-func providerIssuer(ctx server.Cmd, authClient *auth.Client, provider string) (string, error) {
+func providerIssuer(ctx server.Cmd, spanctx context.Context, authClient *auth.Client, provider string) (string, error) {
 	if ctx == nil || authClient == nil {
 		return "", nil
 	}
@@ -548,7 +566,7 @@ func providerIssuer(ctx server.Cmd, authClient *auth.Client, provider string) (s
 		return "", nil
 	}
 	var config schema.PublicClientConfigurations
-	if err := authClient.DoWithContext(ctx.Context(), nil, &config, client.OptPath("config")); err != nil {
+	if err := authClient.DoWithContext(spanctx, nil, &config, client.OptPath("config")); err != nil {
 		return "", fmt.Errorf("fetch auth config: %w", err)
 	}
 	providerConfig, ok := config[provider]

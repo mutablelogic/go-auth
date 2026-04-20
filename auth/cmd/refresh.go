@@ -15,14 +15,17 @@
 package auth
 
 import (
+	"context"
 	"fmt"
 	"net/url"
 	"strings"
 
 	// Packages
 	auth "github.com/mutablelogic/go-auth/auth/httpclient"
+	otel "github.com/mutablelogic/go-client/pkg/otel"
 	server "github.com/mutablelogic/go-server"
 	types "github.com/mutablelogic/go-server/pkg/types"
+	attribute "go.opentelemetry.io/otel/attribute"
 	oauth2 "golang.org/x/oauth2"
 )
 
@@ -35,10 +38,27 @@ type RefreshCommand struct {
 	ClientSecret string `name:"client-secret" help:"OAuth client secret. Defaults to the stored client secret for the issuer when required by the provider."`
 }
 
+func (cmd RefreshCommand) String() string {
+	return types.Stringify(cmd)
+}
+
+func (cmd RefreshCommand) RedactedString() string {
+	r := cmd
+	if strings.TrimSpace(r.ClientSecret) != "" {
+		r.ClientSecret = "[redacted]"
+	}
+	return types.Stringify(r)
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 // COMMANDS
 
-func (cmd *RefreshCommand) Run(ctx server.Cmd) error {
+func (cmd *RefreshCommand) Run(ctx server.Cmd) (err error) {
+	spanctx, endSpan := otel.StartSpan(ctx.Tracer(), ctx.Context(), "RefreshCommand",
+		attribute.String("cmd", cmd.RedactedString()),
+	)
+	defer func() { endSpan(err) }()
+
 	authClient, endpoint, err := clientFor(ctx)
 	if err != nil {
 		return err
@@ -63,7 +83,7 @@ func (cmd *RefreshCommand) Run(ctx server.Cmd) error {
 	}
 
 	// Do the refresh
-	refreshed, err := refreshStoredToken(ctx, authClient, cmd.Endpoint, cmd.ClientID, cmd.ClientSecret)
+	refreshed, err := refreshStoredToken(ctx, spanctx, authClient, cmd.Endpoint, cmd.ClientID, cmd.ClientSecret)
 	if err != nil {
 		return err
 	}
@@ -76,7 +96,24 @@ func (cmd *RefreshCommand) Run(ctx server.Cmd) error {
 ///////////////////////////////////////////////////////////////////////////////
 // PRIVATE FUNCTIONS
 
-func refreshStoredToken(ctx server.Cmd, authClient *auth.Client, endpoint, clientID, clientSecret string) (*oauth2.Token, error) {
+func refreshStoredToken(ctx server.Cmd, spanctx context.Context, authClient *auth.Client, endpoint, clientID, clientSecret string) (*oauth2.Token, error) {
+	if spanctx == nil && ctx != nil {
+		spanctx = ctx.Context()
+	}
+
+	meta, err := discoverAuthMetadata(ctx, spanctx, authClient, endpoint)
+	if err != nil {
+		return nil, err
+	}
+
+	return refreshStoredTokenWithMetadata(ctx, spanctx, authClient, meta, endpoint, clientID, clientSecret)
+}
+
+func refreshStoredTokenWithMetadata(ctx server.Cmd, spanctx context.Context, authClient *auth.Client, meta *auth.Config, endpoint, clientID, clientSecret string) (*oauth2.Token, error) {
+	if spanctx == nil && ctx != nil {
+		spanctx = ctx.Context()
+	}
+
 	endpoint = strings.TrimSpace(endpoint)
 
 	token, err := storedToken(ctx, endpoint)
@@ -87,10 +124,6 @@ func refreshStoredToken(ctx server.Cmd, authClient *auth.Client, endpoint, clien
 		return nil, fmt.Errorf("no stored token for endpoint %q", endpoint)
 	}
 
-	meta, err := discoverAuthMetadata(ctx, authClient, endpoint)
-	if err != nil {
-		return nil, err
-	}
 	serverMeta, err := meta.AuthorizationServerForFlow()
 	if err != nil {
 		return nil, err
@@ -117,7 +150,7 @@ func refreshStoredToken(ctx server.Cmd, authClient *auth.Client, endpoint, clien
 	if err != nil {
 		return nil, err
 	}
-	refreshed, err := authClient.RefreshToken(ctx.Context(), oauthConfig, token)
+	refreshed, err := authClient.RefreshToken(spanctx, oauthConfig, token)
 	if err != nil {
 		return nil, err
 	}

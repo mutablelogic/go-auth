@@ -37,6 +37,11 @@ authmanager: wasmbuild
 	@${BUILD_DIR}/wasmbuild build -o ${BUILD_DIR}/app.wasm ./auth/wasm/app
 	@GOOS=${OS} GOARCH=${ARCH} ${GO} build ${BUILD_FLAGS} -o ${BUILD_DIR}/authmanager ./cmd/authmanager
 
+.PHONY: client
+client: go-dep
+	@echo Build client GOOS=${OS} GOARCH=${ARCH}
+	@GOOS=${OS} GOARCH=${ARCH} ${GO} build ${BUILD_FLAGS} -tags client -o ${BUILD_DIR}/authmanager ./cmd/authmanager
+
 .PHONY: wasmbuild
 wasmbuild: go-dep
 	@GOBIN=$(abspath $(BUILD_DIR)) ${GO} install github.com/djthorpe/go-wasmbuild/cmd/wasmbuild@latest

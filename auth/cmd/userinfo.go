@@ -15,6 +15,7 @@
 package auth
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/url"
@@ -23,8 +24,10 @@ import (
 	// Packages
 	auth "github.com/mutablelogic/go-auth/auth/httpclient"
 	oidc "github.com/mutablelogic/go-auth/auth/oidc"
+	otel "github.com/mutablelogic/go-client/pkg/otel"
 	server "github.com/mutablelogic/go-server"
 	types "github.com/mutablelogic/go-server/pkg/types"
+	attribute "go.opentelemetry.io/otel/attribute"
 	oauth2 "golang.org/x/oauth2"
 )
 
@@ -37,10 +40,27 @@ type UserInfoCommand struct {
 	ClientSecret string `name:"client-secret" help:"OAuth client secret. Defaults to the stored client secret for the issuer when a refresh is needed."`
 }
 
+func (cmd UserInfoCommand) String() string {
+	return types.Stringify(cmd)
+}
+
+func (cmd UserInfoCommand) RedactedString() string {
+	r := cmd
+	if strings.TrimSpace(r.ClientSecret) != "" {
+		r.ClientSecret = "[redacted]"
+	}
+	return types.Stringify(r)
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 // COMMANDS
 
-func (cmd *UserInfoCommand) Run(ctx server.Cmd) error {
+func (cmd *UserInfoCommand) Run(ctx server.Cmd) (err error) {
+	spanctx, endSpan := otel.StartSpan(ctx.Tracer(), ctx.Context(), "UserInfoCommand",
+		attribute.String("cmd", cmd.RedactedString()),
+	)
+	defer func() { endSpan(err) }()
+
 	authClient, endpoint, err := clientFor(ctx)
 	if err != nil {
 		return err
@@ -64,6 +84,11 @@ func (cmd *UserInfoCommand) Run(ctx server.Cmd) error {
 		return fmt.Errorf("endpoint URL must have a host")
 	}
 
+	meta, err := discoverAuthMetadata(ctx, spanctx, authClient, cmd.Endpoint)
+	if err != nil {
+		return err
+	}
+
 	// Get the token
 	token, err := storedToken(ctx, cmd.Endpoint)
 	if err != nil {
@@ -73,13 +98,13 @@ func (cmd *UserInfoCommand) Run(ctx server.Cmd) error {
 		return fmt.Errorf("no stored token for endpoint %q", cmd.Endpoint)
 	}
 	if !token.Valid() {
-		if token, err = refreshStoredToken(ctx, authClient, cmd.Endpoint, cmd.ClientID, cmd.ClientSecret); err != nil {
+		if token, err = refreshStoredTokenWithMetadata(ctx, spanctx, authClient, meta, cmd.Endpoint, cmd.ClientID, cmd.ClientSecret); err != nil {
 			return err
 		}
 	}
 
 	// Get the user info
-	userinfo, err := userInfoForEndpoint(ctx, authClient, cmd.Endpoint, token)
+	userinfo, err := userInfoForEndpointWithMetadata(ctx, spanctx, authClient, meta, cmd.Endpoint, token)
 	if err != nil {
 		return err
 	}
@@ -95,19 +120,31 @@ func (cmd *UserInfoCommand) Run(ctx server.Cmd) error {
 ///////////////////////////////////////////////////////////////////////////////
 // PRIVATE FUNCTIONS
 
-func userInfoForEndpoint(ctx server.Cmd, authClient *auth.Client, endpoint string, token *oauth2.Token) (*oidc.UserInfo, error) {
+func userInfoForEndpoint(ctx server.Cmd, spanctx context.Context, authClient *auth.Client, endpoint string, token *oauth2.Token) (*oidc.UserInfo, error) {
+	if spanctx == nil && ctx != nil {
+		spanctx = ctx.Context()
+	}
+
+	meta, err := discoverAuthMetadata(ctx, spanctx, authClient, endpoint)
+	if err != nil {
+		return nil, err
+	}
+
+	return userInfoForEndpointWithMetadata(ctx, spanctx, authClient, meta, endpoint, token)
+}
+
+func userInfoForEndpointWithMetadata(ctx server.Cmd, spanctx context.Context, authClient *auth.Client, meta *auth.Config, endpoint string, token *oauth2.Token) (*oidc.UserInfo, error) {
+	if spanctx == nil && ctx != nil {
+		spanctx = ctx.Context()
+	}
+
 	endpoint = strings.TrimSpace(endpoint)
 	if token == nil {
 		return nil, fmt.Errorf("token is required")
-	}
-
-	meta, err := discoverAuthMetadata(ctx, authClient, endpoint)
-	if err != nil {
-		return nil, err
 	}
 	serverMeta, err := meta.AuthorizationServerForUserInfo()
 	if err != nil {
 		return nil, err
 	}
-	return authClient.UserInfo(ctx.Context(), serverMeta.Oidc.UserInfoEndpoint, token)
+	return authClient.UserInfo(spanctx, serverMeta.Oidc.UserInfoEndpoint, token)
 }
