@@ -37,7 +37,7 @@ func ConfigHandler(manager *manager.Manager, doc *opts.MarkdownDoc) (string, *js
 		"Auth",
 	).Get(
 		func(w http.ResponseWriter, r *http.Request) {
-			config, err := manager.AuthConfig()
+			config, err := manager.AuthConfig(r.Context())
 			if err != nil {
 				_ = httpresponse.Error(w, autherr.HTTPError(err))
 				return
@@ -45,7 +45,7 @@ func ConfigHandler(manager *manager.Manager, doc *opts.MarkdownDoc) (string, *js
 			_ = httpresponse.JSON(w, http.StatusOK, httprequest.Indent(r), config)
 		},
 		"Get public auth configuration",
-		opts.WithDescription(doc.Section(3, "GET /auth/config").Body),
+		opts.WithDescription(doc.Section(3, "GET /config").Body),
 		opts.WithJSONResponse(http.StatusOK, jsonschema.MustFor[schema.PublicClientConfigurations]()),
 		opts.WithErrorResponse(http.StatusNotFound, "No upstream providers are configured."),
 	)

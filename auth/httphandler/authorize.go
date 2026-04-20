@@ -76,7 +76,7 @@ func authorize(ctx context.Context, manager *manager.Manager, w http.ResponseWri
 	}
 
 	// Get the identity provider for the request
-	identity_provider, err := authorizationProvider(manager, req.Provider)
+	identity_provider, err := authorizationProvider(ctx, manager, req.Provider)
 	if err != nil {
 		return authorizeError(w, r, req, err)
 	}
@@ -99,8 +99,8 @@ func authorize(ctx context.Context, manager *manager.Manager, w http.ResponseWri
 	return nil
 }
 
-func authorizationProvider(manager *manager.Manager, key string) (provider.Provider, error) {
-	config, err := manager.AuthConfig()
+func authorizationProvider(ctx context.Context, manager *manager.Manager, key string) (provider.Provider, error) {
+	config, err := manager.AuthConfig(ctx)
 	if err != nil {
 		return nil, err
 	} else if len(config) == 0 {
