@@ -1,4 +1,4 @@
-const AUTH_SERVER_BASE = "http://127.0.0.1:8084/api";
+const AUTH_SERVER_BASE = "/api";
 const PENDING_AUTH_KEY = "auth.pending";
 const TOKEN_RESPONSE_KEY = "auth.tokens";
 const DEFAULT_LOGIN_SCOPE = "openid email profile";

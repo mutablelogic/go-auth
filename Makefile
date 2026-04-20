@@ -12,8 +12,9 @@ VERSION ?= $(shell git describe --tags --always | sed 's/^v//')
 
 # Set build flags
 BUILD_MODULE = $(shell cat go.mod | head -1 | cut -d ' ' -f 2)
-BUILD_LD_FLAGS += -X $(BUILD_MODULE)/pkg/version.GitTag=$(shell git describe --tags --always)
-BUILD_LD_FLAGS += -X $(BUILD_MODULE)/pkg/version.GitBranch=$(shell git name-rev HEAD --name-only --always)
+BUILD_VERSION_PACKAGE = github.com/mutablelogic/go-server/pkg/version
+BUILD_LD_FLAGS += -X $(BUILD_VERSION_PACKAGE).GitTag=${VERSION}
+BUILD_LD_FLAGS += -X $(BUILD_VERSION_PACKAGE).GitBranch=$(shell git name-rev HEAD --name-only --always)
 BUILD_FLAGS = -ldflags "-s -w ${BUILD_LD_FLAGS}" 
 
 # Docker
