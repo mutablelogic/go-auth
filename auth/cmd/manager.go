@@ -32,6 +32,7 @@ type ManagerCommands struct {
 	ScopeCommands
 	UserCommands
 	GroupCommands
+	KeyCommands
 }
 
 ///////////////////////////////////////////////////////////////////////////////

@@ -15,6 +15,7 @@
 package schema
 
 import (
+	"encoding/json"
 	"strings"
 	"time"
 
@@ -69,8 +70,47 @@ type Key struct {
 ///////////////////////////////////////////////////////////////////////////////
 // STRINGIFY
 
+func KeyIDFromString(s string) (KeyID, error) {
+	if uid, err := uuid.Parse(strings.Trim(s, `"`)); err != nil {
+		return KeyID(uuid.Nil), err
+	} else if uid == uuid.Nil {
+		return KeyID(uuid.Nil), auth.ErrBadParameter.With("id cannot be nil")
+	} else {
+		return KeyID(uid), nil
+	}
+}
+
+func (k KeyID) MarshalJSON() ([]byte, error) {
+	return json.Marshal(uuid.UUID(k))
+}
+
 func (k KeyID) String() string {
 	return uuid.UUID(k).String()
+}
+
+func (k KeyID) MarshalText() ([]byte, error) {
+	return []byte(k.String()), nil
+}
+
+func (k *KeyID) UnmarshalText(text []byte) error {
+	id, err := KeyIDFromString(string(text))
+	if err != nil {
+		return err
+	}
+	*k = id
+	return nil
+}
+
+func (k *KeyID) UnmarshalJSON(data []byte) error {
+	var s string
+	if err := json.Unmarshal(data, &s); err != nil {
+		return err
+	} else if id, err := KeyIDFromString(s); err != nil {
+		return err
+	} else {
+		*k = id
+	}
+	return nil
 }
 
 func (k KeyMeta) String() string {
