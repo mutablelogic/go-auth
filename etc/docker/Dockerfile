@@ -8,7 +8,7 @@ ARG ARCH
 WORKDIR /usr/src/app
 COPY . .
 
-RUN OS=${OS} ARCH=${ARCH} make cmd/authmanager
+RUN OS=${OS} ARCH=${ARCH} make
 
 # Runtime stage
 FROM --platform=${OS}/${ARCH} debian:trixie-slim
