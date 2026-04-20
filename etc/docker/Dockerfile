@@ -20,5 +20,6 @@ LABEL org.opencontainers.image.source=https://${SOURCE}
 
 # Entrypoint
 EXPOSE 80 443
+ENV ADDR=0.0.0.0:80
 ENTRYPOINT ["/usr/local/bin/authmanager"]
 CMD ["run"]
