@@ -22,6 +22,7 @@ import (
 
 	// Packages
 	auth "github.com/mutablelogic/go-auth/auth/httpclient"
+	oidc "github.com/mutablelogic/go-auth/auth/oidc"
 	client "github.com/mutablelogic/go-client"
 	otel "github.com/mutablelogic/go-client/pkg/otel"
 	server "github.com/mutablelogic/go-server"
@@ -89,6 +90,13 @@ func discoverAuthMetadata(ctx server.Cmd, spanctx context.Context, authClient *a
 		if issuer := strings.TrimSpace(ctx.GetString(issuerStoreKey(endpoint))); issuer != "" {
 			meta, err := authClient.DiscoverFromIssuer(spanctx, issuer)
 			if err == nil && meta != nil && len(meta.AuthorizationServers) > 0 {
+				if strings.TrimSpace(meta.ProtectedResourceMetadata.Resource) == "" {
+					meta.ProtectedResourceMetadata = oidc.ProtectedResourceMetadata{
+						Resource:               endpoint,
+						AuthorizationServers:   []string{issuer},
+						BearerMethodsSupported: []string{"header"},
+					}
+				}
 				return meta, nil
 			}
 		}

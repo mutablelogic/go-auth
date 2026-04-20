@@ -15,6 +15,7 @@
 package auth
 
 import (
+	"context"
 	"os"
 
 	// Packages
@@ -37,9 +38,9 @@ type ListProvidersCommand struct{}
 ///////////////////////////////////////////////////////////////////////////////
 // COMMANDS
 
-func (cmd *ListProvidersCommand) Run(ctx server.Cmd) error {
-	return withManager(ctx, func(client *auth.ManagerClient, endpoint string) error {
-		providers, err := client.Config(ctx.Context())
+func (cmd *ListProvidersCommand) Run(globals server.Cmd) error {
+	return withManager(globals, "ListProvidersCommand", types.Stringify(cmd), func(ctx context.Context, client *auth.ManagerClient) error {
+		providers, err := client.Config(ctx)
 		if err != nil {
 			return err
 		}
@@ -53,13 +54,16 @@ func (cmd *ListProvidersCommand) Run(ctx server.Cmd) error {
 		}
 
 		// Write out the provider table, and the summary
-		tui.TableFor[providerRow]().Write(os.Stdout, providerRows...)
+		tui.TableFor[providerRow](tui.SetWidth(globals.IsTerm())).Write(os.Stdout, providerRows...)
 		tui.TableSummary("providers", uint(len(providerRows)), 0, nil).Write(os.Stdout)
 
 		// Return success
 		return nil
 	})
 }
+
+///////////////////////////////////////////////////////////////////////////////
+// TABLE OUTPUT
 
 type providerRow struct {
 	Key      string

@@ -15,6 +15,7 @@
 package auth
 
 import (
+	"context"
 	"os"
 
 	// Packages
@@ -22,6 +23,7 @@ import (
 	schema "github.com/mutablelogic/go-auth/auth/schema"
 	server "github.com/mutablelogic/go-server"
 	tui "github.com/mutablelogic/go-server/pkg/tui"
+	types "github.com/mutablelogic/go-server/pkg/types"
 )
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -38,9 +40,9 @@ type ListScopesCommand struct {
 ///////////////////////////////////////////////////////////////////////////////
 // COMMANDS
 
-func (cmd *ListScopesCommand) Run(ctx server.Cmd) error {
-	return withManager(ctx, func(client *auth.ManagerClient, endpoint string) error {
-		scopes, err := client.ListScopes(ctx.Context(), cmd.ScopeListRequest)
+func (cmd *ListScopesCommand) Run(globals server.Cmd) error {
+	return withManager(globals, "ListScopesCommand", types.Stringify(cmd), func(ctx context.Context, client *auth.ManagerClient) error {
+		scopes, err := client.ListScopes(ctx, cmd.ScopeListRequest)
 		if err != nil {
 			return err
 		}
@@ -51,7 +53,7 @@ func (cmd *ListScopesCommand) Run(ctx server.Cmd) error {
 		}
 
 		// Write out the scope table, and the summary
-		tui.TableFor[scopeRow]().Write(os.Stdout, scopeRows...)
+		tui.TableFor[scopeRow](tui.SetWidth(globals.IsTerm())).Write(os.Stdout, scopeRows...)
 		tui.TableSummary("scopes", scopes.Count, scopes.Offset, scopes.Limit).Write(os.Stdout)
 
 		// Return success

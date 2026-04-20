@@ -15,13 +15,13 @@
 package auth
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"strconv"
 	"strings"
 
 	// Packages
-
 	auth "github.com/mutablelogic/go-auth/auth/httpclient"
 	schema "github.com/mutablelogic/go-auth/auth/schema"
 	server "github.com/mutablelogic/go-server"
@@ -65,9 +65,9 @@ type DeleteGroupCommand struct {
 ///////////////////////////////////////////////////////////////////////////////
 // COMMANDS
 
-func (cmd *ListGroupsCommand) Run(ctx server.Cmd) error {
-	return withManager(ctx, func(client *auth.ManagerClient, endpoint string) error {
-		groups, err := client.ListGroups(ctx.Context(), cmd.GroupListRequest)
+func (cmd *ListGroupsCommand) Run(globals server.Cmd) error {
+	return withManager(globals, "ListGroupsCommand", types.Stringify(cmd), func(ctx context.Context, client *auth.ManagerClient) error {
+		groups, err := client.ListGroups(ctx, cmd.GroupListRequest)
 		if err != nil {
 			return err
 		}
@@ -79,7 +79,7 @@ func (cmd *ListGroupsCommand) Run(ctx server.Cmd) error {
 		}
 
 		// Write out the group table, and the summary
-		tui.TableFor[groupRow](tui.SetWidth(ctx.IsTerm())).Write(os.Stdout, groupRows...)
+		tui.TableFor[groupRow](tui.SetWidth(globals.IsTerm())).Write(os.Stdout, groupRows...)
 		tui.TableSummary("groups", groups.Count, groups.Offset, groups.Limit).Write(os.Stdout)
 
 		// Return success
@@ -87,9 +87,9 @@ func (cmd *ListGroupsCommand) Run(ctx server.Cmd) error {
 	})
 }
 
-func (cmd *CreateGroupCommand) Run(ctx server.Cmd) error {
-	return withManager(ctx, func(client *auth.ManagerClient, endpoint string) error {
-		group, err := client.CreateGroup(ctx.Context(), schema.GroupInsert{ID: cmd.Group, GroupMeta: cmd.GroupMeta})
+func (cmd *CreateGroupCommand) Run(globals server.Cmd) error {
+	return withManager(globals, "CreateGroupCommand", types.Stringify(cmd), func(ctx context.Context, client *auth.ManagerClient) error {
+		group, err := client.CreateGroup(ctx, schema.GroupInsert{ID: cmd.Group, GroupMeta: cmd.GroupMeta})
 		if err != nil {
 			return err
 		}
@@ -98,9 +98,9 @@ func (cmd *CreateGroupCommand) Run(ctx server.Cmd) error {
 	})
 }
 
-func (cmd *GetGroupCommand) Run(ctx server.Cmd) error {
-	return withManager(ctx, func(client *auth.ManagerClient, endpoint string) error {
-		group, err := client.GetGroup(ctx.Context(), cmd.Group)
+func (cmd *GetGroupCommand) Run(globals server.Cmd) error {
+	return withManager(globals, "GetGroupCommand", types.Stringify(cmd), func(ctx context.Context, client *auth.ManagerClient) error {
+		group, err := client.GetGroup(ctx, cmd.Group)
 		if err != nil {
 			return err
 		}
@@ -109,9 +109,9 @@ func (cmd *GetGroupCommand) Run(ctx server.Cmd) error {
 	})
 }
 
-func (cmd *UpdateGroupCommand) Run(ctx server.Cmd) error {
-	return withManager(ctx, func(client *auth.ManagerClient, endpoint string) error {
-		group, err := client.UpdateGroup(ctx.Context(), cmd.Group, cmd.GroupMeta)
+func (cmd *UpdateGroupCommand) Run(globals server.Cmd) error {
+	return withManager(globals, "UpdateGroupCommand", types.Stringify(cmd), func(ctx context.Context, client *auth.ManagerClient) error {
+		group, err := client.UpdateGroup(ctx, cmd.Group, cmd.GroupMeta)
 		if err != nil {
 			return err
 		}
@@ -120,9 +120,9 @@ func (cmd *UpdateGroupCommand) Run(ctx server.Cmd) error {
 	})
 }
 
-func (cmd *DeleteGroupCommand) Run(ctx server.Cmd) error {
-	return withManager(ctx, func(client *auth.ManagerClient, endpoint string) error {
-		if err := client.DeleteGroup(ctx.Context(), cmd.Group); err != nil {
+func (cmd *DeleteGroupCommand) Run(globals server.Cmd) error {
+	return withManager(globals, "DeleteGroupCommand", types.Stringify(cmd), func(ctx context.Context, client *auth.ManagerClient) error {
+		if err := client.DeleteGroup(ctx, cmd.Group); err != nil {
 			return err
 		}
 		return nil

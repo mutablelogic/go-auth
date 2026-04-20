@@ -126,7 +126,7 @@ func (cmd *AuthorizeCommand) Run(ctx server.Cmd) (err error) {
 				fmt.Println(string(data))
 				return nil
 			}
-			refreshed, err := refreshStoredToken(ctx, spanctx, auth_client, cmd.Endpoint, cmd.ClientID, cmd.ClientSecret)
+			refreshed, err := refreshStoredToken(ctx, spanctx, auth_client, cmd.Endpoint)
 			if err != nil {
 				if shouldStartNewAuthorizationSession(err) {
 					if deleteErr := deleteStoredToken(ctx, cmd.Endpoint, ""); deleteErr != nil {

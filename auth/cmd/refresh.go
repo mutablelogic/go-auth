@@ -33,9 +33,7 @@ import (
 // TYPES
 
 type RefreshCommand struct {
-	Endpoint     string `arg:"" optional:"" name:"endpoint" help:"Protected resource endpoint. Defaults to the stored endpoint or the global HTTP client endpoint."`
-	ClientID     string `name:"client-id" help:"OAuth client ID. Defaults to the stored client ID for the issuer."`
-	ClientSecret string `name:"client-secret" help:"OAuth client secret. Defaults to the stored client secret for the issuer when required by the provider."`
+	Endpoint string `arg:"" optional:"" name:"endpoint" help:"Protected resource endpoint. Defaults to the stored endpoint or the global HTTP client endpoint."`
 }
 
 func (cmd RefreshCommand) String() string {
@@ -43,11 +41,7 @@ func (cmd RefreshCommand) String() string {
 }
 
 func (cmd RefreshCommand) RedactedString() string {
-	r := cmd
-	if strings.TrimSpace(r.ClientSecret) != "" {
-		r.ClientSecret = "[redacted]"
-	}
-	return types.Stringify(r)
+	return types.Stringify(cmd)
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -83,7 +77,7 @@ func (cmd *RefreshCommand) Run(ctx server.Cmd) (err error) {
 	}
 
 	// Do the refresh
-	refreshed, err := refreshStoredToken(ctx, spanctx, authClient, cmd.Endpoint, cmd.ClientID, cmd.ClientSecret)
+	refreshed, err := refreshStoredToken(ctx, spanctx, authClient, cmd.Endpoint)
 	if err != nil {
 		return err
 	}
@@ -96,7 +90,7 @@ func (cmd *RefreshCommand) Run(ctx server.Cmd) (err error) {
 ///////////////////////////////////////////////////////////////////////////////
 // PRIVATE FUNCTIONS
 
-func refreshStoredToken(ctx server.Cmd, spanctx context.Context, authClient *auth.Client, endpoint, clientID, clientSecret string) (*oauth2.Token, error) {
+func refreshStoredToken(ctx server.Cmd, spanctx context.Context, authClient *auth.Client, endpoint string) (*oauth2.Token, error) {
 	if spanctx == nil && ctx != nil {
 		spanctx = ctx.Context()
 	}
@@ -106,10 +100,10 @@ func refreshStoredToken(ctx server.Cmd, spanctx context.Context, authClient *aut
 		return nil, err
 	}
 
-	return refreshStoredTokenWithMetadata(ctx, spanctx, authClient, meta, endpoint, clientID, clientSecret)
+	return refreshStoredTokenWithMetadata(ctx, spanctx, authClient, meta, endpoint)
 }
 
-func refreshStoredTokenWithMetadata(ctx server.Cmd, spanctx context.Context, authClient *auth.Client, meta *auth.Config, endpoint, clientID, clientSecret string) (*oauth2.Token, error) {
+func refreshStoredTokenWithMetadata(ctx server.Cmd, spanctx context.Context, authClient *auth.Client, meta *auth.Config, endpoint string) (*oauth2.Token, error) {
 	if spanctx == nil && ctx != nil {
 		spanctx = ctx.Context()
 	}
@@ -137,14 +131,8 @@ func refreshStoredTokenWithMetadata(ctx server.Cmd, spanctx context.Context, aut
 	if issuer == "" {
 		issuer = strings.TrimSpace(serverMeta.Issuer)
 	}
-	clientID = strings.TrimSpace(clientID)
-	if clientID == "" {
-		clientID = strings.TrimSpace(ctx.GetString(clientIDStoreKey(nil, issuer)))
-	}
-	clientSecret = strings.TrimSpace(clientSecret)
-	if clientSecret == "" {
-		clientSecret = strings.TrimSpace(ctx.GetString(clientSecretStoreKey(nil, issuer)))
-	}
+	clientID := strings.TrimSpace(ctx.GetString(clientIDStoreKey(nil, issuer)))
+	clientSecret := strings.TrimSpace(ctx.GetString(clientSecretStoreKey(nil, issuer)))
 
 	oauthConfig, err := auth.OAuth2Config(config, clientID, clientSecret)
 	if err != nil {

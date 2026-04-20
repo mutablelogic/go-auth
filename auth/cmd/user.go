@@ -15,12 +15,12 @@
 package auth
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"strings"
 
 	// Packages
-
 	auth "github.com/mutablelogic/go-auth/auth/httpclient"
 	schema "github.com/mutablelogic/go-auth/auth/schema"
 	server "github.com/mutablelogic/go-server"
@@ -70,9 +70,9 @@ type LeaveGroupsCommand struct {
 ///////////////////////////////////////////////////////////////////////////////
 // COMMANDS
 
-func (cmd *ListUsersCommand) Run(ctx server.Cmd) error {
-	return withManager(ctx, func(client *auth.ManagerClient, endpoint string) error {
-		users, err := client.ListUsers(ctx.Context(), cmd.UserListRequest)
+func (cmd *ListUsersCommand) Run(globals server.Cmd) error {
+	return withManager(globals, "ListUsersCommand", types.Stringify(cmd), func(ctx context.Context, client *auth.ManagerClient) error {
+		users, err := client.ListUsers(ctx, cmd.UserListRequest)
 		if err != nil {
 			return err
 		}
@@ -84,7 +84,7 @@ func (cmd *ListUsersCommand) Run(ctx server.Cmd) error {
 		}
 
 		// Write out the user table, and the summary
-		tui.TableFor[userRow](tui.SetWidth(ctx.IsTerm())).Write(os.Stdout, userRows...)
+		tui.TableFor[userRow](tui.SetWidth(globals.IsTerm())).Write(os.Stdout, userRows...)
 		tui.TableSummary("users", users.Count, users.Offset, users.Limit).Write(os.Stdout)
 
 		// Return success
@@ -93,9 +93,9 @@ func (cmd *ListUsersCommand) Run(ctx server.Cmd) error {
 	})
 }
 
-func (cmd *GetUserCommand) Run(ctx server.Cmd) error {
-	return withManager(ctx, func(client *auth.ManagerClient, endpoint string) error {
-		user, err := client.GetUser(ctx.Context(), cmd.ID)
+func (cmd *GetUserCommand) Run(globals server.Cmd) error {
+	return withManager(globals, "GetUserCommand", types.Stringify(cmd), func(ctx context.Context, client *auth.ManagerClient) error {
+		user, err := client.GetUser(ctx, cmd.ID)
 		if err != nil {
 			return err
 		}
@@ -104,9 +104,9 @@ func (cmd *GetUserCommand) Run(ctx server.Cmd) error {
 	})
 }
 
-func (cmd *UpdateUserCommand) Run(ctx server.Cmd) error {
-	return withManager(ctx, func(client *auth.ManagerClient, endpoint string) error {
-		user, err := client.UpdateUser(ctx.Context(), cmd.ID, cmd.UserMeta)
+func (cmd *UpdateUserCommand) Run(globals server.Cmd) error {
+	return withManager(globals, "UpdateUserCommand", types.Stringify(cmd), func(ctx context.Context, client *auth.ManagerClient) error {
+		user, err := client.UpdateUser(ctx, cmd.ID, cmd.UserMeta)
 		if err != nil {
 			return err
 		}
@@ -115,18 +115,18 @@ func (cmd *UpdateUserCommand) Run(ctx server.Cmd) error {
 	})
 }
 
-func (cmd *DeleteUserCommand) Run(ctx server.Cmd) error {
-	return withManager(ctx, func(client *auth.ManagerClient, endpoint string) error {
-		if err := client.DeleteUser(ctx.Context(), cmd.ID); err != nil {
+func (cmd *DeleteUserCommand) Run(globals server.Cmd) error {
+	return withManager(globals, "DeleteUserCommand", types.Stringify(cmd), func(ctx context.Context, client *auth.ManagerClient) error {
+		if err := client.DeleteUser(ctx, cmd.ID); err != nil {
 			return err
 		}
 		return nil
 	})
 }
 
-func (cmd *JoinGroupsCommand) Run(ctx server.Cmd) error {
-	return withManager(ctx, func(client *auth.ManagerClient, endpoint string) error {
-		user, err := client.AddUserGroups(ctx.Context(), cmd.ID, cmd.Groups)
+func (cmd *JoinGroupsCommand) Run(globals server.Cmd) error {
+	return withManager(globals, "JoinGroupsCommand", types.Stringify(cmd), func(ctx context.Context, client *auth.ManagerClient) error {
+		user, err := client.AddUserGroups(ctx, cmd.ID, cmd.Groups)
 		if err != nil {
 			return err
 		}
@@ -135,9 +135,9 @@ func (cmd *JoinGroupsCommand) Run(ctx server.Cmd) error {
 	})
 }
 
-func (cmd *LeaveGroupsCommand) Run(ctx server.Cmd) error {
-	return withManager(ctx, func(client *auth.ManagerClient, endpoint string) error {
-		user, err := client.RemoveUserGroups(ctx.Context(), cmd.ID, cmd.Groups)
+func (cmd *LeaveGroupsCommand) Run(globals server.Cmd) error {
+	return withManager(globals, "LeaveGroupsCommand", types.Stringify(cmd), func(ctx context.Context, client *auth.ManagerClient) error {
+		user, err := client.RemoveUserGroups(ctx, cmd.ID, cmd.Groups)
 		if err != nil {
 			return err
 		}
@@ -147,7 +147,7 @@ func (cmd *LeaveGroupsCommand) Run(ctx server.Cmd) error {
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-// TABLES
+// TABLE OUTPUT
 
 type userRow schema.User
 

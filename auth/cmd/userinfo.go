@@ -35,9 +35,7 @@ import (
 // TYPES
 
 type UserInfoCommand struct {
-	Endpoint     string `arg:"" optional:"" name:"endpoint" help:"Protected resource endpoint. Defaults to the stored endpoint or the global HTTP client endpoint."`
-	ClientID     string `name:"client-id" help:"OAuth client ID. Defaults to the stored client ID for the issuer when a refresh is needed."`
-	ClientSecret string `name:"client-secret" help:"OAuth client secret. Defaults to the stored client secret for the issuer when a refresh is needed."`
+	Endpoint string `arg:"" optional:"" name:"endpoint" help:"Protected resource endpoint. Defaults to the stored endpoint or the global HTTP client endpoint."`
 }
 
 func (cmd UserInfoCommand) String() string {
@@ -45,11 +43,7 @@ func (cmd UserInfoCommand) String() string {
 }
 
 func (cmd UserInfoCommand) RedactedString() string {
-	r := cmd
-	if strings.TrimSpace(r.ClientSecret) != "" {
-		r.ClientSecret = "[redacted]"
-	}
-	return types.Stringify(r)
+	return types.Stringify(cmd)
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -98,7 +92,7 @@ func (cmd *UserInfoCommand) Run(ctx server.Cmd) (err error) {
 		return fmt.Errorf("no stored token for endpoint %q", cmd.Endpoint)
 	}
 	if !token.Valid() {
-		if token, err = refreshStoredTokenWithMetadata(ctx, spanctx, authClient, meta, cmd.Endpoint, cmd.ClientID, cmd.ClientSecret); err != nil {
+		if token, err = refreshStoredTokenWithMetadata(ctx, spanctx, authClient, meta, cmd.Endpoint); err != nil {
 			return err
 		}
 	}
