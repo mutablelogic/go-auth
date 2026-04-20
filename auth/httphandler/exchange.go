@@ -87,42 +87,40 @@ func (req RefreshTokenExchangeRequest) Validate() error {
 // PRIVATE METHODS
 
 func exchange(ctx context.Context, manager *auth.Manager, w http.ResponseWriter, r *http.Request) error {
-	var req ExchangeRequest
-	if err := httprequest.Read(r, &req); err != nil {
+	var request ExchangeRequest
+	if err := httprequest.Read(r, &request); err != nil {
 		return httpresponse.Error(w, autherr.HTTPError(err))
-	} else if err := req.Validate(); err != nil {
+	} else if err := request.Validate(); err != nil {
 		return httpresponse.Error(w, autherr.HTTPError(err))
 	}
 
 	// Other authorize or refresh
-	switch req.GrantType {
+	switch request.GrantType {
 	case "authorization_code":
-		var req schema.AuthorizationCodeRequest
-		if err := httprequest.Read(r, &req); err != nil {
-			return httpresponse.Error(w, autherr.HTTPError(err))
-		} else if err := req.Validate(); err != nil {
+		codeRequest := request.AuthorizationCodeRequest
+		if err := codeRequest.Validate(); err != nil {
 			return httpresponse.Error(w, autherr.HTTPError(err))
 		}
 
 		// Get the identity provider for the request
-		identity_provider, err := manager.Provider(req.Provider)
+		identity_provider, err := manager.Provider(codeRequest.Provider)
 		if err != nil {
 			return httpresponse.Error(w, autherr.HTTPError(err))
 		}
 
 		// Exchange the authorization code for an identity
 		identity, err := identity_provider.ExchangeAuthorizationCode(ctx, provider.ExchangeRequest{
-			Code:         req.Code,
-			RedirectURL:  req.RedirectURI,
-			CodeVerifier: req.CodeVerifier,
-			Nonce:        req.Nonce,
+			Code:         codeRequest.Code,
+			RedirectURL:  codeRequest.RedirectURI,
+			CodeVerifier: codeRequest.CodeVerifier,
+			Nonce:        codeRequest.Nonce,
 		})
 		if err != nil {
 			return httpresponse.Error(w, autherr.HTTPError(err))
 		}
 
 		// Now login with this identity
-		user, session, err := manager.LoginWithIdentity(ctx, types.Value(identity), req.Meta)
+		user, session, err := manager.LoginWithIdentity(ctx, types.Value(identity), codeRequest.Meta)
 		if err != nil {
 			return httpresponse.Error(w, autherr.HTTPError(err))
 		}
@@ -149,10 +147,8 @@ func exchange(ctx context.Context, manager *auth.Manager, w http.ResponseWriter,
 			ExpiresIn:    tokenExpiresIn(session.ExpiresAt),
 		})
 	case "refresh_token":
-		var req RefreshTokenExchangeRequest
-		if err := httprequest.Read(r, &req); err != nil {
-			return httpresponse.Error(w, autherr.HTTPError(err))
-		} else if err := req.Validate(); err != nil {
+		refreshRequest := request.RefreshTokenExchangeRequest
+		if err := refreshRequest.Validate(); err != nil {
 			return httpresponse.Error(w, autherr.HTTPError(err))
 		}
 
@@ -161,7 +157,7 @@ func exchange(ctx context.Context, manager *auth.Manager, w http.ResponseWriter,
 		if err != nil {
 			return httpresponse.Error(w, autherr.HTTPError(err))
 		}
-		claims, err := manager.OIDCVerify(req.Token, config.Issuer)
+		claims, err := manager.OIDCVerify(refreshRequest.Token, config.Issuer)
 		if err != nil {
 			return httpresponse.Error(w, autherr.HTTPError(err))
 		}
@@ -204,7 +200,7 @@ func exchange(ctx context.Context, manager *auth.Manager, w http.ResponseWriter,
 			ExpiresIn:    tokenExpiresIn(session.ExpiresAt),
 		})
 	default:
-		return httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest).Withf("unsupported grant_type %q", req.GrantType))
+		return httpresponse.Error(w, httpresponse.Err(http.StatusBadRequest).Withf("unsupported grant_type %q", request.GrantType))
 	}
 
 }

@@ -12,39 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package schema
+package wasm
 
 import (
-	_ "embed"
-	"time"
+	"embed"
 )
 
-///////////////////////////////////////////////////////////////////////////////
-// GLOBALS
-
-//go:embed objects.sql
-var Objects string
-
-//go:embed queries.sql
-var Queries string
-
-//go:embed metrics.sql
-var Metrics string
-
-const (
-	DefaultSchema     = "auth"
-	DefaultSessionTTL = time.Minute * 15   // 15 minutes
-	DefaultRefreshTTL = time.Hour * 24 * 7 // 7 days
-)
-
-const (
-	GroupListMax    = 100
-	IdentityListMax = 100
-	ScopeListMax    = 100
-	UserListMax     = 100
-)
-
-// Scopes
-const (
-	SecurityBearerAuth = "bearerAuth"
-)
+//go:embed *
+var FrontendFS embed.FS

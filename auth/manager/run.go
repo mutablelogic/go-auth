@@ -22,20 +22,22 @@ import (
 	broadcaster "github.com/mutablelogic/go-pg/pkg/broadcaster"
 )
 
+///////////////////////////////////////////////////////////////////////////////
+// LIFECYCLE
+
 // Run periodically prunes stale sessions until the context is cancelled.
 func (m *Manager) Run(ctx context.Context) error {
+	// Notifications
 	if m.channel != "" && m.notifications == nil {
 		notifications, err := broadcaster.NewBroadcaster(m.PoolConn, m.channel)
 		if err != nil {
 			return err
 		}
 		m.notifications = notifications
+		defer m.closeNotifications()
 	}
 
-	defer func() {
-		_ = m.closeNotifications()
-	}()
-
+	// Cleanup
 	interval := m.cleanupint
 	if interval <= 0 {
 		interval = DefaultCleanupInterval

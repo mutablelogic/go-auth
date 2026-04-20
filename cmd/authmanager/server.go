@@ -27,6 +27,7 @@ import (
 	pg "github.com/mutablelogic/go-pg"
 	server "github.com/mutablelogic/go-server"
 	cmd "github.com/mutablelogic/go-server/pkg/cmd"
+	httprouter "github.com/mutablelogic/go-server/pkg/httprouter"
 	errgroup "golang.org/x/sync/errgroup"
 )
 
@@ -47,6 +48,7 @@ type AuthServer struct {
 	AuthFlags           `embed:"" prefix:"auth."`
 	LocalProviderFlags  `embed:"" prefix:"local."`
 	GoogleProviderFlags `embed:"" prefix:"google."`
+	UI                  bool `name:"ui" help:"Whether to serve the embedded web user interface" default:"true" negatable:""`
 }
 
 type BootstrapCert struct {
@@ -123,6 +125,14 @@ func (cmd *AuthServer) Run(ctx server.Cmd) error {
 				errgroup.Go(func() error {
 					return cmd.RunServer.Run(ctx)
 				})
+
+				// Add the UI handlers if enabled
+				if cmd.UI {
+					ctx.Logger().WarnContext(ctx.Context(), "User Interface Enabled")
+					cmd.RunServer.Register(func(router *httprouter.Router) error {
+						return registerUIHandlers(router)
+					})
+				}
 
 				// Run all the goroutines until one errors, and return any errors
 				return errgroup.Wait()

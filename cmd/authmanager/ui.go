@@ -12,39 +12,20 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package schema
+package main
 
 import (
-	_ "embed"
-	"time"
+	"io/fs"
+
+	// Packages
+	app "github.com/mutablelogic/go-auth/auth/wasm"
+	httprouter "github.com/mutablelogic/go-server/pkg/httprouter"
 )
 
-///////////////////////////////////////////////////////////////////////////////
-// GLOBALS
-
-//go:embed objects.sql
-var Objects string
-
-//go:embed queries.sql
-var Queries string
-
-//go:embed metrics.sql
-var Metrics string
-
-const (
-	DefaultSchema     = "auth"
-	DefaultSessionTTL = time.Minute * 15   // 15 minutes
-	DefaultRefreshTTL = time.Hour * 24 * 7 // 7 days
-)
-
-const (
-	GroupListMax    = 100
-	IdentityListMax = 100
-	ScopeListMax    = 100
-	UserListMax     = 100
-)
-
-// Scopes
-const (
-	SecurityBearerAuth = "bearerAuth"
-)
+func registerUIHandlers(router *httprouter.Router) error {
+	root, err := fs.Sub(app.FrontendFS, "app")
+	if err != nil {
+		return err
+	}
+	return router.RegisterFS("/", root, false, nil)
+}

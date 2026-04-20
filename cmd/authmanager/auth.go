@@ -55,6 +55,7 @@ const (
 func (flags *AuthFlags) Options(ctx server.Cmd) ([]auth.Opt, *rsa.PrivateKey, error) {
 	opts := []auth.Opt{
 		auth.WithTracer(ctx.Tracer()),
+		auth.WithMetrics(ctx.Meter()),
 	}
 
 	// Database schema

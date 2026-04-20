@@ -21,10 +21,11 @@ import (
 	"time"
 
 	// Packages
-	"github.com/mutablelogic/go-auth"
+	auth "github.com/mutablelogic/go-auth"
 	providerpkg "github.com/mutablelogic/go-auth/auth/provider"
 	schema "github.com/mutablelogic/go-auth/auth/schema"
-	"github.com/mutablelogic/go-server/pkg/types"
+	types "github.com/mutablelogic/go-server/pkg/types"
+	metric "go.opentelemetry.io/otel/metric"
 	trace "go.opentelemetry.io/otel/trace"
 )
 
@@ -65,6 +66,7 @@ type opt struct {
 	providers    map[string]providerpkg.Provider
 	hooks        any
 	tracer       trace.Tracer
+	metrics      metric.Meter
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -169,10 +171,12 @@ func WithNotificationChannel(name string) Opt {
 func WithTTL(sessionTTL, refreshTTL time.Duration) Opt {
 	return func(o *opt) error {
 		if sessionTTL <= 0 {
-			return auth.ErrBadParameter.With("session TTL must be positive")
-		} else if refreshTTL <= 0 {
-			return auth.ErrBadParameter.With("refresh TTL must be positive")
-		} else if sessionTTL >= refreshTTL {
+			sessionTTL = schema.DefaultSessionTTL
+		}
+		if refreshTTL <= 0 {
+			refreshTTL = schema.DefaultRefreshTTL
+		}
+		if sessionTTL >= refreshTTL {
 			return auth.ErrBadParameter.With("session TTL must be less than refresh TTL")
 		}
 		o.sessionttl = sessionTTL
@@ -218,10 +222,15 @@ func WithHooks(hooks any) Opt {
 // WithTracer sets the OpenTelemetry tracer used for manager spans.
 func WithTracer(tracer trace.Tracer) Opt {
 	return func(o *opt) error {
-		if tracer == nil {
-			return auth.ErrBadParameter.With("tracer is required")
-		}
 		o.tracer = tracer
+		return nil
+	}
+}
+
+// WithMetrics sets the OpenTelemetry meter used for manager metrics.
+func WithMetrics(meter metric.Meter) Opt {
+	return func(o *opt) error {
+		o.metrics = meter
 		return nil
 	}
 }
