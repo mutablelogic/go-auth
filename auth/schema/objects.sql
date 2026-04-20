@@ -49,13 +49,50 @@ CREATE INDEX IF NOT EXISTS session_user_idx ON ${"schema"}.session ("user");
 
 -- auth.apikey
 CREATE TABLE IF NOT EXISTS ${"schema"}.apikey (
-    "hash"        BYTEA       NOT NULL PRIMARY KEY,
+    "id"          UUID        NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
+    "hash"        BYTEA       NOT NULL CONSTRAINT apikey_hash_key UNIQUE,
     "user"        UUID        NOT NULL REFERENCES ${"schema"}."user" (id) ON DELETE CASCADE,
     "name"        TEXT        NOT NULL,
     "created_at"  TIMESTAMPTZ NOT NULL DEFAULT now(),
     "modified_at" TIMESTAMPTZ NOT NULL DEFAULT now(),
     "expires_at"  TIMESTAMPTZ NULL
 );
+
+-- auth.apikey.migrate_id
+DO $$ BEGIN
+    ALTER TABLE ${"schema"}.apikey ADD COLUMN IF NOT EXISTS "id" UUID;
+    ALTER TABLE ${"schema"}.apikey ALTER COLUMN "id" SET DEFAULT gen_random_uuid();
+    UPDATE ${"schema"}.apikey SET "id" = gen_random_uuid() WHERE "id" IS NULL;
+    ALTER TABLE ${"schema"}.apikey ALTER COLUMN "id" SET NOT NULL;
+
+    IF NOT EXISTS (
+        SELECT 1
+        FROM pg_constraint
+        WHERE conrelid = '${"schema"}.apikey'::regclass
+          AND conname = 'apikey_hash_key'
+    ) THEN
+        ALTER TABLE ${"schema"}.apikey ADD CONSTRAINT apikey_hash_key UNIQUE ("hash");
+    END IF;
+
+    IF EXISTS (
+        SELECT 1
+        FROM pg_constraint
+        WHERE conrelid = '${"schema"}.apikey'::regclass
+          AND conname = 'apikey_pkey'
+          AND pg_get_constraintdef(oid) <> 'PRIMARY KEY (id)'
+    ) THEN
+        ALTER TABLE ${"schema"}.apikey DROP CONSTRAINT apikey_pkey;
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1
+        FROM pg_constraint
+        WHERE conrelid = '${"schema"}.apikey'::regclass
+          AND conname = 'apikey_pkey'
+    ) THEN
+        ALTER TABLE ${"schema"}.apikey ADD CONSTRAINT apikey_pkey PRIMARY KEY ("id");
+    END IF;
+END $$;
 
 -- auth.apikey.user_index
 CREATE INDEX IF NOT EXISTS apikey_user_idx ON ${"schema"}.apikey ("user");

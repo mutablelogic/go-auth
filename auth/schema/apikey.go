@@ -33,24 +33,45 @@ const defaultKeyDigestAlgorithm = "sha256"
 ///////////////////////////////////////////////////////////////////////////////
 // TYPES
 
+// KeyID is a unique identifier for an API key.
+type KeyID uuid.UUID
+
+// KeyToken selects API key rows by plaintext token.
+type KeyToken struct {
+	Token string
+	Query string
+}
+
+// KeySelector selects an API key row by ID and optionally scopes it to a user.
+type KeySelector struct {
+	ID    KeyID
+	User  *UserID
+	Query string
+}
+
 // KeyMeta contains the writable fields for an API key.
 type KeyMeta struct {
-	Name      string     `json:"name,omitempty"`
-	ExpiresAt *time.Time `json:"expires_at,omitempty" format:"date-time"`
+	Name      string     `json:"name,omitempty" jsonschema:"Human-readable label for the API key. Names must be unique per user account." example:"deploy-bot"`
+	ExpiresAt *time.Time `json:"expires_at,omitempty" jsonschema:"Optional absolute expiry for the API key. When both the user and the key have expiries, the effective expiry is the earlier of the two." format:"date-time" example:"2026-12-31T23:59:59Z"`
 }
 
 // Key represents a stored API key row plus the generated plaintext token.
 type Key struct {
-	User       UserID      `json:"user" format:"uuid"`
-	CreatedAt  time.Time   `json:"created_at" format:"date-time" readonly:""`
-	ModifiedAt time.Time   `json:"modified_at" format:"date-time" readonly:""`
-	Status     *UserStatus `json:"status,omitempty" readonly:"" enum:"new,active,inactive,suspended,deleted"`
-	Token      string      `json:"token,omitempty" readonly:""`
+	ID         KeyID       `json:"id" jsonschema:"Stable identifier for the stored API key row." format:"uuid" example:"123e4567-e89b-12d3-a456-426614174000" readonly:""`
+	User       UserID      `json:"user" jsonschema:"Identifier of the local user account that owns the API key." format:"uuid" example:"123e4567-e89b-12d3-a456-426614174000"`
+	CreatedAt  time.Time   `json:"created_at" jsonschema:"Timestamp when the API key row was created." format:"date-time" example:"2026-04-20T18:00:00Z" readonly:""`
+	ModifiedAt time.Time   `json:"modified_at" jsonschema:"Timestamp when the API key row was last modified." format:"date-time" example:"2026-04-20T18:05:00Z" readonly:""`
+	Status     *UserStatus `json:"status,omitempty" jsonschema:"Current status of the owning user account. This is included to show whether the key belongs to an active, inactive, suspended, or deleted user." readonly:"" enum:"new,active,inactive,suspended,deleted" example:"active"`
+	Token      string      `json:"token,omitempty" jsonschema:"Plaintext API token. This is only returned when the token is first created; subsequent lookups return metadata only." example:"test_4f7c0f6f4c7a2f80f8bb5c5f2f8b4e9a8a7d6c5b4e3f2a1d0c9b8a7f6e5d4c3" readonly:""`
 	KeyMeta
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 // STRINGIFY
+
+func (k KeyID) String() string {
+	return uuid.UUID(k).String()
+}
 
 func (k KeyMeta) String() string {
 	return types.Stringify(k)
@@ -64,10 +85,11 @@ func (k Key) String() string {
 // PUBLIC METHODS - READER
 
 // Scan reads a full API key row into the receiver.
-// Expected column order: user, name, created_at, modified_at,
+// Expected column order: id, user, name, created_at, modified_at,
 // expires_at, status, token.
 func (k *Key) Scan(row pg.Row) error {
 	return row.Scan(
+		&k.ID,
 		&k.User,
 		&k.Name,
 		&k.CreatedAt,
@@ -76,6 +98,51 @@ func (k *Key) Scan(row pg.Row) error {
 		&k.Status,
 		&k.Token,
 	)
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// PUBLIC METHODS - SELECTOR
+
+func (id KeyID) Select(bind *pg.Bind, op pg.Op) (string, error) {
+	bind.Set("id", uuid.UUID(id))
+	switch op {
+	case pg.Get:
+		return bind.Query("apikey.get"), nil
+	case pg.Update:
+		return bind.Query("apikey.update"), nil
+	case pg.Delete:
+		return bind.Query("apikey.delete"), nil
+	default:
+		return "", auth.ErrNotImplemented.Withf("unsupported KeyID operation %q", op)
+	}
+}
+
+func (k KeySelector) Select(bind *pg.Bind, op pg.Op) (string, error) {
+	bind.Set("id", uuid.UUID(k.ID))
+	if k.User == nil {
+		bind.Set("user", nil)
+	} else {
+		bind.Set("user", uuid.UUID(*k.User))
+	}
+	switch op {
+	case pg.Get, pg.Update, pg.Delete:
+		return bind.Query(k.Query), nil
+	default:
+		return "", auth.ErrNotImplemented.Withf("unsupported KeySelector operation %q", op)
+	}
+}
+
+func (k KeyToken) Select(bind *pg.Bind, op pg.Op) (string, error) {
+	if op != pg.Get {
+		return "", auth.ErrNotImplemented.Withf("unsupported KeyToken operation %q", op)
+	}
+	if token := strings.TrimSpace(k.Token); token == "" {
+		return "", auth.ErrBadParameter.With("token is required")
+	} else {
+		bind.Set("token", token)
+	}
+	bind.Set("algorithm", defaultKeyDigestAlgorithm)
+	return bind.Query(k.Query), nil
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -108,6 +175,22 @@ func (k KeyMeta) Insert(bind *pg.Bind) (string, error) {
 	return bind.Query("apikey.insert"), nil
 }
 
-func (k KeyMeta) Update(_ *pg.Bind) error {
-	return auth.ErrNotImplemented.With("api key update is not supported")
+func (k KeyMeta) Update(bind *pg.Bind) error {
+	bind.Del("patch")
+	if name := strings.TrimSpace(k.Name); name != "" {
+		bind.Append("patch", "name = "+bind.Set("name", name))
+	}
+	if k.ExpiresAt != nil {
+		if k.ExpiresAt.IsZero() {
+			bind.Append("patch", "expires_at = NULL")
+		} else {
+			bind.Append("patch", "expires_at = "+bind.Set("expires_at", k.ExpiresAt))
+		}
+	}
+	if patch := bind.Join("patch", ", "); patch == "" {
+		return auth.ErrBadParameter.With("no fields to update")
+	} else {
+		bind.Set("patch", patch)
+	}
+	return nil
 }

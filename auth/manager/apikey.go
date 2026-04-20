@@ -19,34 +19,12 @@ import (
 	"strings"
 
 	// Packages
-	auth "github.com/mutablelogic/go-auth"
 	schema "github.com/mutablelogic/go-auth/auth/schema"
 	otel "github.com/mutablelogic/go-client/pkg/otel"
 	pg "github.com/mutablelogic/go-pg"
 	types "github.com/mutablelogic/go-server/pkg/types"
 	attribute "go.opentelemetry.io/otel/attribute"
 )
-
-///////////////////////////////////////////////////////////////////////////////
-// TYPES
-
-type apiKeyTokenSelector struct {
-	token string
-	query string
-}
-
-func (s apiKeyTokenSelector) Select(bind *pg.Bind, op pg.Op) (string, error) {
-	if op != pg.Get {
-		return "", auth.ErrNotImplemented.Withf("unsupported API key token selector operation %q", op)
-	}
-	if token := strings.TrimSpace(s.token); token == "" {
-		return "", auth.ErrBadParameter.With("token is required")
-	} else {
-		bind.Set("token", token)
-	}
-	bind.Set("algorithm", "sha256")
-	return bind.Query(s.query), nil
-}
 
 ///////////////////////////////////////////////////////////////////////////////
 // PUBLIC METHODS
@@ -82,8 +60,8 @@ func (m *Manager) CreateKey(ctx context.Context, user schema.UserID, meta schema
 	return types.Ptr(result), nil
 }
 
-func (m *Manager) GetKey(ctx context.Context, token string) (_ *schema.Key, _ *schema.User, err error) {
-	ctx, endSpan := otel.StartSpan(m.tracer, ctx, "GetKey",
+func (m *Manager) GetKeyByToken(ctx context.Context, token string) (_ *schema.Key, _ *schema.User, err error) {
+	ctx, endSpan := otel.StartSpan(m.tracer, ctx, "GetKeyByToken",
 		attribute.Int("token_length", len(strings.TrimSpace(token))),
 	)
 	defer func() { endSpan(err) }()
@@ -100,10 +78,9 @@ func (m *Manager) GetKey(ctx context.Context, token string) (_ *schema.Key, _ *s
 	var key schema.Key
 	var user schema.User
 	if err = m.PoolConn.Tx(ctx, func(conn pg.Conn) error {
-		if err := conn.Get(ctx, &key, apiKeyTokenSelector{token: token, query: "apikey.select"}); err != nil {
+		if err := conn.Get(ctx, &key, schema.KeyToken{Token: token, Query: "apikey.select"}); err != nil {
 			return err
-		}
-		if err := conn.Get(ctx, &user, apiKeyTokenSelector{token: token, query: "apikey.user"}); err != nil {
+		} else if err := conn.Get(ctx, &user, schema.KeyToken{Token: token, Query: "apikey.user"}); err != nil {
 			return err
 		}
 		return nil
@@ -112,4 +89,47 @@ func (m *Manager) GetKey(ctx context.Context, token string) (_ *schema.Key, _ *s
 		return nil, nil, err
 	}
 	return types.Ptr(key), types.Ptr(user), nil
+}
+
+func (m *Manager) GetKeyByID(ctx context.Context, id schema.KeyID, user *schema.UserID) (_ *schema.Key, err error) {
+	ctx, endSpan := otel.StartSpan(m.tracer, ctx, "GetKeyByID",
+		attribute.String("key", id.String()),
+	)
+	defer func() { endSpan(err) }()
+
+	var key schema.Key
+	if err = m.PoolConn.Get(ctx, &key, schema.KeySelector{ID: id, User: user, Query: "apikey.get"}); err != nil {
+		err = dbErr(err)
+		return nil, err
+	}
+	return types.Ptr(key), nil
+}
+
+func (m *Manager) UpdateKey(ctx context.Context, id schema.KeyID, user *schema.UserID, meta schema.KeyMeta) (_ *schema.Key, err error) {
+	ctx, endSpan := otel.StartSpan(m.tracer, ctx, "UpdateKey",
+		attribute.String("key", id.String()),
+		attribute.String("meta", meta.String()),
+	)
+	defer func() { endSpan(err) }()
+
+	var key schema.Key
+	if err = m.PoolConn.Update(ctx, &key, schema.KeySelector{ID: id, User: user, Query: "apikey.update"}, meta); err != nil {
+		err = dbErr(err)
+		return nil, err
+	}
+	return types.Ptr(key), nil
+}
+
+func (m *Manager) DeleteKey(ctx context.Context, id schema.KeyID, user *schema.UserID) (_ *schema.Key, err error) {
+	ctx, endSpan := otel.StartSpan(m.tracer, ctx, "DeleteKey",
+		attribute.String("key", id.String()),
+	)
+	defer func() { endSpan(err) }()
+
+	var key schema.Key
+	if err = m.PoolConn.Delete(ctx, &key, schema.KeySelector{ID: id, User: user, Query: "apikey.delete"}); err != nil {
+		err = dbErr(err)
+		return nil, err
+	}
+	return types.Ptr(key), nil
 }

@@ -361,9 +361,10 @@ WITH generated AS (
     @name,
     @expires_at
   FROM generated
-  RETURNING "user", name, created_at, modified_at, expires_at
+  RETURNING id, "user", name, created_at, modified_at, expires_at
 )
 SELECT
+  inserted.id,
   inserted."user",
   inserted.name,
   inserted.created_at,
@@ -379,8 +380,28 @@ FROM inserted
 JOIN ${"schema"}.user AS user_row ON user_row.id = inserted."user"
 JOIN generated ON true;
 
+-- apikey.get
+SELECT
+  apikey.id,
+  apikey."user",
+  apikey.name,
+  apikey.created_at,
+  apikey.modified_at,
+  CASE
+    WHEN user_row.expires_at IS NULL THEN apikey.expires_at
+    WHEN apikey.expires_at IS NULL THEN user_row.expires_at
+    ELSE LEAST(apikey.expires_at, user_row.expires_at)
+  END AS expires_at,
+  user_row.status,
+  ''::text AS token
+FROM ${"schema"}.apikey AS apikey
+JOIN ${"schema"}.user AS user_row ON user_row.id = apikey."user"
+WHERE apikey.id = @id
+  AND (@user::uuid IS NULL OR apikey."user" = @user::uuid);
+
 -- apikey.select
 SELECT
+  apikey.id,
   apikey."user",
   apikey.name,
   apikey.created_at,
@@ -395,6 +416,53 @@ SELECT
 FROM ${"schema"}.apikey AS apikey
 JOIN ${"schema"}.user AS user_row ON user_row.id = apikey."user"
 WHERE apikey."hash" = digest(@token, ${'algorithm'});
+
+-- apikey.update
+WITH updated AS (
+  UPDATE ${"schema"}.apikey
+  SET modified_at = NOW(), ${patch}
+  WHERE id = @id
+    AND (@user::uuid IS NULL OR "user" = @user::uuid)
+  RETURNING id, "user", name, created_at, modified_at, expires_at
+)
+SELECT
+  updated.id,
+  updated."user",
+  updated.name,
+  updated.created_at,
+  updated.modified_at,
+  CASE
+    WHEN user_row.expires_at IS NULL THEN updated.expires_at
+    WHEN updated.expires_at IS NULL THEN user_row.expires_at
+    ELSE LEAST(updated.expires_at, user_row.expires_at)
+  END AS expires_at,
+  user_row.status,
+  ''::text AS token
+FROM updated
+JOIN ${"schema"}.user AS user_row ON user_row.id = updated."user";
+
+-- apikey.delete
+WITH deleted AS (
+  DELETE FROM ${"schema"}.apikey
+  WHERE id = @id
+    AND (@user::uuid IS NULL OR "user" = @user::uuid)
+  RETURNING id, "user", name, created_at, modified_at, expires_at
+)
+SELECT
+  deleted.id,
+  deleted."user",
+  deleted.name,
+  deleted.created_at,
+  deleted.modified_at,
+  CASE
+    WHEN user_row.expires_at IS NULL THEN deleted.expires_at
+    WHEN deleted.expires_at IS NULL THEN user_row.expires_at
+    ELSE LEAST(deleted.expires_at, user_row.expires_at)
+  END AS expires_at,
+  user_row.status,
+  ''::text AS token
+FROM deleted
+JOIN ${"schema"}.user AS user_row ON user_row.id = deleted."user";
 
 -- apikey.user
 SELECT
