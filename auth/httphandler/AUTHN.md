@@ -6,7 +6,7 @@ Registers the public auth, OIDC, and protected-resource endpoints exposed by the
 
 Auth is the server's local authentication layer. It starts browser sign-in, exchanges provider credentials for locally signed tokens, publishes discovery metadata, and returns the authenticated user's client-facing claims.
 
-### `GET /auth/config`
+### `GET /config`
 
 Returns a `PublicClientConfigurations` object keyed by provider name. Each value is a `PublicClientConfiguration` containing only client-safe fields such as `issuer` and `client_id`.
 

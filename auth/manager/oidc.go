@@ -36,8 +36,8 @@ import (
 
 // AuthConfig returns the shareable upstream provider configuration exposed by
 // /auth/config. The client secret remains server-side.
-func (m *Manager) AuthConfig() (_ schema.PublicClientConfigurations, err error) {
-	ctx, endSpan := otel.StartSpan(m.tracer, context.Background(), "manager.AuthConfig")
+func (m *Manager) AuthConfig(ctx context.Context) (_ schema.PublicClientConfigurations, err error) {
+	ctx, endSpan := otel.StartSpan(m.tracer, ctx, "manager.AuthConfig")
 	defer func() { endSpan(err) }()
 
 	config := make(schema.PublicClientConfigurations)
