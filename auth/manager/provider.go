@@ -16,41 +16,54 @@ package manager
 
 import (
 	"maps"
-	"net/http"
 	"net/url"
 	"slices"
 
 	// Packages
 	auth "github.com/mutablelogic/go-auth"
 	provider "github.com/mutablelogic/go-auth/auth/provider"
-	openapi "github.com/mutablelogic/go-server/pkg/openapi/schema"
 	types "github.com/mutablelogic/go-server/pkg/types"
 )
 
 ///////////////////////////////////////////////////////////////////////////////
-// TYPES
+// PUBLIC METHODS
 
-type HTTPHandler struct {
-	Path    string
-	Handler http.HandlerFunc
-	Spec    *openapi.PathItem
+// WithProvider sets an identity provider for the manager.
+func (m *Manager) WithProvider(provider provider.Provider) error {
+	m.Lock()
+	defer m.Unlock()
+
+	// We allow nil providers here
+	if provider == nil {
+		return nil
+	}
+
+	// Register the provider
+	return WithProvider(provider)(&m.opt)
 }
 
-///////////////////////////////////////////////////////////////////////////////
-// PUBLIC METHODS
+// WithIssuer sets the issuer URL for the manager's OIDC configuration.
+func (m *Manager) WithIssuer(issuer string) error {
+	m.Lock()
+	defer m.Unlock()
+	return WithIssuer(issuer)(&m.opt)
+}
 
 // ProviderKeys returns the keys of all registered providers.
 func (m *Manager) ProviderKeys() []string {
+	m.Lock()
+	defer m.Unlock()
 	return slices.Collect(maps.Keys(m.providers))
 }
 
 // Provider returns a registered provider by key.
 func (m *Manager) Provider(key string) (provider.Provider, error) {
+	m.Lock()
+	defer m.Unlock()
+
 	if !types.IsIdentifier(key) {
 		return nil, auth.ErrInvalidProvider.Withf("invalid provider key: %q", key)
-	}
-
-	if provider, ok := m.providers[key]; !ok || provider == nil {
+	} else if provider, ok := m.providers[key]; !ok || provider == nil {
 		return nil, auth.ErrInvalidProvider.Withf("unsupported provider %q", key)
 	} else {
 		return provider, nil
@@ -59,9 +72,11 @@ func (m *Manager) Provider(key string) (provider.Provider, error) {
 
 // ProviderPath returns the mount path for a registered provider browser handler.
 func (m *Manager) ProviderPath(key string) (string, error) {
+	// Validate the provider key and return the path
 	provider, err := m.Provider(key)
 	if err != nil {
 		return "", err
+	} else {
+		return url.JoinPath("auth", "provider", provider.Key())
 	}
-	return url.JoinPath("auth", "provider", provider.Key())
 }

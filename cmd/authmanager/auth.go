@@ -35,7 +35,6 @@ import (
 type AuthFlags struct {
 	Enabled    bool          `help:"Enable authentication" default:"true" negatable:""`
 	Schema     string        `help:"Database schema to use for authentication manager tables" env:"AUTH_SCHEMA"`
-	Issuer     *url.URL      `help:"Issuer URL to use in OIDC metadata and tokens. If not set, the server's base URL will be used." env:"AUTH_ISSUER"`
 	Signer     []*url.URL    `help:"Private Key PEM files to use for signing tokens. Can be specified multiple times for multiple signers."`
 	SessionTTL time.Duration `help:"Duration for which authentication sessions are valid. Defaults to 15 minutes." env:"AUTH_SESSION_TTL"`
 	RefreshTTL time.Duration `help:"Duration for which refresh tokens are valid. Defaults to 7 days." env:"AUTH_REFRESH_TTL"`
@@ -61,18 +60,6 @@ func (flags *AuthFlags) Options(ctx server.Cmd) ([]auth.Opt, *rsa.PrivateKey, er
 	// Database schema
 	if schema := strings.TrimSpace(flags.Schema); schema != "" {
 		opts = append(opts, auth.WithSchema(schema))
-	}
-
-	// Issuer
-	if flags.Issuer != nil {
-		opts = append(opts, auth.WithIssuer(flags.Issuer.String()))
-	} else if endpoint, _, err := ctx.ClientEndpoint(); err != nil {
-		return nil, nil, err
-	} else if issuer, err := url.Parse(endpoint); err != nil {
-		return nil, nil, err
-	} else {
-		flags.Issuer = issuer
-		opts = append(opts, auth.WithIssuer(issuer.String()))
 	}
 
 	// Signers

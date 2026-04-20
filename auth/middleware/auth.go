@@ -33,7 +33,7 @@ import (
 
 // TokenVerifier validates and decodes a bearer JWT token.
 type TokenVerifier interface {
-	OIDCIssuer() (string, error)
+	Issuer() (string, error)
 	OIDCVerify(token, issuer string) (map[string]any, error)
 }
 
@@ -52,7 +52,7 @@ func AuthN(verifier TokenVerifier) func(http.HandlerFunc) http.HandlerFunc {
 				writeUnauthorized(w, r, verifier, "invalid_request", "missing bearer token")
 				return
 			}
-			issuer, err := verifier.OIDCIssuer()
+			issuer, err := verifier.Issuer()
 			if err != nil {
 				_ = httpresponse.Error(w, httpresponse.ErrInternalError.With(err))
 				return
@@ -199,7 +199,7 @@ func writeUnauthorized(w http.ResponseWriter, r *http.Request, verifier TokenVer
 		challenge = append(challenge, fmt.Sprintf(`error_description=%q`, description))
 	}
 	if verifier != nil {
-		if issuer, err := verifier.OIDCIssuer(); err == nil {
+		if issuer, err := verifier.Issuer(); err == nil {
 			resourceMetadata := strings.TrimRight(issuer, "/") + "/" + oidc.ProtectedResourcePath
 			challenge = append(challenge, fmt.Sprintf(`resource_metadata=%q`, resourceMetadata))
 		}

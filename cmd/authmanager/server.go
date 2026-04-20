@@ -18,6 +18,7 @@ package main
 
 import (
 	"fmt"
+	"time"
 
 	// Packages
 	authhandler "github.com/mutablelogic/go-auth/auth/httphandler"
@@ -92,18 +93,7 @@ func (cmd *AuthServer) Run(ctx server.Cmd) error {
 				errgroup, errctx := errgroup.WithContext(ctx.Context())
 
 				// Log the startup message
-				ctx.Logger().InfoContext(ctx.Context(), "Started", "name", ctx.Name(), "version", ctx.Version())
-				if authmanager != nil {
-					if issuer, err := authmanager.OIDCIssuer(); err == nil {
-						ctx.Logger().InfoContext(ctx.Context(), "OIDC Issuer", "issuer", issuer)
-					}
-					if signers, err := authmanager.OIDCJWKSet(); err == nil && signers.Len() > 0 {
-						ctx.Logger().InfoContext(ctx.Context(), "OIDC Signers", "signers", signers.Keys(ctx.Context()))
-					}
-					if providers := authmanager.ProviderKeys(); len(providers) > 0 {
-						ctx.Logger().InfoContext(ctx.Context(), "Identity Providers", "providers", providers)
-					}
-				}
+				ctx.Logger().InfoContext(ctx.Context(), "Started", "name", authmanager.Name(), "version", authmanager.Version())
 
 				// Run the auth manager
 				if authmanager != nil {
@@ -121,11 +111,6 @@ func (cmd *AuthServer) Run(ctx server.Cmd) error {
 					})
 				}
 
-				// Run the http server
-				errgroup.Go(func() error {
-					return cmd.RunServer.Run(ctx)
-				})
-
 				// Add the UI handlers if enabled
 				if cmd.UI {
 					ctx.Logger().WarnContext(ctx.Context(), "User Interface Enabled")
@@ -133,6 +118,31 @@ func (cmd *AuthServer) Run(ctx server.Cmd) error {
 						return registerUIHandlers(router)
 					})
 				}
+
+				// Run the http server
+				errgroup.Go(func() error {
+					return cmd.RunServer.Run(ctx)
+				})
+
+				// Report
+				errgroup.Go(func() error {
+					// Wait for the server to have started up
+					time.Sleep(time.Second)
+
+					// Log information about the auth manager, OIDC configuration, and providers
+					if authmanager != nil {
+						if issuer, err := authmanager.Issuer(); err == nil {
+							ctx.Logger().InfoContext(ctx.Context(), "Issuer", "issuer", issuer)
+						}
+						if signers, err := authmanager.OIDCJWKSet(); err == nil && signers.Len() > 0 {
+							ctx.Logger().InfoContext(ctx.Context(), "OIDC Signers", "signers", signers.Keys(ctx.Context()))
+						}
+						if providers := authmanager.ProviderKeys(); len(providers) > 0 {
+							ctx.Logger().InfoContext(ctx.Context(), "Identity Providers", "providers", providers)
+						}
+					}
+					return nil
+				})
 
 				// Run all the goroutines until one errors, and return any errors
 				return errgroup.Wait()
@@ -154,29 +164,38 @@ func (cmd *AuthServer) WithAuthManager(ctx server.Cmd, conn pg.PoolConn, fn func
 		return fn(nil)
 	}
 
-	// Add google provider
-	if provider, err := cmd.GoogleProviderFlags.NewProvider(); err != nil {
-		return err
-	} else if provider != nil {
-		opts = append(opts, auth.WithProvider(provider))
-	}
-
-	// Add local provider - without signing
-	if provider, err := cmd.LocalProviderFlags.NewProvider(signer, cmd.Issuer.String()); err != nil {
-		return err
-	} else if provider != nil {
-		opts = append(opts, auth.WithProvider(provider))
-	}
-
 	// Create the auth manager
 	ctx.Logger().DebugContext(ctx.Context(), "Creating Auth manager")
-	manager, err := auth.New(ctx.Context(), conn, opts...)
+	manager, err := auth.New(ctx.Context(), conn, ctx.Name(), ctx.Version(), opts...)
 	if err != nil {
 		return err
 	}
 
 	// Register the HTTP handler routes
 	cmd.RunServer.Register(
+		func(router *httprouter.Router) error {
+			// Add the issuer late in the chain
+			if err := manager.WithIssuer(ctx.URL().String()); err != nil {
+				return err
+			}
+
+			// Add local provider late in the chain to return the issuer URL
+			if local, err := cmd.LocalProviderFlags.NewProvider(signer, ctx.URL().String()); err != nil {
+				return err
+			} else if err := manager.WithProvider(local); err != nil {
+				return err
+			}
+
+			// Add google provider
+			if google, err := cmd.GoogleProviderFlags.NewProvider(); err != nil {
+				return err
+			} else if err := manager.WithProvider(google); err != nil {
+				return err
+			}
+
+			// Return success
+			return nil
+		},
 		authhandler.RegisterAuthHandlers(manager),
 		authhandler.RegisterProviderHandlers(manager),
 		authhandler.RegisterManagerHandlers(manager, cmd.AuthFlags.Enabled),
