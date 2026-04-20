@@ -15,6 +15,7 @@
 package auth
 
 import (
+	"context"
 	"fmt"
 	"net/url"
 	"strings"
@@ -22,8 +23,10 @@ import (
 	// Packages
 	auth "github.com/mutablelogic/go-auth/auth/httpclient"
 	client "github.com/mutablelogic/go-client"
+	otel "github.com/mutablelogic/go-client/pkg/otel"
 	server "github.com/mutablelogic/go-server"
 	types "github.com/mutablelogic/go-server/pkg/types"
+	attribute "go.opentelemetry.io/otel/attribute"
 )
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -36,7 +39,12 @@ type DiscoverCommand struct {
 ///////////////////////////////////////////////////////////////////////////////
 // COMMANDS
 
-func (cmd *DiscoverCommand) Run(ctx server.Cmd) error {
+func (cmd *DiscoverCommand) Run(ctx server.Cmd) (err error) {
+	spanctx, endSpan := otel.StartSpan(ctx.Tracer(), ctx.Context(), "DiscoverCommand",
+		attribute.String("cmd", types.Stringify(cmd)),
+	)
+	defer func() { endSpan(err) }()
+
 	authClient, endpoint, err := clientFor(ctx)
 	if err != nil {
 		return err
@@ -60,7 +68,7 @@ func (cmd *DiscoverCommand) Run(ctx server.Cmd) error {
 		return fmt.Errorf("endpoint URL must have a host")
 	}
 
-	config, err := discoverAuthMetadata(ctx, authClient, cmd.Endpoint)
+	config, err := discoverAuthMetadata(ctx, spanctx, authClient, cmd.Endpoint)
 	if err != nil {
 		return err
 	}
@@ -71,11 +79,15 @@ func (cmd *DiscoverCommand) Run(ctx server.Cmd) error {
 ///////////////////////////////////////////////////////////////////////////////
 // PRIVATE FUNCTIONS
 
-func discoverAuthMetadata(ctx server.Cmd, authClient *auth.Client, endpoint string) (*auth.Config, error) {
+func discoverAuthMetadata(ctx server.Cmd, spanctx context.Context, authClient *auth.Client, endpoint string) (*auth.Config, error) {
+	if spanctx == nil && ctx != nil {
+		spanctx = ctx.Context()
+	}
+
 	endpoint = strings.TrimSpace(endpoint)
 	if ctx != nil {
 		if issuer := strings.TrimSpace(ctx.GetString(issuerStoreKey(endpoint))); issuer != "" {
-			meta, err := authClient.DiscoverFromIssuer(ctx.Context(), issuer)
+			meta, err := authClient.DiscoverFromIssuer(spanctx, issuer)
 			if err == nil && meta != nil && len(meta.AuthorizationServers) > 0 {
 				return meta, nil
 			}
@@ -83,8 +95,8 @@ func discoverAuthMetadata(ctx server.Cmd, authClient *auth.Client, endpoint stri
 	}
 
 	var meta *auth.Config
-	if err := authClient.DoAuthWithContext(ctx.Context(), nil, nil, client.OptReqEndpoint(endpoint)); err != nil {
-		meta_, discoverErr := authClient.DiscoverWithError(ctx.Context(), err)
+	if err := authClient.DoAuthWithContext(spanctx, nil, nil, client.OptReqEndpoint(endpoint)); err != nil {
+		meta_, discoverErr := authClient.DiscoverWithError(spanctx, err)
 		if discoverErr == nil && meta_ != nil {
 			meta = meta_
 		}
@@ -92,7 +104,7 @@ func discoverAuthMetadata(ctx server.Cmd, authClient *auth.Client, endpoint stri
 	if meta != nil {
 		return meta, nil
 	}
-	meta, err := authClient.Discover(ctx.Context(), endpoint)
+	meta, err := authClient.Discover(spanctx, endpoint)
 	if err != nil {
 		return nil, fmt.Errorf("failed to discover auth server metadata: %w", err)
 	}
