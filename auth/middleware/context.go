@@ -30,25 +30,17 @@ type contextKey string
 // GLOBALS
 
 const (
-	contextKeyClaims  contextKey = "auth.claims"
 	contextKeyUser    contextKey = "auth.user"
+	contextKeyKey     contextKey = "auth.key"
 	contextKeySession contextKey = "auth.session"
 )
 
 ///////////////////////////////////////////////////////////////////////////////
 // PUBLIC METHODS
 
-// ClaimsFromContext returns JWT claims stored by the auth middleware.
-func ClaimsFromContext(ctx context.Context) map[string]any {
-	if claims, ok := ctx.Value(contextKeyClaims).(map[string]any); ok {
-		return claims
-	}
-	return nil
-}
-
 // UserFromContext returns the authenticated user stored by the auth middleware.
-func UserFromContext(ctx context.Context) *schema.User {
-	if user, ok := ctx.Value(contextKeyUser).(*schema.User); ok {
+func UserFromContext(ctx context.Context) *schema.UserInfo {
+	if user, ok := ctx.Value(contextKeyUser).(*schema.UserInfo); ok {
 		return user
 	}
 	return nil
@@ -62,12 +54,25 @@ func SessionFromContext(ctx context.Context) *schema.Session {
 	return nil
 }
 
+// KeyFromContext returns the authenticated API key stored by the auth middleware.
+func KeyFromContext(ctx context.Context) *schema.Key {
+	if key, ok := ctx.Value(contextKeyKey).(*schema.Key); ok {
+		return key
+	}
+	return nil
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 // PRIVATE METHODS
 
-func withAuthContext(ctx context.Context, claims map[string]any, user *schema.User, session *schema.Session) context.Context {
-	ctx = context.WithValue(ctx, contextKeyClaims, claims)
+func withAuthContext(ctx context.Context, user *schema.UserInfo, session *schema.Session) context.Context {
 	ctx = context.WithValue(ctx, contextKeyUser, user)
 	ctx = context.WithValue(ctx, contextKeySession, session)
+	return ctx
+}
+
+func withAPIKeyContext(ctx context.Context, user *schema.UserInfo, key *schema.Key) context.Context {
+	ctx = context.WithValue(ctx, contextKeyUser, user)
+	ctx = context.WithValue(ctx, contextKeyKey, key)
 	return ctx
 }

@@ -111,7 +111,12 @@ func (m *Manager) GetKeyByToken(ctx context.Context, token string) (_ *schema.Ke
 	if err = m.PoolConn.Tx(ctx, func(conn pg.Conn) error {
 		if err := conn.Get(ctx, &key, schema.KeyToken{Token: token, Query: "apikey.select"}); err != nil {
 			return err
-		} else if err := conn.Get(ctx, &user, schema.KeyToken{Token: token, Query: "apikey.user"}); err != nil {
+		}
+		if userinfo, ok := m.cachedKeyUserInfo(key.ID); ok {
+			user = userFromUserInfo(userinfo)
+			return nil
+		}
+		if err := conn.Get(ctx, &user, schema.KeyToken{Token: token, Query: "apikey.user"}); err != nil {
 			return err
 		}
 		return nil
@@ -119,6 +124,7 @@ func (m *Manager) GetKeyByToken(ctx context.Context, token string) (_ *schema.Ke
 		err = dbErr(err)
 		return nil, nil, err
 	}
+	m.cacheKeyUserInfo(&key, schema.NewUserInfo(&user))
 	return types.Ptr(key), types.Ptr(user), nil
 }
 
@@ -148,6 +154,9 @@ func (m *Manager) UpdateKey(ctx context.Context, id schema.KeyID, user *schema.U
 		err = dbErr(err)
 		return nil, err
 	}
+	if m.keycache != nil {
+		m.keycache.Delete(id)
+	}
 	return types.Ptr(key), nil
 }
 
@@ -161,6 +170,9 @@ func (m *Manager) DeleteKey(ctx context.Context, id schema.KeyID, user *schema.U
 	if err = m.PoolConn.Delete(ctx, &key, schema.KeySelector{ID: id, User: user, Query: "apikey.delete"}); err != nil {
 		err = dbErr(err)
 		return nil, err
+	}
+	if m.keycache != nil {
+		m.keycache.Delete(id)
 	}
 	return types.Ptr(key), nil
 }

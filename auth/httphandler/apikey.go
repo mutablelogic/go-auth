@@ -129,7 +129,7 @@ func listKey(ctx context.Context, manager *manager.Manager, w http.ResponseWrite
 	}
 
 	// List the keys
-	keys, err := manager.ListKeys(ctx, &user.ID, req)
+	keys, err := manager.ListKeys(ctx, &user.Sub, req)
 	if err != nil {
 		return httpresponse.Error(w, authpkg.HTTPError(err))
 	}
@@ -152,7 +152,7 @@ func createKey(ctx context.Context, manager *manager.Manager, w http.ResponseWri
 	}
 
 	// Create the key
-	key, err := manager.CreateKey(ctx, user.ID, req)
+	key, err := manager.CreateKey(ctx, user.Sub, req)
 	if err != nil {
 		return httpresponse.Error(w, authpkg.HTTPError(err))
 	}
@@ -169,7 +169,7 @@ func getKey(ctx context.Context, manager *manager.Manager, w http.ResponseWriter
 	}
 
 	// Get the API key
-	response, err := manager.GetKeyByID(ctx, key, types.Ptr(user.ID))
+	response, err := manager.GetKeyByID(ctx, key, types.Ptr(user.Sub))
 	if err != nil {
 		return httpresponse.Error(w, authpkg.HTTPError(err))
 	}
@@ -192,7 +192,7 @@ func updateKey(ctx context.Context, manager *manager.Manager, w http.ResponseWri
 	}
 
 	// Update the API key
-	response, err := manager.UpdateKey(ctx, key, types.Ptr(user.ID), req)
+	response, err := manager.UpdateKey(ctx, key, types.Ptr(user.Sub), req)
 	if err != nil {
 		return httpresponse.Error(w, authpkg.HTTPError(err))
 	}
@@ -209,7 +209,7 @@ func deleteKey(ctx context.Context, manager *manager.Manager, w http.ResponseWri
 	}
 
 	// Delete the API key
-	_, err := manager.DeleteKey(ctx, key, types.Ptr(user.ID))
+	_, err := manager.DeleteKey(ctx, key, types.Ptr(user.Sub))
 	if err != nil {
 		return httpresponse.Error(w, authpkg.HTTPError(err))
 	}

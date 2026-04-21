@@ -34,7 +34,7 @@ func Test_policy_001(t *testing.T) {
 	t.Run("MatchUserAllowsUserWithRequiredScopes", func(t *testing.T) {
 		require := require.New(t)
 
-		user := &schema.User{Scopes: []string{"auth:user:read", "auth:group:write"}}
+		user := &schema.UserInfo{Scopes: []string{"auth:user:read", "auth:group:write"}}
 
 		err := MatchScopes("auth:user:read", "auth:group:write").MatchUser(user)
 

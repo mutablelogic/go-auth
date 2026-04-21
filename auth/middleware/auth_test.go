@@ -68,92 +68,14 @@ func Test_auth_001(t *testing.T) {
 	t.Run("ContextHelpers", func(t *testing.T) {
 		assert := assert.New(t)
 
-		user := &schema.User{ID: schema.UserID(uuid.New())}
-		session := &schema.Session{ID: schema.SessionID(uuid.New()), User: user.ID, ExpiresAt: time.Now().Add(time.Minute)}
-		claims := map[string]any{"sub": uuid.UUID(user.ID).String(), "sid": uuid.UUID(session.ID).String()}
+		user := &schema.UserInfo{Sub: schema.UserID(uuid.New())}
+		session := &schema.Session{ID: schema.SessionID(uuid.New()), User: user.Sub, ExpiresAt: time.Now().Add(time.Minute)}
 
-		ctx := withAuthContext(context.Background(), claims, user, session)
-		gotClaims := ClaimsFromContext(ctx)
-		assert.Equal(claims, gotClaims)
+		ctx := withAuthContext(context.Background(), user, session)
 		gotUser := UserFromContext(ctx)
 		assert.Equal(user, gotUser)
 		gotSession := SessionFromContext(ctx)
 		assert.Equal(session, gotSession)
-	})
-
-	t.Run("ValidateClaimBindingsRejectsMismatch", func(t *testing.T) {
-		assert := assert.New(t)
-
-		user := &schema.User{ID: schema.UserID(uuid.New())}
-		session := &schema.Session{ID: schema.SessionID(uuid.New()), User: schema.UserID(uuid.New())}
-		claims := map[string]any{"sub": uuid.UUID(user.ID).String(), "sid": uuid.UUID(session.ID).String()}
-
-		err := validateClaimBindings(claims, user, session)
-		assert.Error(err)
-		assert.Contains(err.Error(), "session does not match")
-
-		err = validateClaimBindings(claims, nil, session)
-		assert.Error(err)
-		assert.Contains(err.Error(), "missing user or session")
-
-		err = validateClaimBindings(map[string]any{"sid": uuid.UUID(session.ID).String()}, user, &schema.Session{ID: session.ID, User: user.ID})
-		assert.Error(err)
-		assert.Contains(err.Error(), "missing sub claim")
-
-		err = validateClaimBindings(map[string]any{"sub": uuid.NewString(), "sid": uuid.UUID(session.ID).String()}, user, &schema.Session{ID: session.ID, User: user.ID})
-		assert.Error(err)
-		assert.Contains(err.Error(), "sub does not match")
-
-		err = validateClaimBindings(map[string]any{"sub": uuid.UUID(user.ID).String()}, user, &schema.Session{ID: session.ID, User: user.ID})
-		assert.Error(err)
-		assert.Contains(err.Error(), "missing sid claim")
-
-		err = validateClaimBindings(map[string]any{"sub": uuid.UUID(user.ID).String(), "sid": uuid.NewString()}, user, &schema.Session{ID: session.ID, User: user.ID})
-		assert.Error(err)
-		assert.Contains(err.Error(), "sid does not match")
-	})
-
-	t.Run("ValidateTokenUse", func(t *testing.T) {
-		assert := assert.New(t)
-
-		assert.NoError(validateTokenUse(map[string]any{}))
-		assert.NoError(validateTokenUse(map[string]any{"token_use": "access"}))
-
-		err := validateTokenUse(map[string]any{"token_use": "refresh"})
-		assert.Error(err)
-		assert.Contains(err.Error(), `token_use must be "access"`)
-
-		err = validateTokenUse(map[string]any{"token_use": 123})
-		assert.Error(err)
-		assert.Contains(err.Error(), "token_use claim is invalid")
-	})
-
-	t.Run("DecodeClaimMissing", func(t *testing.T) {
-		assert := assert.New(t)
-
-		_, err := decodeClaim[schema.User](map[string]any{}, "user")
-		assert.Error(err)
-		assert.Contains(err.Error(), "missing user claim")
-
-		_, err = decodeClaim[schema.User](map[string]any{"user": func() {}}, "user")
-		assert.Error(err)
-		assert.Contains(err.Error(), "encode user claim")
-
-		_, err = decodeClaim[schema.User](map[string]any{"user": "not-an-object"}, "user")
-		assert.Error(err)
-		assert.Contains(err.Error(), "decode user claim")
-	})
-
-	t.Run("UserFromClaimsDecodeError", func(t *testing.T) {
-		assert := assert.New(t)
-		_, err := userFromClaims(map[string]any{"user": "not-an-object"})
-		assert.Error(err)
-	})
-
-	t.Run("SessionFromClaimsDecodeError", func(t *testing.T) {
-		assert := assert.New(t)
-		_, err := sessionFromClaims(map[string]any{"session": "not-an-object"})
-		assert.Error(err)
 	})
 
 	t.Run("NewMiddlewareRejectsInvalidTokenWithoutConfiguredIssuer", func(t *testing.T) {
@@ -191,8 +113,45 @@ func Test_auth_001(t *testing.T) {
 
 		require.Equal(http.StatusUnauthorized, res.Code)
 		assert.Contains(res.Header().Get("WWW-Authenticate"), `Bearer error="invalid_request"`)
-		assert.Contains(res.Header().Get("WWW-Authenticate"), `error_description="missing bearer token"`)
+		assert.Contains(res.Header().Get("WWW-Authenticate"), `error_description="missing bearer token or API key"`)
 		assert.Contains(res.Header().Get("WWW-Authenticate"), `resource_metadata="`+issuer+`/.well-known/oauth-protected-resource"`)
+	})
+
+	t.Run("NewMiddlewareAllowsValidAPIKeyAndSetsContext", func(t *testing.T) {
+		assert := assert.New(t)
+		require := require.New(t)
+
+		mgr, _ := newMiddlewareTestManager(t)
+		status := schema.UserStatusActive
+		user, err := mgr.CreateUser(context.Background(), schema.UserMeta{
+			Name:   "API Key User",
+			Email:  "apikey@example.com",
+			Status: &status,
+		}, nil)
+		require.NoError(err)
+
+		key, err := mgr.CreateKey(context.Background(), user.ID, schema.KeyMeta{Name: "middleware-key"})
+		require.NoError(err)
+
+		handler := NewMiddleware(mgr)(func(w http.ResponseWriter, r *http.Request) {
+			gotUser := UserFromContext(r.Context())
+			require.NotNil(gotUser)
+			assert.Equal(user.ID, gotUser.Sub)
+
+			gotKey := KeyFromContext(r.Context())
+			require.NotNil(gotKey)
+			assert.Equal(key.ID, gotKey.ID)
+			assert.Nil(SessionFromContext(r.Context()))
+			w.WriteHeader(http.StatusNoContent)
+		})
+
+		req := httptest.NewRequest(http.MethodGet, "/", nil)
+		req.Header.Set("X-API-Key", key.Token)
+		res := httptest.NewRecorder()
+
+		handler(res, req)
+
+		require.Equal(http.StatusNoContent, res.Code)
 	})
 
 	t.Run("NewMiddlewareAllowsValidTokenAndSetsContext", func(t *testing.T) {
@@ -205,12 +164,13 @@ func Test_auth_001(t *testing.T) {
 		token := mustSignToken(t, mgr, issuer, user, session)
 
 		handler := NewMiddleware(mgr)(func(w http.ResponseWriter, r *http.Request) {
-			claims := ClaimsFromContext(r.Context())
-			require.NotNil(claims)
-			assert.Equal(uuid.UUID(user.ID).String(), claims["sub"])
 			gotUser := UserFromContext(r.Context())
 			require.NotNil(gotUser)
-			assert.Equal(user.ID, gotUser.ID)
+			assert.Equal(user.ID, gotUser.Sub)
+			assert.Equal(user.Email, gotUser.Email)
+			assert.Equal(user.Name, gotUser.Name)
+			assert.Equal(user.Groups, gotUser.Groups)
+			assert.Equal(user.Scopes, gotUser.Scopes)
 			gotSession := SessionFromContext(r.Context())
 			require.NotNil(gotSession)
 			assert.Equal(session.ID, gotSession.ID)
@@ -471,7 +431,15 @@ func newMiddlewareTestManager(t *testing.T) (*manager.Manager, string) {
 	issuer := "http://localhost:8084/api"
 	localProvider, err := localprovider.New(issuer, key)
 	require.NoError(t, err)
-	mgr, err := manager.New(context.Background(), c, manager.WithSigner("local-main", key), manager.WithProvider(localProvider))
+	mgr, err := manager.New(
+		context.Background(),
+		c,
+		"middleware",
+		"test",
+		manager.WithIssuer(issuer),
+		manager.WithSigner("local-main", key),
+		manager.WithProvider(localProvider),
+	)
 	require.NoError(t, err)
 	return mgr, issuer
 }
