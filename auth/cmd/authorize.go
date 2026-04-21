@@ -65,31 +65,43 @@ const endpointStoreKeyPrefix = "auth.endpoint"
 const issuerStoreKeyPrefix = "auth.issuer."
 const providerStoreKeyPrefix = "auth.provider."
 const tokenStoreKeyPrefix = "auth.token."
-const defaultRedirectURL = "http://localhost/"
 
 ///////////////////////////////////////////////////////////////////////////////
 // COMMANDS
 
+func endpoint(globals server.Cmd, authclient *auth.Client, endpoint, provider string) (*url.URL, error) {
+	// provider and endpoint are mutually exclusive
+	if provider != "" {
+		if endpoint != "" {
+			return nil, fmt.Errorf("endpoint and provider cannot both be specified")
+		} else {
+			endpoint = authclient.Endpoint
+		}
+	}
+	if endpoint == "" {
+		endpoint = authclient.Endpoint
+	}
+
+	// Check the endpoint
+	url, err := url.Parse(endpoint)
+	if err != nil {
+		return nil, fmt.Errorf("invalid endpoint URL: %w", err)
+	} else if url.Scheme != types.SchemeSecure && url.Scheme != types.SchemeInsecure {
+		return nil, fmt.Errorf("endpoint URL must have http or https scheme")
+	} else if url.Host == "" {
+		return nil, fmt.Errorf("endpoint URL must have a host")
+	}
+
+	// Return the endpoint
+	return url, nil
+}
+
 func (cmd *AuthorizeCommand) Run(globals server.Cmd) (err error) {
 	return withAuth(globals, "AuthorizeCommand", cmd.RedactedString(), func(ctx context.Context, authclient *auth.Client) error {
-		// Set the endpoint
-		if cmd.Endpoint == "" {
-			cmd.Endpoint = authclient.Endpoint
-			if strings.TrimSpace(cmd.Provider) == "" {
-				if stored_endpoint := globals.GetString(endpointStoreKeyPrefix); stored_endpoint != "" {
-					cmd.Endpoint = stored_endpoint
-				}
-			}
-		}
-
-		// Check the endpoint
-		url, err := url.Parse(cmd.Endpoint)
-		if err != nil {
-			return fmt.Errorf("invalid endpoint URL: %w", err)
-		} else if url.Scheme != types.SchemeSecure && url.Scheme != types.SchemeInsecure {
-			return fmt.Errorf("endpoint URL must have http or https scheme")
-		} else if url.Host == "" {
-			return fmt.Errorf("endpoint URL must have a host")
+		if endpoint, err := endpoint(globals, authclient, cmd.Endpoint, cmd.Provider); err != nil {
+			return err
+		} else {
+			cmd.Endpoint = endpoint.String()
 		}
 
 		// Reuse a stored token when it already belongs to the requested provider.
@@ -155,19 +167,14 @@ func (cmd *AuthorizeCommand) Run(globals server.Cmd) (err error) {
 
 		// Create the callback listener first so the resolved loopback URL, including
 		// any auto-selected port, is used consistently for registration and the auth flow.
-		redirectURL := strings.TrimSpace(cmd.Redirect)
-		if redirectURL == "" {
-			redirectURL = defaultRedirectURL
-		}
-		callback, err := webcallback.New(redirectURL)
+		callback, err := webcallback.New(cmd.Redirect)
 		if err != nil {
 			return err
 		}
-		redirectURL = callback.URL()
 
 		// Get the server metadata and client ID for the authorization flow, either from the command line, stored value,
 		// or dynamic registration
-		serverMeta, clientID, clientSecret, err := cmd.authorizationServerAndClientCredentials(globals, ctx, authclient, meta, redirectURL)
+		serverMeta, clientID, clientSecret, err := cmd.authorizationServerAndClientCredentials(globals, ctx, authclient, meta, callback.URL())
 		if err != nil {
 			return err
 		}
@@ -177,12 +184,16 @@ func (cmd *AuthorizeCommand) Run(globals server.Cmd) (err error) {
 		if err != nil {
 			return err
 		}
+
 		scopes := cmd.authorizationScopes(meta, serverMeta)
-		flow, err := oidc.NewAuthorizationCodeFlow(config, clientID, redirectURL, scopes...)
+		flow, err := oidc.NewAuthorizationCodeFlow(config, clientID, callback.URL(), scopes...)
 		if err != nil {
 			return err
 		}
-		flow.Provider = strings.TrimSpace(cmd.Provider)
+		flow.Provider, err = resolveAuthorizationProvider(ctx, authclient, cmd.Provider)
+		if err != nil {
+			return err
+		}
 		flow.AuthorizationURL, err = authorizationURLWithHints(flow.AuthorizationURL, flow.Provider)
 		if err != nil {
 			return err
@@ -214,7 +225,7 @@ func (cmd *AuthorizeCommand) Run(globals server.Cmd) (err error) {
 			return nil
 		})
 		g.Go(func() error {
-			globals.Logger().InfoContext(ctx, "Opening browser for authorization code flow", "url", flow.AuthorizationURL)
+			globals.Logger().DebugContext(ctx, "Opening browser for authorization code flow", "url", flow.AuthorizationURL)
 			return browser.OpenURL(flow.AuthorizationURL)
 		})
 		if err := g.Wait(); err != nil {
@@ -258,10 +269,6 @@ func (cmd *AuthorizeCommand) authorizationServerAndClientCredentials(globals ser
 			return nil, "", "", fmt.Errorf("client ID is required for authorization server %q", authorizationServerName(serverMeta))
 		}
 		return serverMeta, "", clientSecret, nil
-	}
-	redirectURL = strings.TrimSpace(redirectURL)
-	if redirectURL == "" {
-		redirectURL = defaultRedirectURL
 	}
 	registration, err := authClient.RegisterClient(ctx, serverMeta, redirectURL)
 	if err != nil {
@@ -364,17 +371,38 @@ func compactScopes(scopes []string) []string {
 }
 
 func authorizationURLWithHints(rawURL, provider string) (string, error) {
-	uri, err := url.Parse(strings.TrimSpace(rawURL))
+	uri, err := url.Parse(rawURL)
 	if err != nil {
 		return "", err
-	}
-	provider = strings.TrimSpace(provider)
-	if provider != "" {
+	} else if provider != "" {
 		query := uri.Query()
-		query.Set("provider", provider)
+		query.Set("provider", strings.TrimSpace(provider))
 		uri.RawQuery = query.Encode()
 	}
 	return uri.String(), nil
+}
+
+func resolveAuthorizationProvider(ctx context.Context, authClient *auth.Client, provider string) (string, error) {
+	provider = strings.TrimSpace(provider)
+	if provider != "" || authClient == nil {
+		return provider, nil
+	}
+
+	var config schema.PublicClientConfigurations
+	if err := authClient.DoWithContext(ctx, nil, &config, client.OptPath("config")); err != nil {
+		return "", fmt.Errorf("fetch auth config: %w", err)
+	}
+	return defaultAuthorizationProvider(config), nil
+}
+
+func defaultAuthorizationProvider(config schema.PublicClientConfigurations) string {
+	if len(config) != 1 {
+		return ""
+	}
+	for provider := range config {
+		return strings.TrimSpace(provider)
+	}
+	return ""
 }
 
 func storeToken(ctx server.Cmd, endpoint, issuer, provider string, token *oauth2.Token) error {

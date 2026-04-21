@@ -25,7 +25,7 @@ import (
 	schema "github.com/mutablelogic/go-auth/ldap/schema"
 	server "github.com/mutablelogic/go-server"
 	httpresponse "github.com/mutablelogic/go-server/pkg/httpresponse"
-	term "golang.org/x/crypto/ssh/terminal"
+	term "golang.org/x/term"
 )
 
 ///////////////////////////////////////////////////////////////////////////////

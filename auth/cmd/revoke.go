@@ -17,7 +17,6 @@ package auth
 import (
 	"context"
 	"fmt"
-	"net/url"
 	"strings"
 
 	// Packages
@@ -47,23 +46,11 @@ func (cmd RevokeCommand) RedactedString() string {
 
 func (cmd *RevokeCommand) Run(globals server.Cmd) (err error) {
 	return withAuth(globals, "RevokeCommand", types.Stringify(cmd), func(ctx context.Context, authclient *auth.Client) error {
-
-		// Set the endpoint
-		if cmd.Endpoint == "" {
-			cmd.Endpoint = authclient.Endpoint
-			if stored_endpoint := globals.GetString(endpointStoreKeyPrefix); stored_endpoint != "" {
-				cmd.Endpoint = stored_endpoint
-			}
-		}
-
-		// Check the endpoint
-		url, err := url.Parse(cmd.Endpoint)
-		if err != nil {
-			return fmt.Errorf("invalid endpoint URL: %w", err)
-		} else if url.Scheme != types.SchemeSecure && url.Scheme != types.SchemeInsecure {
-			return fmt.Errorf("endpoint URL must have http or https scheme")
-		} else if url.Host == "" {
-			return fmt.Errorf("endpoint URL must have a host")
+		// Get the endpoint, defaulting to the global HTTP client endpoint
+		if endpoint, err := endpoint(globals, authclient, cmd.Endpoint, ""); err != nil {
+			return err
+		} else {
+			cmd.Endpoint = endpoint.String()
 		}
 
 		// Get the token

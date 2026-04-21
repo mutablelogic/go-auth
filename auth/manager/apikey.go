@@ -19,6 +19,7 @@ import (
 	"strings"
 
 	// Packages
+	auth "github.com/mutablelogic/go-auth"
 	schema "github.com/mutablelogic/go-auth/auth/schema"
 	otel "github.com/mutablelogic/go-client/pkg/otel"
 	pg "github.com/mutablelogic/go-pg"
@@ -28,6 +29,36 @@ import (
 
 ///////////////////////////////////////////////////////////////////////////////
 // PUBLIC METHODS
+
+func (m *Manager) ListKeys(ctx context.Context, user *schema.UserID, req schema.KeyListRequest) (_ *schema.KeyList, err error) {
+	// Otel
+	attrs := []attribute.KeyValue{attribute.String("req", req.String())}
+	if user != nil {
+		attrs = append(attrs, attribute.String("user", user.String()))
+	}
+	ctx, endSpan := otel.StartSpan(m.tracer, ctx, "ListKeys", attrs...)
+	defer func() { endSpan(err) }()
+
+	// If a user is provided (ie, a logged-in user) then we return an error when the request contains a user filter
+	if user != nil {
+		if req.User != nil {
+			err = auth.ErrBadParameter.With("user filter is not allowed for scoped key list")
+			return nil, err
+		} else {
+			req.User = user
+		}
+	}
+
+	// Perform the query
+	result := schema.KeyList{KeyListRequest: req}
+	if err = m.PoolConn.List(ctx, &result, req); err != nil {
+		err = dbErr(err)
+		return nil, err
+	}
+
+	// Return the result
+	return types.Ptr(result), nil
+}
 
 func (m *Manager) CreateKey(ctx context.Context, user schema.UserID, meta schema.KeyMeta) (_ *schema.Key, err error) {
 	ctx, endSpan := otel.StartSpan(m.tracer, ctx, "CreateKey",

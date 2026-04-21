@@ -27,6 +27,38 @@ import (
 ///////////////////////////////////////////////////////////////////////////////
 // PUBLIC METHODS
 
+func (c *ManagerClient) ListKeys(ctx context.Context, req schema.KeyListRequest) (*schema.KeyList, error) {
+	var response schema.KeyList
+	if err := c.DoWithContext(ctx, nil, &response, client.OptPath("key"), client.OptQuery(req.Query())); err != nil {
+		return nil, err
+	}
+	return types.Ptr(response), nil
+}
+
+func (c *ManagerClient) GetKey(ctx context.Context, key schema.KeyID) (*schema.Key, error) {
+	var response schema.Key
+	if err := c.DoWithContext(ctx, nil, &response, client.OptPath("key", key)); err != nil {
+		return nil, err
+	}
+	return types.Ptr(response), nil
+}
+
+func (c *ManagerClient) UpdateKey(ctx context.Context, key schema.KeyID, meta schema.KeyMeta) (*schema.Key, error) {
+	var response schema.Key
+	req, err := client.NewJSONRequestEx(http.MethodPatch, meta, types.ContentTypeJSON)
+	if err != nil {
+		return nil, err
+	}
+	if err := c.DoWithContext(ctx, req, &response, client.OptPath("key", key)); err != nil {
+		return nil, err
+	}
+	return types.Ptr(response), nil
+}
+
+func (c *ManagerClient) DeleteKey(ctx context.Context, key schema.KeyID) error {
+	return c.DoWithContext(ctx, client.MethodDelete, nil, client.OptPath("key", key))
+}
+
 func (c *ManagerClient) CreateKey(ctx context.Context, meta schema.KeyMeta) (*schema.Key, error) {
 	var response schema.Key
 	req, err := client.NewJSONRequestEx(http.MethodPost, meta, types.ContentTypeJSON)

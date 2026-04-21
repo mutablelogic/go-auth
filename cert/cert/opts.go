@@ -68,16 +68,6 @@ func apply(opts ...Opt) (*Cert, error) {
 ////////////////////////////////////////////////////////////////////////////////
 // PUBLIC METHODS
 
-// Set certificate name
-func withName(name string) Opt {
-	return func(o *Cert) error {
-		if name != "" {
-			o.Name = name
-		}
-		return nil
-	}
-}
-
 // Set common name
 func WithCommonName(name string) Opt {
 	return func(o *Cert) error {
@@ -200,7 +190,7 @@ func WithKeyType(t string) Opt {
 		case t == "RSA":
 			return WithRSAKey(0)(o)
 		case strings.HasPrefix(t, "RSA"):
-			if bits, err := strconv.ParseUint(strings.TrimPrefix(t, "RSA"), 10, 32); err != nil {
+			if bits, err := strconv.ParseInt(strings.TrimPrefix(t, "RSA"), 10, 32); err != nil {
 				return err
 			} else {
 				return WithRSAKey(int(bits))(o)
@@ -237,8 +227,10 @@ func WithEllipticKey(t string) Opt {
 func WithRSAKey(bits int) Opt {
 	return func(o *Cert) error {
 		// Set bits if not specified
-		if bits <= 0 {
-			bits = defaultBits
+		if bits == 0 {
+			bits = minBits
+		} else if bits < minBits || bits > maxBits {
+			return fmt.Errorf("invalid RSA key size: %d", bits)
 		}
 		// Generate a private key
 		if key, err := rsa.GenerateKey(rand.Reader, bits); err != nil {

@@ -16,11 +16,13 @@ package schema
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 
 	// Packages
 	uuid "github.com/google/uuid"
 	auth "github.com/mutablelogic/go-auth"
+	pg "github.com/mutablelogic/go-pg"
 	assert "github.com/stretchr/testify/assert"
 	require "github.com/stretchr/testify/require"
 )
@@ -102,5 +104,27 @@ func Test_apikey_schema_001(t *testing.T) {
 		require.NoError(json.Unmarshal(data, &decoded))
 		assert.Equal(uuid.UUID(key.ID).String(), decoded["id"])
 		assert.Equal(uuid.UUID(key.User).String(), decoded["user"])
+	})
+
+	t.Run("KeyListRequestSelectGroupsNonExpiredFilter", func(t *testing.T) {
+		assert := assert.New(t)
+		require := require.New(t)
+
+		user := UserID(uuid.New())
+		expired := false
+		bind := pg.NewBind("schema", DefaultSchema)
+		query, err := (KeyListRequest{User: &user, Expired: &expired}).Select(bind, pg.List)
+		require.NoError(err)
+		assert.NotEmpty(query)
+
+		where, ok := bind.Get("where").(string)
+		require.True(ok)
+		assert.Contains(where, `apikey."user" = @user AND ((`)
+		assert.True(strings.Contains(where, `) IS NULL OR (`))
+		assert.True(strings.Contains(where, `) >= NOW())`))
+
+		_, err = (KeyListRequest{}).Select(pg.NewBind(), pg.Get)
+		assert.Error(err)
+		assert.ErrorIs(err, auth.ErrNotImplemented)
 	})
 }

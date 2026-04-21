@@ -16,9 +16,7 @@ package auth
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"net/url"
 
 	// Packages
 	auth "github.com/mutablelogic/go-auth/auth/httpclient"
@@ -40,24 +38,14 @@ type UserInfoCommand struct {
 
 func (cmd *UserInfoCommand) Run(globals server.Cmd) (err error) {
 	return withAuth(globals, "AuthorizeCommand", types.Stringify(cmd), func(ctx context.Context, authclient *auth.Client) error {
-		// Set the endpoint
-		if cmd.Endpoint == "" {
-			cmd.Endpoint = authclient.Endpoint
-			if stored_endpoint := globals.GetString(endpointStoreKeyPrefix); stored_endpoint != "" {
-				cmd.Endpoint = stored_endpoint
-			}
+		// Get the endpoint, defaulting to the global HTTP client endpoint
+		if endpoint, err := endpoint(globals, authclient, cmd.Endpoint, ""); err != nil {
+			return err
+		} else {
+			cmd.Endpoint = endpoint.String()
 		}
 
-		// Check the endpoint
-		url, err := url.Parse(cmd.Endpoint)
-		if err != nil {
-			return fmt.Errorf("invalid endpoint URL: %w", err)
-		} else if url.Scheme != types.SchemeSecure && url.Scheme != types.SchemeInsecure {
-			return fmt.Errorf("endpoint URL must have http or https scheme")
-		} else if url.Host == "" {
-			return fmt.Errorf("endpoint URL must have a host")
-		}
-
+		// Discover the OIDC configuration for the endpoint
 		meta, err := discoverAuthMetadata(globals, ctx, authclient, cmd.Endpoint)
 		if err != nil {
 			return err
@@ -67,10 +55,11 @@ func (cmd *UserInfoCommand) Run(globals server.Cmd) (err error) {
 		token, err := storedToken(globals, cmd.Endpoint)
 		if err != nil {
 			return err
-		}
-		if token == nil {
+		} else if token == nil {
 			return fmt.Errorf("no stored token for endpoint %q", cmd.Endpoint)
 		}
+
+		// Check token validity and refresh if needed
 		if !token.Valid() {
 			if token, err = refreshStoredTokenWithMetadata(globals, ctx, authclient, meta, cmd.Endpoint); err != nil {
 				return err
@@ -83,11 +72,8 @@ func (cmd *UserInfoCommand) Run(globals server.Cmd) (err error) {
 			return err
 		}
 
-		data, err := json.MarshalIndent(userinfo, "", "  ")
-		if err != nil {
-			return fmt.Errorf("marshal userinfo: %w", err)
-		}
-		fmt.Println(string(data))
+		// Print the user info as JSON
+		fmt.Println(types.Stringify(userinfo))
 		return nil
 	})
 }

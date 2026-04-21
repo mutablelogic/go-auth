@@ -55,7 +55,8 @@ const (
 	keyTypeECDSA = "ECDSA"
 
 	// DefaultBits is the default number of bits for a RSA private key
-	defaultBits = 2048
+	minBits = 2048
+	maxBits = 8192
 )
 
 const (
