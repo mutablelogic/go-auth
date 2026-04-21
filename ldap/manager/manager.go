@@ -28,8 +28,8 @@ import (
 	"unicode/utf16"
 
 	// Packages
-	schema "github.com/mutablelogic/go-auth/ldap/schema"
 	ldap "github.com/go-ldap/ldap/v3"
+	schema "github.com/mutablelogic/go-auth/ldap/schema"
 	httpresponse "github.com/mutablelogic/go-server/pkg/httpresponse"
 	types "github.com/mutablelogic/go-server/pkg/types"
 )
@@ -130,12 +130,12 @@ func New(opt ...Opt) (*Manager, error) {
 // PUBLIC METHODS
 
 // Return the port for the LDAP connection
-func (ldap *Manager) Port() int {
+func (ldap *Manager) Port() uint {
 	port, err := strconv.ParseUint(ldap.url.Port(), 10, 32)
 	if err != nil {
 		return 0
 	} else {
-		return int(port)
+		return uint(port)
 	}
 }
 
@@ -220,7 +220,7 @@ func (manager *Manager) WhoAmI() (string, error) {
 // PRIVATE METHODS
 
 // Connect to the LDAP server
-func ldapConnect(host string, port int, tls *tls.Config) (*ldap.Conn, error) {
+func ldapConnect(host string, port uint, tls *tls.Config) (*ldap.Conn, error) {
 	var url string
 	if tls == nil {
 		url = fmt.Sprintf("%s://%s:%d", schema.MethodPlain, host, port)
@@ -269,11 +269,11 @@ func (manager *Manager) passwordEndpoint() (*url.URL, *tls.Config) {
 
 func (manager *Manager) openPasswordConn() (*ldap.Conn, error) {
 	endpoint, tlsConfig := manager.passwordEndpoint()
-	port, err := strconv.Atoi(endpoint.Port())
+	port, err := strconv.ParseUint(endpoint.Port(), 10, 16)
 	if err != nil {
 		return nil, err
 	}
-	return ldapConnect(endpoint.Hostname(), port, tlsConfig)
+	return ldapConnect(endpoint.Hostname(), uint(port), tlsConfig)
 }
 
 func (manager *Manager) bindPasswordConn() (*ldap.Conn, error) {

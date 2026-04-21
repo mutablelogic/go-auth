@@ -203,7 +203,7 @@ func WithKeyType(t string) Opt {
 			if bits, err := strconv.ParseUint(strings.TrimPrefix(t, "RSA"), 10, 32); err != nil {
 				return err
 			} else {
-				return WithRSAKey(int(bits))(o)
+				return WithRSAKey(uint(bits))(o)
 			}
 		default:
 			return WithEllipticKey(t)(o)
@@ -234,17 +234,17 @@ func WithEllipticKey(t string) Opt {
 }
 
 // Create an RSA key with the specified number of bits
-func WithRSAKey(bits int) Opt {
+func WithRSAKey(bits uint) Opt {
 	return func(o *Cert) error {
 		// Set bits if not specified
-		if bits <= 0 {
+		if bits == 0 {
 			bits = defaultBits
 		}
 		if bits < 2048 {
 			return fmt.Errorf("invalid RSA key size: %d", bits)
 		}
 		// Generate a private key
-		if key, err := rsa.GenerateKey(rand.Reader, bits); err != nil {
+		if key, err := rsa.GenerateKey(rand.Reader, int(bits)); err != nil {
 			return err
 		} else {
 			o.priv = key
