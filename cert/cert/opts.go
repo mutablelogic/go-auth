@@ -238,9 +238,8 @@ func WithRSAKey(bits uint) Opt {
 	return func(o *Cert) error {
 		// Set bits if not specified
 		if bits == 0 {
-			bits = defaultBits
-		}
-		if bits < 2048 {
+			bits = minBits
+		} else if bits < minBits || bits > maxBits {
 			return fmt.Errorf("invalid RSA key size: %d", bits)
 		}
 		// Generate a private key
