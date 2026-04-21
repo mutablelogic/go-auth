@@ -1,0 +1,11 @@
+assets:
+    - ../embed.go
+    - ../../build/dist/assets
+    - ../../build/dist/auth.js
+    - ../../build/dist/token.js
+    - ../../build/dist/bundle.js
+    - img
+    - index.html
+    - index.css
+vars:
+    Title: "Authentication"

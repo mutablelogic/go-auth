@@ -18,12 +18,12 @@ import (
 	"io/fs"
 
 	// Packages
-	app "github.com/mutablelogic/go-auth/auth/wasm"
+	app "github.com/mutablelogic/go-auth/build/app.wasm"
 	httprouter "github.com/mutablelogic/go-server/pkg/httprouter"
 )
 
 func registerUIHandlers(router *httprouter.Router) error {
-	root, err := fs.Sub(app.FrontendFS, "app")
+	root, err := fs.Sub(app.FrontendFS, ".")
 	if err != nil {
 		return err
 	}

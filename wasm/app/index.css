@@ -1,0 +1,115 @@
+@import url(assets/fonts.css);
+@import url(assets/grid.css);
+@import url(assets/themes.css);
+@import url(assets/tokens.css);
+
+html,
+body {
+    min-height: 100%;
+    margin: 0;
+}
+
+body.login {
+    background-image:
+        linear-gradient(rgba(8, 11, 10, 0.4), rgba(8, 11, 10, 0.52)),
+        linear-gradient(120deg, rgba(26, 39, 31, 0.18), rgba(0, 0, 0, 0.04)),
+        url("img/leipzig-1920x1200.jpg");
+    background-position: center center;
+    background-repeat: no-repeat;
+    background-size: cover;
+}
+
+main {
+    position: relative;
+    z-index: 1;
+    min-height: 100vh;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(360px, 29vw);
+    align-items: stretch;
+}
+
+.login-strip {
+    grid-column: 2;
+    min-height: 100vh;
+    padding: 3rem;
+    margin-right: 2rem;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: center;
+    gap: 2rem;
+    background: linear-gradient(180deg, rgba(12, 18, 16, 0.7), rgba(12, 18, 16, 0.8));
+    color: #fff;
+    backdrop-filter: blur(8px);
+}
+
+.login-copy {
+    max-width: 18rem;
+}
+
+.login-strip h1 {
+    margin: 0;
+    color: inherit;
+    font-size: clamp(2.25rem, 4vw, 4rem);
+    line-height: 1;
+}
+
+.login-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    width: min(100%, 18rem);
+}
+
+.login-actions cds-button {
+    inline-size: 100%;
+}
+
+.login-actions cds-button [slot="icon"] {
+    inline-size: 1rem;
+    block-size: 1rem;
+    flex: 0 0 1rem;
+}
+
+.app-toast-stack {
+    position: fixed;
+    bottom: 1.5rem;
+    right: 1.5rem;
+    z-index: 20;
+    display: flex;
+    flex-direction: column-reverse;
+    gap: 0.75rem;
+    width: min(24rem, calc(100vw - 2rem));
+}
+
+.app-toast-stack>cds-toast-notification {
+    inline-size: 100%;
+}
+
+@media (max-width: 800px) {
+    .app-toast-stack {
+        bottom: 1rem;
+        right: 1rem;
+        left: 1rem;
+        width: auto;
+    }
+
+    main {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .login-strip {
+        grid-column: 1;
+        min-height: 100vh;
+        width: min(100%, 32rem);
+        margin-right: 0;
+        margin-left: auto;
+        padding: 2rem;
+    }
+
+    .login-copy,
+    .login-actions {
+        max-width: none;
+        width: 100%;
+    }
+}
