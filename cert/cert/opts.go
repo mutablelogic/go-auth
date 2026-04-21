@@ -240,6 +240,9 @@ func WithRSAKey(bits int) Opt {
 		if bits <= 0 {
 			bits = defaultBits
 		}
+		if bits < 2048 {
+			return fmt.Errorf("invalid RSA key size: %d", bits)
+		}
 		// Generate a private key
 		if key, err := rsa.GenerateKey(rand.Reader, bits); err != nil {
 			return err
