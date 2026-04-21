@@ -15,12 +15,15 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
+	"strings"
 
 	// Packages
 	auth "github.com/mutablelogic/go-auth/auth/cmd"
 	cmd "github.com/mutablelogic/go-server/pkg/cmd"
+	httpresponse "github.com/mutablelogic/go-server/pkg/httpresponse"
 	version "github.com/mutablelogic/go-server/pkg/version"
 )
 
@@ -38,7 +41,18 @@ type CLI struct {
 
 func main() {
 	if err := cmd.Main(CLI{}, "Identity, Authentication and Authorization Server", version.Version()); err != nil {
-		fmt.Fprintln(os.Stderr, "Error:", err)
-		os.Exit(-1)
+		str, code := formatError(err)
+		fmt.Fprintln(os.Stderr, "Error:", str)
+		os.Exit(code)
 	}
+}
+
+func formatError(err error) (string, int) {
+	var errResponse httpresponse.ErrResponse
+	if errors.As(err, &errResponse) {
+		if reason := strings.TrimSpace(errResponse.Reason); reason != "" {
+			return reason, errResponse.Code
+		}
+	}
+	return err.Error(), -1
 }
