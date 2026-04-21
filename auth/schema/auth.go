@@ -16,6 +16,9 @@ package schema
 
 import (
 	// Packages
+	"slices"
+	"strings"
+
 	auth "github.com/mutablelogic/go-auth"
 	types "github.com/mutablelogic/go-server/pkg/types"
 )
@@ -94,6 +97,19 @@ func NewUserInfo(user *User) *UserInfo {
 		Groups: user.Groups,
 		Scopes: user.Scopes,
 	}
+}
+
+func (u UserInfo) HasScope(scope string) bool {
+	return slices.Contains(u.Scopes, strings.TrimSpace(scope))
+}
+
+func (u UserInfo) HasAllScopes(scopes ...string) bool {
+	for _, scope := range scopes {
+		if !u.HasScope(scope) {
+			return false
+		}
+	}
+	return true
 }
 
 func (req *AuthorizationCodeRequest) Validate() error {

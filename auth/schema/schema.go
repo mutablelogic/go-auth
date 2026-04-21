@@ -48,4 +48,5 @@ const (
 // Scopes
 const (
 	SecurityBearerAuth = "bearerAuth"
+	SecurityAPIKeyAuth = "apiKeyAuth"
 )

@@ -26,7 +26,7 @@ import (
 
 // A policy object is used to implement authorization checks on the user
 type Policy interface {
-	MatchUser(*schema.User) error
+	MatchUser(*schema.UserInfo) error
 }
 
 type scopePolicy struct {
@@ -45,7 +45,7 @@ func MatchScopes(required ...string) Policy {
 ///////////////////////////////////////////////////////////////////////////////
 // PUBLIC METHODS
 
-func (p *scopePolicy) MatchUser(user *schema.User) error {
+func (p *scopePolicy) MatchUser(user *schema.UserInfo) error {
 	if user == nil {
 		return fmt.Errorf("user is required")
 	}

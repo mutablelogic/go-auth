@@ -204,7 +204,7 @@ func UserInfoHandler(manager *manager.Manager, doc *opts.MarkdownDoc) (string, *
 				_ = httpresponse.Error(w, httpresponse.ErrNotAuthorized)
 				return
 			}
-			_ = httpresponse.JSON(w, http.StatusOK, httprequest.Indent(r), schema.NewUserInfo(user))
+			_ = httpresponse.JSON(w, http.StatusOK, httprequest.Indent(r), user)
 
 		},
 		"Get authenticated user info",

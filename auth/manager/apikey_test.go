@@ -136,6 +136,16 @@ func Test_apikey_001(t *testing.T) {
 			require.Empty(t, lookupKey.Token)
 		})
 
+		t.Run("AuthenticateKey", func(t *testing.T) {
+			lookupUser, lookupKey, err := manager.AuthenticateKey(ctx, key.Token)
+			require.NoError(t, err)
+			require.NotNil(t, lookupUser)
+			require.NotNil(t, lookupKey)
+			require.Equal(t, user.ID, lookupUser.Sub)
+			require.Equal(t, user.Email, lookupUser.Email)
+			require.Equal(t, key.ID, lookupKey.ID)
+		})
+
 		t.Run("UpdateKey", func(t *testing.T) {
 			expiresAt := time.Now().Add(12 * time.Hour).UTC().Truncate(time.Microsecond)
 			updated, err := manager.UpdateKey(ctx, key.ID, &user.ID, schema.KeyMeta{

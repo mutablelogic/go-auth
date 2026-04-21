@@ -21,6 +21,7 @@ import (
 	"sync"
 
 	// Packages
+	cache "github.com/mutablelogic/go-auth/auth/cache"
 	schema "github.com/mutablelogic/go-auth/auth/schema"
 	otel "github.com/mutablelogic/go-client/pkg/otel"
 	pg "github.com/mutablelogic/go-pg"
@@ -37,6 +38,8 @@ type Manager struct {
 	opt
 	pg.PoolConn
 	notifications broadcaster.Broadcaster
+	keycache      cache.Cache[schema.KeyID, schema.UserID, schema.UserInfo]
+	sessioncache  cache.Cache[schema.SessionID, schema.UserID, schema.UserInfo]
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -91,6 +94,10 @@ func New(ctx context.Context, pool pg.PoolConn, name, version string, opts ...Op
 			return nil, fmt.Errorf("seed %s scope %q: %w", schema.GroupSysAdmin, scope, err)
 		}
 	}
+
+	// Initialize caches for API keys and sessions
+	self.keycache = cache.New[schema.KeyID, schema.UserID, schema.UserInfo](DefaultCacheSize)
+	self.sessioncache = cache.New[schema.SessionID, schema.UserID, schema.UserInfo](DefaultCacheSize)
 
 	// Return the manager
 	return self, nil
