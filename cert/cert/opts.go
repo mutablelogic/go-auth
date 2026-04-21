@@ -68,16 +68,6 @@ func apply(opts ...Opt) (*Cert, error) {
 ////////////////////////////////////////////////////////////////////////////////
 // PUBLIC METHODS
 
-// Set certificate name
-func withName(name string) Opt {
-	return func(o *Cert) error {
-		if name != "" {
-			o.Name = name
-		}
-		return nil
-	}
-}
-
 // Set common name
 func WithCommonName(name string) Opt {
 	return func(o *Cert) error {
