@@ -54,7 +54,7 @@ func (b *bearerAuth) Spec() openapi.SecurityScheme {
 }
 
 func (b *bearerAuth) Wrap(handler http.HandlerFunc, scopes []string) http.HandlerFunc {
-	wrapper := NewMiddleware(b.authenticator)
+	wrapper := AuthN(b.authenticator)
 	return wrapper(func(w http.ResponseWriter, r *http.Request) {
 		if user := UserFromContext(r.Context()); user == nil {
 			_ = httpresponse.Error(w, httpresponse.Err(http.StatusUnauthorized).With("invalid token: no user in context"))

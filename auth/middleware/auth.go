@@ -48,6 +48,7 @@ type Authenticator interface {
 func AuthN(authenticator Authenticator) func(http.HandlerFunc) http.HandlerFunc {
 	return func(next http.HandlerFunc) http.HandlerFunc {
 		return func(w http.ResponseWriter, r *http.Request) {
+			// Bearer token
 			token, ok := bearerToken(r)
 			if ok {
 				user, session, err := authenticator.AuthenticateBearer(r.Context(), token)
@@ -65,6 +66,7 @@ func AuthN(authenticator Authenticator) func(http.HandlerFunc) http.HandlerFunc 
 				return
 			}
 
+			// API key
 			if token, ok := apiKeyToken(r); ok {
 				user, key, err := authenticator.AuthenticateKey(r.Context(), token)
 				if err != nil {
@@ -80,14 +82,10 @@ func AuthN(authenticator Authenticator) func(http.HandlerFunc) http.HandlerFunc 
 				return
 			}
 
+			// Neither
 			writeUnauthorized(w, r, authenticator, "invalid_request", "missing bearer token or API key")
 		}
 	}
-}
-
-// NewMiddleware is kept as a compatibility wrapper for existing callers.
-func NewMiddleware(authenticator Authenticator) func(http.HandlerFunc) http.HandlerFunc {
-	return AuthN(authenticator)
 }
 
 ///////////////////////////////////////////////////////////////////////////////

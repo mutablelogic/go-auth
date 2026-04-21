@@ -82,7 +82,7 @@ func Test_auth_001(t *testing.T) {
 		assert := assert.New(t)
 		require := require.New(t)
 
-		handler := NewMiddleware(&manager.Manager{})(func(w http.ResponseWriter, r *http.Request) {
+		handler := AuthN(&manager.Manager{})(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusNoContent)
 		})
 
@@ -102,7 +102,7 @@ func Test_auth_001(t *testing.T) {
 		require := require.New(t)
 
 		mgr, issuer := newMiddlewareTestManager(t)
-		handler := NewMiddleware(mgr)(func(w http.ResponseWriter, r *http.Request) {
+		handler := AuthN(mgr)(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusNoContent)
 		})
 
@@ -133,7 +133,7 @@ func Test_auth_001(t *testing.T) {
 		key, err := mgr.CreateKey(context.Background(), user.ID, schema.KeyMeta{Name: "middleware-key"})
 		require.NoError(err)
 
-		handler := NewMiddleware(mgr)(func(w http.ResponseWriter, r *http.Request) {
+		handler := AuthN(mgr)(func(w http.ResponseWriter, r *http.Request) {
 			gotUser := UserFromContext(r.Context())
 			require.NotNil(gotUser)
 			assert.Equal(user.ID, gotUser.Sub)
@@ -163,7 +163,7 @@ func Test_auth_001(t *testing.T) {
 		session := &schema.Session{ID: schema.SessionID(uuid.New()), User: user.ID, ExpiresAt: time.Now().Add(15 * time.Minute), CreatedAt: time.Now()}
 		token := mustSignToken(t, mgr, issuer, user, session)
 
-		handler := NewMiddleware(mgr)(func(w http.ResponseWriter, r *http.Request) {
+		handler := AuthN(mgr)(func(w http.ResponseWriter, r *http.Request) {
 			gotUser := UserFromContext(r.Context())
 			require.NotNil(gotUser)
 			assert.Equal(user.ID, gotUser.Sub)
@@ -195,7 +195,7 @@ func Test_auth_001(t *testing.T) {
 		session := &schema.Session{ID: schema.SessionID(uuid.New()), User: user.ID, ExpiresAt: time.Now().Add(15 * time.Minute), CreatedAt: time.Now()}
 		token := mustSignToken(t, mgr, "https://wrong.example.test/api", user, session)
 
-		handler := NewMiddleware(mgr)(func(w http.ResponseWriter, r *http.Request) {
+		handler := AuthN(mgr)(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusNoContent)
 		})
 
@@ -232,7 +232,7 @@ func Test_auth_001(t *testing.T) {
 		token, err := mgr.OIDCSign(claims)
 		require.NoError(err)
 
-		handler := NewMiddleware(mgr)(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusNoContent) })
+		handler := AuthN(mgr)(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusNoContent) })
 		req := httptest.NewRequest(http.MethodGet, "/", nil)
 		req.Header.Set("Authorization", "Bearer "+token)
 		res := httptest.NewRecorder()
@@ -263,7 +263,7 @@ func Test_auth_001(t *testing.T) {
 		token, err := mgr.OIDCSign(claims)
 		require.NoError(err)
 
-		handler := NewMiddleware(mgr)(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusNoContent) })
+		handler := AuthN(mgr)(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusNoContent) })
 		req := httptest.NewRequest(http.MethodGet, "/", nil)
 		req.Header.Set("Authorization", "Bearer "+token)
 		res := httptest.NewRecorder()
@@ -285,7 +285,7 @@ func Test_auth_001(t *testing.T) {
 		session := &schema.Session{ID: schema.SessionID(uuid.New()), User: user.ID, ExpiresAt: time.Now().Add(15 * time.Minute), CreatedAt: time.Now()}
 		token := mustSignToken(t, mgr, issuer, user, session)
 
-		handler := NewMiddleware(mgr)(func(w http.ResponseWriter, r *http.Request) {
+		handler := AuthN(mgr)(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusNoContent)
 		})
 
@@ -309,7 +309,7 @@ func Test_auth_001(t *testing.T) {
 		session := &schema.Session{ID: schema.SessionID(uuid.New()), User: user.ID, ExpiresAt: time.Now().Add(15 * time.Minute), CreatedAt: time.Now()}
 		token := mustSignToken(t, mgr, issuer, user, session)
 
-		handler := NewMiddleware(mgr)(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusNoContent) })
+		handler := AuthN(mgr)(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusNoContent) })
 		req := httptest.NewRequest(http.MethodGet, "/", nil)
 		req.Header.Set("Authorization", "Bearer "+token)
 		res := httptest.NewRecorder()
@@ -329,7 +329,7 @@ func Test_auth_001(t *testing.T) {
 		session := &schema.Session{ID: schema.SessionID(uuid.New()), User: user.ID, ExpiresAt: time.Now().Add(15 * time.Minute), CreatedAt: time.Now()}
 		token := mustSignToken(t, mgr, issuer, user, session)
 
-		handler := NewMiddleware(mgr)(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusNoContent) })
+		handler := AuthN(mgr)(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusNoContent) })
 		req := httptest.NewRequest(http.MethodGet, "/", nil)
 		req.Header.Set("Authorization", "Bearer "+token)
 		res := httptest.NewRecorder()
@@ -358,7 +358,7 @@ func Test_auth_001(t *testing.T) {
 		token, err := mgr.OIDCSign(claims)
 		require.NoError(err)
 
-		handler := NewMiddleware(mgr)(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusNoContent) })
+		handler := AuthN(mgr)(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusNoContent) })
 		req := httptest.NewRequest(http.MethodGet, "/", nil)
 		req.Header.Set("Authorization", "Bearer "+token)
 		res := httptest.NewRecorder()
@@ -379,7 +379,7 @@ func Test_auth_001(t *testing.T) {
 		session := &schema.Session{ID: schema.SessionID(uuid.New()), User: user.ID, ExpiresAt: time.Now().Add(15 * time.Minute), CreatedAt: time.Now(), SessionMeta: schema.SessionMeta{RevokedAt: &revokedAt}}
 		token := mustSignToken(t, mgr, issuer, user, session)
 
-		handler := NewMiddleware(mgr)(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusNoContent) })
+		handler := AuthN(mgr)(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusNoContent) })
 		req := httptest.NewRequest(http.MethodGet, "/", nil)
 		req.Header.Set("Authorization", "Bearer "+token)
 		res := httptest.NewRecorder()
@@ -408,7 +408,7 @@ func Test_auth_001(t *testing.T) {
 		token, err := mgr.OIDCSign(claims)
 		require.NoError(err)
 
-		handler := NewMiddleware(mgr)(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusNoContent) })
+		handler := AuthN(mgr)(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusNoContent) })
 		req := httptest.NewRequest(http.MethodGet, "/", nil)
 		req.Header.Set("Authorization", "Bearer "+token)
 		res := httptest.NewRecorder()
