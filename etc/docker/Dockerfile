@@ -5,6 +5,7 @@ ARG ARCH
 FROM --platform=${OS}/${ARCH} golang:1.26 AS builder
 ARG OS
 ARG ARCH
+RUN apt-get update -y && apt-get install -y nodejs npm && rm -rf /var/lib/apt/lists/*
 WORKDIR /usr/src/app
 COPY . .
 RUN OS=${OS} ARCH=${ARCH} make

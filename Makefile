@@ -4,6 +4,8 @@ DOCKER ?= $(shell which docker 2>/dev/null)
 
 # Locations
 BUILD_DIR ?= build
+DIST_DIR ?= $(BUILD_DIR)/dist
+WASMBUILD_SUBMODULE_DIR ?= third_party/go-wasmbuild
 
 # Set OS and Architecture
 ARCH ?= $(shell arch | tr A-Z a-z | sed 's/x86_64/amd64/' | sed 's/i386/amd64/' | sed 's/armv7l/arm/' | sed 's/aarch64/arm64/')
@@ -32,9 +34,9 @@ all: authmanager
 # BUILD
 
 .PHONY: authmanager
-authmanager: wasmbuild
+authmanager: wasmbuild dist
 	@echo Build authmanager GOOS=${OS} GOARCH=${ARCH}
-	@${BUILD_DIR}/wasmbuild build -o ${BUILD_DIR}/app.wasm ./auth/wasm/app
+	@${BUILD_DIR}/wasmbuild build -o ${BUILD_DIR}/app.wasm ./wasm/app
 	@GOOS=${OS} GOARCH=${ARCH} ${GO} build ${BUILD_FLAGS} -o ${BUILD_DIR}/authmanager ./cmd/authmanager
 
 .PHONY: client
@@ -44,7 +46,25 @@ client: go-dep
 
 .PHONY: wasmbuild
 wasmbuild: go-dep
-	@GOBIN=$(abspath $(BUILD_DIR)) ${GO} install github.com/djthorpe/go-wasmbuild/cmd/wasmbuild@latest
+	@GOBIN=$(abspath $(BUILD_DIR)) ${GO} install github.com/djthorpe/go-wasmbuild/cmd/wasmbuild@v0.0.4
+
+.PHONY: submodule
+submodule:
+	@git submodule sync --recursive -- third_party
+	@git submodule update --init --recursive -- third_party
+
+.PHONY: dist
+dist: carbon-dist auth-dist
+
+.PHONY: carbon-dist
+carbon-dist: npm-dep mkdir
+	@echo Build Carbon assets into $(DIST_DIR)
+	@$(MAKE) -C $(WASMBUILD_SUBMODULE_DIR) NPM_CARBON_DIST_DIR='$(abspath $(DIST_DIR))' npm/carbon
+
+.PHONY: auth-dist
+auth-dist: npm-dep mkdir
+	@echo Build auth assets into $(DIST_DIR)
+	@$(MAKE) -C $(WASMBUILD_SUBMODULE_DIR) NPM_AUTH_DIST_DIR='$(abspath $(DIST_DIR))' npm/auth
 
 ###############################################################################
 # DOCKER

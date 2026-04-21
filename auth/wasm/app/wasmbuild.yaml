@@ -1,9 +1,0 @@
-assets:
-    - ../embed.go
-    - index.html
-    - js
-    - img
-    - css
-    
-vars:
-    Title: "Authentication"

@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Login</title>
+    <link rel="stylesheet" href="index.css">
+    <link rel="icon" type="image/png" href="favicon.png" />
+    <script src="bundle.js"></script>
+    <script type="module">
+        import Auth from "./auth.js";
+        import Token from "./token.js";
+
+        const AUTH_BASE_URL = "/api";
+        const AUTH_REQUEST_KEY = "auth:request";
+        const POST_LOGIN_REDIRECT_DELAY_MS = 2000;
+        const POST_LOGIN_REDIRECT_PATH = "/wasm_exec.html";
+        const AUTH_PROVIDER_SCOPES = {
+            google: "openid email profile",
+        };
+        let postLoginRedirectHandle;
+
+        function normalizeError(err) {
+            if (err instanceof Error) {
+                return err.message;
+            }
+            return String(err);
+        }
+
+        function showToast(kind, title, message, timeout = 5000) {
+            const container = document.querySelector("[data-toast-container]");
+            if (!container) {
+                return;
+            }
+
+            const toast = document.createElement("cds-toast-notification");
+            toast.setAttribute("kind", kind);
+            toast.setAttribute("low-contrast", "");
+            toast.setAttribute("open", "");
+
+            const titleSlot = document.createElement("div");
+            titleSlot.setAttribute("slot", "title");
+            titleSlot.textContent = title;
+
+            const subtitleSlot = document.createElement("div");
+            subtitleSlot.setAttribute("slot", "subtitle");
+            subtitleSlot.textContent = message;
+
+            toast.append(titleSlot, subtitleSlot);
+
+            container.appendChild(toast);
+
+            const dismiss = () => {
+                toast.removeAttribute("open");
+                window.setTimeout(() => toast.remove(), 220);
+            };
+
+            window.setTimeout(dismiss, timeout);
+            toast.addEventListener("cds-notification-closed", dismiss, { once: true });
+        }
+
+        function getStoredRequest() {
+            const raw = sessionStorage.getItem(AUTH_REQUEST_KEY);
+            if (!raw) {
+                return undefined;
+            }
+            try {
+                return JSON.parse(raw);
+            } catch {
+                sessionStorage.removeItem(AUTH_REQUEST_KEY);
+                return undefined;
+            }
+        }
+
+        function setSessionActionState(sessionButtons, enabled) {
+            for (const button of sessionButtons) {
+                if (enabled) {
+                    button.removeAttribute("disabled");
+                } else {
+                    button.setAttribute("disabled", "true");
+                }
+            }
+        }
+
+        function schedulePostLoginRedirect() {
+            if (postLoginRedirectHandle) {
+                return;
+            }
+            const redirectUrl = new URL(POST_LOGIN_REDIRECT_PATH, window.location.origin);
+            postLoginRedirectHandle = window.setTimeout(() => {
+                window.location.replace(redirectUrl.toString());
+            }, POST_LOGIN_REDIRECT_DELAY_MS);
+        }
+
+        document.addEventListener("DOMContentLoaded", async () => {
+            const auth = new Auth({
+                baseUrl: AUTH_BASE_URL,
+            });
+            const tokenStore = new Token();
+            const currentUrl = new URL(window.location.href);
+            const code = currentUrl.searchParams.get("code");
+            const state = currentUrl.searchParams.get("state");
+            const storedRequest = getStoredRequest();
+            const storedToken = tokenStore.read();
+            const redirectUri = storedRequest?.redirectUri || new URL(currentUrl.pathname, currentUrl.origin).toString();
+            const providerButtons = Array.from(document.querySelectorAll("cds-button[data-provider]"));
+            const sessionButtons = Array.from(document.querySelectorAll("cds-button[data-session-action]"));
+            const activateSession = (title, message) => {
+                setSessionActionState(sessionButtons, true);
+                showToast("success", title, message, POST_LOGIN_REDIRECT_DELAY_MS);
+                schedulePostLoginRedirect();
+            };
+            for (const button of providerButtons) {
+                button.setAttribute("disabled", "true");
+            }
+            setSessionActionState(sessionButtons, false);
+
+            if (storedToken && !tokenStore.valid(storedToken)) {
+                tokenStore.delete();
+                showToast("info", "Session expired", "Stored token has expired and was cleared.", 4000);
+            } else if (storedToken) {
+                activateSession("Signed in", "Using existing session token. Redirecting...");
+            }
+
+            const refreshButton = document.querySelector('cds-button[data-session-action="refresh"]');
+            if (refreshButton) {
+                refreshButton.addEventListener("click", async () => {
+                    const token = tokenStore.read();
+                    if (!token || !tokenStore.valid(token) || !token.refresh_token) {
+                        setSessionActionState(sessionButtons, false);
+                        showToast("info", "No session", "No valid session token is available to refresh.", 4000);
+                        return;
+                    }
+                    try {
+                        const refreshed = await auth.refresh(token.refresh_token);
+                        tokenStore.write(refreshed);
+                        activateSession("Session refreshed", "Session token refreshed successfully. Redirecting...");
+                    } catch (err) {
+                        console.error("Failed to refresh session", err);
+                        showToast("error", "Refresh failed", normalizeError(err), 8000);
+                    }
+                });
+            }
+
+            const revokeButton = document.querySelector('cds-button[data-session-action="revoke"]');
+            if (revokeButton) {
+                revokeButton.addEventListener("click", async () => {
+                    const token = tokenStore.read();
+                    if (!token || !tokenStore.valid(token) || !token.access_token) {
+                        tokenStore.delete();
+                        setSessionActionState(sessionButtons, false);
+                        showToast("info", "No session", "No valid session token is available to revoke.", 4000);
+                        return;
+                    }
+                    try {
+                        await auth.revoke(token.access_token);
+                        tokenStore.delete();
+                        setSessionActionState(sessionButtons, false);
+                        showToast("success", "Session revoked", "Session token revoked successfully.", 4000);
+                    } catch (err) {
+                        console.error("Failed to revoke session", err);
+                        showToast("error", "Revoke failed", normalizeError(err), 8000);
+                    }
+                });
+            }
+
+            if (code || state) {
+                try {
+                    if (!storedRequest) {
+                        throw new Error("missing stored authorization request");
+                    }
+                    if (!code) {
+                        throw new Error("missing authorization code");
+                    }
+                    if (!state || state !== storedRequest.state) {
+                        throw new Error("authorization state mismatch");
+                    }
+                    const token = await auth.exchange(
+                        storedRequest.provider,
+                        code,
+                        storedRequest.redirectUri,
+                        storedRequest.codeVerifier,
+                        {
+                            nonce: storedRequest.nonce,
+                        },
+                    );
+                    tokenStore.write(token);
+                    sessionStorage.removeItem(AUTH_REQUEST_KEY);
+                    currentUrl.search = "";
+                    window.history.replaceState({}, document.title, currentUrl.toString());
+                    activateSession("Signed in", "Authorization code exchanged successfully. Redirecting...");
+                } catch (err) {
+                    console.error("Failed to exchange authorization code", err);
+                    showToast("error", "Sign-in failed", normalizeError(err), 8000);
+                }
+            }
+
+            try {
+                const config = await auth.config();
+                for (const button of providerButtons) {
+                    const provider = button.getAttribute("data-provider");
+                    if (!provider || !config[provider]) {
+                        continue;
+                    }
+                    button.removeAttribute("disabled");
+                    button.addEventListener("click", async () => {
+                        try {
+                            const request = await auth.authorize(provider, redirectUri, {
+                                scope: AUTH_PROVIDER_SCOPES[provider],
+                            });
+                            sessionStorage.setItem(AUTH_REQUEST_KEY, JSON.stringify({
+                                provider,
+                                redirectUri,
+                                state: request.state,
+                                nonce: request.nonce,
+                                codeVerifier: request.codeVerifier,
+                                codeChallenge: request.codeChallenge,
+                                codeChallengeMethod: request.codeChallengeMethod,
+                            }));
+                            showToast("info", "Redirecting", `Starting ${provider} sign-in.`, 2500);
+                            window.location.replace(request.url.href);
+                        } catch (err) {
+                            console.error("Failed to start authorization", err);
+                            showToast("error", "Authorization error", normalizeError(err), 8000);
+                        }
+                    });
+                }
+            } catch (err) {
+                console.error("Failed to load auth config", err);
+                showToast("error", "Configuration error", normalizeError(err), 8000);
+            }
+        });
+    </script>
+</head>
+
+<body class="login">
+    <div class="app-toast-stack" data-toast-container></div>
+    <main>
+        <section class="login-strip">
+            <div class="login-copy">
+                <h1 class="cds--fluid-display-03">Hello, World!</h1>
+            </div>
+            <div class="login-actions">
+                <cds-button data-provider="google" disabled>
+                    Login - Google
+                    <svg slot="icon" viewBox="0 0 16 16" aria-hidden="true">
+                        <path fill="currentColor"
+                            d="M8.16 6.86v2.42h3.97c-.16 1.04-1.22 3.06-3.97 3.06-2.39 0-4.33-1.98-4.33-4.42S5.77 3.5 8.16 3.5c1.36 0 2.27.58 2.79 1.08l1.9-1.83C11.63 1.62 10.07 1 8.16 1 4.27 1 1.12 4.13 1.12 8s3.15 7 7.04 7C12.22 15 15 12.15 15 8.13c0-.47-.05-.82-.11-1.27z" />
+                    </svg>
+                </cds-button>
+                <cds-button data-provider="local" disabled>
+                    Login - Local
+                    <svg slot="icon" viewBox="0 0 16 16" aria-hidden="true">
+                        <path fill="currentColor"
+                            d="M8 1a3 3 0 1 1-3 3 3 3 0 0 1 3-3zm0 7c3 0 5.5 1.5 5.5 3.35V15h-11v-3.65C2.5 9.5 5 8 8 8zm0 1c-2.56 0-4.5 1.18-4.5 2.35V14h9v-2.65C12.5 10.18 10.56 9 8 9z" />
+                    </svg>
+                </cds-button>
+                <cds-button data-session-action="refresh" disabled>
+                    Refresh
+                    <svg slot="icon" viewBox="0 0 16 16" aria-hidden="true">
+                        <path fill="currentColor"
+                            d="M8 2a5.96 5.96 0 0 1 4.24 1.76L14 2v5H9l2.53-2.53A4.98 4.98 0 1 0 13 8h1a6 6 0 1 1-6-6z" />
+                    </svg>
+                </cds-button>
+                <cds-button data-session-action="revoke" disabled>
+                    Revoke
+                    <svg slot="icon" viewBox="0 0 16 16" aria-hidden="true">
+                        <path fill="currentColor"
+                            d="M3.7 3 3 3.7 7.29 8 3 12.29l.7.71L8 8.71 12.29 13l.71-.71L8.71 8 13 3.71 12.29 3 8 7.29z" />
+                    </svg>
+                </cds-button>
+            </div>
+        </section>
+    </main>
+</body>
+
+</html>
