@@ -256,12 +256,12 @@ func Test_apikey_001(t *testing.T) {
 			require.NoError(t, err)
 			require.NotNil(t, otherKey)
 
-			allKeys, err := manager.ListKeys(ctx, schema.KeyListRequest{}, nil)
+			allKeys, err := manager.ListKeys(ctx, nil, schema.KeyListRequest{})
 			require.NoError(t, err)
 			require.NotNil(t, allKeys)
 			assert.GreaterOrEqual(int(allKeys.Count), 3)
 
-			scopedKeys, err := manager.ListKeys(ctx, schema.KeyListRequest{}, &user.ID)
+			scopedKeys, err := manager.ListKeys(ctx, &user.ID, schema.KeyListRequest{})
 			require.NoError(t, err)
 			require.NotNil(t, scopedKeys)
 			assert.Equal(uint(2), scopedKeys.Count)
@@ -270,14 +270,14 @@ func Test_apikey_001(t *testing.T) {
 				assert.Equal(user.ID, key.User)
 			}
 
-			filteredKeys, err := manager.ListKeys(ctx, schema.KeyListRequest{User: &otherUser.ID}, nil)
+			filteredKeys, err := manager.ListKeys(ctx, nil, schema.KeyListRequest{User: &otherUser.ID})
 			require.NoError(t, err)
 			require.NotNil(t, filteredKeys)
 			assert.Equal(uint(1), filteredKeys.Count)
 			assert.Len(filteredKeys.Body, 1)
 			assert.Equal(otherUser.ID, filteredKeys.Body[0].User)
 
-			rejectedKeys, err := manager.ListKeys(ctx, schema.KeyListRequest{User: &otherUser.ID}, &user.ID)
+			rejectedKeys, err := manager.ListKeys(ctx, &user.ID, schema.KeyListRequest{User: &otherUser.ID})
 			require.Error(t, err)
 			assert.ErrorIs(err, auth.ErrBadParameter)
 			assert.Nil(rejectedKeys)

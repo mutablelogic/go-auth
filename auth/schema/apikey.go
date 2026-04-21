@@ -261,7 +261,7 @@ func (req KeyListRequest) Select(bind *pg.Bind, op pg.Op) (string, error) {
 				END
 			) < NOW()`)
 		} else {
-			bind.Append("where", `(
+			bind.Append("where", `((
 				CASE
 					WHEN user_row.expires_at IS NULL THEN apikey.expires_at
 					WHEN apikey.expires_at IS NULL THEN user_row.expires_at
@@ -273,7 +273,7 @@ func (req KeyListRequest) Select(bind *pg.Bind, op pg.Op) (string, error) {
 					WHEN apikey.expires_at IS NULL THEN user_row.expires_at
 					ELSE LEAST(apikey.expires_at, user_row.expires_at)
 				END
-			) >= NOW()`)
+			) >= NOW())`)
 		}
 	}
 	if where := bind.Join("where", " AND "); where == "" {
