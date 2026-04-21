@@ -169,7 +169,13 @@ func (r userRow) Header() []string {
 func (r userRow) Cell(i int) string {
 	switch i {
 	case 0:
-		return r.Name
+		if r.Name == "" && r.Email != "" {
+			return r.Email
+		}
+		if r.Email != "" && r.Name == "" {
+			return r.Email
+		}
+		return fmt.Sprintf("%s <%s>", r.Name, r.Email)
 	case 1:
 		return r.ID.String()
 	case 2:

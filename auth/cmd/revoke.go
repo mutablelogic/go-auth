@@ -16,6 +16,7 @@ package auth
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -63,6 +64,16 @@ func (cmd *RevokeCommand) Run(globals server.Cmd) (err error) {
 		}
 
 		issuer := strings.TrimSpace(globals.GetString(issuerStoreKey(cmd.Endpoint)))
+		cleanupStoredToken := func(runErr error) error {
+			if deleteErr := deleteStoredToken(globals, cmd.Endpoint, issuer); deleteErr != nil {
+				if runErr != nil {
+					return errors.Join(runErr, deleteErr)
+				}
+				return deleteErr
+			}
+			return runErr
+		}
+
 		clientID := ""
 		clientSecret := ""
 		if issuer != "" {
@@ -72,15 +83,15 @@ func (cmd *RevokeCommand) Run(globals server.Cmd) (err error) {
 
 		meta, err := discoverAuthMetadata(globals, ctx, authclient, cmd.Endpoint)
 		if err != nil {
-			return err
+			return cleanupStoredToken(err)
 		}
 		serverMeta, err := meta.AuthorizationServerForFlow()
 		if err != nil {
-			return err
+			return cleanupStoredToken(err)
 		}
 		config, err := serverMeta.AuthorizationCodeConfig()
 		if err != nil {
-			return err
+			return cleanupStoredToken(err)
 		}
 		if issuer == "" {
 			issuer = strings.TrimSpace(config.Issuer)
@@ -88,11 +99,11 @@ func (cmd *RevokeCommand) Run(globals server.Cmd) (err error) {
 				issuer = strings.TrimSpace(serverMeta.Issuer)
 			}
 		}
+
+		var revokeErr error
 		if endpoint := strings.TrimSpace(config.RevocationEndpoint); endpoint != "" {
-			if err := authclient.RevokeToken(ctx, endpoint, token, clientID, clientSecret); err != nil {
-				return err
-			}
+			revokeErr = authclient.RevokeToken(ctx, endpoint, token, clientID, clientSecret)
 		}
-		return deleteStoredToken(globals, cmd.Endpoint, issuer)
+		return cleanupStoredToken(revokeErr)
 	})
 }
