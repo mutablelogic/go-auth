@@ -46,7 +46,7 @@ client: go-dep
 
 .PHONY: wasmbuild
 wasmbuild: go-dep
-	@GOBIN=$(abspath $(BUILD_DIR)) ${GO} install github.com/djthorpe/go-wasmbuild/cmd/wasmbuild@latest
+	@GOBIN=$(abspath $(BUILD_DIR)) ${GO} install github.com/djthorpe/go-wasmbuild/cmd/wasmbuild@v0.0.4
 
 .PHONY: submodule
 submodule:
