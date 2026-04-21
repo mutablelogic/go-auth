@@ -46,6 +46,11 @@ client: go-dep
 wasmbuild: go-dep
 	@GOBIN=$(abspath $(BUILD_DIR)) ${GO} install github.com/djthorpe/go-wasmbuild/cmd/wasmbuild@latest
 
+.PHONY: submodule
+submodule:
+	@git submodule sync --recursive -- third_party
+	@git submodule update --init --recursive -- third_party
+
 ###############################################################################
 # DOCKER
 
