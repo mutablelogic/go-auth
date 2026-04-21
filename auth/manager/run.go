@@ -38,12 +38,10 @@ func (m *Manager) Run(ctx context.Context) error {
 	}
 
 	// Cleanup
-	interval := m.cleanupint
-	if interval <= 0 {
-		interval = DefaultCleanupInterval
-	}
-	ticker := time.NewTicker(interval)
+	ticker := time.NewTicker(m.cleanupint)
 	defer ticker.Stop()
+
+	// Run until context is cancelled
 	for {
 		select {
 		case <-ctx.Done():
@@ -54,6 +52,14 @@ func (m *Manager) Run(ctx context.Context) error {
 					return nil
 				}
 				return err
+			}
+
+			// Prune caches of expired entries
+			if m.sessioncache != nil {
+				m.sessioncache.Prune()
+			}
+			if m.keycache != nil {
+				m.keycache.Prune()
 			}
 		}
 	}

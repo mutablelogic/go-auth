@@ -59,6 +59,7 @@ type APIKeyHook interface {
 const (
 	DefaultCleanupInterval = time.Hour
 	DefaultCleanupLimit    = 100
+	DefaultCacheSize       = 1000 // default max entries in the session and key caches
 )
 
 // opt combines all configuration options for Manager.
