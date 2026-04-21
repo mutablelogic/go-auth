@@ -23,8 +23,8 @@ import (
 	"time"
 
 	// Packages
-	auth "github.com/mutablelogic/go-auth"
 	uuid "github.com/google/uuid"
+	auth "github.com/mutablelogic/go-auth"
 	pg "github.com/mutablelogic/go-pg"
 	types "github.com/mutablelogic/go-server/pkg/types"
 )
@@ -46,7 +46,7 @@ type UserMeta struct {
 	Groups    []string    `json:"groups,omitempty"`
 	Status    *UserStatus `json:"status,omitempty" enum:"new,active,inactive,suspended,deleted"`
 	Meta      MetaMap     `json:"meta,omitempty"`
-	ExpiresAt *time.Time  `json:"expires_at,omitzero" format:"date-time"`
+	ExpiresAt *time.Time  `json:"expires_at,omitempty" format:"date-time"`
 }
 
 // User represents a user account in the system. It contains both

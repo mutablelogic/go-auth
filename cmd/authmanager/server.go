@@ -18,6 +18,7 @@ package main
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	// Packages
@@ -174,13 +175,18 @@ func (cmd *AuthServer) WithAuthManager(ctx server.Cmd, conn pg.PoolConn, fn func
 	// Register the HTTP handler routes
 	cmd.RunServer.Register(
 		func(router *httprouter.Router) error {
+			issuer, err := issuerURL(ctx)
+			if err != nil {
+				return err
+			}
+
 			// Add the issuer late in the chain
-			if err := manager.WithIssuer(ctx.URL().String()); err != nil {
+			if err := manager.WithIssuer(issuer); err != nil {
 				return err
 			}
 
 			// Add local provider late in the chain to return the issuer URL
-			if local, err := cmd.LocalProviderFlags.NewProvider(signer, ctx.URL().String()); err != nil {
+			if local, err := cmd.LocalProviderFlags.NewProvider(signer, issuer); err != nil {
 				return err
 			} else if err := manager.WithProvider(local); err != nil {
 				return err
@@ -208,6 +214,17 @@ func (cmd *AuthServer) WithAuthManager(ctx server.Cmd, conn pg.PoolConn, fn func
 
 	// Next callback in the chain
 	return fn(manager)
+}
+
+func issuerURL(ctx server.Cmd) (string, error) {
+	if ctx == nil || ctx.URL() == nil {
+		return "", fmt.Errorf("issuer URL is not available")
+	}
+	if issuer := strings.TrimSpace(ctx.URL().String()); issuer == "" {
+		return "", fmt.Errorf("issuer URL is not configured")
+	} else {
+		return issuer, nil
+	}
 }
 
 ///////////////////////////////////////////////////////////////////////////////

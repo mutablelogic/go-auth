@@ -19,8 +19,10 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	// Packages
+	authpkg "github.com/mutablelogic/go-auth"
 	auth "github.com/mutablelogic/go-auth/auth/httpclient"
 	schema "github.com/mutablelogic/go-auth/auth/schema"
 	server "github.com/mutablelogic/go-server"
@@ -51,6 +53,7 @@ type GetUserCommand struct {
 type UpdateUserCommand struct {
 	GetUserCommand
 	schema.UserMeta
+	NoExpiresAt bool `name:"no-expires-at" help:"Remove the user expiry instead of setting one."`
 }
 
 type DeleteUserCommand struct {
@@ -106,6 +109,14 @@ func (cmd *GetUserCommand) Run(globals server.Cmd) error {
 
 func (cmd *UpdateUserCommand) Run(globals server.Cmd) error {
 	return withManager(globals, "UpdateUserCommand", types.Stringify(cmd), func(ctx context.Context, client *auth.ManagerClient) error {
+		if cmd.NoExpiresAt {
+			if cmd.ExpiresAt != nil {
+				return authpkg.ErrBadParameter.With("cannot use --no-expires-at with --expires-at")
+			} else {
+				cmd.ExpiresAt = types.Ptr(time.Time{})
+			}
+		}
+
 		user, err := client.UpdateUser(ctx, cmd.ID, cmd.UserMeta)
 		if err != nil {
 			return err

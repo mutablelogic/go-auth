@@ -108,13 +108,29 @@ Accepts a `GroupMeta` JSON body and returns the updated `Group` record for the `
 
 Deletes the named group identified by the `{group}` path parameter. On success the endpoint returns `204 No Content`.
 
-## API Keys
+## API Key
 
 API key operations manage bearer-like opaque credentials owned by the authenticated local user. Key creation returns the plaintext token exactly once together with the stored metadata; later lookups and management operations work with the stored key record rather than reissuing the token value.
+
+### `GET /{prefix}/key`
+
+Returns a `KeyList` for the authenticated user. Query parameters support pagination and expiry filtering. The `user` filter is not accepted on this authenticated endpoint because the handler always scopes the request to the current user.
 
 ### `POST /{prefix}/key`
 
 Accepts a `KeyMeta` JSON body and returns the created `Key` record. The response includes the generated plaintext `token` only on creation, along with the stored key `id`, owning `user`, timestamps, effective expiry, and the owning user's current `status`.
+
+### `GET /{prefix}/key/{key}`
+
+Returns the `Key` record for the `{key}` path parameter, for the authenticated user.
+
+### `PATCH /{prefix}/key/{key}`
+
+Accepts a `KeyMeta` JSON body and returns the updated `Key` record for the `{key}` path parameter, scoped to the authenticated user.
+
+### `DELETE /{prefix}/key/{key}`
+
+Deletes the API key identified by the `{key}` path parameter for the authenticated user. On success the endpoint returns `204 No Content`.
 
 ## Scope
 

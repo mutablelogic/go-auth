@@ -1,0 +1,20 @@
+{
+	"folders": [
+		{
+			"path": "../.."
+		},
+		{
+			"path": "../../../go-server"
+		},
+		{
+			"path": "../../../go-tokenizer"
+		},
+		{
+			"path": "../../../go-wasmbuild"
+		},
+		{
+			"path": "../../../tf-modules"
+		}
+	],
+	"settings": {}
+}

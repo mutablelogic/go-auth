@@ -21,8 +21,10 @@ import (
 
 	// Packages
 	uuid "github.com/google/uuid"
+	auth "github.com/mutablelogic/go-auth"
 	schema "github.com/mutablelogic/go-auth/auth/schema"
 	test "github.com/mutablelogic/go-auth/auth/test"
+	assert "github.com/stretchr/testify/assert"
 	require "github.com/stretchr/testify/require"
 )
 
@@ -237,6 +239,60 @@ func Test_apikey_001(t *testing.T) {
 			require.Error(t, err)
 			require.Nil(t, lookupKey)
 			require.Nil(t, lookupUser)
+		})
+
+		t.Run("ListKeys", func(t *testing.T) {
+			assert := assert.New(t)
+
+			firstKey, err := manager.CreateKey(ctx, user.ID, schema.KeyMeta{Name: "list-key-1"})
+			require.NoError(t, err)
+			require.NotNil(t, firstKey)
+
+			secondKey, err := manager.CreateKey(ctx, user.ID, schema.KeyMeta{Name: "list-key-2"})
+			require.NoError(t, err)
+			require.NotNil(t, secondKey)
+
+			otherKey, err := manager.CreateKey(ctx, otherUser.ID, schema.KeyMeta{Name: "list-key-other"})
+			require.NoError(t, err)
+			require.NotNil(t, otherKey)
+
+			allKeys, err := manager.ListKeys(ctx, schema.KeyListRequest{}, nil)
+			require.NoError(t, err)
+			require.NotNil(t, allKeys)
+			assert.GreaterOrEqual(int(allKeys.Count), 3)
+
+			scopedKeys, err := manager.ListKeys(ctx, schema.KeyListRequest{}, &user.ID)
+			require.NoError(t, err)
+			require.NotNil(t, scopedKeys)
+			assert.Equal(uint(2), scopedKeys.Count)
+			assert.Len(scopedKeys.Body, 2)
+			for _, key := range scopedKeys.Body {
+				assert.Equal(user.ID, key.User)
+			}
+
+			filteredKeys, err := manager.ListKeys(ctx, schema.KeyListRequest{User: &otherUser.ID}, nil)
+			require.NoError(t, err)
+			require.NotNil(t, filteredKeys)
+			assert.Equal(uint(1), filteredKeys.Count)
+			assert.Len(filteredKeys.Body, 1)
+			assert.Equal(otherUser.ID, filteredKeys.Body[0].User)
+
+			rejectedKeys, err := manager.ListKeys(ctx, schema.KeyListRequest{User: &otherUser.ID}, &user.ID)
+			require.Error(t, err)
+			assert.ErrorIs(err, auth.ErrBadParameter)
+			assert.Nil(rejectedKeys)
+
+			deleted, err := manager.DeleteKey(ctx, firstKey.ID, nil)
+			require.NoError(t, err)
+			require.NotNil(t, deleted)
+
+			deleted, err = manager.DeleteKey(ctx, secondKey.ID, nil)
+			require.NoError(t, err)
+			require.NotNil(t, deleted)
+
+			deleted, err = manager.DeleteKey(ctx, otherKey.ID, nil)
+			require.NoError(t, err)
+			require.NotNil(t, deleted)
 		})
 	})
 }

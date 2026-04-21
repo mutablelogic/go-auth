@@ -510,6 +510,25 @@ LEFT JOIN LATERAL (
 ) AS group_memberships ON true
 WHERE apikey."hash" = digest(@token, ${'algorithm'});
 
+-- apikey.list
+SELECT
+  apikey.id,
+  apikey."user",
+  apikey.name,
+  apikey.created_at,
+  apikey.modified_at,
+  CASE
+    WHEN user_row.expires_at IS NULL THEN apikey.expires_at
+    WHEN apikey.expires_at IS NULL THEN user_row.expires_at
+    ELSE LEAST(apikey.expires_at, user_row.expires_at)
+  END AS expires_at,
+  user_row.status,
+  ''::text AS token
+FROM ${"schema"}.apikey AS apikey
+JOIN ${"schema"}.user AS user_row ON user_row.id = apikey."user"
+${where}
+${orderby}
+
 -- group.insert
 INSERT INTO ${"schema"}."group" (id, description, enabled, scopes, meta)
   VALUES (@id, @description, @enabled, @scopes, @meta)
