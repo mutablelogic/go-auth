@@ -63,8 +63,8 @@ github.com/decred/dcrd/dcrec/secp256k1/v4 v4.4.1 h1:5RVFMOWjMyRy8cARdy79nAmgYw3h
 github.com/decred/dcrd/dcrec/secp256k1/v4 v4.4.1/go.mod h1:ZXNYxsqcloTdSy/rNShjYzMhyjf0LaoftYK0p+A3h40=
 github.com/distribution/reference v0.6.0 h1:0IXCQ5g4/QMHHkarYzh5l+u8T3t73zM5QvfrDyIgxBk=
 github.com/distribution/reference v0.6.0/go.mod h1:BbU0aIcezP1/5jX/8MP0YiH4SdvB5Y4f/wlDRiLyi3E=
-github.com/djthorpe/go-wasmbuild v0.0.5 h1:HGnrvQY598djEdcCDoBQZjFFSYAcBM6A4anxmSUTTMk=
-github.com/djthorpe/go-wasmbuild v0.0.5/go.mod h1:aFsyWZA+tyJmGpL1ZQvvdzi9k3dEXGoDZpj4lODjuzk=
+github.com/djthorpe/go-wasmbuild v0.0.6 h1:GwcXGsObsC4IqpOlLppK2eX8T480AWIA9oNElyQb3Do=
+github.com/djthorpe/go-wasmbuild v0.0.6/go.mod h1:aFsyWZA+tyJmGpL1ZQvvdzi9k3dEXGoDZpj4lODjuzk=
 github.com/docker/go-connections v0.7.0 h1:6SsRfJddP22WMrCkj19x9WKjEDTB+ahsdiGYf0mN39c=
 github.com/docker/go-connections v0.7.0/go.mod h1:no1qkHdjq7kLMGUXYAduOhYPSJxxvgWBh7ogVvptn3Q=
 github.com/docker/go-units v0.5.0 h1:69rxXcBk27SvSaaxTtLh/8llcHD8vYHT7WSdRZ/jvr4=
@@ -109,8 +109,8 @@ github.com/jackc/pgpassfile v1.0.0 h1:/6Hmqy13Ss2zCq62VdNG8tM1wchn8zjSGOBJ6icpsI
 github.com/jackc/pgpassfile v1.0.0/go.mod h1:CEx0iS5ambNFdcRtxPj5JhEz+xB6uRky5eyVu/W2HEg=
 github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 h1:iCEnooe7UlwOQYpKFhBabPMi4aNAfoODPEFNiAnClxo=
 github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761/go.mod h1:5TJZWKEWniPve33vlWYSoGYefn3gLQRzjfDlhSJ9ZKM=
-github.com/jackc/pgx/v5 v5.9.2 h1:3ZhOzMWnR4yJ+RW1XImIPsD1aNSz4T4fyP7zlQb56hw=
-github.com/jackc/pgx/v5 v5.9.2/go.mod h1:mal1tBGAFfLHvZzaYh77YS/eC6IX9OWbRV1QIIM0Jn4=
+github.com/jackc/pgx/v5 v5.9.1 h1:uwrxJXBnx76nyISkhr33kQLlUqjv7et7b9FjCen/tdc=
+github.com/jackc/pgx/v5 v5.9.1/go.mod h1:mal1tBGAFfLHvZzaYh77YS/eC6IX9OWbRV1QIIM0Jn4=
 github.com/jackc/puddle/v2 v2.2.2 h1:PR8nw+E/1w0GLuRFSmiioY6UooMp6KJv0/61nB7icHo=
 github.com/jackc/puddle/v2 v2.2.2/go.mod h1:vriiEXHvEE654aYKXXjOvZM39qJ0q+azkZFrfEOc3H4=
 github.com/jcmturner/aescts/v2 v2.0.0 h1:9YKLH6ey7H4eDBXW8khjYslgyqG2xZikXP0EQFKrle8=
@@ -177,8 +177,8 @@ github.com/mutablelogic/go-client v1.4.9 h1:1JHLha6u0u0mEQEHc4K0Pq6EJMwd8F0DR/ah
 github.com/mutablelogic/go-client v1.4.9/go.mod h1:g8c6RlvIC0wC5rpoqtqk7eznBxormwrxArxH9I5rNRQ=
 github.com/mutablelogic/go-pg v1.1.14 h1:CkHWIet3/5x1StbIHhmxVPk9ZAR3tiVYZM69aShSPw4=
 github.com/mutablelogic/go-pg v1.1.14/go.mod h1:gVlww7AFL4bzpeQwvDO+ozUQZL4bQLbcI6ICgG5R1pg=
-github.com/mutablelogic/go-server v1.6.31 h1:CO6LsWYpbr0VNSvVq0Ry7u0mf/wwQ3VRK/gD50zXam8=
-github.com/mutablelogic/go-server v1.6.31/go.mod h1:WEitTi2S39tM0xkmhm0aMNzb7NqhkaqJmwfHpaVtycw=
+github.com/mutablelogic/go-server v1.6.32 h1:VL6qLPk3hHkwJmAvDlwxnaudOtevMKnkUcTjgqXOWQM=
+github.com/mutablelogic/go-server v1.6.32/go.mod h1:WEitTi2S39tM0xkmhm0aMNzb7NqhkaqJmwfHpaVtycw=
 github.com/mutablelogic/go-tokenizer v0.0.3 h1:6oaa80TaAl+nVpd+M9QhlJPbP7y5/thq4d0dKjreiLs=
 github.com/mutablelogic/go-tokenizer v0.0.3/go.mod h1:zdAyIhfqUKxFXb8MwChbXNwMOZt/5NlUylmx6Qjr4v8=
 github.com/opencontainers/go-digest v1.0.0 h1:apOUWs51W5PlhuyGyz9FCeeBIOUDA/6nW8Oi/yOhh5U=
