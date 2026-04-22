@@ -12,9 +12,12 @@
         import Auth from "./auth.js";
         import Token from "./token.js";
 
+        globalThis.Auth = Auth;
+        globalThis.Token = Token;
+
         const AUTH_BASE_URL = "/api";
         const AUTH_REQUEST_KEY = "auth:request";
-        const POST_LOGIN_REDIRECT_DELAY_MS = 2000;
+        const POST_LOGIN_REDIRECT_DELAY_MS = 500;
         const POST_LOGIN_REDIRECT_PATH = "/wasm_exec.html";
         const AUTH_PROVIDER_SCOPES = {
             google: "openid email profile",
