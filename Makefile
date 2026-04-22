@@ -17,6 +17,7 @@ BUILD_MODULE = $(shell cat go.mod | head -1 | cut -d ' ' -f 2)
 BUILD_VERSION_PACKAGE = github.com/mutablelogic/go-server/pkg/version
 BUILD_LD_FLAGS += -X $(BUILD_VERSION_PACKAGE).GitTag=${VERSION}
 BUILD_LD_FLAGS += -X $(BUILD_VERSION_PACKAGE).GitBranch=$(shell git name-rev HEAD --name-only --always)
+BUILD_LD_FLAGS += -X $(BUILD_VERSION_PACKAGE).BuildDate=$(shell date -u +%Y-%m-%dT%H:%M:%SZ)
 BUILD_FLAGS = -ldflags "-s -w ${BUILD_LD_FLAGS}" 
 
 # Docker
