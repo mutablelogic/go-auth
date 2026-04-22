@@ -14,9 +14,44 @@
 
 package main
 
-import "fmt"
+import (
+	// Packages
+	dom "github.com/djthorpe/go-wasmbuild"
+	mvc "github.com/djthorpe/go-wasmbuild/pkg/mvc"
+)
+
+///////////////////////////////////////////////////////////////////////////////
+// LIFECYCLE
 
 func main() {
-	fmt.Println("Hello, World!")
-	select {}
+	mvc.New("hello, world").Run()
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// TYPES
+
+type app struct {
+	mvc.View
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// GLOBAL VARIABLES
+
+const (
+	AppView = "app-view"
+)
+
+///////////////////////////////////////////////////////////////////////////////
+// LIFECYCLE
+
+func init() {
+	mvc.RegisterView(AppView, func(element dom.Element) mvc.View {
+		return mvc.NewViewWithElement(new(app), element, nil)
+	})
+}
+
+func App() mvc.View {
+	return mvc.NewView(new(app), AppView, "cds-button", func(self, child mvc.View) {
+		self.(*app).View = child
+	})
 }

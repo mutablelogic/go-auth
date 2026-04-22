@@ -9,3 +9,6 @@ assets:
     - index.css
 vars:
     Title: "Authentication"
+    Header: |
+        <link rel="stylesheet" href="index.css">
+        <script src="bundle.js"></script>    
