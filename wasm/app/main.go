@@ -17,14 +17,16 @@ package main
 import (
 	// Packages
 	dom "github.com/djthorpe/go-wasmbuild"
+	"github.com/djthorpe/go-wasmbuild/pkg/carbon"
 	mvc "github.com/djthorpe/go-wasmbuild/pkg/mvc"
+	"github.com/mutablelogic/go-server/pkg/types"
 )
 
 ///////////////////////////////////////////////////////////////////////////////
 // LIFECYCLE
 
 func main() {
-	mvc.New("hello, world").Run()
+	mvc.New(App()).Run()
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -51,7 +53,34 @@ func init() {
 }
 
 func App() mvc.View {
-	return mvc.NewView(new(app), AppView, "cds-button", func(self, child mvc.View) {
-		self.(*app).View = child
+	header := carbon.Header(
+		carbon.HeaderNavItem("#auth", "Auth"),
+		carbon.HeaderNavItem("#ldap", "LDAP"),
+		carbon.HeaderNavItem("#cert", "Cert"),
+	).SetLabel("/", "Authentication", "Manager")
+	sidenav := carbon.SideNav(
+		carbon.SideNavGroup("Users",
+			carbon.SideNavGroupItem("#active", "Active Users"),
+			carbon.SideNavGroupItem("#inactive", "Inactive Users"),
+			carbon.SideNavGroupItem("#sessions", "Sessions"),
+			carbon.SideNavGroupItem("#keys", "API Keys"),
+		),
+		carbon.SideNavGroup("Groups",
+			carbon.SideNavGroupItem("#groups", "Groups"),
+			carbon.SideNavGroupItem("#scopes", "Scopes"),
+		),
+	)
+	content := carbon.Section(
+		mvc.WithStyle("min-height:100vh"),
+		carbon.With(carbon.ThemeG10),
+		carbon.Head(1, "hello, world!"),
+	)
+	return types.Ptr(app{
+		View: carbon.Page(
+			carbon.With(carbon.ThemeG90),
+			header,
+			sidenav,
+			content,
+		),
 	})
 }
