@@ -4,8 +4,8 @@ github.com/AdaLogics/go-fuzz-headers v0.0.0-20240806141605-e8a1dd7889d6 h1:He8af
 github.com/AdaLogics/go-fuzz-headers v0.0.0-20240806141605-e8a1dd7889d6/go.mod h1:8o94RPi1/7XTJvwPpRSzSUedZrtlirdB3r9Z20bi2f8=
 github.com/Azure/go-ansiterm v0.0.0-20250102033503-faa5f7b0171c h1:udKWzYgxTojEKWjV8V+WSxDXJ4NFATAsZjh8iIbsQIg=
 github.com/Azure/go-ansiterm v0.0.0-20250102033503-faa5f7b0171c/go.mod h1:xomTg63KZ2rFqZQzSB4Vz2SUXa1BpHTVz9L5PTmPC4E=
-github.com/Azure/go-ntlmssp v0.1.0 h1:DjFo6YtWzNqNvQdrwEyr/e4nhU3vRiwenz5QX7sFz+A=
-github.com/Azure/go-ntlmssp v0.1.0/go.mod h1:NYqdhxd/8aAct/s4qSYZEerdPuH1liG2/X9DiVTbhpk=
+github.com/Azure/go-ntlmssp v0.1.1 h1:l+FM/EEMb0U9QZE7mKNEDw5Mu3mFiaa2GKOoTSsNDPw=
+github.com/Azure/go-ntlmssp v0.1.1/go.mod h1:NYqdhxd/8aAct/s4qSYZEerdPuH1liG2/X9DiVTbhpk=
 github.com/Microsoft/go-winio v0.6.2 h1:F2VQgta7ecxGYO8k3ZZz3RS8fVIXVxONVUPlNERoyfY=
 github.com/Microsoft/go-winio v0.6.2/go.mod h1:yd8OoFMLzJbo9gZq8j5qaps8bJ9aShtEA8Ipt1oGCvU=
 github.com/alecthomas/assert/v2 v2.11.0 h1:2Q9r3ki8+JYXvGsDyBXwH3LcJ+WK5D0gc5E8vS6K3D0=
@@ -177,8 +177,6 @@ github.com/mutablelogic/go-client v1.4.9 h1:1JHLha6u0u0mEQEHc4K0Pq6EJMwd8F0DR/ah
 github.com/mutablelogic/go-client v1.4.9/go.mod h1:g8c6RlvIC0wC5rpoqtqk7eznBxormwrxArxH9I5rNRQ=
 github.com/mutablelogic/go-pg v1.1.14 h1:CkHWIet3/5x1StbIHhmxVPk9ZAR3tiVYZM69aShSPw4=
 github.com/mutablelogic/go-pg v1.1.14/go.mod h1:gVlww7AFL4bzpeQwvDO+ozUQZL4bQLbcI6ICgG5R1pg=
-github.com/mutablelogic/go-server v1.6.32 h1:VL6qLPk3hHkwJmAvDlwxnaudOtevMKnkUcTjgqXOWQM=
-github.com/mutablelogic/go-server v1.6.32/go.mod h1:WEitTi2S39tM0xkmhm0aMNzb7NqhkaqJmwfHpaVtycw=
 github.com/mutablelogic/go-server v1.6.33 h1:NVqMI9kL4Dwtc6ficubcwp8exI8LMGFeucSt3//lY8w=
 github.com/mutablelogic/go-server v1.6.33/go.mod h1:WEitTi2S39tM0xkmhm0aMNzb7NqhkaqJmwfHpaVtycw=
 github.com/mutablelogic/go-tokenizer v0.0.3 h1:6oaa80TaAl+nVpd+M9QhlJPbP7y5/thq4d0dKjreiLs=
