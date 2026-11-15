@@ -4,6 +4,7 @@ Manages X.509 certificate authorities and leaf certificates, from a root certifi
 
 - **Chain of trust:** root → intermediate certificate authority (CA) → leaf certificate.
 - **Key:** a certificate is identified by its name and serial number. Its latest version is the one created last.
+- **Latest version:** only a certificate's latest version is renewed, or, for a certificate authority, signs certificates. Its older versions are kept, and can still be valid, downloaded, and enabled or disabled.
 - **Root:** imported once, when the server starts. It can't be renewed, replaced or updated through the API, and only signs CAs.
 - **Private keys:** encrypted at rest with the server's storage passphrases. A leaf certificate's key is returned by its own operation, which needs `cert:key`. A CA's never is.
 - **Expiry:** the default is five years for a CA and 90 days for a leaf certificate. It's capped at the signer's expiry.
@@ -47,6 +48,8 @@ Leaf certificates, signed by a certificate authority. Listing and updating inclu
 Lists certificates, other than the root, without their private keys.
 
 - **Filters:** `is_ca`, `enabled`, `valid` (within its validity period), `tags` (all of them) and `subject`.
+- **Versions:** `latest=true` lists each certificate's latest version, and `latest=false` the older ones. `name` lists a certificate's versions, the latest first.
+- **Search:** `search` lists the certificates whose names have its text, in any case.
 - **Pages:** `offset` and `limit`.
 
 ### GET /cert/{name}

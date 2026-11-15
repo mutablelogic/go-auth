@@ -62,16 +62,23 @@ func Test_Client(t *testing.T) {
 	renewedCA, err := c.RenewCA(ctx, cert.CertKey{Name: "client_ca"}, cert.RenewCertRequest{})
 	require.NoError(t, err)
 	assert.NotEqual(t, ca.Serial, renewedCA.Serial)
-	_, err = c.RenewCA(ctx, renewedCA.CertKey, cert.RenewCertRequest{Expiry: time.Hour})
+	latestCA, err := c.RenewCA(ctx, renewedCA.CertKey, cert.RenewCertRequest{Expiry: time.Hour})
 	require.NoError(t, err)
 
-	// A leaf certificate, with the CA's latest version and with a version
+	// Only the latest version is renewed
+	_, err = c.RenewCA(ctx, ca.CertKey, cert.RenewCertRequest{})
+	assert.ErrorIs(t, err, auth.ErrConflict)
+
+	// A leaf certificate, with the CA's latest version, by its name and its
+	// version, and not with an older version
 	leaf, err := c.CreateCert(ctx, cert.CreateCertRequest{Name: "client_leaf", SAN: []string{"leaf.example.test"}, Tags: []string{"client"}}, cert.CertKey{Name: "client_ca"})
 	require.NoError(t, err)
-	assert.Equal(t, "client_ca", types.Value(leaf.Signer).Name)
-	other, err := c.CreateCert(ctx, cert.CreateCertRequest{Name: "client_other", Expiry: time.Hour}, ca.CertKey)
+	assert.Equal(t, latestCA.CertKey, types.Value(leaf.Signer))
+	other, err := c.CreateCert(ctx, cert.CreateCertRequest{Name: "client_other", Expiry: time.Hour}, latestCA.CertKey)
 	require.NoError(t, err)
-	assert.Equal(t, ca.CertKey, types.Value(other.Signer))
+	assert.Equal(t, latestCA.CertKey, types.Value(other.Signer))
+	_, err = c.CreateCert(ctx, cert.CreateCertRequest{Name: "client_older"}, ca.CertKey)
+	assert.ErrorIs(t, err, auth.ErrConflict)
 	_, err = c.CreateCert(ctx, cert.CreateCertRequest{Name: "client_missing"}, cert.CertKey{Name: "missing_ca"})
 	assert.ErrorIs(t, err, auth.ErrNotFound)
 

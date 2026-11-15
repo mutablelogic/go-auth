@@ -259,6 +259,31 @@ func Test_Subject(t *testing.T) {
 	assert.Equal(t, http.StatusNotFound, status)
 }
 
+func Test_Latest(t *testing.T) {
+	mgr, _ := certtest.Begin(t)
+	s := test.NewServer(t, httphandler.RegisterHandlers(mgr, false))
+
+	var ca, renewed cert.Certificate
+	require.Equal(t, http.StatusCreated, s.JSON(t, http.MethodPost, "ca", cert.CreateCertRequest{Name: "versioned_ca"}, &ca))
+	require.Equal(t, http.StatusCreated, s.JSON(t, http.MethodPost, "ca/versioned_ca/renew", cert.RenewCertRequest{}, &renewed))
+
+	// The latest version, and a certificate's versions
+	var latest, versions cert.CertList
+	require.Equal(t, http.StatusOK, s.JSON(t, http.MethodGet, "cert?latest=true&is_ca=true", nil, &latest))
+	for _, c := range latest.Body {
+		assert.NotEqual(t, ca.CertKey, c.CertKey, "an older version isn't the latest")
+	}
+	require.Equal(t, http.StatusOK, s.JSON(t, http.MethodGet, "cert?name=versioned_ca", nil, &versions))
+	require.Len(t, versions.Body, 2)
+	assert.Equal(t, renewed.CertKey, versions.Body[0].CertKey)
+
+	// An older version isn't renewed, or signs
+	status, _ := s.Do(t, http.MethodPost, "ca/versioned_ca/"+ca.Serial+"/renew", cert.RenewCertRequest{})
+	assert.Equal(t, http.StatusConflict, status)
+	status, _ = s.Do(t, http.MethodPost, "cert/versioned_ca/"+ca.Serial, cert.CreateCertRequest{Name: "from_older"})
+	assert.Equal(t, http.StatusConflict, status)
+}
+
 func Test_Spec(t *testing.T) {
 	mgr, _ := certtest.Begin(t)
 	s := test.NewServer(t, httphandler.RegisterHandlers(mgr, false))

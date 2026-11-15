@@ -150,6 +150,29 @@ func (c CertListRequest) Select(bind *pg.Bind, op pg.Op) (string, error) {
 			bind.Append("where", `(cert_row."not_before" > CURRENT_TIMESTAMP OR cert_row."not_after" <= CURRENT_TIMESTAMP)`)
 		}
 	}
+	if c.Latest != nil {
+		// The latest version of a name is the one inserted last. The where
+		// clause isn't expanded again, so the schema is expanded here.
+		latest := bind.Replace(`cert_row."id" = (SELECT MAX(version."id") FROM ${"schema"}."cert" AS version WHERE version."name" = cert_row."name")`)
+		if *c.Latest {
+			bind.Append("where", latest)
+		} else {
+			bind.Append("where", "NOT ("+latest+")")
+		}
+	}
+	if search := strings.TrimSpace(c.Search); search != "" {
+		// The text is matched literally, so the LIKE pattern's characters in
+		// it are escaped
+		escaped := strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(search)
+		bind.Append("where", `cert_row."name" ILIKE `+bind.Set("search", "%"+escaped+"%"))
+	}
+	if c.Name != "" {
+		name, err := cert.ValidateCertName(c.Name)
+		if err != nil {
+			return "", err
+		}
+		bind.Append("where", `cert_row."name" = `+bind.Set("name_filter", name))
+	}
 	if c.Subject != nil {
 		if types.Value(c.Subject) == 0 {
 			return "", httpresponse.ErrBadRequest.With("subject is invalid")
@@ -162,7 +185,8 @@ func (c CertListRequest) Select(bind *pg.Bind, op pg.Op) (string, error) {
 	} else {
 		bind.Set("where", "WHERE "+where)
 	}
-	bind.Set("orderby", `ORDER BY cert_row."name" ASC, cert_row."serial"::NUMERIC DESC, cert_row."id" DESC`)
+	// A name's versions are the latest first, which is the one inserted last
+	bind.Set("orderby", `ORDER BY cert_row."name" ASC, cert_row."id" DESC`)
 	offsetlimit := pg.OffsetLimit(c.OffsetLimit)
 	offsetlimit.Bind(bind, CertListLimit)
 

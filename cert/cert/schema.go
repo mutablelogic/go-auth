@@ -149,6 +149,9 @@ type CertListRequest struct {
 	Tags    []string `json:"tags,omitempty" jsonschema:"require all specified effective tags" example:"[\"production\"]"`
 	Valid   *bool    `json:"valid,omitempty" jsonschema:"filter by current validity window" example:"true"`
 	Subject *uint64  `json:"subject,omitempty" jsonschema:"filter by subject row identifier" example:"1"`
+	Latest  *bool    `json:"latest,omitempty" negatable:"" jsonschema:"only each certificate's latest version, which can be renewed and sign certificates, or with false, only their older versions" example:"true"`
+	Name    string   `json:"name,omitempty" jsonschema:"only the versions of the certificate with the name, the latest first" example:"web"`
+	Search  string   `json:"search,omitempty" jsonschema:"only the certificates whose names have the text, in any case" example:"web"`
 }
 
 type CertList struct {
@@ -410,6 +413,15 @@ func (r CertListRequest) Query() url.Values {
 	}
 	if r.Subject != nil {
 		query.Set("subject", strconv.FormatUint(*r.Subject, 10))
+	}
+	if r.Latest != nil {
+		query.Set("latest", strconv.FormatBool(*r.Latest))
+	}
+	if r.Name != "" {
+		query.Set("name", r.Name)
+	}
+	if r.Search != "" {
+		query.Set("search", r.Search)
 	}
 	return query
 }

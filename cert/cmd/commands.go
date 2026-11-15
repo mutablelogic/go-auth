@@ -37,7 +37,7 @@ import (
 type CertCommands struct {
 	CACreate   CACreateCmd   `cmd:"" name:"ca-create" help:"Create a certificate authority, signed by the root." group:"CERTIFICATE"`
 	CARenew    CARenewCmd    `cmd:"" name:"ca-renew" help:"Renew a certificate authority. The current version stays enabled." group:"CERTIFICATE"`
-	CertList   CertListCmd   `cmd:"" name:"certs" help:"List certificates." group:"CERTIFICATE"`
+	CertList   CertListCmd   `cmd:"" name:"certs" help:"List the latest version of each certificate, which is renewed and signs certificates, or with --all every version, or with --name a certificate's versions." group:"CERTIFICATE"`
 	CertGet    CertGetCmd    `cmd:"" name:"cert" help:"Get a certificate as PEM, with its chain or private key. Prints a private key only to a pipe or file, unless --show is set." group:"CERTIFICATE"`
 	CertCreate CertCreateCmd `cmd:"" name:"cert-create" help:"Create a certificate, signed by a certificate authority." group:"CERTIFICATE"`
 	CertRenew  CertRenewCmd  `cmd:"" name:"cert-renew" help:"Renew a certificate, which disables the current version." group:"CERTIFICATE"`
@@ -63,6 +63,8 @@ type CertListCmd struct {
 	Enabled *bool    `name:"enabled" negatable:"" help:"Only enabled certificates, or with --no-enabled, only disabled ones"`
 	Valid   *bool    `name:"valid" negatable:"" help:"Only certificates within their validity period, or with --no-valid, only those outside it"`
 	Tags    []string `name:"tag" help:"Only certificates with the tag. Repeat to require more than one."`
+	All     bool     `name:"all" help:"Every version of the certificates, rather than the latest"`
+	Name    string   `name:"name" help:"The versions of the certificate with the name, the latest first"`
 	Offset  uint64   `name:"offset" help:"Offset within the list"`
 	Limit   *uint64  `name:"limit" help:"Number of certificates to list"`
 }
@@ -138,6 +140,8 @@ func (cmd *CertListCmd) Run(ctx server.Cmd) error {
 			Enabled:     cmd.Enabled,
 			Valid:       cmd.Valid,
 			Tags:        cmd.Tags,
+			Latest:      latestOnly(cmd.All, cmd.Name),
+			Name:        cmd.Name,
 		})
 		if err != nil {
 			return err
@@ -227,6 +231,16 @@ func (cmd *CertUpdateCmd) Run(ctx server.Cmd) error {
 
 ///////////////////////////////////////////////////////////////////////////////
 // PRIVATE METHODS
+
+// latestOnly is the latest filter: only the latest versions, unless every
+// version, or a certificate's, are listed
+func latestOnly(all bool, name string) *bool {
+	if all || name != "" {
+		return nil
+	}
+	latest := true
+	return &latest
+}
 
 // printCert prints what was done to a certificate, with its name and serial,
 // or the certificate with debugging

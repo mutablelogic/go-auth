@@ -93,6 +93,9 @@ func (m *Manager) CreateCert(ctx context.Context, req cert.CreateCertRequest, ca
 	if !types.Value(caRow.Enabled) {
 		return nil, httpresponse.ErrConflict.With("certificate authority is disabled")
 	}
+	if err := m.isLatest(ctx, caRow, "only the latest version of certificate authority %q, serial %s, signs certificates"); err != nil {
+		return nil, err
+	}
 
 	privateCA, err := m.getPrivateCert(ctx, caRow.CertKey)
 	if err != nil {
@@ -290,6 +293,20 @@ func (m *Manager) GetCertChain(ctx context.Context, key cert.CertKey) (_ []cert.
 ///////////////////////////////////////////////////////////////////////////////
 // PRIVATE METHODS
 
+// isLatest is a conflict, with the message, of the certificate's name and
+// latest serial, unless the certificate is its name's latest version, which
+// alone is renewed, and signs certificates
+func (m *Manager) isLatest(ctx context.Context, c cert.Certificate, message string) error {
+	latest, err := m.GetLatestCert(ctx, c.Name)
+	if err != nil {
+		return err
+	}
+	if latest.CertKey != c.CertKey {
+		return httpresponse.ErrConflict.Withf(message, c.Name, latest.Serial)
+	}
+	return nil
+}
+
 // withSubject sets the subject, unless it's empty, such as a generated
 // root's, which has only a common name, as cert.WithSubject needs a field
 func withSubject(subject cert.SubjectMeta) cert.Opt {
@@ -376,6 +393,11 @@ func (m *Manager) renewCert(ctx context.Context, current cert.CertKey, req cert.
 	}
 	if !expectCA && currentRow.IsCA {
 		return nil, httpresponse.ErrBadRequest.With("certificate is not a leaf certificate")
+	}
+	// An older version isn't renewed, which says which is the latest, even
+	// when it's disabled, as a renewed leaf certificate's older versions are
+	if err := m.isLatest(ctx, currentRow, "only the latest version of %q, serial %s, can be renewed"); err != nil {
+		return nil, err
 	}
 	if !types.Value(currentRow.Enabled) {
 		if currentRow.IsCA {

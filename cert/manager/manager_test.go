@@ -18,6 +18,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"strconv"
 	"testing"
 	"time"
@@ -356,6 +357,13 @@ func Test_manager_issuers(t *testing.T) {
 		var latest cert.Certificate
 		require.NoError(t, m.Get(ctx, (*schema.Certificate)(&latest), schema.CertName("versioned")))
 		assert.Equal(t, "9", latest.Serial)
+
+		// A name's versions are the latest first, which is the one inserted
+		// last, rather than the largest serial
+		versions, err := m.ListCerts(ctx, cert.CertListRequest{Name: "versioned"})
+		require.NoError(t, err)
+		require.Len(t, versions.Body, 2)
+		assert.Equal(t, []string{"9", "10"}, []string{versions.Body[0].Serial, versions.Body[1].Serial})
 	})
 }
 
@@ -575,4 +583,65 @@ func (selector triggerCountSelector) Select(bind *pg.Bind, op pg.Op) (string, er
 		FROM information_schema.triggers
 		WHERE trigger_schema = @trigger_schema
 	`, nil
+}
+
+func Test_manager_latest(t *testing.T) {
+	ctx := context.Background()
+	m := test.IsolatedManager(t, manager.WithPassphrase(1, "root-secret-1"), manager.WithGeneratedRoot("Latest Root CA"))
+
+	// A CA, and a leaf certificate, renewed twice each
+	ca, err := m.CreateCA(ctx, cert.CreateCertRequest{Name: "latest_ca"})
+	require.NoError(t, err)
+	ca2, err := m.RenewCA(ctx, ca.CertKey, cert.RenewCertRequest{})
+	require.NoError(t, err)
+	leaf, err := m.CreateCert(ctx, cert.CreateCertRequest{Name: "latest_leaf", Expiry: time.Hour}, ca2.CertKey)
+	require.NoError(t, err)
+	leaf2, err := m.RenewCert(ctx, leaf.CertKey, cert.RenewCertRequest{})
+	require.NoError(t, err)
+	leaf3, err := m.RenewCert(ctx, leaf2.CertKey, cert.RenewCertRequest{})
+	require.NoError(t, err)
+
+	keys := func(list *cert.CertList) []cert.CertKey {
+		result := []cert.CertKey{}
+		for _, c := range list.Body {
+			result = append(result, c.CertKey)
+		}
+		return result
+	}
+
+	// The latest versions, and the others
+	latest, err := m.ListCerts(ctx, cert.CertListRequest{Latest: types.Ptr(true)})
+	require.NoError(t, err)
+	assert.Equal(t, []cert.CertKey{ca2.CertKey, leaf3.CertKey}, keys(latest))
+	assert.Equal(t, uint64(2), latest.Count)
+	older, err := m.ListCerts(ctx, cert.CertListRequest{Latest: types.Ptr(false)})
+	require.NoError(t, err)
+	assert.Equal(t, []cert.CertKey{ca.CertKey, leaf2.CertKey, leaf.CertKey}, keys(older))
+
+	// A certificate's versions, the latest first
+	versions, err := m.ListCerts(ctx, cert.CertListRequest{Name: "latest_leaf"})
+	require.NoError(t, err)
+	assert.Equal(t, []cert.CertKey{leaf3.CertKey, leaf2.CertKey, leaf.CertKey}, keys(versions))
+	_, err = m.ListCerts(ctx, cert.CertListRequest{Name: "not a name"})
+	assert.Error(t, err)
+
+	// A search of the names, in any case, which matches its text literally
+	found, err := m.ListCerts(ctx, cert.CertListRequest{Search: "LEAF", Latest: types.Ptr(true)})
+	require.NoError(t, err)
+	assert.Equal(t, []cert.CertKey{leaf3.CertKey}, keys(found))
+	found, err = m.ListCerts(ctx, cert.CertListRequest{Search: "t_l", Latest: types.Ptr(true)})
+	require.NoError(t, err)
+	assert.Equal(t, []cert.CertKey{leaf3.CertKey}, keys(found), "_ is matched, rather than any character")
+	found, err = m.ListCerts(ctx, cert.CertListRequest{Search: "%"})
+	require.NoError(t, err)
+	assert.Empty(t, found.Body, "% is matched, rather than anything")
+
+	// Only the latest version is renewed, or signs, even when an older one is
+	// enabled, as a renewed CA's is
+	_, err = m.RenewCA(ctx, ca.CertKey, cert.RenewCertRequest{})
+	assert.EqualError(t, err, fmt.Sprintf("Conflict: only the latest version of %q, serial %s, can be renewed", "latest_ca", ca2.Serial))
+	_, err = m.CreateCert(ctx, cert.CreateCertRequest{Name: "older_ca_leaf"}, ca.CertKey)
+	assert.EqualError(t, err, fmt.Sprintf("Conflict: only the latest version of certificate authority %q, serial %s, signs certificates", "latest_ca", ca2.Serial))
+	_, err = m.RenewCert(ctx, leaf2.CertKey, cert.RenewCertRequest{})
+	assert.Error(t, err, "an older leaf version is disabled, and isn't the latest")
 }
