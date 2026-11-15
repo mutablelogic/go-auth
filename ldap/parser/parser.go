@@ -68,7 +68,9 @@ func (p *parser) ParseObjectClass() (*schema.ObjectClassSchema, error) {
 		return nil, err
 	}
 
-	oid, err := p.readOID(false)
+	// The leading OID is numeric, or a descriptor, as 389 DS's schema has,
+	// such as nsCertConfig-oid, but never quoted, or with a length
+	oid, err := p.readOID(false, false)
 	if err != nil {
 		return nil, err
 	}
@@ -92,13 +94,13 @@ func (p *parser) ParseObjectClass() (*schema.ObjectClassSchema, error) {
 			case "OBSOLETE":
 				result.Obsolete = true
 			case "SUP":
-				result.SuperClasses, err = p.readOIDList(false)
+				result.SuperClasses, err = p.readOIDList()
 			case "ABSTRACT", "STRUCTURAL", "AUXILIARY":
 				result.ClassKind = schema.ObjectClassKind(keyword)
 			case "MUST":
-				result.Must, err = p.readOIDList(false)
+				result.Must, err = p.readOIDList()
 			case "MAY":
-				result.May, err = p.readOIDList(false)
+				result.May, err = p.readOIDList()
 			default:
 				if strings.HasPrefix(keyword, "X-") {
 					result.Extensions[keyword], err = p.readExtensionValues()
@@ -127,7 +129,9 @@ func (p *parser) ParseAttributeType() (*schema.AttributeTypeSchema, error) {
 		return nil, err
 	}
 
-	oid, err := p.readOID(false)
+	// The leading OID is numeric, or a descriptor, as 389 DS's schema has,
+	// such as nsCertConfig-oid, but never quoted, or with a length
+	oid, err := p.readOID(false, false)
 	if err != nil {
 		return nil, err
 	}
@@ -151,9 +155,9 @@ func (p *parser) ParseAttributeType() (*schema.AttributeTypeSchema, error) {
 			case "OBSOLETE":
 				result.Obsolete = true
 			case "SUP":
-				result.SuperType, err = p.readOID(false)
+				result.SuperType, err = p.readOID(false, false)
 			case "SYNTAX":
-				result.Syntax, err = p.readOID(true)
+				result.Syntax, err = p.readOID(true, true)
 			case "SINGLE-VALUE":
 				result.SingleValue = true
 			case "COLLECTIVE":
@@ -187,7 +191,11 @@ func (p *parser) reset() error {
 	if p == nil || strings.TrimSpace(p.definition) == "" {
 		return errEmptyDefinition
 	}
-	p.scanner = tokenizer.NewScanner(strings.NewReader(p.definition), tokenizer.Pos{}, scannerFeatures)
+	definition, err := escapeQuoted(p.definition)
+	if err != nil {
+		return err
+	}
+	p.scanner = tokenizer.NewScanner(strings.NewReader(definition), tokenizer.Pos{}, scannerFeatures)
 	return nil
 }
 
@@ -225,6 +233,9 @@ func (p *parser) expect(kind tokenizer.TokenKind, values ...string) error {
 
 func (p *parser) expectEOF() error {
 	tok := p.peek()
+	if err := p.scanErr(tok); err != nil {
+		return err
+	}
 	if tok.Kind != tokenizer.EOF {
 		return p.unexpected(tok, "end of definition")
 	}
@@ -234,6 +245,9 @@ func (p *parser) expectEOF() error {
 func (p *parser) unexpected(tok *tokenizer.Token, expected string) error {
 	if tok == nil {
 		return auth.ErrBadParameter.Withf("ldapparser: expected %s", expected)
+	}
+	if err := p.scanErr(tok); err != nil {
+		return err
 	}
 	// The position is in the message, as go-tokenizer's PosError doesn't
 	// unwrap, so the error wouldn't be a bad parameter
@@ -281,7 +295,10 @@ func (p *parser) readQDStrings() ([]string, error) {
 	}
 }
 
-func (p *parser) readOID(allowQuoted bool) (string, error) {
+// readOID reads a descriptor, or a numeric OID, with a length, such as a
+// syntax has, when allowLength is true, or a quoted one, when allowQuoted
+// is true
+func (p *parser) readOID(allowQuoted, allowLength bool) (string, error) {
 	tok := p.peek()
 	switch tok.Kind {
 	case tokenizer.Ident:
@@ -304,6 +321,9 @@ func (p *parser) readOID(allowQuoted bool) (string, error) {
 			builder.WriteString(p.next().Val)
 		}
 		if p.peek().Kind == tokenizer.OpenBrace {
+			if !allowLength {
+				return "", p.unexpected(p.peek(), "numeric OID without a length")
+			}
 			p.next()
 			part := p.peek()
 			if part.Kind != tokenizer.NumberInteger {
@@ -322,9 +342,11 @@ func (p *parser) readOID(allowQuoted bool) (string, error) {
 	}
 }
 
-func (p *parser) readOIDList(allowQuoted bool) ([]string, error) {
+// readOIDList reads an OID, or a list of them, which is at least one,
+// separated by $
+func (p *parser) readOIDList() ([]string, error) {
 	if p.peek().Kind != tokenizer.OpenParen {
-		value, err := p.readOID(allowQuoted)
+		value, err := p.readOID(false, false)
 		if err != nil {
 			return nil, err
 		}
@@ -334,19 +356,19 @@ func (p *parser) readOIDList(allowQuoted bool) ([]string, error) {
 	p.next()
 	values := make([]string, 0, 4)
 	for {
-		tok := p.peek()
-		switch tok.Kind {
+		value, err := p.readOID(false, false)
+		if err != nil {
+			return nil, err
+		}
+		values = append(values, value)
+		switch tok := p.peek(); tok.Kind {
 		case tokenizer.CloseParen:
 			p.next()
 			return values, nil
 		case tokenizer.Dollar:
 			p.next()
 		default:
-			value, err := p.readOID(allowQuoted)
-			if err != nil {
-				return nil, err
-			}
-			values = append(values, value)
+			return nil, p.unexpected(tok, "$ or )")
 		}
 	}
 }
@@ -383,7 +405,7 @@ func (p *parser) readExtensionValue() (string, error) {
 	if tok.Kind == tokenizer.String {
 		return p.next().Val, nil
 	}
-	return p.readOID(true)
+	return p.readOID(true, true)
 }
 
 func (p *parser) skipClauseValue(keyword string) error {
@@ -406,7 +428,7 @@ func (p *parser) skipClauseValue(keyword string) error {
 			}
 		}
 	case tokenizer.String, tokenizer.Ident, tokenizer.NumberInteger:
-		_, err := p.readOID(true)
+		_, err := p.readOID(true, true)
 		if tok.Kind == tokenizer.String {
 			return nil
 		}
@@ -414,6 +436,54 @@ func (p *parser) skipClauseValue(keyword string) error {
 	default:
 		return p.unexpected(tok, fmt.Sprintf("value for %q", keyword))
 	}
+}
+
+// scanErr returns the scanner's error, as a bad parameter, when the token
+// is the end of the definition because the scanner failed, such as at an
+// unterminated string
+func (p *parser) scanErr(tok *tokenizer.Token) error {
+	if tok == nil || tok.Kind != tokenizer.EOF || p.scanner == nil {
+		return nil
+	}
+	if err := p.scanner.Err(); err != nil {
+		return auth.ErrBadParameter.Withf("ldapparser: %v", err)
+	}
+	return nil
+}
+
+// escapeQuoted rewrites RFC 4512's escapes in quoted strings, \27 for an
+// apostrophe and \5C for a backslash, as the tokenizer's, \' and \\.
+// Any other backslash in a quoted string is invalid. The rewritten escapes
+// are a character shorter, so positions after them are a column earlier.
+func escapeQuoted(definition string) (string, error) {
+	var result strings.Builder
+	result.Grow(len(definition))
+	quoted := false
+	for i := 0; i < len(definition); i++ {
+		ch := definition[i]
+		switch {
+		case ch == '\'':
+			quoted = !quoted
+			result.WriteByte(ch)
+		case ch == '\\' && quoted:
+			escape := ""
+			if i+2 < len(definition) {
+				escape = strings.ToLower(definition[i+1 : i+3])
+			}
+			switch escape {
+			case "27":
+				result.WriteString(`\'`)
+			case "5c":
+				result.WriteString(`\\`)
+			default:
+				return "", auth.ErrBadParameter.Withf("ldapparser: invalid escape at %d, which is \\27 or \\5C", i+1)
+			}
+			i += 2
+		default:
+			result.WriteByte(ch)
+		}
+	}
+	return result.String(), nil
 }
 
 func expectedDescription(kind tokenizer.TokenKind, values ...string) string {
