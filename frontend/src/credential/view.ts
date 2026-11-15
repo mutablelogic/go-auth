@@ -25,7 +25,7 @@ import type { PageAction } from '@mutablelogic/go-server/page';
 import type { Router } from '@mutablelogic/go-server/router';
 import { CredentialController } from './controller.ts';
 import { credentialChange, credentialForm, credentialFormErrors, credentialRequest, type CredentialForm, type CredentialFormErrors } from './form.ts';
-import type { Credential, CredentialFeatures } from './schema.ts';
+import { refreshable, type Credential, type CredentialFeatures } from './schema.ts';
 
 // go-server's and Carbon's elements
 import '@mutablelogic/go-server/list/view';
@@ -38,6 +38,7 @@ import '@carbon/web-components/es/components/tag/index.js';
 import '@carbon/web-components/es/components/text-input/index.js';
 import '@carbon/web-components/es/components/textarea/index.js';
 import AddIcon from '@carbon/icons/es/add/16.js';
+import RenewIcon from '@carbon/icons/es/renew/16.js';
 import PasswordIcon from '@carbon/icons/es/password/32.js';
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -229,6 +230,9 @@ export class CredentialsElement extends LitElement {
         const actions: PageAction[] = [];
         if ((this.features?.rotate ?? true) && this.rotations > 0) {
             actions.push({ label: `Rotate all (${this.rotations})`, kind: 'secondary', run: () => this.rotateAll() });
+        }
+        if (refreshable(this.features?.backend)) {
+            actions.push({ label: 'Refresh', kind: 'secondary', icon: RenewIcon, run: () => this.controller?.list.refresh() });
         }
         actions.push({ label: 'Store a credential', icon: AddIcon, run: () => this.store() });
         return html`

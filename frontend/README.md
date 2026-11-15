@@ -21,7 +21,7 @@ credentialModule({ nav, router, client, root: document.querySelector('main')!, n
 ```
 
 - **The module:** adds the Credentials section to the app's `NavController`, its page to `root`, and its route to the `Router`.
-- **The page:** `ga-credentials` has its own header, which stores a credential, a table of the credentials, and a panel. The panel gets a credential's value with its passphrase, replaces it, rotates it, and deletes it.
+- **The page:** `ga-credentials` has its own header, which stores a credential, and, for AWS and Bitwarden, refreshes the list, since their changes made elsewhere aren't published. It has a table of the credentials, and a panel. The panel gets a credential's value with its passphrase, replaces it, rotates it, and deletes it.
 - **Values:** only shown with the passphrase they were encrypted with, so only for the file and pg backends.
 - **Parts:** an app with its own table and panel can use `CredentialController`, `credentialColumns` and the form views instead.
 
