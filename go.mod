@@ -14,6 +14,7 @@ require (
 	github.com/mutablelogic/go-client v1.4.13
 	github.com/mutablelogic/go-pg v1.5.1
 	github.com/mutablelogic/go-server v1.8.7
+	github.com/mutablelogic/go-tokenizer v0.0.3
 	github.com/stretchr/testify v1.12.1
 	github.com/youmark/pkcs8 v0.0.0-20240726163527-a2c0da244d78
 	go.opentelemetry.io/otel v1.47.0
@@ -94,7 +95,6 @@ require (
 	github.com/moby/term v0.5.2 // indirect
 	github.com/muesli/reflow v0.3.0 // indirect
 	github.com/muesli/termenv v0.16.0 // indirect
-	github.com/mutablelogic/go-tokenizer v0.0.3 // indirect
 	github.com/opencontainers/go-digest v1.0.0 // indirect
 	github.com/opencontainers/image-spec v1.1.1 // indirect
 	github.com/pkg/browser v0.0.0-20240102092130-5ac0b6a4141c // indirect
