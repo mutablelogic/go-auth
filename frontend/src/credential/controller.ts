@@ -24,6 +24,10 @@ export class CredentialController {
     readonly client: Client;
     readonly list: ListController<Credential>;
 
+    // rotations is how many credentials need rotating, of all of them, when
+    // the list was last loaded
+    rotations = 0;
+
     constructor(client: Client, options: CredentialOptions = {}) {
         this.client = client;
         this.list = new ListController<Credential>({
@@ -32,6 +36,7 @@ export class CredentialController {
             // here
             list: async (offset, limit, sort) => {
                 const all = sortCredentials((await api.listCredentials(client)).body ?? [], sort);
+                this.rotations = all.filter((credential) => credential.rotate).length;
                 return { count: all.length, body: all.slice(offset, offset + limit) };
             },
             get: (credential) => api.getCredentialMeta(client, credential.key),
@@ -81,6 +86,20 @@ export class CredentialController {
         if (rotated) {
             await this.list.refresh();
         }
+        return rotated;
+    }
+
+    // rotateAll rotates each credential which needs rotating, of all of
+    // them, and loads the list again, and returns how many were rotated
+    async rotateAll(): Promise<number> {
+        const all = (await api.listCredentials(this.client)).body ?? [];
+        let rotated = 0;
+        for (const credential of all.filter((c) => c.rotate)) {
+            if (await api.rotateCredential(this.client, credential.key)) {
+                rotated++;
+            }
+        }
+        await this.list.refresh();
         return rotated;
     }
 }

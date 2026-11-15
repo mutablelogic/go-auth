@@ -236,6 +236,10 @@ func (self *Manager) List(ctx context.Context) (_ []credential.Credential, err e
 	if err != nil {
 		return nil, auth.ErrInternalServerError.Withf("credential path %q: %w", self.path, err)
 	}
+
+	// A credential needs rotating when it's encrypted with an older
+	// passphrase than the latest
+	_, latest := self.passphrases.Get(0)
 	result := make([]credential.Credential, 0, len(entries))
 	for _, entry := range entries {
 		if !entry.Type().IsRegular() || validateKey(entry.Name()) != nil {
@@ -249,15 +253,15 @@ func (self *Manager) List(ctx context.Context) (_ []credential.Credential, err e
 		}
 		// The description is in the file, which is listed without it when
 		// it isn't valid
-		description := ""
+		description, rotate := "", false
 		if r, err := self.readRecord(entry.Name()); err == nil {
-			description = r.description
+			description, rotate = r.description, latest != 0 && r.version != latest
 		} else if errors.Is(err, auth.ErrNotFound) {
 			continue
 		} else if !errors.Is(err, errInvalid) {
 			return nil, err
 		}
-		result = append(result, credential.Credential{Key: entry.Name(), Description: description, UpdatedAt: info.ModTime().UTC()})
+		result = append(result, credential.Credential{Key: entry.Name(), Description: description, UpdatedAt: info.ModTime().UTC(), Rotate: rotate})
 	}
 	return result, nil
 }

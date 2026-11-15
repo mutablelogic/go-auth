@@ -118,9 +118,10 @@ func (flags FileFlags) options(ctx server.Cmd) []filecredential.Opt {
 
 // WithPGCredentialManager creates the pg backend in the pool and schema,
 // which is the default when it's empty, without the environment as a
-// fallback, and calls fn with it. It needs a passphrase.
-func (flags PGFlags) WithPGCredentialManager(ctx server.Cmd, pool pg.PoolConn, schema string, fn func(provider.CredentialManager) error) error {
-	mgr, err := pgcredential.New(ctx.Context(), pool, flags.options(ctx, schema)...)
+// fallback, and calls fn with it, with the store's own options, such as
+// pg.WithChannel. It needs a passphrase.
+func (flags PGFlags) WithPGCredentialManager(ctx server.Cmd, pool pg.PoolConn, schema string, fn func(provider.CredentialManager) error, opts ...pgcredential.Opt) error {
+	mgr, err := pgcredential.New(ctx.Context(), pool, append(flags.options(ctx, schema), opts...)...)
 	if err != nil {
 		return err
 	}

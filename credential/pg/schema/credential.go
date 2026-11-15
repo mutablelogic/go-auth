@@ -37,6 +37,7 @@ type CredentialKey struct {
 type Credential struct {
 	CredentialKey
 	Description string    `json:"description,omitempty" help:"Credential description, such as what it's for"`
+	PV          uint64    `json:"pv,omitempty" help:"Passphrase version it's encrypted with" readonly:""`
 	UpdatedAt   time.Time `json:"updated_at" help:"Update timestamp" readonly:""`
 }
 
@@ -213,10 +214,10 @@ func (c *CredentialListRequest) Select(bind *pg.Bind, op pg.Op) (string, error) 
 ///////////////////////////////////////////////////////////////////////////////
 // PUBLIC METHODS - READER
 
-// Expected column order: key, description, updated_at.
+// Expected column order: key, description, pv, updated_at.
 func (c *Credential) Scan(row pg.Row) error {
 	var description *string
-	if err := row.Scan(&c.Key, &description, &c.UpdatedAt); err != nil {
+	if err := row.Scan(&c.Key, &description, &c.PV, &c.UpdatedAt); err != nil {
 		return err
 	}
 	c.Description = types.Value(description)

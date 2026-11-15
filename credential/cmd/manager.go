@@ -36,7 +36,7 @@ import (
 type CredentialManagerCommands struct {
 	CredentialList   CredentialListCmd   `cmd:"" name:"credentials" help:"List credential keys." group:"CREDENTIAL"`
 	CredentialDelete CredentialDeleteCmd `cmd:"" name:"credential-delete" help:"Delete a credential by key." group:"CREDENTIAL"`
-	CredentialRotate CredentialRotateCmd `cmd:"" name:"credential-rotate" help:"Re-encrypt a credential with the latest passphrase version." group:"CREDENTIAL"`
+	CredentialRotate CredentialRotateCmd `cmd:"" name:"credential-rotate" help:"Re-encrypt a credential, or with --all every one which needs it, with the latest passphrase version." group:"CREDENTIAL"`
 }
 
 type CredentialListCmd struct{}
@@ -46,7 +46,8 @@ type CredentialDeleteCmd struct {
 }
 
 type CredentialRotateCmd struct {
-	Key string `arg:"" name:"key" help:"Credential key (identifier)."`
+	All bool   `name:"all" help:"Rotate every credential which needs rotating, rather than one."`
+	Key string `arg:"" optional:"" name:"key" help:"Credential key (identifier)."`
 }
 
 // credentialRow is a row of the credentials table
@@ -93,24 +94,51 @@ func (cmd *CredentialDeleteCmd) Run(ctx server.Cmd) error {
 }
 
 func (cmd *CredentialRotateCmd) Run(ctx server.Cmd) error {
+	if cmd.All == (cmd.Key != "") {
+		return fmt.Errorf("either a key, or --all, is required")
+	}
 	return withClient(ctx, "credential.CredentialRotateCmd", func(ctx context.Context, client *httpclient.Client) error {
-		if err := client.RotateCredential(ctx, cmd.Key); errors.Is(err, auth.ErrNotModified) {
-			// Already using the latest passphrase version, which isn't an error
-			fmt.Fprintf(os.Stderr, "credential %q already uses the latest passphrase version\n", cmd.Key)
-			return nil
-		} else if err != nil {
+		if !cmd.All {
+			return rotate(ctx, client, cmd.Key)
+		}
+
+		// Rotate each credential which needs rotating
+		list, err := client.ListCredentials(ctx)
+		if err != nil {
 			return err
 		}
-		fmt.Println("rotated credential", cmd.Key)
+		rotated := 0
+		for _, c := range list.Body {
+			if !c.Rotate {
+				continue
+			} else if err := rotate(ctx, client, c.Key); err != nil {
+				return err
+			}
+			rotated++
+		}
+		fmt.Printf("rotated %d credentials\n", rotated)
 		return nil
 	})
+}
+
+// rotate rotates the credential, which isn't an error when it already uses
+// the latest passphrase version
+func rotate(ctx context.Context, client *httpclient.Client, key string) error {
+	if err := client.RotateCredential(ctx, key); errors.Is(err, auth.ErrNotModified) {
+		fmt.Fprintf(os.Stderr, "credential %q already uses the latest passphrase version\n", key)
+		return nil
+	} else if err != nil {
+		return err
+	}
+	fmt.Println("rotated credential", key)
+	return nil
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 // TABLE
 
 func (r credentialRow) Header() []string {
-	return []string{"Key", "Description", "Updated"}
+	return []string{"Key", "Description", "Updated", "Rotate"}
 }
 
 func (r credentialRow) Width(int) int {
@@ -128,6 +156,11 @@ func (r credentialRow) Cell(col int) tui.CellText {
 			return ""
 		}
 		return r.UpdatedAt.Local().Format(time.DateTime)
+	case 3:
+		if r.Rotate {
+			return "needed"
+		}
+		return ""
 	default:
 		return ""
 	}

@@ -6,6 +6,10 @@ export interface Credential {
     key: string;
     description?: string;
     updated_at?: string;
+    // rotate is true when it's encrypted with an older passphrase than the
+    // latest, so it needs rotating, which only backends which encrypt with
+    // their own passphrases say
+    rotate?: boolean;
 }
 
 // CredentialList is the stored credentials, in key order

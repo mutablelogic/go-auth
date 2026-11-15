@@ -13,3 +13,30 @@ CREATE TABLE IF NOT EXISTS ${"schema"}."credential" (
 -- credential.description
 -- A credential's description, for a table which was created without it
 ALTER TABLE ${"schema"}."credential" ADD COLUMN IF NOT EXISTS "description" TEXT;
+
+-- credential.notify_func
+-- Notifies the channel of a change of a credential, as JSON, which go-pg's
+-- pgbroadcaster publishes, by its key, without its value
+CREATE OR REPLACE FUNCTION ${"schema"}.credential_notify() RETURNS TRIGGER AS $$
+DECLARE
+    v_key TEXT;
+BEGIN
+    IF TG_OP = 'DELETE' THEN
+        v_key := OLD."key";
+    ELSE
+        v_key := NEW."key";
+    END IF;
+    PERFORM pg_notify(${'channel'}, json_build_object(
+        'action', CASE TG_OP WHEN 'INSERT' THEN 'create' WHEN 'UPDATE' THEN 'update' ELSE 'delete' END,
+        'schema', ${'schema'},
+        'table', 'credential',
+        'row', v_key
+    )::TEXT);
+    RETURN NULL;
+END;
+$$ LANGUAGE plpgsql;
+
+-- credential.notify_trigger
+CREATE OR REPLACE TRIGGER credential_notify_trigger
+    AFTER INSERT OR UPDATE OR DELETE ON ${"schema"}."credential"
+    FOR EACH ROW EXECUTE FUNCTION ${"schema"}.credential_notify();

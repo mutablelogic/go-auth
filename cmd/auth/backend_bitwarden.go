@@ -21,6 +21,7 @@ import (
 	credential "github.com/mutablelogic/go-auth/credential"
 	credentialcmd "github.com/mutablelogic/go-auth/credential/cmd"
 	server "github.com/mutablelogic/go-server"
+	broadcaster "github.com/mutablelogic/go-server/broadcaster"
 )
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -43,6 +44,6 @@ const (
 ///////////////////////////////////////////////////////////////////////////////
 // PRIVATE METHODS
 
-func (flags BackendFlags) withManager(ctx server.Cmd, fn func(credential.CredentialManager) error) error {
-	return flags.WithBitwardenCredentialManager(ctx, flags.Project, fn)
+func (flags BackendFlags) withManager(ctx server.Cmd, _ *broadcaster.Broadcaster, fn func(credential.CredentialManager, *follow) error) error {
+	return flags.WithBitwardenCredentialManager(ctx, flags.Project, without(fn))
 }

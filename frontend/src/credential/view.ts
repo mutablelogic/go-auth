@@ -34,6 +34,7 @@ import '@mutablelogic/go-server/panel/view';
 import '@carbon/web-components/es/components/checkbox/index.js';
 import '@carbon/web-components/es/components/copy-button/index.js';
 import '@carbon/web-components/es/components/password-input/index.js';
+import '@carbon/web-components/es/components/tag/index.js';
 import '@carbon/web-components/es/components/text-input/index.js';
 import '@carbon/web-components/es/components/textarea/index.js';
 import AddIcon from '@carbon/icons/es/add/16.js';
@@ -46,15 +47,15 @@ import PasswordIcon from '@carbon/icons/es/password/32.js';
 // which can be copied, without opening the credential, its description, and
 // when it was last changed, which sort it
 export const credentialColumns: Column<Credential>[] = [
-    { header: 'Key', cell: (credential) => keyView(credential.key), sort: 'key', sortFirst: 'ascending' },
+    { header: 'Key', cell: (credential) => keyView(credential.key, credential.rotate), sort: 'key', sortFirst: 'ascending' },
     { header: 'Description', cell: (credential) => credential.description ?? '' },
     { header: 'Updated', cell: (credential) => formatTime(credential.updated_at), sort: 'updated_at' },
 ];
 
 // keyView is a credential's key, in a monospace font, with a button which
-// copies it. A click on the button doesn't reach the table's row, so it
+// copies it, and a tag when it needs rotating. A click on the button doesn't reach the table's row, so it
 // doesn't open the credential.
-export function keyView(key: string): TemplateResult {
+export function keyView(key: string, rotate = false): TemplateResult {
     return html`
         <span class="ga-key" style="display: inline-flex; align-items: center; gap: 0.25rem">
             <code style="font-family: 'IBM Plex Mono', monospace; font-size: 0.875rem">${key}</code>
@@ -62,6 +63,7 @@ export function keyView(key: string): TemplateResult {
                 event.stopPropagation();
                 void copyText(key);
             }}>Copy ${key}</cds-copy-button>
+            ${rotate ? html`<cds-tag type="warm-gray" size="sm" title="It's encrypted with an older passphrase than the latest">Needs rotation</cds-tag>` : nothing}
         </span>
     `;
 }
@@ -149,6 +151,7 @@ export class CredentialsElement extends LitElement {
         features: { attribute: false },
         heading: { type: String },
         body: { state: true },
+        rotations: { state: true },
     };
 
     // client is the credential API's client, which the controller is made
@@ -175,6 +178,10 @@ export class CredentialsElement extends LitElement {
     // body is what the panel shows
     declare private body?: Body;
 
+    // rotations is how many credentials need rotating, which Rotate all
+    // rotates
+    declare private rotations: number;
+
     private readonly panel = new PanelController<Body>();
 
     // opened counts what's opened in the panel, so a response which arrives
@@ -185,6 +192,7 @@ export class CredentialsElement extends LitElement {
     constructor() {
         super();
         this.heading = 'Credentials';
+        this.rotations = 0;
         this.panel.onClose(() => this.controller?.list.close());
         this.panel.onError((error, action) => this.notifications?.error(`${action.label} didn't work`, error));
     }
@@ -218,9 +226,11 @@ export class CredentialsElement extends LitElement {
         if (!this.controller) {
             return nothing;
         }
-        const actions: PageAction[] = [
-            { label: 'Store a credential', icon: AddIcon, run: () => this.store() },
-        ];
+        const actions: PageAction[] = [];
+        if ((this.features?.rotate ?? true) && this.rotations > 0) {
+            actions.push({ label: `Rotate all (${this.rotations})`, kind: 'secondary', run: () => this.rotateAll() });
+        }
+        actions.push({ label: 'Store a credential', icon: AddIcon, run: () => this.store() });
         return html`
             <gs-page-header heading=${this.heading} subtitle="Secrets, such as API keys, which the server uses, stored encrypted"
                 .icon=${PasswordIcon} .actions=${actions}></gs-page-header>
@@ -235,6 +245,7 @@ export class CredentialsElement extends LitElement {
     private watch() {
         this.unsubscribe?.();
         this.unsubscribe = this.isConnected ? this.controller?.list.subscribe(({ selected }) => {
+            this.rotations = this.controller?.rotations ?? 0;
             if (selected) {
                 // The list is loaded again, such as when a credential
                 // changes, with the same one selected: its details are
@@ -263,21 +274,25 @@ export class CredentialsElement extends LitElement {
     private show(credential: Credential) {
         const updated = credential.updated_at ? `Updated ${formatTime(credential.updated_at)}` : 'Credential';
         const decrypt = this.features?.decrypt ?? true;
-        const rotate = this.features?.rotate ?? true;
+        // Rotate is only offered when the credential needs it, and is then
+        // the main action
+        const rotate = (this.features?.rotate ?? true) && !!credential.rotate;
         const actions: PanelAction[] = [
             { label: 'Delete', kind: 'danger', close: false, run: () => this.delete(credential) },
+            { label: 'Edit', kind: decrypt || rotate ? 'secondary' : 'primary', close: false, run: () => this.store(credential) },
         ];
-        if (rotate) {
-            actions.push({ label: 'Rotate', kind: 'secondary', close: false, run: () => this.rotate(credential) });
-        }
-        actions.push({ label: 'Edit', kind: decrypt ? 'secondary' : 'primary', close: false, run: () => this.store(credential) });
         if (decrypt) {
-            actions.push({ label: 'Get value', kind: 'primary', close: false, run: () => this.passphrase(credential) });
+            actions.push({ label: 'Get value', kind: rotate ? 'secondary' : 'primary', close: false, run: () => this.passphrase(credential) });
+        }
+        if (rotate) {
+            actions.push({ label: 'Rotate', kind: 'primary', close: false, run: () => this.rotate(credential) });
         }
         this.open(credential.key, updated, {
             kind: 'credential',
             key: credential.key,
-            content: html`${credential.description ? html`<p class="description">${credential.description}</p>` : nothing}<p class="helper">${decrypt
+            content: html`${credential.description ? html`<p class="description">${credential.description}</p>` : nothing}${rotate
+                ? html`<p class="helper">It's encrypted with an older passphrase than the latest, so it needs rotating.</p>`
+                : nothing}<p class="helper">${decrypt
                 ? 'Its value is only shown with the passphrase it was encrypted with.'
                 : `Its value isn't shown, as it's stored in ${backendName(this.features?.backend)}.`}</p>`,
         }, actions);
@@ -313,13 +328,13 @@ export class CredentialsElement extends LitElement {
                     case 'value': {
                         const stored = await this.controller.set(credentialRequest(form));
                         this.notifications?.push({ kind: 'success', title: credential ? `${stored.key} was changed` : `${stored.key} was stored` });
-                        this.show({ key: stored.key, description: form.description.trim() || undefined, updated_at: stored.updated_at ?? credential?.updated_at });
+                        this.show(this.reloaded({ key: stored.key, description: form.description.trim() || undefined, updated_at: stored.updated_at ?? credential?.updated_at, rotate: false }));
                         break;
                     }
                     case 'description': {
                         const described = await this.controller.describe(form.key.trim(), form.description);
                         this.notifications?.push({ kind: 'success', title: `${described.key}'s description was changed` });
-                        this.show({ key: described.key, description: described.description || undefined, updated_at: credential?.updated_at });
+                        this.show(this.reloaded({ key: described.key, description: described.description || undefined, updated_at: credential?.updated_at, rotate: credential?.rotate }));
                         break;
                     }
                     default:
@@ -383,7 +398,8 @@ export class CredentialsElement extends LitElement {
         ]);
     }
 
-    // rotate re-encrypts a credential with the latest passphrase version
+    // rotate re-encrypts a credential with the latest passphrase version,
+    // and shows it, without Rotate
     private async rotate(credential: Credential) {
         if (!this.controller) {
             return;
@@ -392,6 +408,28 @@ export class CredentialsElement extends LitElement {
         this.notifications?.push(rotated
             ? { kind: 'success', title: `${credential.key} was re-encrypted with the latest passphrase` }
             : { kind: 'info', title: `${credential.key} already uses the latest passphrase` });
+        if (this.panel.isOpen && this.body?.key === credential.key) {
+            this.show(this.reloaded({ ...credential, rotate: false }));
+        }
+    }
+
+    // reloaded is the credential as the list has it, once it's loaded again
+    // after a change, when it's selected, or else the fallback, which is
+    // what the change is known to have done
+    private reloaded(fallback: Credential): Credential {
+        const selected = this.controller?.list.current.selected;
+        return selected?.key === fallback.key ? selected : fallback;
+    }
+
+    // rotateAll re-encrypts each credential which needs it with the latest
+    // passphrase version
+    private async rotateAll() {
+        if (!this.controller) {
+            return;
+        }
+        const rotated = await this.controller.rotateAll();
+        this.rotations = this.controller.rotations;
+        this.notifications?.push({ kind: 'success', title: rotated === 1 ? '1 credential was rotated' : `${rotated} credentials were rotated` });
     }
 
     // delete deletes a credential, once it's confirmed
