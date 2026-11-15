@@ -44,7 +44,9 @@ import (
 
 // Manager stores credentials in files in a directory, one for each key,
 // encrypted with a passphrase. Each file is the passphrase version, as eight
-// big-endian bytes, followed by the encrypted credential.
+// big-endian bytes, followed by the encrypted credential. A credential's
+// description is in a file beside it, whose name is the key, with
+// .description.
 type Manager struct {
 	opt
 	sync.Mutex
@@ -67,6 +69,10 @@ const (
 
 	// versionSize is the size of the passphrase version at the start of a file
 	versionSize = 8
+
+	// descriptionSuffix is added to a key, for the file of its description,
+	// which isn't a key, as a key has no "."
+	descriptionSuffix = ".description"
 )
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -223,8 +229,8 @@ func (self *Manager) Set(ctx context.Context, key string, value json.RawMessage)
 	return self.write(key, data)
 }
 
-// List returns the stored credentials, in key order, without reading or
-// decrypting them. Files whose names aren't keys, such as temporary files,
+// List returns the stored credentials, in key order, with their
+// descriptions, without reading or decrypting their values. Files whose names aren't keys, such as temporary files,
 // aren't listed.
 func (self *Manager) List(ctx context.Context) (_ []credential.Credential, err error) {
 	_, endSpan := otel.StartSpan(self.tracer, ctx, "credential.file.List")
@@ -245,7 +251,11 @@ func (self *Manager) List(ctx context.Context) (_ []credential.Credential, err e
 		} else if err != nil {
 			return nil, auth.ErrInternalServerError.Withf("credential %q: %w", entry.Name(), err)
 		}
-		result = append(result, credential.Credential{Key: entry.Name(), UpdatedAt: info.ModTime().UTC()})
+		description, err := self.description(entry.Name())
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, credential.Credential{Key: entry.Name(), Description: description, UpdatedAt: info.ModTime().UTC()})
 	}
 	return result, nil
 }
@@ -267,8 +277,38 @@ func (self *Manager) Delete(ctx context.Context, key string) (err error) {
 		return auth.ErrNotFound.Withf("credential %q not found", key)
 	} else if err != nil {
 		return auth.ErrInternalServerError.Withf("credential %q: %w", key, err)
+	} else if err := os.Remove(filepath.Join(self.path, key+descriptionSuffix)); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return auth.ErrInternalServerError.Withf("credential %q: %w", key, err)
 	}
 	return nil
+}
+
+// Describe sets the description of the key's credential, in a file beside
+// it, which isn't encrypted, as a description isn't secret, or removes it,
+// when it's empty, and returns ErrNotFound when there's no credential
+func (self *Manager) Describe(ctx context.Context, key, description string) (err error) {
+	_, endSpan := otel.StartSpan(self.tracer, ctx, "credential.file.Describe",
+		attribute.String("key", key),
+	)
+	defer func() { endSpan(err) }()
+
+	if err := validateKey(key); err != nil {
+		return err
+	}
+	self.Lock()
+	defer self.Unlock()
+	if _, err := os.Stat(filepath.Join(self.path, key)); errors.Is(err, fs.ErrNotExist) {
+		return auth.ErrNotFound.Withf("credential %q not found", key)
+	} else if err != nil {
+		return auth.ErrInternalServerError.Withf("credential %q: %w", key, err)
+	}
+	if description = strings.TrimSpace(description); description == "" {
+		if err := os.Remove(filepath.Join(self.path, key+descriptionSuffix)); err != nil && !errors.Is(err, fs.ErrNotExist) {
+			return auth.ErrInternalServerError.Withf("credential %q: %w", key, err)
+		}
+		return nil
+	}
+	return self.writeFile(key, key+descriptionSuffix, []byte(description))
 }
 
 // Decrypt returns the credential for the key, as JSON, when the passphrase
@@ -360,6 +400,18 @@ func pathErr(path string, err error) error {
 	return auth.ErrInternalServerError.Withf("credential path %q: %w", path, err)
 }
 
+// description returns the description of the key's credential, or nothing,
+// when it has none
+func (self *Manager) description(key string) (string, error) {
+	data, err := os.ReadFile(filepath.Join(self.path, key+descriptionSuffix))
+	if errors.Is(err, fs.ErrNotExist) {
+		return "", nil
+	} else if err != nil {
+		return "", auth.ErrInternalServerError.Withf("credential %q: %w", key, err)
+	}
+	return string(data), nil
+}
+
 // version returns the passphrase version of the key's file
 func (self *Manager) version(key string) (uint64, error) {
 	f, err := os.Open(filepath.Join(self.path, key))
@@ -428,8 +480,15 @@ func (self *Manager) read(key string) (json.RawMessage, error) {
 // write replaces the key's file with the data, by writing a temporary file
 // in the directory and renaming it
 func (self *Manager) write(key string, data []byte) (err error) {
+	return self.writeFile(key, key, data)
+}
+
+// writeFile replaces the file of the name, such as the key's, or its
+// description's, with the data, by writing a temporary file in the
+// directory and renaming it
+func (self *Manager) writeFile(key, name string, data []byte) (err error) {
 	// The temporary file's name starts with ".", which isn't a valid key
-	tmp, err := os.CreateTemp(self.path, "."+key+".*")
+	tmp, err := os.CreateTemp(self.path, "."+name+".*")
 	if err != nil {
 		return auth.ErrInternalServerError.Withf("credential %q: %w", key, err)
 	}
@@ -452,7 +511,7 @@ func (self *Manager) write(key string, data []byte) (err error) {
 		return auth.ErrInternalServerError.Withf("credential %q: %w", key, err)
 	} else if err := tmp.Close(); err != nil {
 		return auth.ErrInternalServerError.Withf("credential %q: %w", key, err)
-	} else if err := os.Rename(tmp.Name(), filepath.Join(self.path, key)); err != nil {
+	} else if err := os.Rename(tmp.Name(), filepath.Join(self.path, name)); err != nil {
 		return auth.ErrInternalServerError.Withf("credential %q: %w", key, err)
 	}
 

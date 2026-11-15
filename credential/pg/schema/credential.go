@@ -36,7 +36,14 @@ type CredentialKey struct {
 // Secret material and passphrase version are intentionally excluded.
 type Credential struct {
 	CredentialKey
-	UpdatedAt time.Time `json:"updated_at" help:"Update timestamp" readonly:""`
+	Description string    `json:"description,omitempty" help:"Credential description, such as what it's for"`
+	UpdatedAt   time.Time `json:"updated_at" help:"Update timestamp" readonly:""`
+}
+
+// CredentialDescribe sets a credential's description, or removes it, when
+// it's empty
+type CredentialDescribe struct {
+	Description string
 }
 
 // CredentialCreate contains the values required to create a credential row.
@@ -122,7 +129,7 @@ func (r CredentialListRequest) Query() url.Values {
 // TABLE OUTPUT
 
 func (r Credential) Header() []string {
-	return []string{"Key", "Updated At"}
+	return []string{"Key", "Description", "Updated At"}
 }
 
 func (r Credential) Width(col int) int {
@@ -134,6 +141,8 @@ func (r Credential) Cell(col int) string {
 	case 0:
 		return r.Key
 	case 1:
+		return r.Description
+	case 2:
 		return r.UpdatedAt.Format(time.RFC3339)
 	default:
 		return ""
@@ -171,6 +180,11 @@ func (c CredentialKey) Select(bind *pg.Bind, op pg.Op) (string, error) {
 		}
 	case pg.Delete:
 		return bind.Query("credential.delete"), nil
+	case pg.Update:
+		if bind.Has("description") {
+			return bind.Query("credential.describe"), nil
+		}
+		return "", auth.ErrNotImplemented.With("CredentialKey: update: only the description can be updated")
 	default:
 		return "", auth.ErrNotImplemented.Withf("unsupported CredentialKey operation %q", op)
 	}
@@ -199,11 +213,13 @@ func (c *CredentialListRequest) Select(bind *pg.Bind, op pg.Op) (string, error) 
 ///////////////////////////////////////////////////////////////////////////////
 // PUBLIC METHODS - READER
 
-// Expected column order: key, updated_at.
+// Expected column order: key, description, updated_at.
 func (c *Credential) Scan(row pg.Row) error {
-	if err := row.Scan(&c.Key, &c.UpdatedAt); err != nil {
+	var description *string
+	if err := row.Scan(&c.Key, &description, &c.UpdatedAt); err != nil {
 		return err
 	}
+	c.Description = types.Value(description)
 	return nil
 }
 
@@ -270,6 +286,15 @@ func (c CredentialRotate) Insert(bind *pg.Bind) (string, error) {
 	bind.Set("oldpv", c.OldPV)
 	bind.Set("oldcredentials", c.OldCredentials)
 	return bind.Query("credential.rotate"), nil
+}
+
+func (c CredentialDescribe) Insert(_ *pg.Bind) (string, error) {
+	return "", auth.ErrNotImplemented.With("CredentialDescribe: insert: not supported")
+}
+
+func (c CredentialDescribe) Update(bind *pg.Bind) error {
+	bind.Set("description", strings.TrimSpace(c.Description))
+	return nil
 }
 
 func (c CredentialRotate) Update(_ *pg.Bind) error {

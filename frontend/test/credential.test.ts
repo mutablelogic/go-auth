@@ -41,15 +41,22 @@ test('credentialForm', async (t) => {
     });
 
     await t.test('a value is text, or JSON when json is set', () => {
-        const text = { ...credentialForm('token'), value: 'hunter2' };
+        const text = { ...credentialForm({ key: 'token' }), value: 'hunter2' };
         assert.equal(text.replace, true);
-        assert.deepEqual(credentialRequest(text), { key: 'token', credentials: 'hunter2' });
+        assert.deepEqual(credentialRequest(text), { key: 'token', credentials: 'hunter2', description: '' });
 
-        const object = { ...credentialForm('login'), value: '{"user":"admin"}', json: true };
+        const object = { ...credentialForm({ key: 'login' }), value: '{"user":"admin"}', json: true };
         assert.deepEqual(credentialFormErrors(object), {});
-        assert.deepEqual(credentialRequest(object), { key: 'login', credentials: { user: 'admin' } });
+        assert.deepEqual(credentialRequest(object), { key: 'login', credentials: { user: 'admin' }, description: '' });
 
         assert.ok(credentialFormErrors({ ...object, value: '{user' }).value);
+    });
+
+    await t.test('replacing keeps the description, which can be changed', () => {
+        const form = credentialForm({ key: 'token', description: 'The API token' });
+        assert.equal(form.description, 'The API token');
+        assert.equal(credentialRequest({ ...form, value: 'v' }).description, 'The API token');
+        assert.equal(credentialRequest({ ...form, value: 'v', description: '  ' }).description, '', 'an empty one removes it');
     });
 });
 

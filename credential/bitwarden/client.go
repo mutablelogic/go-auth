@@ -144,8 +144,9 @@ func (c *client) createSecret(ctx context.Context, s secret) error {
 	return c.do(ctx, http.MethodPost, "/organizations/"+url.PathEscape(orgID)+"/secrets", request, nil)
 }
 
-// updateSecret replaces the secret's key, value, note and projects
-func (c *client) updateSecret(ctx context.Context, s secret) error {
+// updateSecret replaces the secret's key, value, note and projects, and
+// says whether its value changed, which Bitwarden records
+func (c *client) updateSecret(ctx context.Context, s secret, valueChanged bool) error {
 	_, orgKey, err := c.session(ctx)
 	if err != nil {
 		return err
@@ -154,8 +155,7 @@ func (c *client) updateSecret(ctx context.Context, s secret) error {
 	if err != nil {
 		return err
 	}
-	changed := true
-	request.ValueChanged = &changed
+	request.ValueChanged = &valueChanged
 	return c.do(ctx, http.MethodPut, "/secrets/"+url.PathEscape(s.ID), request, nil)
 }
 

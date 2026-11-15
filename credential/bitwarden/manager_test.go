@@ -56,8 +56,9 @@ type fakeBitwarden struct {
 	secrets   map[string]encryptedSecret
 	logins    int
 	expiresIn int
-	reject    bool // reject the next API call with 401
-	readOnly  bool // return 404 for writes, as Bitwarden does without write access
+	reject    bool   // reject the next API call with 401
+	readOnly  bool   // return 404 for writes, as Bitwarden does without write access
+	changed   []bool // valueChanged of each update
 	nextID    int
 }
 
@@ -217,6 +218,7 @@ func (f *fakeBitwarden) update(w http.ResponseWriter, r *http.Request) {
 	var request secretRequest
 	require.NoError(f.t, json.NewDecoder(r.Body).Decode(&request))
 	require.NotNil(f.t, request.ValueChanged)
+	f.changed = append(f.changed, *request.ValueChanged)
 	s := encryptedSecret{ID: id, Key: request.Key, Value: request.Value, Note: request.Note}
 	for _, project := range request.ProjectIDs {
 		s.Projects = append(s.Projects, struct {
@@ -446,6 +448,49 @@ func Test_Delete(t *testing.T) {
 	f.readOnly = true
 	defer func() { f.readOnly = false }()
 	assert.ErrorIs(t, mgr.Delete(ctx, "readonly"), auth.ErrForbidden)
+}
+
+func Test_Describe(t *testing.T) {
+	isolate(t)
+	ctx := context.Background()
+	f := newFakeBitwarden(t)
+	mgr, err := New(WithAccessToken(testToken), WithServerURL(f.URL))
+	require.NoError(t, err)
+
+	// The description is the secret's note, and its value and projects
+	// aren't changed
+	id := f.add("key", "value", testProjectA)
+	require.NoError(t, mgr.Describe(ctx, "key", "  The API key  "))
+	value, note, projects := f.value(id)
+	assert.Equal(t, "value", value)
+	assert.Equal(t, "The API key", note)
+	assert.Equal(t, []string{testProjectA}, projects)
+	assert.Equal(t, []bool{false}, f.changed, "the value isn't changed")
+
+	// The list has the notes, as descriptions
+	f.add("other", "x")
+	list, err := mgr.List(ctx)
+	require.NoError(t, err)
+	require.Len(t, list, 2)
+	assert.Equal(t, "The API key", list[0].Description)
+	assert.Equal(t, "a note", list[1].Description)
+
+	// Replacing the value keeps the description, and says the value changed
+	require.NoError(t, mgr.Set(ctx, "key", json.RawMessage(`"new"`)))
+	_, note, _ = f.value(id)
+	assert.Equal(t, "The API key", note)
+	assert.Equal(t, []bool{false, true}, f.changed)
+
+	// An empty description removes it
+	require.NoError(t, mgr.Describe(ctx, "key", ""))
+	_, note, _ = f.value(id)
+	assert.Empty(t, note)
+
+	assert.ErrorIs(t, mgr.Describe(ctx, "missing", "x"), auth.ErrNotFound)
+	assert.ErrorIs(t, mgr.Describe(ctx, "a/b", "x"), auth.ErrBadParameter)
+	f.add("twice", "1")
+	f.add("twice", "2")
+	assert.ErrorIs(t, mgr.Describe(ctx, "twice", "x"), auth.ErrConflict)
 }
 
 func Test_Session(t *testing.T) {

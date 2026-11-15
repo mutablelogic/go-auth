@@ -16,7 +16,6 @@ package httpclient
 
 import (
 	"context"
-	"encoding/json"
 	"io"
 	"net/http"
 	"strings"
@@ -43,10 +42,11 @@ func (textPayload) Type() string   { return types.ContentTypeTextPlain }
 ///////////////////////////////////////////////////////////////////////////////
 // PUBLIC METHODS - PROVIDER
 
-// SetCredential stores the credential, which is JSON, under the key,
-// replacing any credential with the key
-func (c *Client) SetCredential(ctx context.Context, key string, value json.RawMessage) (*credential.Credential, error) {
-	req, err := client.NewJSONRequestEx(http.MethodPut, credential.CredentialSet{Key: key, Credentials: value}, types.ContentTypeAny)
+// SetCredential stores the credential, whose value is JSON, replacing any
+// credential with the key, and its description, when it's set, which is
+// kept when it isn't, and removed when it's empty
+func (c *Client) SetCredential(ctx context.Context, set credential.CredentialSet) (*credential.Credential, error) {
+	req, err := client.NewJSONRequestEx(http.MethodPut, set, types.ContentTypeAny)
 	if err != nil {
 		return nil, err
 	}

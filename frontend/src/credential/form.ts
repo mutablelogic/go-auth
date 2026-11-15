@@ -2,12 +2,13 @@
 // it replaces a credential, and its value, which is text, or, when json is
 // set, JSON, such as an object of a user and a password
 
-import { KeyPattern, type CredentialSet } from './schema.ts';
+import { KeyPattern, type Credential, type CredentialSet } from './schema.ts';
 
 // CredentialForm is what the form's inputs set
 export interface CredentialForm {
     key: string;
     value: string;
+    description: string;
     json: boolean;
     // replace is true when it replaces a credential, whose key is fixed
     replace: boolean;
@@ -17,9 +18,16 @@ export interface CredentialForm {
 export type CredentialFormErrors = Partial<Record<'key' | 'value', string>>;
 
 // credentialForm returns the form which stores a new credential, or
-// replaces the value of the one with the key
-export function credentialForm(key?: string): CredentialForm {
-    return { key: key ?? '', value: '', json: false, replace: key !== undefined };
+// replaces the value of the credential, and keeps its description, which
+// can be changed
+export function credentialForm(credential?: Credential): CredentialForm {
+    return {
+        key: credential?.key ?? '',
+        value: '',
+        description: credential?.description ?? '',
+        json: false,
+        replace: credential !== undefined,
+    };
 }
 
 // credentialFormErrors returns what's wrong with the form, which isn't sent
@@ -46,10 +54,12 @@ export function credentialFormErrors(form: CredentialForm): CredentialFormErrors
 }
 
 // credentialRequest returns the request of the form, whose value is the
-// text, or the JSON, when json is set
+// text, or the JSON, when json is set, with its description, which is
+// removed when it's empty
 export function credentialRequest(form: CredentialForm): CredentialSet {
     return {
         key: form.key.trim(),
         credentials: form.json ? JSON.parse(form.value) : form.value,
+        description: form.description.trim(),
     };
 }

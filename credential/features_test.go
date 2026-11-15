@@ -44,6 +44,7 @@ func (plain) Get(context.Context, string) (json.RawMessage, error)  { return nil
 func (plain) Set(context.Context, string, json.RawMessage) error    { return nil }
 func (plain) List(context.Context) ([]credential.Credential, error) { return nil, nil }
 func (plain) Delete(context.Context, string) error                  { return nil }
+func (plain) Describe(context.Context, string, string) error        { return nil }
 
 func Test_FeaturesOf(t *testing.T) {
 	assert.Equal(t, credential.Features{Backend: "aws"}, credential.FeaturesOf("aws", plain{}))

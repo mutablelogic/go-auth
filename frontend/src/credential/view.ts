@@ -43,10 +43,11 @@ import PasswordIcon from '@carbon/icons/es/password/32.js';
 // PARTS
 
 // credentialColumns are the columns of a table of credentials: the key,
-// which can be copied, without opening the credential, and when it was last
-// changed, which sort it
+// which can be copied, without opening the credential, its description, and
+// when it was last changed, which sort it
 export const credentialColumns: Column<Credential>[] = [
     { header: 'Key', cell: (credential) => keyView(credential.key), sort: 'key', sortFirst: 'ascending' },
+    { header: 'Description', cell: (credential) => credential.description ?? '' },
     { header: 'Updated', cell: (credential) => formatTime(credential.updated_at), sort: 'updated_at' },
 ];
 
@@ -76,6 +77,9 @@ export function credentialFormView(form: CredentialForm, rerender: () => void, e
                 helper-text=${form.replace ? 'The credential whose value is replaced' : 'A letter, then letters, digits, _ and -, such as OPENAI_API_KEY'}
                 ?invalid=${!!errors.key} invalid-text=${errors.key ?? ''}
                 @input=${(event: Event) => { form.key = (event.target as HTMLInputElement).value; }}></cds-text-input>
+            <cds-text-input label="Description" value=${form.description}
+                helper-text="What it's for, which isn't secret, so it's shown in the list"
+                @input=${(event: Event) => { form.description = (event.target as HTMLInputElement).value; }}></cds-text-input>
             ${form.json ? html`
                 <cds-textarea label="Value" rows="6" value=${form.value}
                     helper-text="Any JSON, such as an object with a user and a password"
@@ -252,7 +256,7 @@ export class CredentialsElement extends LitElement {
         }
         this.open(credential.key, updated, {
             kind: 'credential',
-            content: html`<p class="helper">${decrypt
+            content: html`${credential.description ? html`<p class="description">${credential.description}</p>` : nothing}<p class="helper">${decrypt
                 ? 'Its value is only shown with the passphrase it was encrypted with.'
                 : `Its value isn't shown, as it's stored in ${backendName(this.features?.backend)}.`}</p>`,
         }, actions);
@@ -261,7 +265,7 @@ export class CredentialsElement extends LitElement {
     // store shows the form which stores a new credential, or replaces the
     // value of one, which stores it, and shows it
     private store(credential?: Credential) {
-        const form = credentialForm(credential?.key);
+        const form = credentialForm(credential);
         let errors: CredentialFormErrors = {};
         const rerender = () => {
             this.body = { kind: 'form', content: credentialFormView(form, rerender, errors) };

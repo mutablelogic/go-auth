@@ -21,6 +21,7 @@ import (
 
 	// Packages
 	auth "github.com/mutablelogic/go-auth"
+	credential "github.com/mutablelogic/go-auth/credential"
 	envcredential "github.com/mutablelogic/go-auth/credential/env"
 	filecredential "github.com/mutablelogic/go-auth/credential/file"
 	httpclient "github.com/mutablelogic/go-auth/credential/httpclient"
@@ -55,12 +56,12 @@ func Test_Manager(t *testing.T) {
 	})
 
 	t.Run("Set", func(t *testing.T) {
-		stored, err := c.SetCredential(ctx, "token", json.RawMessage(`"secret"`))
+		stored, err := c.SetCredential(ctx, credential.CredentialSet{Key: "token", Credentials: json.RawMessage(`"secret"`)})
 		require.NoError(t, err)
 		assert.Equal(t, "token", stored.Key)
-		_, err = c.SetCredential(ctx, "object", json.RawMessage(`{"user":"admin"}`))
+		_, err = c.SetCredential(ctx, credential.CredentialSet{Key: "object", Credentials: json.RawMessage(`{"user":"admin"}`)})
 		require.NoError(t, err)
-		_, err = c.SetCredential(ctx, "bad key", json.RawMessage(`"x"`))
+		_, err = c.SetCredential(ctx, credential.CredentialSet{Key: "bad key", Credentials: json.RawMessage(`"x"`)})
 		assert.ErrorIs(t, err, auth.ErrBadParameter)
 	})
 
@@ -71,6 +72,20 @@ func Test_Manager(t *testing.T) {
 		require.Len(t, list.Body, 2)
 		assert.Equal(t, "object", list.Body[0].Key)
 		assert.Equal(t, "token", list.Body[1].Key)
+	})
+
+	t.Run("Description", func(t *testing.T) {
+		// The description is set with the value, and listed, and kept when
+		// the value is replaced without one
+		description := "The API token"
+		stored, err := c.SetCredential(ctx, credential.CredentialSet{Key: "token", Credentials: json.RawMessage(`"secret"`), Description: &description})
+		require.NoError(t, err)
+		assert.Equal(t, "The API token", stored.Description)
+		_, err = c.SetCredential(ctx, credential.CredentialSet{Key: "token", Credentials: json.RawMessage(`"secret"`)})
+		require.NoError(t, err)
+		meta, err := c.GetCredentialMeta(ctx, "token")
+		require.NoError(t, err)
+		assert.Equal(t, "The API token", meta.Description)
 	})
 
 	t.Run("Meta", func(t *testing.T) {
@@ -140,7 +155,7 @@ func Test_Provider(t *testing.T) {
 	c, s := newClient(t, func(t *testing.T) *test.Server {
 		return test.NewServer(t, httphandler.RegisterProviderHandlers(envcredential.New(), false))
 	})
-	_, err := c.SetCredential(ctx, "GOAUTH_TEST_CLIENT", json.RawMessage(`"x"`))
+	_, err := c.SetCredential(ctx, credential.CredentialSet{Key: "GOAUTH_TEST_CLIENT", Credentials: json.RawMessage(`"x"`)})
 	assert.ErrorIs(t, err, auth.ErrNotImplemented)
 
 	var value string

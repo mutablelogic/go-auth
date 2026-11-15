@@ -39,10 +39,11 @@ const (
 // TYPES
 
 // CredentialSet is a request to store a credential, replacing any credential
-// with the key
+// with the key, and its description, when it's set
 type CredentialSet struct {
 	Key         string          `json:"key" help:"Credential key, an identifier"`
 	Credentials json.RawMessage `json:"credentials" help:"Credential value, which can be any JSON value"`
+	Description *string         `json:"description,omitempty" help:"Credential description, such as what it's for, which is kept when it isn't set, and removed when it's empty"`
 }
 
 // CredentialList is the stored credentials, without their values

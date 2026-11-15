@@ -17,6 +17,7 @@ package httphandler
 import (
 	"errors"
 	"net/http"
+	"strings"
 
 	// Packages
 	auth "github.com/mutablelogic/go-auth"
@@ -183,11 +184,26 @@ func set(provider credential.CredentialProvider, w http.ResponseWriter, r *http.
 		httpresponse.Error(w, httpresponse.ErrBadRequest.With("credentials are required"))
 		return
 	}
+
+	// A description needs a manager, which keeps them
+	manager, describes := provider.(credential.CredentialManager)
+	if req.Description != nil && !describes {
+		httpresponse.Error(w, httpresponse.ErrNotImplemented.With("credentials have no descriptions"), req.Key)
+		return
+	}
 	if err := provider.Set(r.Context(), req.Key, req.Credentials); err != nil {
 		httpresponse.Error(w, auth.HTTPError(err), req.Key)
 		return
 	}
-	httpresponse.JSON(w, http.StatusOK, httprequest.Indent(r), credential.Credential{Key: req.Key})
+	result := credential.Credential{Key: req.Key}
+	if req.Description != nil {
+		if err := manager.Describe(r.Context(), req.Key, *req.Description); err != nil {
+			httpresponse.Error(w, auth.HTTPError(err), req.Key)
+			return
+		}
+		result.Description = strings.TrimSpace(*req.Description)
+	}
+	httpresponse.JSON(w, http.StatusOK, httprequest.Indent(r), result)
 }
 
 func get(manager credential.CredentialManager, w http.ResponseWriter, r *http.Request) {

@@ -56,6 +56,21 @@ func Test_Manager(t *testing.T) {
 		require.Equal(t, http.StatusOK, status)
 	})
 
+	t.Run("Description", func(t *testing.T) {
+		// A description is set with the value, listed, and kept when the
+		// value is replaced without one
+		var stored credential.Credential
+		require.Equal(t, http.StatusOK, s.JSON(t, http.MethodPut, "credential", map[string]any{"key": "described", "credentials": "x", "description": " What it's for "}, &stored))
+		assert.Equal(t, "What it's for", stored.Description)
+		status, _ := s.Do(t, http.MethodPut, "credential", map[string]any{"key": "described", "credentials": "y"})
+		require.Equal(t, http.StatusOK, status)
+		var meta credential.Credential
+		require.Equal(t, http.StatusOK, s.JSON(t, http.MethodGet, "credential/described", nil, &meta))
+		assert.Equal(t, "What it's for", meta.Description)
+		status, _ = s.Do(t, http.MethodDelete, "credential/described", nil)
+		require.Equal(t, http.StatusNoContent, status)
+	})
+
 	t.Run("SetInvalid", func(t *testing.T) {
 		for _, body := range []any{
 			map[string]any{"key": "bad key", "credentials": "x"},
@@ -181,6 +196,9 @@ func Test_ProviderNoPassphrase(t *testing.T) {
 	s := test.NewServer(t, httphandler.RegisterProviderHandlers(envcredential.New(), false))
 	status, _ := s.Do(t, http.MethodPut, "credential", credential.CredentialSet{Key: "GOAUTH_TEST_HTTP", Credentials: json.RawMessage(`"x"`)})
 	assert.Equal(t, http.StatusNotImplemented, status)
+
+	status, _ = s.Do(t, http.MethodPut, "credential", map[string]any{"key": "GOAUTH_TEST_HTTP", "credentials": "x", "description": "d"})
+	assert.Equal(t, http.StatusNotImplemented, status, "a provider has no descriptions")
 
 	status, _, _ = decrypt(t, s, "GOAUTH_TEST_HTTP", passphrase)
 	assert.Equal(t, http.StatusNotFound, status)

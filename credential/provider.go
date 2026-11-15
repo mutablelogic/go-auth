@@ -23,11 +23,12 @@ import (
 ////////////////////////////////////////////////////////////////////////////////
 // TYPES
 
-// Credential is a stored credential's key, and when it was last changed,
-// without its value
+// Credential is a stored credential's key, its description, and when it
+// was last changed, without its value
 type Credential struct {
-	Key       string    `json:"key"`
-	UpdatedAt time.Time `json:"updated_at,omitzero"`
+	Key         string    `json:"key"`
+	Description string    `json:"description,omitempty"`
+	UpdatedAt   time.Time `json:"updated_at,omitzero"`
 }
 
 type CredentialProvider interface {
@@ -56,6 +57,12 @@ type CredentialManager interface {
 	// ErrNotFound when there isn't one. A credential from the environment
 	// can't be deleted.
 	Delete(ctx context.Context, key string) error
+
+	// Describe sets the description of the stored credential for the key,
+	// such as what it's for, or removes it, when it's empty, and returns
+	// ErrNotFound when there isn't one. Descriptions aren't secret, and
+	// List returns them.
+	Describe(ctx context.Context, key, description string) error
 }
 
 // CredentialRotator is a provider which encrypts credentials with its own

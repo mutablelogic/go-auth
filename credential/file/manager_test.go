@@ -234,6 +234,48 @@ func Test_DeleteRotate(t *testing.T) {
 	})
 }
 
+func Test_Describe(t *testing.T) {
+	ctx := context.Background()
+	path := t.TempDir()
+	mgr, err := file.New(path, file.WithPassphrase(1, passphrase))
+	require.NoError(t, err)
+	require.NoError(t, mgr.Set(ctx, "token", json.RawMessage(`"secret"`)))
+
+	// The description is in a file beside the credential, which isn't a key
+	require.NoError(t, mgr.Describe(ctx, "token", "  The API token  "))
+	data, err := os.ReadFile(filepath.Join(path, "token.description"))
+	require.NoError(t, err)
+	assert.Equal(t, "The API token", string(data))
+	info, err := os.Stat(filepath.Join(path, "token.description"))
+	require.NoError(t, err)
+	assert.Equal(t, os.FileMode(0o600), info.Mode().Perm())
+	list, err := mgr.List(ctx)
+	require.NoError(t, err)
+	require.Len(t, list, 1)
+	assert.Equal(t, "token", list[0].Key)
+	assert.Equal(t, "The API token", list[0].Description)
+
+	// Replacing the value keeps it
+	require.NoError(t, mgr.Set(ctx, "token", json.RawMessage(`"new"`)))
+	list, err = mgr.List(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, "The API token", list[0].Description)
+
+	// An empty description removes it
+	require.NoError(t, mgr.Describe(ctx, "token", ""))
+	_, err = os.Stat(filepath.Join(path, "token.description"))
+	assert.ErrorIs(t, err, os.ErrNotExist)
+
+	// Deleting the credential deletes its description
+	require.NoError(t, mgr.Describe(ctx, "token", "again"))
+	require.NoError(t, mgr.Delete(ctx, "token"))
+	_, err = os.Stat(filepath.Join(path, "token.description"))
+	assert.ErrorIs(t, err, os.ErrNotExist)
+
+	assert.ErrorIs(t, mgr.Describe(ctx, "missing", "x"), auth.ErrNotFound)
+	assert.ErrorIs(t, mgr.Describe(ctx, "../x", "x"), auth.ErrBadParameter)
+}
+
 func Test_Passphrases(t *testing.T) {
 	ctx := context.Background()
 	path := t.TempDir()

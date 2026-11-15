@@ -30,7 +30,7 @@ import (
 // machine account, creating new secrets in the project
 type BackendFlags struct {
 	credentialcmd.BitwardenFlags
-	Project string `name:"project" env:"CREDENTIAL_BITWARDEN_PROJECT" help:"Project for new secrets, by its identifier, which the machine account can write to"`
+	Project string `name:"project" env:"BWS_PROJECT" help:"Project for new secrets, by its identifier, which the machine account can write to"`
 }
 
 ///////////////////////////////////////////////////////////////////////////////

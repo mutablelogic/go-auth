@@ -21,6 +21,7 @@ import (
 	"os"
 
 	// Packages
+	schema "github.com/mutablelogic/go-auth/credential"
 	httpclient "github.com/mutablelogic/go-auth/credential/httpclient"
 	server "github.com/mutablelogic/go-server"
 	term "golang.org/x/term"
@@ -43,8 +44,9 @@ type CredentialGetCmd struct {
 }
 
 type CredentialSetCmd struct {
-	Json bool   `name:"json" help:"Interpret the credential value as JSON, rather than a string." negatable:""`
-	Key  string `arg:"" name:"key" help:"Credential key (identifier)."`
+	Json        bool    `name:"json" help:"Interpret the credential value as JSON, rather than a string." negatable:""`
+	Description *string `name:"description" help:"Description of the credential, such as what it's for, which is kept when it isn't set, and removed when it's empty."`
+	Key         string  `arg:"" name:"key" help:"Credential key (identifier)."`
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -97,7 +99,7 @@ func (cmd *CredentialSetCmd) Run(ctx server.Cmd) error {
 	}
 
 	return withClient(ctx, "credential.CredentialSetCmd", func(ctx context.Context, client *httpclient.Client) error {
-		stored, err := client.SetCredential(ctx, cmd.Key, credential)
+		stored, err := client.SetCredential(ctx, schema.CredentialSet{Key: cmd.Key, Credentials: credential, Description: cmd.Description})
 		if err != nil {
 			return err
 		}

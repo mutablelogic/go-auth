@@ -1,9 +1,10 @@
 // The credential API's types, as go-auth's credential package has them
 
-// Credential is a stored credential's key, and when it was last changed,
-// when the backend records it, without its value
+// Credential is a stored credential's key, its description, and when it
+// was last changed, when the backend records it, without its value
 export interface Credential {
     key: string;
+    description?: string;
     updated_at?: string;
 }
 
@@ -14,10 +15,12 @@ export interface CredentialList {
 }
 
 // CredentialSet is a request which stores a credential, which can be any
-// JSON value, replacing any with the key
+// JSON value, replacing any with the key, and its description, when it's
+// set, which is kept when it isn't, and removed when it's empty
 export interface CredentialSet {
     key: string;
     credentials: unknown;
+    description?: string;
 }
 
 // CredentialFeatures is what the server's credential manager can do, from

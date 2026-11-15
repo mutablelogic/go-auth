@@ -110,7 +110,7 @@ func (cmd *CredentialRotateCmd) Run(ctx server.Cmd) error {
 // TABLE
 
 func (r credentialRow) Header() []string {
-	return []string{"Key", "Updated"}
+	return []string{"Key", "Description", "Updated"}
 }
 
 func (r credentialRow) Width(int) int {
@@ -122,6 +122,8 @@ func (r credentialRow) Cell(col int) tui.CellText {
 	case 0:
 		return r.Key
 	case 1:
+		return r.Description
+	case 2:
 		if r.UpdatedAt.IsZero() {
 			return ""
 		}

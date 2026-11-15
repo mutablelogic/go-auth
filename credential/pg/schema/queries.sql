@@ -1,7 +1,7 @@
 
 -- credential.list
 SELECT
-	"key", "updated_at"
+	"key", "description", "updated_at"
 FROM
 	${"schema"}."credential"
 ${where}
@@ -19,7 +19,7 @@ WHERE
 -- credential.get_meta
 -- The key and the time it was stored, without the encrypted credential
 SELECT
-	"key", "updated_at"
+	"key", "description", "updated_at"
 FROM
 	${"schema"}."credential"
 WHERE
@@ -40,7 +40,7 @@ DELETE FROM ${"schema"}."credential"
 WHERE
 	"key" = @key
 RETURNING
-	"key", "updated_at"
+	"key", "description", "updated_at"
 
 -- credential.upsert
 INSERT INTO ${"schema"}."credential" (
@@ -55,7 +55,7 @@ SET
 	"credential" = EXCLUDED."credential",
 	"updated_at" = now()
 RETURNING
-	"key", "updated_at"
+	"key", "description", "updated_at"
 
 -- credential.rotate
 UPDATE ${"schema"}."credential"
@@ -70,4 +70,15 @@ AND
 AND
 	"credential" = @oldcredentials
 RETURNING
-	"key", "updated_at"
+	"key", "description", "updated_at"
+
+-- credential.describe
+-- The credential's description, or none, when it's empty, which doesn't
+-- change when it was updated, as its value is the same
+UPDATE ${"schema"}."credential"
+SET
+	"description" = NULLIF(@description, '')
+WHERE
+	"key" = @key
+RETURNING
+	"key", "description", "updated_at"
