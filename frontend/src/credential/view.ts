@@ -328,13 +328,13 @@ export class CredentialsElement extends LitElement {
                     case 'value': {
                         const stored = await this.controller.set(credentialRequest(form));
                         this.notifications?.push({ kind: 'success', title: credential ? `${stored.key} was changed` : `${stored.key} was stored` });
-                        this.show({ key: stored.key, description: form.description.trim() || undefined, updated_at: stored.updated_at ?? credential?.updated_at });
+                        this.show(this.reloaded({ key: stored.key, description: form.description.trim() || undefined, updated_at: stored.updated_at ?? credential?.updated_at, rotate: false }));
                         break;
                     }
                     case 'description': {
                         const described = await this.controller.describe(form.key.trim(), form.description);
                         this.notifications?.push({ kind: 'success', title: `${described.key}'s description was changed` });
-                        this.show({ key: described.key, description: described.description || undefined, updated_at: credential?.updated_at });
+                        this.show(this.reloaded({ key: described.key, description: described.description || undefined, updated_at: credential?.updated_at, rotate: credential?.rotate }));
                         break;
                     }
                     default:
@@ -409,8 +409,16 @@ export class CredentialsElement extends LitElement {
             ? { kind: 'success', title: `${credential.key} was re-encrypted with the latest passphrase` }
             : { kind: 'info', title: `${credential.key} already uses the latest passphrase` });
         if (this.panel.isOpen && this.body?.key === credential.key) {
-            this.show({ ...credential, rotate: false });
+            this.show(this.reloaded({ ...credential, rotate: false }));
         }
+    }
+
+    // reloaded is the credential as the list has it, once it's loaded again
+    // after a change, when it's selected, or else the fallback, which is
+    // what the change is known to have done
+    private reloaded(fallback: Credential): Credential {
+        const selected = this.controller?.list.current.selected;
+        return selected?.key === fallback.key ? selected : fallback;
     }
 
     // rotateAll re-encrypts each credential which needs it with the latest
