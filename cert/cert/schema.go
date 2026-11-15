@@ -58,6 +58,10 @@ const (
 	// certificate authorities.
 	DefaultCACertExpiry = 5 * 365 * 24 * time.Hour
 
+	// DefaultRootExpiry is the validity period of a generated root
+	// certificate.
+	DefaultRootExpiry = 10 * 365 * 24 * time.Hour
+
 	// DefaultCertExpiry is the default validity period for leaf certificates.
 	DefaultCertExpiry = 90 * 24 * time.Hour
 )

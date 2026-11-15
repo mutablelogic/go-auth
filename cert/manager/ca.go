@@ -80,7 +80,7 @@ func (m *Manager) CreateCA(ctx context.Context, req cert.CreateCertRequest) (_ *
 	// Generate a CA certificate signed by the root certificate
 	caCert, err := cert.New([]cert.Opt{
 		cert.WithCommonName(req.Name),
-		cert.WithSubject(caSubject),
+		withSubject(caSubject),
 		cert.WithRSAKey(0),
 		cert.WithCA(),
 		cert.WithValidity(validFrom, expires),

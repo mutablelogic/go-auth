@@ -33,7 +33,7 @@ import (
 // ServerFlags configures the certificate manager, in a pool, schema and
 // with passphrases, which are passed to WithCertManager
 type ServerFlags struct {
-	Root string `name:"root" env:"${ENV_NAME}_CERT_ROOT" type:"path" help:"PEM file with the root certificate and its RSA private key, which is imported when it isn't stored. A different root is an error."`
+	Root string `name:"root" env:"${ENV_NAME}_CERT_ROOT" type:"path" help:"PEM file with a self-signed root certificate and its RSA private key, which is imported when it isn't stored. A different root is an error. Without it, a root is generated when none is stored."`
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -42,7 +42,9 @@ type ServerFlags struct {
 // WithCertManager creates the certificate manager in the pool and schema,
 // which is the default when it's empty, with the passphrases, for versions
 // 1, 2 and so on, which encrypt its private keys, and the root, when it's
-// set, and calls fn with it, with the manager's own options
+// set, and calls fn with it, with the manager's own options. Without a root,
+// one is generated, named after the command, when none is stored and there's
+// a passphrase to encrypt its key.
 func (flags ServerFlags) WithCertManager(ctx server.Cmd, pool pg.PoolConn, schema string, passphrases []string, fn func(*manager.Manager) error, opts ...manager.Opt) error {
 	if pool == nil {
 		return auth.ErrBadParameter.With("certificates need a PostgreSQL connection")
@@ -62,6 +64,10 @@ func (flags ServerFlags) WithCertManager(ctx server.Cmd, pool pg.PoolConn, schem
 			return err
 		}
 		base = append(base, manager.WithRoot(string(data)))
+	} else if len(passphrases) > 0 {
+		base = append(base, manager.WithGeneratedRoot(ctx.Name()+" Root CA"))
+	} else {
+		ctx.Logger().WarnContext(ctx.Context(), "No passphrase, so no root certificate is generated, and certificates can't be created: set --passphrase")
 	}
 
 	mgr, err := manager.New(ctx.Context(), pool, append(base, opts...)...)
