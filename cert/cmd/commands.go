@@ -81,7 +81,7 @@ type CertCreateCmd struct {
 	CA       string        `arg:"" name:"ca" help:"Certificate authority name"`
 	CASerial string        `arg:"" optional:"" name:"serial" help:"Certificate authority serial number, which is its latest version when it's not set"`
 	Expiry   time.Duration `name:"expiry" help:"Lifetime, which is 90 days when it's not set, capped at the certificate authority's expiry"`
-	SAN      []string      `name:"san" help:"Subject alternative name: a DNS name, wildcard, IP address or CIDR range. Repeat for more than one."`
+	SAN      []string      `name:"san" help:"Subject alternative name: a DNS name, a wildcard such as *.example.com, or an IP address. Repeat for more than one."`
 	Tags     []string      `name:"tag" help:"Tag. Repeat for more than one."`
 	subjectFlags
 }

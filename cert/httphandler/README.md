@@ -38,7 +38,7 @@ Renews a version of a certificate authority, as renewing by name does.
 
 Leaf certificates, signed by a certificate authority. Listing and updating include the CAs.
 
-- **SAN entries:** DNS names, wildcards, IP addresses and CIDR ranges.
+- **SAN entries:** DNS names, wildcards, which are `*` as the first label, such as `*.example.com`, and IP addresses. CIDR ranges aren't certificates' SAN entries.
 - **Metadata:** the enabled state and tags can be changed. Disabling a certificate disables those it signed. Tags are inherited from the signers, as effective tags.
 - **Renewal:** creates a new version, with the next serial, and disables the current one. It's signed by the latest version of the certificate authority which signed it.
 

@@ -63,6 +63,20 @@ export class CertController {
         }
     }
 
+    // subjects returns the stored subjects which have fields, which a
+    // certificate can be created with, in the order they were created
+    async subjects(): Promise<Subject[]> {
+        const subjects: Subject[] = [];
+        for (let offset = 0; ; ) {
+            const page = await api.listSubjects(this.client, offset, 100);
+            subjects.push(...(page.body ?? []).filter((subject) => subject.subject));
+            offset += page.body?.length ?? 0;
+            if (!page.body?.length || offset >= page.count) {
+                return subjects;
+            }
+        }
+    }
+
     // create creates a certificate authority, or a certificate signed by the
     // latest version of the certificate authority, and loads the list again
     async create(req: CreateCertRequest, signer?: string): Promise<Certificate> {
