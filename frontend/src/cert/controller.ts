@@ -26,9 +26,10 @@ export class CertController {
     readonly client: Client;
     readonly list: ListController<Certificate>;
 
-    // showDisabled lists disabled certificates too, rather than only the
-    // enabled ones
+    // disabled lists disabled certificates too, rather than only the enabled
+    // ones, and query is the text of the names which are listed
     private disabled = false;
+    private query = '';
 
     constructor(client: Client, options: CertOptions = {}) {
         this.client = client;
@@ -38,7 +39,7 @@ export class CertController {
                 // Only each certificate's latest version, which is renewed,
                 // and signs certificates, and whose older versions are listed
                 // with versions
-                const page = await api.listCerts(client, { offset, limit, is_ca: options.ca, latest: true, enabled: this.disabled ? undefined : true });
+                const page = await api.listCerts(client, { offset, limit, is_ca: options.ca, latest: true, enabled: this.disabled ? undefined : true, search: this.query || undefined });
                 return { count: page.count, body: page.body ?? [] };
             },
             get: (cert) => api.getCert(client, cert).catch(() => cert),
@@ -73,6 +74,18 @@ export class CertController {
     // ones, from the first page
     setShowDisabled(show: boolean): Promise<void> {
         this.disabled = show;
+        return this.list.reset();
+    }
+
+    // search is the text of the names which are listed
+    get search(): string {
+        return this.query;
+    }
+
+    // setSearch lists the certificates whose names have the text, or all of
+    // them, when it's empty, from the first page
+    setSearch(text: string): Promise<void> {
+        this.query = text.trim();
         return this.list.reset();
     }
 

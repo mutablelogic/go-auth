@@ -22,7 +22,7 @@ import { live } from 'lit/directives/live.js';
 import { until } from 'lit/directives/until.js';
 import type { Client } from '@mutablelogic/go-server/api';
 import type { ChangesController } from '@mutablelogic/go-server/broadcaster';
-import type { Column } from '@mutablelogic/go-server/list/view';
+import type { Column, TableSearch, TableSetting, TableSettingChange } from '@mutablelogic/go-server/list/view';
 import type { NavController } from '@mutablelogic/go-server/nav';
 import type { NotificationController } from '@mutablelogic/go-server/notification';
 import { PanelController, type PanelAction } from '@mutablelogic/go-server/panel';
@@ -293,12 +293,18 @@ export class CertificatesElement extends LitElement {
         const root = this.features?.root ?? true;
         const authorities = this.kind === 'ca';
         const show = this.controller.showDisabled;
+        const searching = !!this.controller.search;
         const actions: PageAction[] = [
-            { label: show ? 'Hide disabled' : 'Show disabled', kind: 'tertiary', run: () => this.toggleDisabled() },
             authorities
                 ? { label: 'Create a certificate authority', icon: AddIcon, disabled: !root, run: () => this.create(true) }
                 : { label: 'Create a certificate', icon: AddIcon, run: () => this.create(false) },
         ];
+        const settings: TableSetting[] = [{ key: 'disabled', label: 'Show disabled', checked: show }];
+        const empty = searching
+            ? (authorities ? 'No certificate authorities match' : 'No leaf certificates match')
+            : authorities
+                ? (show ? 'No certificate authorities are stored' : 'No enabled certificate authorities')
+                : (show ? 'No leaf certificates are stored' : 'No enabled leaf certificates');
         const subtitle = authorities
             ? (root ? 'Which the root signs, and which sign leaf certificates' : 'No root certificate is stored, so certificate authorities can\'t be created')
             : 'Such as a server\'s, which a certificate authority signs';
@@ -307,9 +313,14 @@ export class CertificatesElement extends LitElement {
                 subtitle=${subtitle} .icon=${authorities ? CertificateCheckIcon : CertificateIcon} .actions=${actions}></gs-page-header>
             <gs-table .controller=${this.controller.list} .columns=${authorities ? authorityColumns : certificateColumns}
                 .expand=${(cert: Certificate) => this.versionsView(cert)} .itemKey=${(cert: Certificate) => cert.name}
-                empty=${authorities
-                    ? (show ? 'No certificate authorities are stored' : 'No enabled certificate authorities')
-                    : (show ? 'No leaf certificates are stored' : 'No enabled leaf certificates')}></gs-table>
+                .search=${authorities ? 'Search certificate authorities' : 'Search leaf certificates'} .settings=${settings}
+                @gs-table-search=${(event: CustomEvent<TableSearch>) => { void this.controller?.setSearch(event.detail.value).then(() => this.requestUpdate()); }}
+                @gs-table-setting=${(event: CustomEvent<TableSettingChange>) => {
+                    if (event.detail.key === 'disabled') {
+                        void this.toggleDisabled();
+                    }
+                }}
+                empty=${empty}></gs-table>
             <gs-panel .controller=${this.panel}>${this.body?.content ?? nothing}</gs-panel>
         `;
     }
