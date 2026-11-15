@@ -139,3 +139,38 @@ func Test_Client(t *testing.T) {
 		assert.ErrorIs(t, err, auth.ErrConflict, "the first version is disabled")
 	})
 }
+
+func Test_Subjects(t *testing.T) {
+	ctx := context.Background()
+	c := newClient(t)
+
+	created, err := c.CreateSubject(ctx, cert.SubjectMeta{Org: types.Ptr("Client Org")})
+	require.NoError(t, err)
+	assert.Equal(t, uint64(0), created.Certs)
+
+	limit := uint64(100)
+	list, err := c.ListSubjects(ctx, cert.SubjectListRequest{OffsetLimit: cert.OffsetLimit{Limit: &limit}})
+	require.NoError(t, err)
+	assert.Contains(t, list.Body, *created)
+
+	got, err := c.GetSubject(ctx, created.ID)
+	require.NoError(t, err)
+	assert.Equal(t, *created, *got)
+
+	updated, err := c.UpdateSubject(ctx, created.ID, cert.SubjectMeta{Country: types.Ptr("FR")})
+	require.NoError(t, err)
+	assert.Equal(t, "FR", types.Value(updated.Country))
+
+	require.NoError(t, c.DeleteSubject(ctx, created.ID))
+	_, err = c.GetSubject(ctx, created.ID)
+	assert.ErrorIs(t, err, auth.ErrNotFound)
+
+	// One which a certificate uses can't be changed
+	ca, err := c.CreateCA(ctx, cert.CreateCertRequest{Name: "subject_client_ca", Subject: &cert.SubjectMeta{Org: types.Ptr("Client CA Org")}})
+	require.NoError(t, err)
+	_, err = c.UpdateSubject(ctx, ca.Subject.ID, cert.SubjectMeta{Org: types.Ptr("Changed")})
+	assert.ErrorIs(t, err, auth.ErrConflict)
+	assert.ErrorIs(t, c.DeleteSubject(ctx, ca.Subject.ID), auth.ErrConflict)
+	_, err = c.CreateSubject(ctx, cert.SubjectMeta{})
+	assert.ErrorIs(t, err, auth.ErrBadParameter)
+}

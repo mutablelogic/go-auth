@@ -37,8 +37,9 @@ var HandlerDoc []byte
 const (
 	// The OpenAPI tags of the certificate authority and certificate
 	// operations
-	tagCA   = "Certificate Authorities"
-	tagCert = "Certificates"
+	tagCA      = "Certificate Authorities"
+	tagCert    = "Certificates"
+	tagSubject = "Subjects"
 
 	securityScheme = "bearerAuth"
 )
@@ -47,19 +48,22 @@ const (
 // PUBLIC METHODS
 
 // RegisterHandlers registers the handlers of the certificate manager:
-// creating and renewing certificate authorities, and listing, getting,
-// creating, renewing and updating certificates. When auth is true, the
+// creating and renewing certificate authorities, listing, getting,
+// creating, renewing and updating certificates, and managing the subjects
+// they're created with. When auth is true, the
 // handlers need the certificate scopes.
 func RegisterHandlers(manager *manager.Manager, auth bool) func(*httprouter.Router) error {
 	return func(router *httprouter.Router) error {
 		doc := opts.ParseMarkdown(HandlerDoc)
 		router.Spec().AddTag(tagCA, doc.Section(2, tagCA).Body)
 		router.Spec().AddTag(tagCert, doc.Section(2, tagCert).Body)
-		router.Spec().AddTagGroup("Certificate Management", tagCA, tagCert)
+		router.Spec().AddTag(tagSubject, doc.Section(2, tagSubject).Body)
+		router.Spec().AddTagGroup("Certificate Management", tagCA, tagCert, tagSubject)
 
 		return errors.Join(
 			registerCA(router, manager, auth, doc),
 			registerCert(router, manager, auth, doc),
+			registerSubject(router, manager, auth, doc),
 		)
 	}
 }

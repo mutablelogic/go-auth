@@ -106,3 +106,36 @@ Renews the latest version of a leaf certificate.
 ### POST /cert/{name}/{serial}/renew
 
 Renews a version of a leaf certificate, as renewing by name does.
+
+## Subjects
+
+The subjects of certificates, other than their common names, which certificates with the same subject share.
+
+- **Certificates which use it:** each subject has `certs`, the number of certificates which use it.
+- **Changes:** a subject which a certificate uses can't be updated or deleted, as its certificates have the subject in them, and deleting it would delete them. Either is a conflict.
+
+### GET /subject
+
+Lists the subjects, in the order they were created, with the number of certificates which use each.
+
+- **Pages:** `offset` and `limit`.
+
+### POST /subject
+
+Creates a subject, which certificates can then be created with, or returns an identical subject, when it's stored.
+
+- It needs a field. Fields are trimmed, and empty ones aren't set.
+
+### GET /subject/{id}
+
+Returns a subject, with the number of certificates which use it.
+
+### PATCH /subject/{id}
+
+Updates a subject which no certificate uses.
+
+- A field which isn't set is kept, and an empty one removed.
+
+### DELETE /subject/{id}
+
+Deletes a subject which no certificate uses.

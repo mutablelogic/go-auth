@@ -22,6 +22,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -208,6 +209,54 @@ func Test_Cert(t *testing.T) {
 	})
 }
 
+func Test_Subject(t *testing.T) {
+	mgr, _ := certtest.Begin(t)
+	s := test.NewServer(t, httphandler.RegisterHandlers(mgr, false))
+
+	// Create one, which is listed, got, updated and deleted
+	var created cert.Subject
+	require.Equal(t, http.StatusCreated, s.JSON(t, http.MethodPost, "subject", cert.SubjectMeta{Org: types.Ptr("Handler Org"), Unit: types.Ptr("Web")}, &created))
+	assert.NotZero(t, created.ID)
+	assert.Equal(t, uint64(0), created.Certs)
+	id := strconv.FormatUint(created.ID, 10)
+
+	var list cert.SubjectList
+	require.Equal(t, http.StatusOK, s.JSON(t, http.MethodGet, "subject?limit=100", nil, &list))
+	assert.Contains(t, list.Body, created)
+
+	var got cert.Subject
+	require.Equal(t, http.StatusOK, s.JSON(t, http.MethodGet, "subject/"+id, nil, &got))
+	assert.Equal(t, created, got)
+
+	var updated cert.Subject
+	require.Equal(t, http.StatusOK, s.JSON(t, http.MethodPatch, "subject/"+id, cert.SubjectMeta{City: types.Ptr("Leeds")}, &updated))
+	assert.Equal(t, "Leeds", types.Value(updated.City))
+
+	status, _ := s.Do(t, http.MethodDelete, "subject/"+id, nil)
+	assert.Equal(t, http.StatusNoContent, status)
+	status, _ = s.Do(t, http.MethodGet, "subject/"+id, nil)
+	assert.Equal(t, http.StatusNotFound, status)
+
+	// One which a certificate uses can't be changed
+	var ca cert.Certificate
+	require.Equal(t, http.StatusCreated, s.JSON(t, http.MethodPost, "ca", cert.CreateCertRequest{Name: "subject_handler_ca", Subject: &cert.SubjectMeta{Org: types.Ptr("Used By A CA")}}, &ca))
+	used := strconv.FormatUint(ca.Subject.ID, 10)
+	require.Equal(t, http.StatusOK, s.JSON(t, http.MethodGet, "subject/"+used, nil, &got))
+	assert.Equal(t, uint64(1), got.Certs)
+	status, _ = s.Do(t, http.MethodPatch, "subject/"+used, cert.SubjectMeta{Org: types.Ptr("Changed")})
+	assert.Equal(t, http.StatusConflict, status)
+	status, _ = s.Do(t, http.MethodDelete, "subject/"+used, nil)
+	assert.Equal(t, http.StatusConflict, status)
+
+	// Bad requests
+	status, _ = s.Do(t, http.MethodPost, "subject", cert.SubjectMeta{})
+	assert.Equal(t, http.StatusBadRequest, status, "no fields")
+	status, _ = s.Do(t, http.MethodGet, "subject/abc", nil)
+	assert.Equal(t, http.StatusBadRequest, status, "not an identifier")
+	status, _ = s.Do(t, http.MethodPatch, "subject/999999", cert.SubjectMeta{Org: types.Ptr("x")})
+	assert.Equal(t, http.StatusNotFound, status)
+}
+
 func Test_Spec(t *testing.T) {
 	mgr, _ := certtest.Begin(t)
 	s := test.NewServer(t, httphandler.RegisterHandlers(mgr, false))
@@ -225,6 +274,8 @@ func Test_Spec(t *testing.T) {
 		"/cert/{name}/key":            "Certificates",
 		"/cert/{name}/{serial}/key":   "Certificates",
 		"/cert/{name}/renew":          "Certificates",
+		"/subject":                    "Subjects",
+		"/subject/{id}":               "Subjects",
 		"/cert/{name}/{serial}/renew": "Certificates",
 	} {
 		item, ok := paths.MapOfPathItemValues[test.Prefix+path]

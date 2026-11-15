@@ -136,7 +136,7 @@ func (n SubjectMeta) Update(bind *pg.Bind) error {
 
 func (n *Subject) Scan(row pg.Row) error {
 	// Scan from row
-	if err := row.Scan(&n.ID, &n.Org, &n.Unit, &n.Country, &n.City, &n.State, &n.StreetAddress, &n.PostalCode, &n.Ts); err != nil {
+	if err := row.Scan(&n.ID, &n.Org, &n.Unit, &n.Country, &n.City, &n.State, &n.StreetAddress, &n.PostalCode, &n.Ts, &n.Certs); err != nil {
 		return err
 	}
 
