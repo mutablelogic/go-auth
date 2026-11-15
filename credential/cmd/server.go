@@ -37,13 +37,13 @@ import (
 // FileFlags stores credentials in encrypted files in a directory, which is
 // passed to the helpers
 type FileFlags struct {
-	Passphrase []string `name:"passphrase" env:"CREDENTIAL_PASSPHRASE" sep:"none" help:"Passphrase for encrypting credentials. Can be specified multiple times, for versions 1, 2 and so on, and the last is used for new credentials."`
+	Passphrase []string `name:"passphrase" env:"${ENV_NAME}_PASSPHRASE" sep:"none" help:"Passphrase for encrypting credentials. Can be specified multiple times, for versions 1, 2 and so on, and the last is used for new credentials."`
 }
 
 // PGFlags stores credentials in PostgreSQL, in a pool and schema which are
 // passed to the helpers
 type PGFlags struct {
-	Passphrase []string `name:"passphrase" env:"CREDENTIAL_PASSPHRASE" sep:"none" help:"Passphrase for encrypting credentials. Can be specified multiple times, for versions 1, 2 and so on, and the last is used for new credentials."`
+	Passphrase []string `name:"passphrase" env:"${ENV_NAME}_PASSPHRASE" sep:"none" help:"Passphrase for encrypting credentials. Can be specified multiple times, for versions 1, 2 and so on, and the last is used for new credentials."`
 }
 
 // AWSFlags stores credentials in AWS Secrets Manager. The region and
@@ -53,9 +53,9 @@ type AWSFlags struct {
 	Region         string `name:"region" help:"AWS region, in place of AWS_REGION"`
 	Profile        string `name:"profile" help:"AWS shared configuration profile, in place of AWS_PROFILE"`
 	Endpoint       string `name:"endpoint" help:"Secrets Manager endpoint URL, such as for a local emulator"`
-	Prefix         string `name:"prefix" env:"CREDENTIAL_AWS_PREFIX" help:"Prefix of secret names, such as myapp/"`
-	KMSKey         string `name:"kms-key" env:"CREDENTIAL_AWS_KMS_KEY" help:"KMS key for new secrets, in place of the account's default key"`
-	RecoveryWindow *int   `name:"recovery-window" env:"CREDENTIAL_AWS_RECOVERY_WINDOW" help:"Days, from 7 to 30, that a deleted secret can be recovered for, or 0 to delete at once. AWS's default is 30."`
+	Prefix         string `name:"prefix" env:"AWS_CREDENTIAL_PREFIX" help:"Prefix of secret names, such as myapp/"`
+	KMSKey         string `name:"kms-key" env:"AWS_CREDENTIAL_KMS_KEY" help:"KMS key for new secrets, in place of the account's default key"`
+	RecoveryWindow *int   `name:"recovery-window" env:"AWS_CREDENTIAL_RECOVERY_WINDOW" help:"Days, from 7 to 30, that a deleted secret can be recovered for, or 0 to delete at once. AWS's default is 30."`
 }
 
 // BitwardenFlags stores credentials in Bitwarden Secrets Manager, for a

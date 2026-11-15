@@ -57,7 +57,7 @@ func (runner *RunServer) Run(ctx server.Cmd) error {
 		return runner.Credential.withManager(ctx, func(manager credential.CredentialManager) error {
 			ctx.Logger().InfoContext(ctx.Context(), "Credentials", "backend", backend)
 			ctx.Logger().WarnContext(ctx.Context(), "The credential API has no authentication")
-			runner.register(ctx, manager)
+			runner.register(ctx, manager, changes)
 			return runner.run(ctx, changes)
 		})
 	})
@@ -68,8 +68,9 @@ func (runner *RunServer) Run(ctx server.Cmd) error {
 
 // register registers the configuration, with what the credential manager
 // can do, which depends on its backend, the web UI, when it's served, or
-// else a handler of / which isn't found, and the credential API
-func (runner *RunServer) register(ctx server.Cmd, manager credential.CredentialManager) {
+// else a handler of / which isn't found, and the credential API, which
+// publishes its changes, which the UI follows
+func (runner *RunServer) register(ctx server.Cmd, manager credential.CredentialManager, changes *broadcaster.Broadcaster) {
 	runner.RunServer.Register(func(router *httprouter.Router) error {
 		ui, err := runner.Frontend.RegisterUI(ctx, ctx.Logger(), router, runner.RunServer.OpenAPI,
 			config.WithSection("credential", credential.FeaturesOf(backend, manager)),
@@ -82,7 +83,7 @@ func (runner *RunServer) register(ctx server.Cmd, manager credential.CredentialM
 				return err
 			}
 		}
-		return httphandler.RegisterManagerHandlers(manager, false)(router)
+		return httphandler.RegisterManagerHandlers(manager, false, httphandler.WithPublisher(changes))(router)
 	})
 }
 

@@ -24,6 +24,7 @@ import (
 
 	// Packages
 	httpclient "github.com/mutablelogic/go-auth/credential/httpclient"
+	client "github.com/mutablelogic/go-client"
 	otel "github.com/mutablelogic/go-client/pkg/otel"
 	server "github.com/mutablelogic/go-server"
 	term "golang.org/x/term"
@@ -39,6 +40,32 @@ func withClient(ctx server.Cmd, span string, fn func(context.Context, *httpclien
 	if err != nil {
 		return err
 	}
+	return runClient(ctx, span, endpoint, opts, fn)
+}
+
+// withSecretClient calls fn with a client of the credential API, as
+// withClient does, for a request or a response which has a secret, such as
+// a passphrase, or a credential's value. Its options are the command's,
+// without --verbose's trace, which would print the secret, so --debug
+// traces the requests, without their bodies.
+func withSecretClient(ctx server.Cmd, span string, fn func(context.Context, *httpclient.Client) error) error {
+	endpoint, _, err := ctx.ClientEndpoint()
+	if err != nil {
+		return err
+	}
+	opts := []client.ClientOpt{client.OptTracer(ctx.Tracer())}
+	if timeout := ctx.HTTPTimeout(); timeout > 0 {
+		opts = append(opts, client.OptTimeout(timeout))
+	}
+	if ctx.IsDebug() {
+		opts = append(opts, client.OptTrace(os.Stderr, false))
+	}
+	return runClient(ctx, span, endpoint, opts, fn)
+}
+
+// runClient calls fn with a client of the endpoint, with the options, in a
+// span
+func runClient(ctx server.Cmd, span, endpoint string, opts []client.ClientOpt, fn func(context.Context, *httpclient.Client) error) (err error) {
 	client, err := httpclient.New(endpoint, opts...)
 	if err != nil {
 		return err
@@ -66,16 +93,22 @@ func readSecret(prompt string) ([]byte, error) {
 	return trimNewline(value), nil
 }
 
-// writeCredential writes a string credential as text, unless jsonString is
-// set, and any other credential as indented JSON
-func writeCredential(w io.Writer, credential any, jsonString bool) error {
-	if value, ok := credential.(string); ok && !jsonString {
+// writeCredential writes a credential which is a JSON string as text,
+// unless jsonString is set, and any other credential as indented JSON, as
+// it is, so its numbers aren't changed
+func writeCredential(w io.Writer, credential json.RawMessage, jsonString bool) error {
+	var value string
+	if err := json.Unmarshal(credential, &value); err == nil && !jsonString {
 		_, err := fmt.Fprintln(w, value)
 		return err
 	}
-	enc := json.NewEncoder(w)
-	enc.SetIndent("", "  ")
-	return enc.Encode(credential)
+	var indented bytes.Buffer
+	if err := json.Indent(&indented, credential, "", "  "); err != nil {
+		return err
+	}
+	indented.WriteByte('\n')
+	_, err := indented.WriteTo(w)
+	return err
 }
 
 // trimNewline removes a single trailing line ending, which echo and most

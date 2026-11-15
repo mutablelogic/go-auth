@@ -25,6 +25,7 @@ import (
 	envcredential "github.com/mutablelogic/go-auth/credential/env"
 	filecredential "github.com/mutablelogic/go-auth/credential/file"
 	httphandler "github.com/mutablelogic/go-auth/credential/httphandler"
+	schema "github.com/mutablelogic/go-server/broadcaster/schema"
 	httprouter "github.com/mutablelogic/go-server/pkg/httprouter"
 	test "github.com/mutablelogic/go-server/test"
 	assert "github.com/stretchr/testify/assert"
@@ -228,4 +229,43 @@ func Test_Auth(t *testing.T) {
 	router, err := httprouter.NewRouter(context.Background(), http.NewServeMux(), "/api", "", "test", "0.0.0")
 	require.NoError(t, err)
 	assert.Error(t, httphandler.RegisterManagerHandlers(mgr, true)(router))
+}
+
+// publisher records the changes which are published
+type publisher struct {
+	changes []schema.Change
+}
+
+func (p *publisher) Publish(change schema.Change) int {
+	p.changes = append(p.changes, change)
+	return 0
+}
+
+func Test_Publish(t *testing.T) {
+	// A change is published after each write which succeeds, by the key,
+	// without the value
+	mgr, err := filecredential.New(t.TempDir(), filecredential.WithPassphrase(1, passphrase))
+	require.NoError(t, err)
+	var p publisher
+	s := test.NewServer(t, httphandler.RegisterManagerHandlers(mgr, false, httphandler.WithPublisher(&p)))
+
+	status, _ := s.Do(t, http.MethodPut, "credential", map[string]any{"key": "token", "credentials": "secret"})
+	require.Equal(t, http.StatusOK, status)
+	status, _ = s.Do(t, http.MethodPatch, "credential/token", map[string]any{"description": "d"})
+	require.Equal(t, http.StatusOK, status)
+	status, _ = s.Do(t, http.MethodPost, "credential/token/rotate", nil)
+	require.Equal(t, http.StatusNotModified, status, "nothing changed, so nothing is published")
+	status, _ = s.Do(t, http.MethodDelete, "credential/token", nil)
+	require.Equal(t, http.StatusNoContent, status)
+	status, _ = s.Do(t, http.MethodDelete, "credential/token", nil)
+	require.Equal(t, http.StatusNotFound, status, "a failure isn't published")
+
+	assert.Equal(t, []schema.Change{
+		{Action: schema.ChangeUpdate, Table: "credential", Row: "token"},
+		{Action: schema.ChangeUpdate, Table: "credential", Row: "token"},
+		{Action: schema.ChangeDelete, Table: "credential", Row: "token"},
+	}, p.changes)
+	for _, change := range p.changes {
+		assert.Empty(t, change.Data, "no value is published")
+	}
 }

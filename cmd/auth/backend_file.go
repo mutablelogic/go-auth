@@ -33,7 +33,7 @@ import (
 // user's configuration directory, unless --credential.path is set
 type BackendFlags struct {
 	credentialcmd.FileFlags
-	Path string `name:"path" env:"CREDENTIAL_PATH" help:"Directory for credential files, created with permissions 0700. Defaults to a directory in the user's configuration directory."`
+	Path string `name:"path" env:"${ENV_NAME}_CREDENTIAL_PATH" help:"Directory for credential files, created with permissions 0700. Defaults to a directory in the user's configuration directory."`
 }
 
 ///////////////////////////////////////////////////////////////////////////////

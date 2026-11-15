@@ -135,6 +135,9 @@ export const CredentialsTag = 'ga-credentials';
 interface Body {
     kind: 'credential' | 'form' | 'passphrase' | 'value';
     content: TemplateResult;
+    // key is the credential's, when it's one's, so the panel isn't shown
+    // again when the list is loaded again, with the same one selected
+    key?: string;
 }
 
 export class CredentialsElement extends LitElement {
@@ -173,6 +176,10 @@ export class CredentialsElement extends LitElement {
     declare private body?: Body;
 
     private readonly panel = new PanelController<Body>();
+
+    // opened counts what's opened in the panel, so a response which arrives
+    // after what it was for was closed, or another opened, is ignored
+    private opened = 0;
     private unsubscribe?: () => void;
 
     constructor() {
@@ -229,7 +236,13 @@ export class CredentialsElement extends LitElement {
         this.unsubscribe?.();
         this.unsubscribe = this.isConnected ? this.controller?.list.subscribe(({ selected }) => {
             if (selected) {
-                this.show(selected);
+                // The list is loaded again, such as when a credential
+                // changes, with the same one selected: its details are
+                // shown again, but a form, or its value, is kept, with what
+                // was typed in it
+                if (!this.panel.isOpen || this.body?.key !== selected.key || this.body.kind === 'credential') {
+                    this.show(selected);
+                }
             } else if (this.panel.isOpen && this.body?.kind === 'credential') {
                 this.panel.close();
             }
@@ -238,6 +251,7 @@ export class CredentialsElement extends LitElement {
 
     // open shows the body in the panel, with its header and actions
     private open(title: string, subtitle: string, body: Body, actions: PanelAction[]) {
+        this.opened++;
         this.body = body;
         this.panel.setHeader({ title, subtitle });
         this.panel.setActions(actions);
@@ -262,6 +276,7 @@ export class CredentialsElement extends LitElement {
         }
         this.open(credential.key, updated, {
             kind: 'credential',
+            key: credential.key,
             content: html`${credential.description ? html`<p class="description">${credential.description}</p>` : nothing}<p class="helper">${decrypt
                 ? 'Its value is only shown with the passphrase it was encrypted with.'
                 : `Its value isn't shown, as it's stored in ${backendName(this.features?.backend)}.`}</p>`,
@@ -275,13 +290,14 @@ export class CredentialsElement extends LitElement {
         const form = credentialForm(credential);
         let errors: CredentialFormErrors = {};
         const rerender = () => {
-            this.body = { kind: 'form', content: credentialFormView(form, rerender, errors) };
+            this.body = { kind: 'form', key: credential?.key, content: credentialFormView(form, rerender, errors) };
         };
         const cancel: PanelAction = credential
             ? { label: 'Cancel', kind: 'secondary', close: false, run: () => this.show(credential) }
             : { label: 'Cancel', kind: 'secondary' };
         this.open(credential ? `Edit ${credential.key}` : 'Store a credential', 'Credential', {
             kind: 'form',
+            key: credential?.key,
             content: credentialFormView(form, rerender, errors),
         }, [cancel, {
             label: credential ? 'Save' : 'Store',
@@ -321,6 +337,7 @@ export class CredentialsElement extends LitElement {
         const state = { passphrase: '' };
         this.open(`${credential.key}'s value`, 'Credential', {
             kind: 'passphrase',
+            key: credential.key,
             content: passphraseFormView(state),
         }, [
             { label: 'Cancel', kind: 'secondary', close: false, run: () => this.show(credential) },
@@ -330,23 +347,35 @@ export class CredentialsElement extends LitElement {
                 close: false,
                 run: async () => {
                     if (!state.passphrase || !this.controller) {
-                        this.body = { kind: 'passphrase', content: passphraseFormView(state, 'A passphrase is required') };
+                        this.body = { kind: 'passphrase', key: credential.key, content: passphraseFormView(state, 'A passphrase is required') };
                         return;
                     }
+
+                    // The value is only shown when this form is still open,
+                    // so it isn't revealed after the panel was closed, or
+                    // something else was opened, while it was being read
+                    const opened = this.opened;
+                    const current = () => this.opened === opened && this.panel.isOpen && this.isConnected;
+
                     // A wrong passphrase is said beside it, rather than as an
                     // error which goes away
                     let value: unknown;
                     try {
                         value = await this.controller.value(credential.key, state.passphrase);
                     } catch (error) {
-                        if (error instanceof ApiError && error.status === 403) {
-                            this.body = { kind: 'passphrase', content: passphraseFormView(state, "It isn't the passphrase the credential was encrypted with") };
+                        if (!current()) {
+                            return;
+                        } else if (error instanceof ApiError && error.status === 403) {
+                            this.body = { kind: 'passphrase', key: credential.key, content: passphraseFormView(state, "It isn't the passphrase the credential was encrypted with") };
                             return;
                         }
                         throw error;
                     }
                     state.passphrase = '';
-                    this.open(`${credential.key}'s value`, 'Credential', { kind: 'value', content: valueView(value) }, [
+                    if (!current()) {
+                        return;
+                    }
+                    this.open(`${credential.key}'s value`, 'Credential', { kind: 'value', key: credential.key, content: valueView(value) }, [
                         { label: 'Hide', kind: 'secondary', close: false, run: () => this.show(credential) },
                     ]);
                 },

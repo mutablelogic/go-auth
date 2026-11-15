@@ -69,8 +69,8 @@ func (cmd *CredentialGetCmd) Run(ctx server.Cmd) error {
 		return fmt.Errorf("passphrase is required")
 	}
 
-	return withClient(ctx, "credential.CredentialGetCmd", func(ctx context.Context, client *httpclient.Client) error {
-		var credential any
+	return withSecretClient(ctx, "credential.CredentialGetCmd", func(ctx context.Context, client *httpclient.Client) error {
+		var credential json.RawMessage
 		if err := client.GetCredential(ctx, cmd.Key, string(passphrase), &credential); err != nil {
 			return err
 		}
@@ -98,7 +98,7 @@ func (cmd *CredentialSetCmd) Run(ctx server.Cmd) error {
 		return err
 	}
 
-	return withClient(ctx, "credential.CredentialSetCmd", func(ctx context.Context, client *httpclient.Client) error {
+	return withSecretClient(ctx, "credential.CredentialSetCmd", func(ctx context.Context, client *httpclient.Client) error {
 		stored, err := client.SetCredential(ctx, schema.CredentialSet{Key: cmd.Key, Credentials: credential, Description: cmd.Description})
 		if err != nil {
 			return err
