@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import type { Client } from '@mutablelogic/go-server/api';
 import { certForm, certFormErrors, certRequest, validSAN, renewForm, renewFormErrors, renewRequest, splitList, subjectCreateRequest, subjectUpdateRequest, tagsError, tagsRequest } from '../src/cert/form.ts';
 import { certificatePEM, pem, privateKeyPEM } from '../src/cert/pem.ts';
-import { Day, RootCertName, certExpired, certType } from '../src/cert/schema.ts';
+import { Day, RootCertName, certExpired, certType, certValidity } from '../src/cert/schema.ts';
 import * as api from '../src/cert/httpclient.ts';
 
 // fakeClient returns a client whose fetch records each request, and
@@ -114,6 +114,9 @@ test('schema', () => {
     assert.equal(certType({ name: 'web', serial: '1' }), 'certificate');
     assert.equal(certExpired({ name: 'web', serial: '1', not_after: '2000-01-01T00:00:00Z' }), true);
     assert.equal(certExpired({ name: 'web', serial: '1', not_after: '2999-01-01T00:00:00Z' }), false);
+    assert.equal(certValidity({ name: 'web', serial: '1', not_before: '2000-01-01T00:00:00Z', not_after: '2999-01-01T00:00:00Z' }), 'valid');
+    assert.equal(certValidity({ name: 'web', serial: '1', not_after: '2000-01-01T00:00:00Z' }), 'expired');
+    assert.equal(certValidity({ name: 'web', serial: '1', not_before: '2999-01-01T00:00:00Z', not_after: '2999-12-31T00:00:00Z' }), 'pending');
 });
 
 test('httpclient', async (t) => {

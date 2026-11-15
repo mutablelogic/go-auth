@@ -37,7 +37,7 @@ import { copyText, formatTime, subjectView } from './parts.ts';
 import { SubjectsElement, SubjectsTag } from './subject.ts';
 
 export * from './subject.ts';
-import { RootCertName, certExpired, certType, type CertFeatures, type Certificate, type Subject } from './schema.ts';
+import { RootCertName, certType, certValidity, type CertFeatures, type CertValidity, type Certificate, type Subject } from './schema.ts';
 
 // go-server's and Carbon's elements
 import '@mutablelogic/go-server/list/view';
@@ -63,25 +63,23 @@ const DownloadButton = iconLoader(DownloadIcon, { slot: 'icon' });
 
 // authorityColumns are the columns of a table of certificate authorities,
 // which the root signs: the name, which can be copied, without opening the
-// certificate, when it expires, its state, and its tags
+// certificate, when it expires, and its state and tags
 export const authorityColumns: Column<Certificate>[] = [
     { header: 'Name', cell: (cert) => nameView(cert.name) },
     { header: 'Expires', cell: (cert) => formatTime(cert.not_after) },
-    { header: 'State', cell: (cert) => stateTags(cert) },
-    { header: 'Tags', cell: (cert) => (cert.effective_tags ?? []).join(', ') },
+    { header: 'Tags', cell: (cert) => certTags(cert) },
 ];
 
 // certificateColumns are the columns of a table of leaf certificates: the
 // name, which can be copied, without opening the certificate, its SAN
-// entries, the certificate authority which signed it, when it expires, its
-// state, and its tags, with those it inherits
+// entries, the certificate authority which signed it, when it expires, and
+// its state and tags, with those it inherits
 export const certificateColumns: Column<Certificate>[] = [
     { header: 'Name', cell: (cert) => nameView(cert.name) },
     { header: 'SAN', cell: (cert) => (cert.san ?? []).join(', ') },
     { header: 'Signer', cell: (cert) => signerName(cert) },
     { header: 'Expires', cell: (cert) => formatTime(cert.not_after) },
-    { header: 'State', cell: (cert) => stateTags(cert) },
-    { header: 'Tags', cell: (cert) => (cert.effective_tags ?? []).join(', ') },
+    { header: 'Tags', cell: (cert) => certTags(cert) },
 ];
 
 // nameView is a certificate's name, in a monospace font, with a button which
@@ -409,7 +407,7 @@ export class CertificatesElement extends LitElement {
                     <li style="display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap">
                         <cds-button kind="ghost" size="sm" @click=${() => this.openVersion(version)}>Serial ${version.serial}</cds-button>
                         <span>Expires ${formatTime(version.not_after)}</span>
-                        ${stateTags(version)}
+                        ${certTags(version)}
                     </li>
                 `)}
             </ul>
@@ -718,10 +716,28 @@ function typeTag(cert: Certificate): TemplateResult {
     }
 }
 
-// stateTags are tags of a certificate which is disabled, or has expired
+// certTags are a certificate's state, as coloured tags, and its tags, with
+// those it inherits, in gray
+function certTags(cert: Certificate): TemplateResult {
+    return html`<div style="display: flex; gap: 0.25rem; flex-wrap: wrap">${stateTags(cert)}${(cert.effective_tags ?? []).map((tag) => html`<cds-tag type="gray" size="sm">${tag}</cds-tag>`)}</div>`;
+}
+
+// stateTags are tags of whether a certificate is valid, has expired, or
+// isn't valid yet, and whether it's disabled
 function stateTags(cert: Certificate): TemplateResult {
-    return html`${cert.enabled === false ? html`<cds-tag type="red" size="sm">Disabled</cds-tag>` : nothing}${certExpired(cert)
-        ? html`<cds-tag type="warm-gray" size="sm">Expired</cds-tag>`
-        : nothing}`;
+    return html`${validityTag(certValidity(cert))}${cert.enabled === false ? html`<cds-tag type="magenta" size="sm">Disabled</cds-tag>` : nothing}`;
+}
+
+// validityTag is a tag of whether a certificate is valid, has expired, or
+// isn't valid yet
+function validityTag(validity: CertValidity): TemplateResult {
+    switch (validity) {
+        case 'valid':
+            return html`<cds-tag type="green" size="sm">Valid</cds-tag>`;
+        case 'expired':
+            return html`<cds-tag type="red" size="sm">Expired</cds-tag>`;
+        default:
+            return html`<cds-tag type="cool-gray" size="sm">Not yet valid</cds-tag>`;
+    }
 }
 

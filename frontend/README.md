@@ -28,6 +28,7 @@ credentialModule({ nav, router, client, root: document.querySelector('main')!, n
 - **Parts:** an app with its own table and panel can use `CredentialController`, `credentialColumns` and the form views instead.
 - **Certificates:** `certModule` adds a Certificates section the same way, with three pages, Leaf Certificates, Certificate Authorities and Subjects. A CA's panel creates a certificate it signs, on the Leaf Certificates page. Its panel downloads a certificate, with its chain, and a leaf certificate's private key, as PEM. It also renews a certificate, enables or disables it, and changes its tags.
 - **Versions:** the certificate pages list each certificate's latest version, which alone is renewed, or signs certificates. A row expands to its older versions, which open in the panel, where they can be enabled or disabled, retagged, and downloaded.
+- **Tags column:** a certificate's state comes first, in colour: Valid, Expired or Not yet valid, and Disabled. Its tags, with those it inherits, follow in gray.
 - **Toolbar:** each certificate table has a search, of the certificates' names, and a settings menu, whose Show disabled lists disabled certificates, and their disabled older versions, which are hidden otherwise.
 - **Create:** each table's toolbar ends with its Create button: a certificate, a certificate authority, or a subject. Create a certificate authority is disabled without a root.
 - **Subjects:** the Subjects page lists the subjects, with how many certificates use each. It edits or deletes one which no certificate uses.

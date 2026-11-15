@@ -149,3 +149,19 @@ export function certType(cert: Certificate): 'root' | 'ca' | 'certificate' {
 export function certExpired(cert: Certificate, now = Date.now()): boolean {
     return !!cert.not_after && Date.parse(cert.not_after) <= now;
 }
+
+// CertValidity is whether a certificate is valid at a time, has expired, or
+// isn't valid yet
+export type CertValidity = 'valid' | 'expired' | 'pending';
+
+// certValidity is whether the certificate is valid at the time, between its
+// not_before and not_after, or has expired, or isn't valid yet
+export function certValidity(cert: Certificate, now = Date.now()): CertValidity {
+    if (certExpired(cert, now)) {
+        return 'expired';
+    }
+    if (cert.not_before && Date.parse(cert.not_before) > now) {
+        return 'pending';
+    }
+    return 'valid';
+}
