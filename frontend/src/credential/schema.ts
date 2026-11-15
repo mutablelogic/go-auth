@@ -39,3 +39,11 @@ export interface CredentialFeatures {
 // KeyPattern is what a key is: a letter, then up to 63 letters, digits,
 // underscores and hyphens
 export const KeyPattern = /^[a-zA-Z][a-zA-Z0-9_-]{0,63}$/;
+
+// refreshable is true for a backend whose changes made elsewhere, such as
+// in AWS's console, the UI isn't told of, so it's refreshed by hand. The
+// others' changes are published: by the API, or, for pg, by its table's
+// trigger.
+export function refreshable(backend?: string): boolean {
+    return backend === 'aws' || backend === 'bitwarden';
+}
