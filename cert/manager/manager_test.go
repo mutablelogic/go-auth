@@ -618,6 +618,17 @@ func Test_manager_latest(t *testing.T) {
 	_, err = m.ListCerts(ctx, cert.CertListRequest{Name: "not a name"})
 	assert.Error(t, err)
 
+	// A search of the names, in any case, which matches its text literally
+	found, err := m.ListCerts(ctx, cert.CertListRequest{Search: "LEAF", Latest: types.Ptr(true)})
+	require.NoError(t, err)
+	assert.Equal(t, []cert.CertKey{leaf3.CertKey}, keys(found))
+	found, err = m.ListCerts(ctx, cert.CertListRequest{Search: "t_l", Latest: types.Ptr(true)})
+	require.NoError(t, err)
+	assert.Equal(t, []cert.CertKey{leaf3.CertKey}, keys(found), "_ is matched, rather than any character")
+	found, err = m.ListCerts(ctx, cert.CertListRequest{Search: "%"})
+	require.NoError(t, err)
+	assert.Empty(t, found.Body, "% is matched, rather than anything")
+
 	// Only the latest version is renewed, or signs, even when an older one is
 	// enabled, as a renewed CA's is
 	_, err = m.RenewCA(ctx, ca.CertKey, cert.RenewCertRequest{})

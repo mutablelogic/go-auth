@@ -160,6 +160,12 @@ func (c CertListRequest) Select(bind *pg.Bind, op pg.Op) (string, error) {
 			bind.Append("where", "NOT ("+latest+")")
 		}
 	}
+	if search := strings.TrimSpace(c.Search); search != "" {
+		// The text is matched literally, so the LIKE pattern's characters in
+		// it are escaped
+		escaped := strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(search)
+		bind.Append("where", `cert_row."name" ILIKE `+bind.Set("search", "%"+escaped+"%"))
+	}
 	if c.Name != "" {
 		name, err := cert.ValidateCertName(c.Name)
 		if err != nil {
