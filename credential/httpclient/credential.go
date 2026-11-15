@@ -21,6 +21,7 @@ import (
 	"strings"
 
 	// Packages
+	auth "github.com/mutablelogic/go-auth"
 	credential "github.com/mutablelogic/go-auth/credential"
 	client "github.com/mutablelogic/go-client"
 	types "github.com/mutablelogic/go-server/pkg/types"
@@ -52,7 +53,7 @@ func (c *Client) SetCredential(ctx context.Context, set credential.CredentialSet
 	}
 	var response credential.Credential
 	if err := c.DoWithContext(ctx, req, &response, client.OptPath("credential")); err != nil {
-		return nil, clientErr(err)
+		return nil, auth.ClientError(err)
 	}
 	return &response, nil
 }
@@ -62,7 +63,7 @@ func (c *Client) SetCredential(ctx context.Context, set credential.CredentialSet
 // credential's JSON decodes into, such as a json.RawMessage. Only the
 // backends which encrypt with their own passphrases return credentials.
 func (c *Client) GetCredential(ctx context.Context, key, passphrase string, result any) error {
-	return clientErr(c.DoWithContext(ctx, textPayload{Reader: strings.NewReader(passphrase)}, result, client.OptPath("credential", key)))
+	return auth.ClientError(c.DoWithContext(ctx, textPayload{Reader: strings.NewReader(passphrase)}, result, client.OptPath("credential", key)))
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -73,7 +74,7 @@ func (c *Client) GetCredential(ctx context.Context, key, passphrase string, resu
 func (c *Client) ListCredentials(ctx context.Context) (*credential.CredentialList, error) {
 	var response credential.CredentialList
 	if err := c.DoWithContext(ctx, client.MethodGet, &response, client.OptPath("credential")); err != nil {
-		return nil, clientErr(err)
+		return nil, auth.ClientError(err)
 	}
 	return &response, nil
 }
@@ -83,7 +84,7 @@ func (c *Client) ListCredentials(ctx context.Context) (*credential.CredentialLis
 func (c *Client) GetCredentialMeta(ctx context.Context, key string) (*credential.Credential, error) {
 	var response credential.Credential
 	if err := c.DoWithContext(ctx, client.MethodGet, &response, client.OptPath("credential", key)); err != nil {
-		return nil, clientErr(err)
+		return nil, auth.ClientError(err)
 	}
 	return &response, nil
 }
@@ -97,18 +98,18 @@ func (c *Client) DescribeCredential(ctx context.Context, key, description string
 	}
 	var response credential.Credential
 	if err := c.DoWithContext(ctx, req, &response, client.OptPath("credential", key)); err != nil {
-		return nil, clientErr(err)
+		return nil, auth.ClientError(err)
 	}
 	return &response, nil
 }
 
 // DeleteCredential deletes the stored credential for the key
 func (c *Client) DeleteCredential(ctx context.Context, key string) error {
-	return clientErr(c.DoWithContext(ctx, client.MethodDelete, nil, client.OptPath("credential", key)))
+	return auth.ClientError(c.DoWithContext(ctx, client.MethodDelete, nil, client.OptPath("credential", key)))
 }
 
 // RotateCredential re-encrypts the credential for the key with the latest
 // passphrase version. Returns auth.ErrNotModified when it already uses it.
 func (c *Client) RotateCredential(ctx context.Context, key string) error {
-	return clientErr(c.DoWithContext(ctx, client.MethodPost, nil, client.OptPath("credential", key, "rotate")))
+	return auth.ClientError(c.DoWithContext(ctx, client.MethodPost, nil, client.OptPath("credential", key, "rotate")))
 }
