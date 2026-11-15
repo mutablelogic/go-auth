@@ -16,7 +16,8 @@ package manager
 
 import (
 	"context"
-	"errors"
+	"math"
+	"strconv"
 
 	// Packages
 	cert "github.com/mutablelogic/go-auth/cert/cert"
@@ -37,6 +38,9 @@ func (m *Manager) ListSubjects(ctx context.Context, req cert.SubjectListRequest)
 	ctx, endSpan := otel.StartSpan(m.tracer, ctx, "certmanager.ListSubjects", attribute.String("request", req.String()))
 	defer func() { endSpan(err) }()
 
+	// The limit is at most the query's, so the response says which subjects
+	// it has, and the next page starts after them
+	req.OffsetLimit = clampLimit(req.OffsetLimit, schema.SubjectListLimit)
 	result := cert.SubjectList{SubjectListRequest: req}
 	if err = m.PoolConn.List(ctx, (*schema.SubjectList)(&result), schema.SubjectListRequest(req)); err != nil {
 		return nil, err
@@ -46,9 +50,12 @@ func (m *Manager) ListSubjects(ctx context.Context, req cert.SubjectListRequest)
 
 // GetSubject returns a subject, with the number of certificates which use it
 func (m *Manager) GetSubject(ctx context.Context, id uint64) (_ *cert.Subject, err error) {
-	ctx, endSpan := otel.StartSpan(m.tracer, ctx, "certmanager.GetSubject", attribute.Int64("id", int64(id)))
+	ctx, endSpan := otel.StartSpan(m.tracer, ctx, "certmanager.GetSubject", attribute.String("id", strconv.FormatUint(id, 10)))
 	defer func() { endSpan(err) }()
 
+	if err := validID(id); err != nil {
+		return nil, err
+	}
 	var result cert.Subject
 	if err = m.Get(ctx, (*schema.Subject)(&result), schema.SubjectID(id)); err != nil {
 		return nil, err
@@ -77,15 +84,15 @@ func (m *Manager) CreateSubject(ctx context.Context, meta cert.SubjectMeta) (_ *
 // longer be. A field which isn't set is kept, and an empty one removed.
 func (m *Manager) UpdateSubject(ctx context.Context, id uint64, meta cert.SubjectMeta) (_ *cert.Subject, err error) {
 	ctx, endSpan := otel.StartSpan(m.tracer, ctx, "certmanager.UpdateSubject",
-		attribute.Int64("id", int64(id)),
+		attribute.String("id", strconv.FormatUint(id, 10)),
 		attribute.String("meta", meta.String()),
 	)
 	defer func() { endSpan(err) }()
 
 	var result cert.Subject
-	if err = m.Update(ctx, (*schema.Subject)(&result), schema.SubjectID(id), schema.SubjectMeta(meta)); errors.Is(err, pg.ErrNotFound) {
-		return nil, m.subjectNotChanged(ctx, id)
-	} else if err != nil {
+	if err = m.unused(ctx, id, func(conn pg.Conn) error {
+		return conn.Update(ctx, (*schema.Subject)(&result), schema.SubjectID(id), schema.SubjectMeta(meta))
+	}); err != nil {
 		return nil, err
 	}
 	return types.Ptr(result), nil
@@ -94,13 +101,13 @@ func (m *Manager) UpdateSubject(ctx context.Context, id uint64, meta cert.Subjec
 // DeleteSubject deletes a subject which no certificate uses, as deleting it
 // would delete its certificates
 func (m *Manager) DeleteSubject(ctx context.Context, id uint64) (_ *cert.Subject, err error) {
-	ctx, endSpan := otel.StartSpan(m.tracer, ctx, "certmanager.DeleteSubject", attribute.Int64("id", int64(id)))
+	ctx, endSpan := otel.StartSpan(m.tracer, ctx, "certmanager.DeleteSubject", attribute.String("id", strconv.FormatUint(id, 10)))
 	defer func() { endSpan(err) }()
 
 	var result cert.Subject
-	if err = m.Delete(ctx, (*schema.Subject)(&result), schema.SubjectID(id)); errors.Is(err, pg.ErrNotFound) {
-		return nil, m.subjectNotChanged(ctx, id)
-	} else if err != nil {
+	if err = m.unused(ctx, id, func(conn pg.Conn) error {
+		return conn.Delete(ctx, (*schema.Subject)(&result), schema.SubjectID(id))
+	}); err != nil {
 		return nil, err
 	}
 	return types.Ptr(result), nil
@@ -109,12 +116,43 @@ func (m *Manager) DeleteSubject(ctx context.Context, id uint64) (_ *cert.Subject
 ///////////////////////////////////////////////////////////////////////////////
 // PRIVATE METHODS
 
-// subjectNotChanged is why a subject wasn't updated or deleted: it's used by
-// certificates, which is a conflict, or it's not found
-func (m *Manager) subjectNotChanged(ctx context.Context, id uint64) error {
-	subject, err := m.GetSubject(ctx, id)
-	if err != nil {
+// unused calls fn, in a transaction, when no certificate uses the subject,
+// or else returns a conflict, or not found. The subject is locked first,
+// which waits for a certificate which is being created with it, which locks
+// it too, so it's counted, in a statement after the lock, and stops another
+// from being created with it until fn's change is committed.
+func (m *Manager) unused(ctx context.Context, id uint64, fn func(pg.Conn) error) error {
+	if err := validID(id); err != nil {
 		return err
 	}
-	return httpresponse.ErrConflict.Withf("subject %d is used by %d certificates", id, subject.Certs)
+	return m.Tx(ctx, func(conn pg.Conn) error {
+		var locked, subject cert.Subject
+		if err := conn.Get(ctx, (*schema.Subject)(&locked), schema.SubjectLock(id)); err != nil {
+			return err
+		}
+		if err := conn.Get(ctx, (*schema.Subject)(&subject), schema.SubjectID(id)); err != nil {
+			return err
+		} else if subject.Certs > 0 {
+			return httpresponse.ErrConflict.Withf("subject %d is used by %d certificates", id, subject.Certs)
+		}
+		return fn(conn)
+	})
+}
+
+// validID is an error when the identifier isn't a subject's, which are
+// positive, and 32 bits
+func validID(id uint64) error {
+	if id == 0 || id > math.MaxInt32 {
+		return httpresponse.ErrBadRequest.Withf("subject identifier %d is invalid", id)
+	}
+	return nil
+}
+
+// clampLimit is the request's limit, at most the query's maximum. A limit
+// which isn't set is the query's default, and stays unset.
+func clampLimit(offsetlimit cert.OffsetLimit, max uint64) cert.OffsetLimit {
+	if offsetlimit.Limit != nil && *offsetlimit.Limit > max {
+		offsetlimit.Limit = types.Ptr(max)
+	}
+	return offsetlimit
 }

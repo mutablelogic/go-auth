@@ -253,6 +253,8 @@ func Test_Subject(t *testing.T) {
 	assert.Equal(t, http.StatusBadRequest, status, "no fields")
 	status, _ = s.Do(t, http.MethodGet, "subject/abc", nil)
 	assert.Equal(t, http.StatusBadRequest, status, "not an identifier")
+	status, _ = s.Do(t, http.MethodGet, "subject/9999999999", nil)
+	assert.Equal(t, http.StatusBadRequest, status, "beyond 32 bits")
 	status, _ = s.Do(t, http.MethodPatch, "subject/999999", cert.SubjectMeta{Org: types.Ptr("x")})
 	assert.Equal(t, http.StatusNotFound, status)
 }

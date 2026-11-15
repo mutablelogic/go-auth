@@ -183,9 +183,10 @@ func deleteSubject(mgr *manager.Manager, w http.ResponseWriter, r *http.Request)
 	httpresponse.Empty(w, http.StatusNoContent)
 }
 
-// subjectID is the subject's identifier in the path
+// subjectID is the subject's identifier in the path, which is positive, and
+// 32 bits
 func subjectID(r *http.Request) (uint64, error) {
-	id, err := strconv.ParseUint(r.PathValue("id"), 10, 64)
+	id, err := strconv.ParseUint(r.PathValue("id"), 10, 31)
 	if err != nil || id == 0 {
 		return 0, httpresponse.ErrBadRequest.Withf("subject identifier %q is invalid", r.PathValue("id"))
 	}

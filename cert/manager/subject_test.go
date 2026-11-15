@@ -16,11 +16,14 @@ package manager_test
 
 import (
 	"context"
+	"fmt"
 	"testing"
+	"time"
 
 	// Packages
 	cert "github.com/mutablelogic/go-auth/cert/cert"
 	manager "github.com/mutablelogic/go-auth/cert/manager"
+	schema "github.com/mutablelogic/go-auth/cert/schema"
 	test "github.com/mutablelogic/go-auth/cert/test"
 	pg "github.com/mutablelogic/go-pg"
 	types "github.com/mutablelogic/go-server/pkg/types"
@@ -92,4 +95,86 @@ func Test_subject(t *testing.T) {
 	assert.ErrorIs(t, err, pg.ErrNotFound)
 	_, err = m.DeleteSubject(ctx, 999999)
 	assert.ErrorIs(t, err, pg.ErrNotFound)
+}
+
+func Test_subject_pages(t *testing.T) {
+	ctx := context.Background()
+	m := test.IsolatedManager(t)
+
+	// More subjects than a page, with a limit above the most
+	for i := range 105 {
+		_, err := m.CreateSubject(ctx, cert.SubjectMeta{Org: types.Ptr(fmt.Sprintf("Org %03d", i))})
+		require.NoError(t, err)
+	}
+	limit := uint64(1000)
+	first, err := m.ListSubjects(ctx, cert.SubjectListRequest{OffsetLimit: cert.OffsetLimit{Limit: &limit}})
+	require.NoError(t, err)
+	assert.Equal(t, uint64(105), first.Count)
+	assert.Len(t, first.Body, 100)
+	require.NotNil(t, first.Limit)
+	assert.Equal(t, uint64(100), *first.Limit, "the limit is the one which was used")
+
+	// The next page starts after the limit, and has the rest
+	next, err := m.ListSubjects(ctx, cert.SubjectListRequest{OffsetLimit: cert.OffsetLimit{Offset: *first.Limit, Limit: &limit}})
+	require.NoError(t, err)
+	assert.Len(t, next.Body, 5)
+	assert.Equal(t, "Org 100", types.Value(next.Body[0].Org))
+
+	// An identifier which isn't a subject's
+	_, err = m.GetSubject(ctx, 1<<40)
+	assert.EqualError(t, err, "Bad Request: subject identifier 1099511627776 is invalid")
+}
+
+func Test_subject_concurrent(t *testing.T) {
+	ctx := context.Background()
+	m := test.IsolatedManager(t, manager.WithPassphrase(1, "root-secret-1"), manager.WithGeneratedRoot("Concurrent Root CA"))
+
+	// A transaction takes the subject, as creating a certificate does, while
+	// it's deleted or updated, which waits for it, and then counts the
+	// certificate it creates, so it's a conflict, and the certificate isn't
+	// deleted, and its subject isn't changed
+	for _, change := range []string{"delete", "update"} {
+		t.Run(change, func(t *testing.T) {
+			meta := cert.SubjectMeta{Org: types.Ptr("Race " + change)}
+			subject, err := m.CreateSubject(ctx, meta)
+			require.NoError(t, err)
+
+			taken, changed := make(chan struct{}), make(chan error, 1)
+			txErr := m.Tx(ctx, func(conn pg.Conn) error {
+				var row cert.Subject
+				if err := conn.Insert(ctx, (*schema.Subject)(&row), schema.SubjectMeta(meta)); err != nil {
+					return err
+				}
+				close(taken)
+
+				// Change it, which waits, and then create a certificate with it
+				go func() {
+					if change == "delete" {
+						_, err := m.DeleteSubject(ctx, subject.ID)
+						changed <- err
+					} else {
+						_, err := m.UpdateSubject(ctx, subject.ID, cert.SubjectMeta{Org: types.Ptr("Changed")})
+						changed <- err
+					}
+				}()
+				select {
+				case err := <-changed:
+					return fmt.Errorf("the %s didn't wait: %v", change, err)
+				case <-time.After(300 * time.Millisecond):
+				}
+				return conn.With("subject", row.ID, "serial", "race-"+change).Exec(ctx, `
+					INSERT INTO ${"schema"}."cert" ("name", "serial", "subject", "not_before", "not_after", "is_ca", "cert", "key")
+					VALUES (CHR(36) || 'root' || CHR(36), @serial, @subject, NOW(), NOW() + INTERVAL '1 day', TRUE, '\x00', '\x00')
+				`)
+			})
+			<-taken
+			require.NoError(t, txErr, "the certificate is created")
+			assert.EqualError(t, <-changed, fmt.Sprintf("Conflict: subject %d is used by 1 certificates", subject.ID))
+
+			stored, err := m.GetSubject(ctx, subject.ID)
+			require.NoError(t, err, "the subject isn't deleted")
+			assert.Equal(t, "Race "+change, types.Value(stored.Org), "the subject isn't changed")
+			assert.Equal(t, uint64(1), stored.Certs)
+		})
+	}
 }

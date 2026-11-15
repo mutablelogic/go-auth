@@ -1,6 +1,6 @@
 -- subject.insert
 -- Inserts the subject, or returns an identical one, with the number of
--- certificates which use it
+-- certificates which use it, which is locked until the transaction ends
 WITH existing AS (
 	SELECT
 		"id", "organizationName", "organizationalUnit", "countryName", "localityName", "stateOrProvinceName", "streetAddress", "postalCode", "ts", (SELECT COUNT(*) FROM ${"schema"}."cert" WHERE "cert"."subject" = "subject"."id") AS "certs"
@@ -15,6 +15,9 @@ WITH existing AS (
 		"streetAddress" IS NOT DISTINCT FROM @streetAddress AND
 		"postalCode" IS NOT DISTINCT FROM @postalCode
 	LIMIT 1
+	-- The subject is locked until the transaction ends, so it isn't updated
+	-- or deleted while a certificate is created with it
+	FOR SHARE OF "subject"
 ), inserted AS (
 	INSERT INTO ${"schema"}."subject" (
 		"organizationName", "organizationalUnit", "countryName", "localityName", "stateOrProvinceName", "streetAddress", "postalCode"
@@ -47,6 +50,17 @@ DELETE FROM ${"schema"}."subject" WHERE
 	"id" = @id AND NOT EXISTS (SELECT 1 FROM ${"schema"}."cert" WHERE "cert"."subject" = @id)
 RETURNING
 	"id", "organizationName", "organizationalUnit", "countryName", "localityName", "stateOrProvinceName", "streetAddress", "postalCode", "ts", 0::BIGINT AS "certs";
+
+-- subject.lock
+-- Locks a subject, until the transaction ends, so a certificate can't be
+-- created with it, before it's updated or deleted
+SELECT
+	"id", "organizationName", "organizationalUnit", "countryName", "localityName", "stateOrProvinceName", "streetAddress", "postalCode", "ts", 0::BIGINT AS "certs"
+FROM
+	${"schema"}."subject"
+WHERE
+	"id" = @id
+FOR UPDATE;
 
 -- subject.select
 SELECT
