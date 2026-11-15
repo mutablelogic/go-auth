@@ -27,6 +27,8 @@ credentialModule({ nav, router, client, root: document.querySelector('main')!, n
 - **Values:** only shown with the passphrase they were encrypted with, so only for the file and pg backends.
 - **Parts:** an app with its own table and panel can use `CredentialController`, `credentialColumns` and the form views instead.
 - **Certificates:** `certModule` adds a Certificates section the same way, with three pages, Leaf Certificates, Certificate Authorities and Subjects. A CA's panel creates a certificate it signs, on the Leaf Certificates page. Its panel downloads a certificate, with its chain, and a leaf certificate's private key, as PEM. It also renews a certificate, enables or disables it, and changes its tags. The header creates certificate authorities and certificates.
+- **Versions:** the certificate pages list each certificate's latest version, which alone is renewed, or signs certificates. A row expands to its older versions, which open in the panel, where they can be enabled or disabled, retagged, and downloaded.
+- **Batch actions:** the certificates which are selected in a page's table are enabled, or disabled, together.
 - **Subjects:** the Subjects page lists the subjects, with how many certificates use each, and creates them. It edits or deletes one which no certificate uses.
 - **Configuration:** the auth server's app includes Certificates only when `/config.json` has a `cert` section, which a server built with certificates registers. Its `root` says whether a root is stored, without which certificate authorities can't be created.
 

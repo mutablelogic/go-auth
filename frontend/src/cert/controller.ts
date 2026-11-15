@@ -31,7 +31,10 @@ export class CertController {
         this.list = new ListController<Certificate>({
             name: 'Certificates',
             list: async (offset, limit) => {
-                const page = await api.listCerts(client, { offset, limit, is_ca: options.ca });
+                // Only each certificate's latest version, which is renewed,
+                // and signs certificates, and whose older versions are listed
+                // with versions
+                const page = await api.listCerts(client, { offset, limit, is_ca: options.ca, latest: true });
                 return { count: page.count, body: page.body ?? [] };
             },
             get: (cert) => api.getCert(client, cert).catch(() => cert),
@@ -44,23 +47,40 @@ export class CertController {
     }
 
     // authorities returns the names of the certificate authorities whose
-    // latest version is enabled, as their latest version signs. A renewed CA's
-    // older version stays enabled, so whether a name is enabled is its latest
-    // version's, which the list has first of its versions.
+    // latest version is enabled, which signs certificates
     async authorities(): Promise<string[]> {
-        const latest = new Map<string, boolean>();
+        const names: string[] = [];
         for (let offset = 0; ; ) {
-            const page = await api.listCerts(this.client, { offset, limit: 100, is_ca: true });
-            for (const cert of page.body ?? []) {
-                if (!latest.has(cert.name)) {
-                    latest.set(cert.name, cert.enabled ?? true);
-                }
-            }
+            const page = await api.listCerts(this.client, { offset, limit: 100, is_ca: true, latest: true });
+            names.push(...(page.body ?? []).filter((cert) => cert.enabled ?? true).map((cert) => cert.name));
             offset += page.body?.length ?? 0;
             if (!page.body?.length || offset >= page.count) {
-                return [...latest].filter(([, enabled]) => enabled).map(([name]) => name);
+                return names;
             }
         }
+    }
+
+    // versions returns the older versions of a certificate, the latest first,
+    // which aren't renewed, and don't sign certificates
+    async versions(name: string): Promise<Certificate[]> {
+        const versions: Certificate[] = [];
+        for (let offset = 0; ; ) {
+            const page = await api.listCerts(this.client, { offset, limit: 100, name, latest: false });
+            versions.push(...(page.body ?? []));
+            offset += page.body?.length ?? 0;
+            if (!page.body?.length || offset >= page.count) {
+                return versions;
+            }
+        }
+    }
+
+    // setEnabled enables or disables the certificates, and loads the list
+    // again, once
+    async setEnabled(certs: readonly CertKey[], enabled: boolean): Promise<void> {
+        for (const cert of certs) {
+            await api.updateCert(this.client, cert, { enabled });
+        }
+        await this.list.refresh();
     }
 
     // subjects returns the stored subjects which have fields, which a
