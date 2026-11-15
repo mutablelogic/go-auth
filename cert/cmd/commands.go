@@ -65,6 +65,8 @@ type CertListCmd struct {
 	Tags    []string `name:"tag" help:"Only certificates with the tag. Repeat to require more than one."`
 	All     bool     `name:"all" help:"Every version of the certificates, rather than the latest"`
 	Name    string   `name:"name" help:"The versions of the certificate with the name, the latest first"`
+	Sort    string   `name:"sort" enum:",name,signer,expires" default:"" help:"Sort by name, signer or expires"`
+	Desc    bool     `name:"desc" help:"Sort in descending order"`
 	Offset  uint64   `name:"offset" help:"Offset within the list"`
 	Limit   *uint64  `name:"limit" help:"Number of certificates to list"`
 }
@@ -142,6 +144,8 @@ func (cmd *CertListCmd) Run(ctx server.Cmd) error {
 			Tags:        cmd.Tags,
 			Latest:      latestOnly(cmd.All, cmd.Name),
 			Name:        cmd.Name,
+			Sort:        cmd.Sort,
+			Order:       order(cmd.Desc),
 		})
 		if err != nil {
 			return err
@@ -240,6 +244,15 @@ func latestOnly(all bool, name string) *bool {
 	}
 	latest := true
 	return &latest
+}
+
+// order is the order of a sort, desc when it's descending, or the default,
+// which is ascending
+func order(desc bool) string {
+	if desc {
+		return "desc"
+	}
+	return ""
 }
 
 // printCert prints what was done to a certificate, with its name and serial,

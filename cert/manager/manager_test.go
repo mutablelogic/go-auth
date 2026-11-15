@@ -29,6 +29,7 @@ import (
 	schema "github.com/mutablelogic/go-auth/cert/schema"
 	test "github.com/mutablelogic/go-auth/cert/test"
 	pg "github.com/mutablelogic/go-pg"
+	httpresponse "github.com/mutablelogic/go-server/pkg/httpresponse"
 	types "github.com/mutablelogic/go-server/pkg/types"
 	assert "github.com/stretchr/testify/assert"
 	require "github.com/stretchr/testify/require"
@@ -644,4 +645,45 @@ func Test_manager_latest(t *testing.T) {
 	assert.EqualError(t, err, fmt.Sprintf("Conflict: only the latest version of certificate authority %q, serial %s, signs certificates", "latest_ca", ca2.Serial))
 	_, err = m.RenewCert(ctx, leaf2.CertKey, cert.RenewCertRequest{})
 	assert.Error(t, err, "an older leaf version is disabled, and isn't the latest")
+}
+
+func Test_manager_sort(t *testing.T) {
+	ctx := context.Background()
+	m := test.IsolatedManager(t, manager.WithPassphrase(1, "root-secret-1"), manager.WithGeneratedRoot("Sort Root CA"))
+
+	// Two CAs, and leaf certificates whose names, signers and expiries are
+	// in different orders
+	alpha, err := m.CreateCA(ctx, cert.CreateCertRequest{Name: "alpha_ca"})
+	require.NoError(t, err)
+	zulu, err := m.CreateCA(ctx, cert.CreateCertRequest{Name: "zulu_ca"})
+	require.NoError(t, err)
+	zeta, err := m.CreateCert(ctx, cert.CreateCertRequest{Name: "zeta", Expiry: 30 * 24 * time.Hour}, alpha.CertKey)
+	require.NoError(t, err)
+	beta, err := m.CreateCert(ctx, cert.CreateCertRequest{Name: "beta", Expiry: 10 * 24 * time.Hour}, zulu.CertKey)
+	require.NoError(t, err)
+	mid, err := m.CreateCert(ctx, cert.CreateCertRequest{Name: "mid", Expiry: 20 * 24 * time.Hour}, alpha.CertKey)
+	require.NoError(t, err)
+
+	names := func(sort, order string) []string {
+		t.Helper()
+		list, err := m.ListCerts(ctx, cert.CertListRequest{IsCA: types.Ptr(false), Latest: types.Ptr(true), Sort: sort, Order: order})
+		require.NoError(t, err)
+		result := []string{}
+		for _, c := range list.Body {
+			result = append(result, c.Name)
+		}
+		return result
+	}
+
+	assert.Equal(t, []string{beta.Name, mid.Name, zeta.Name}, names("", ""), "by name, by default")
+	assert.Equal(t, []string{zeta.Name, mid.Name, beta.Name}, names("name", "desc"))
+	assert.Equal(t, []string{beta.Name, mid.Name, zeta.Name}, names("expires", "asc"))
+	assert.Equal(t, []string{zeta.Name, mid.Name, beta.Name}, names("Expires", "DESC"))
+	assert.Equal(t, []string{mid.Name, zeta.Name, beta.Name}, names("signer", ""), "a signer's certificates by name")
+	assert.Equal(t, []string{beta.Name, mid.Name, zeta.Name}, names("signer", "desc"))
+
+	_, err = m.ListCerts(ctx, cert.CertListRequest{Sort: "serial"})
+	assert.ErrorIs(t, err, httpresponse.ErrBadRequest)
+	_, err = m.ListCerts(ctx, cert.CertListRequest{Sort: "name", Order: "up"})
+	assert.ErrorIs(t, err, httpresponse.ErrBadRequest)
 }

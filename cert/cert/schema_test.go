@@ -88,4 +88,5 @@ func Test_Query(t *testing.T) {
 		Subject:     &subject,
 	}.Query()
 	assert.Equal("enabled=false&is_ca=true&limit=5&offset=10&subject=7&tags=a&tags=b&valid=true", query.Encode())
+	assert.Equal("order=desc&sort=expires", cert.CertListRequest{Sort: "expires", Order: "desc"}.Query().Encode())
 }

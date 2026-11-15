@@ -152,6 +152,8 @@ type CertListRequest struct {
 	Latest  *bool    `json:"latest,omitempty" negatable:"" jsonschema:"only each certificate's latest version, which can be renewed and sign certificates, or with false, only their older versions" example:"true"`
 	Name    string   `json:"name,omitempty" jsonschema:"only the versions of the certificate with the name, the latest first" example:"web"`
 	Search  string   `json:"search,omitempty" jsonschema:"only the certificates whose names have the text, in any case" example:"web"`
+	Sort    string   `json:"sort,omitempty" enum:"name,signer,expires" jsonschema:"sort by name, signer or expires, rather than by name, then each name's versions, the latest first" example:"expires"`
+	Order   string   `json:"order,omitempty" enum:"asc,desc" jsonschema:"order of the sort, asc, which is the default, or desc" example:"desc"`
 }
 
 type CertList struct {
@@ -422,6 +424,12 @@ func (r CertListRequest) Query() url.Values {
 	}
 	if r.Search != "" {
 		query.Set("search", r.Search)
+	}
+	if r.Sort != "" {
+		query.Set("sort", r.Sort)
+	}
+	if r.Order != "" {
+		query.Set("order", r.Order)
 	}
 	return query
 }

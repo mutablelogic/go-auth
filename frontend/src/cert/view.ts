@@ -69,8 +69,8 @@ const DownloadButton = iconLoader(DownloadIcon, { slot: 'icon' });
 // which the root signs: the name, which can be copied, without opening the
 // certificate, when it expires, and its state and tags
 export const authorityColumns: Column<Certificate>[] = [
-    { header: 'Name', cell: (cert) => nameView(cert.name) },
-    { header: 'Expires', cell: (cert) => formatTime(cert.not_after) },
+    { header: 'Name', cell: (cert) => nameView(cert.name), sort: 'name', sortFirst: 'ascending' },
+    { header: 'Expires', cell: (cert) => formatTime(cert.not_after), sort: 'expires', sortFirst: 'ascending' },
     { header: 'Tags', cell: (cert) => certTags(cert) },
 ];
 
@@ -79,10 +79,10 @@ export const authorityColumns: Column<Certificate>[] = [
 // entries, the certificate authority which signed it, when it expires, and
 // its state and tags, with those it inherits
 export const certificateColumns: Column<Certificate>[] = [
-    { header: 'Name', cell: (cert) => nameView(cert.name) },
+    { header: 'Name', cell: (cert) => nameView(cert.name), sort: 'name', sortFirst: 'ascending' },
     { header: 'SAN', cell: (cert) => (cert.san ?? []).join(', ') },
-    { header: 'Signer', cell: (cert) => signerName(cert) },
-    { header: 'Expires', cell: (cert) => formatTime(cert.not_after) },
+    { header: 'Signer', cell: (cert) => signerName(cert), sort: 'signer', sortFirst: 'ascending' },
+    { header: 'Expires', cell: (cert) => formatTime(cert.not_after), sort: 'expires', sortFirst: 'ascending' },
     { header: 'Tags', cell: (cert) => certTags(cert) },
 ];
 

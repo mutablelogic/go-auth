@@ -9,7 +9,7 @@ import type { ChangesController } from '@mutablelogic/go-server/broadcaster';
 import { ListController } from '@mutablelogic/go-server/list';
 import type { NotificationController } from '@mutablelogic/go-server/notification';
 import * as api from './httpclient.ts';
-import type { CertBundle, CertKey, CertMeta, Certificate, CreateCertRequest, RenewCertRequest, Subject, SubjectMeta } from './schema.ts';
+import type { CertBundle, CertKey, CertMeta, CertSort, Certificate, CreateCertRequest, RenewCertRequest, Subject, SubjectMeta } from './schema.ts';
 
 // CertOptions are the controller's notifications, which say why the
 // certificates can't be loaded, and its changes, which load them again
@@ -35,11 +35,17 @@ export class CertController {
         this.client = client;
         this.list = new ListController<Certificate>({
             name: 'Certificates',
-            list: async (offset, limit) => {
+            list: async (offset, limit, sort) => {
                 // Only each certificate's latest version, which is renewed,
                 // and signs certificates, and whose older versions are listed
-                // with versions
-                const page = await api.listCerts(client, { offset, limit, is_ca: options.ca, latest: true, enabled: this.disabled ? undefined : true, search: this.query || undefined });
+                // with versions, sorted by a column, when it's sorted
+                const page = await api.listCerts(client, {
+                    offset, limit, is_ca: options.ca, latest: true,
+                    enabled: this.disabled ? undefined : true,
+                    search: this.query || undefined,
+                    sort: sort?.key as CertSort | undefined,
+                    order: sort ? (sort.direction === 'descending' ? 'desc' : 'asc') : undefined,
+                });
                 return { count: page.count, body: page.body ?? [] };
             },
             // The list has each certificate's latest version, so an item is

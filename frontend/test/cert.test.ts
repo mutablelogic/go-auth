@@ -132,6 +132,7 @@ test('httpclient', async (t) => {
             : json(method === 'PATCH' || method === 'GET' ? 200 : 201, { name: 'web', serial: '1' }));
 
         await api.listCerts(client, { offset: 10, limit: 5, is_ca: true, tags: ['prod', 'web'] });
+        await api.listCerts(client, { sort: 'expires', order: 'desc' });
         await api.getCert(client, { name: 'web' }, true);
         await api.getPrivateKey(client, { name: 'web', serial: '1' });
         await api.createCA(client, { name: 'ca' });
@@ -142,6 +143,7 @@ test('httpclient', async (t) => {
 
         assert.deepEqual(requests.map((r) => `${r.method} ${r.url.pathname}${r.url.search}`), [
             'GET /api/cert?offset=10&limit=5&is_ca=true&tags=prod&tags=web',
+            'GET /api/cert?sort=expires&order=desc',
             'GET /api/cert/web?chain=true',
             'GET /api/cert/web/1/key',
             'POST /api/ca',
@@ -150,9 +152,9 @@ test('httpclient', async (t) => {
             'POST /api/cert/web/renew',
             'PATCH /api/cert/web/1',
         ]);
-        assert.deepEqual(requests[4].body, { expiry: Day });
-        assert.deepEqual(requests[5].body, { name: 'web', san: ['web.example.test'] });
-        assert.deepEqual(requests[7].body, { enabled: false });
+        assert.deepEqual(requests[5].body, { expiry: Day });
+        assert.deepEqual(requests[6].body, { name: 'web', san: ['web.example.test'] });
+        assert.deepEqual(requests[8].body, { enabled: false });
     });
 });
 

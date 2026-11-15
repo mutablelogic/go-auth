@@ -92,7 +92,15 @@ export interface CertListRequest {
     name?: string;
     // search is the certificates whose names have its text, in any case
     search?: string;
+    // sort is the column they're sorted by, in the order, ascending unless
+    // it's desc, rather than by name, then each name's versions, the latest
+    // first
+    sort?: CertSort;
+    order?: 'asc' | 'desc';
 }
+
+// CertSort is a column which certificates are sorted by
+export type CertSort = 'name' | 'signer' | 'expires';
 
 // CreateCertRequest creates a certificate authority, or a certificate.
 // expiry is in nanoseconds, as Go's durations are, and the server's default
