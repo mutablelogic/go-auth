@@ -26,6 +26,7 @@ import (
 	server "github.com/mutablelogic/go-server"
 	broadcaster "github.com/mutablelogic/go-server/broadcaster"
 	broadcastercmd "github.com/mutablelogic/go-server/broadcaster/cmd"
+	broadcasterhandler "github.com/mutablelogic/go-server/broadcaster/httphandler"
 	config "github.com/mutablelogic/go-server/config"
 	cmd "github.com/mutablelogic/go-server/pkg/cmd"
 	httprouter "github.com/mutablelogic/go-server/pkg/httprouter"
@@ -41,6 +42,10 @@ type ServerCommands struct {
 	Run RunServer `cmd:"" name:"run" help:"Run the credential server." group:"SERVER"`
 	cmd.OpenAPICommands
 }
+
+// openapiTag is the tag of the API's documentation, which go-server's
+// openapi handler has
+const openapiTag = "OpenAPI"
 
 // follow follows the backend's changes, such as pg's notifications, and
 // publishes them, when the backend has its own changes, rather than the
@@ -114,7 +119,15 @@ func (runner *RunServer) register(ctx server.Cmd, manager credential.CredentialM
 		if publisher != nil {
 			opts = append(opts, httphandler.WithPublisher(publisher))
 		}
-		return httphandler.RegisterManagerHandlers(manager, false, opts...)(router)
+		if err := httphandler.RegisterManagerHandlers(manager, false, opts...)(router); err != nil {
+			return err
+		}
+
+		// The configuration, the API's documentation, and the changes, which
+		// the web UI uses, are a tag group, after the credentials', as Redoc
+		// doesn't show a tag which isn't in one
+		router.Spec().AddTagGroup("UI", config.Tag, openapiTag, broadcasterhandler.Tag)
+		return nil
 	})
 }
 
