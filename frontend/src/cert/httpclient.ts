@@ -8,14 +8,20 @@ import type { CertBundle, CertKey, CertList, CertListRequest, CertMeta, Certific
 // listCerts returns a page of certificates, other than the root, without
 // their private keys
 export async function listCerts(client: Client, req: CertListRequest = {}, signal?: AbortSignal): Promise<CertList> {
-    const { tags, ...rest } = req;
-    const query: Record<string, string | number | boolean | undefined> = { ...rest };
-    // A tag is required for each one, but the client sends one value for each
-    // parameter, so only the first is filtered by
-    if (tags?.length) {
-        query.tags = tags[0];
+    // The query is in the path, as it repeats tags, each of which is
+    // required, which the request's query can't
+    const params = new URLSearchParams();
+    for (const [key, value] of Object.entries(req)) {
+        if (key === 'tags') {
+            for (const tag of (value as string[] | undefined) ?? []) {
+                params.append('tags', tag);
+            }
+        } else if (value !== undefined) {
+            params.set(key, String(value));
+        }
     }
-    return request<CertList>(client, 'GET', 'cert', { query, signal });
+    const search = params.toString();
+    return request<CertList>(client, 'GET', search ? `cert?${search}` : 'cert', { signal });
 }
 
 // getCert returns a version of a certificate, with its issuers, up to the

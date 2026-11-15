@@ -107,7 +107,7 @@ test('httpclient', async (t) => {
             ? json(200, { count: 0 })
             : json(method === 'PATCH' || method === 'GET' ? 200 : 201, { name: 'web', serial: '1' }));
 
-        await api.listCerts(client, { offset: 10, limit: 5, is_ca: true, tags: ['prod'] });
+        await api.listCerts(client, { offset: 10, limit: 5, is_ca: true, tags: ['prod', 'web'] });
         await api.getCert(client, { name: 'web' }, true);
         await api.getPrivateKey(client, { name: 'web', serial: '1' });
         await api.createCA(client, { name: 'ca' });
@@ -117,7 +117,7 @@ test('httpclient', async (t) => {
         await api.updateCert(client, { name: 'web', serial: '1' }, { enabled: false });
 
         assert.deepEqual(requests.map((r) => `${r.method} ${r.url.pathname}${r.url.search}`), [
-            'GET /api/cert?offset=10&limit=5&is_ca=true&tags=prod',
+            'GET /api/cert?offset=10&limit=5&is_ca=true&tags=prod&tags=web',
             'GET /api/cert/web?chain=true',
             'GET /api/cert/web/1/key',
             'POST /api/ca',

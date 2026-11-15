@@ -355,11 +355,17 @@ export class CertificatesElement extends LitElement {
         }
         const form = certForm(ca, signer ?? (authorities.length === 1 ? authorities[0] : ''));
         let errors: CertFormErrors = {};
+
+        // The form has the selection's key, when a certificate is selected, so
+        // the list being loaded again doesn't show the certificate in its place
+        const selected = this.controller.list.current.selected;
+        const key = selected ? keyOf(selected) : undefined;
         const rerender = () => {
-            this.body = { kind: 'form', content: certFormView(form, authorities, errors) };
+            this.body = { kind: 'form', key, content: certFormView(form, authorities, errors) };
         };
         this.open(ca ? 'Create a certificate authority' : 'Create a certificate', ca ? 'Certificate authority' : 'Certificate', {
             kind: 'form',
+            key,
             content: certFormView(form, authorities, errors),
         }, [{ label: 'Cancel', kind: 'secondary' }, {
             label: 'Create',

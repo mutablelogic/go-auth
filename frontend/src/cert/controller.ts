@@ -43,18 +43,22 @@ export class CertController {
         });
     }
 
-    // authorities returns the enabled certificate authorities' names, which
-    // can sign certificates, each once, as their latest version signs
+    // authorities returns the names of the certificate authorities whose
+    // latest version is enabled, as their latest version signs. A renewed CA's
+    // older version stays enabled, so whether a name is enabled is its latest
+    // version's, which the list has first of its versions.
     async authorities(): Promise<string[]> {
-        const names = new Set<string>();
+        const latest = new Map<string, boolean>();
         for (let offset = 0; ; ) {
-            const page = await api.listCerts(this.client, { offset, limit: 100, is_ca: true, enabled: true });
+            const page = await api.listCerts(this.client, { offset, limit: 100, is_ca: true });
             for (const cert of page.body ?? []) {
-                names.add(cert.name);
+                if (!latest.has(cert.name)) {
+                    latest.set(cert.name, cert.enabled ?? true);
+                }
             }
             offset += page.body?.length ?? 0;
             if (!page.body?.length || offset >= page.count) {
-                return [...names];
+                return [...latest].filter(([, enabled]) => enabled).map(([name]) => name);
             }
         }
     }
@@ -80,6 +84,13 @@ export class CertController {
     // tags, and loads the list again
     async update(key: CertKey, meta: CertMeta): Promise<Certificate> {
         const updated = await api.updateCert(this.client, key, meta);
+
+        // The selection is the update, before the list is loaded again, as a
+        // disabled certificate can't be got again, so would stay as it was
+        const selected = this.list.current.selected;
+        if (selected && selected.name === updated.name && selected.serial === updated.serial) {
+            this.list.open(updated);
+        }
         await this.list.refresh();
         return updated;
     }
