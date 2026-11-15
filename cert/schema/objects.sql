@@ -26,7 +26,10 @@ CREATE TABLE IF NOT EXISTS ${"schema"}."cert" (
 	"pv" INTEGER NOT NULL DEFAULT 0,
 	"cert" BYTEA NOT NULL,
 	"key" BYTEA NOT NULL,
-	"ts" TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+	"ts" TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+	-- Only the root certificate has no issuer, so a certificate whose signer
+	-- isn't stored can't be inserted
+	CONSTRAINT cert_issuer_check CHECK (("name" = '$root$') = ("issuer" IS NULL))
 );
 
 -- cert.cert.name_serial_index
