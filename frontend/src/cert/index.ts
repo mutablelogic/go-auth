@@ -6,4 +6,4 @@ export * from './schema.ts';
 export * from './httpclient.ts';
 export * from './form.ts';
 export * from './pem.ts';
-export { CertController, type CertOptions } from './controller.ts';
+export { CertController, SubjectController, type CertOptions } from './controller.ts';

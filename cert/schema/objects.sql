@@ -89,3 +89,29 @@ $$ LANGUAGE plpgsql;
 CREATE OR REPLACE TRIGGER cert_subject_notify_trigger
     AFTER UPDATE ON ${"schema"}."subject"
     FOR EACH STATEMENT EXECUTE FUNCTION ${"schema"}.cert_subject_notify();
+
+-- cert.notify_subject_row_func
+-- Notifies the channel of a change of a subject, as JSON, by its identifier
+CREATE OR REPLACE FUNCTION ${"schema"}.subject_notify() RETURNS TRIGGER AS $$
+DECLARE
+    v_id BIGINT;
+BEGIN
+    IF TG_OP = 'DELETE' THEN
+        v_id := OLD."id";
+    ELSE
+        v_id := NEW."id";
+    END IF;
+    PERFORM pg_notify(${'channel'}, json_build_object(
+        'action', CASE TG_OP WHEN 'INSERT' THEN 'create' WHEN 'UPDATE' THEN 'update' ELSE 'delete' END,
+        'schema', ${'schema'},
+        'table', 'subject',
+        'row', v_id::TEXT
+    )::TEXT);
+    RETURN NULL;
+END;
+$$ LANGUAGE plpgsql;
+
+-- cert.notify_subject_row_trigger
+CREATE OR REPLACE TRIGGER subject_notify_trigger
+    AFTER INSERT OR UPDATE OR DELETE ON ${"schema"}."subject"
+    FOR EACH ROW EXECUTE FUNCTION ${"schema"}.subject_notify();

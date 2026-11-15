@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import type { Client } from '@mutablelogic/go-server/api';
-import { certForm, certFormErrors, certRequest, renewForm, renewFormErrors, renewRequest, splitList, tagsError, tagsRequest } from '../src/cert/form.ts';
+import { certForm, certFormErrors, certRequest, renewForm, renewFormErrors, renewRequest, splitList, subjectCreateRequest, subjectUpdateRequest, tagsError, tagsRequest } from '../src/cert/form.ts';
 import { certificatePEM, pem, privateKeyPEM } from '../src/cert/pem.ts';
 import { Day, RootCertName, certExpired, certType } from '../src/cert/schema.ts';
 import * as api from '../src/cert/httpclient.ts';
@@ -129,5 +129,36 @@ test('httpclient', async (t) => {
         assert.deepEqual(requests[4].body, { expiry: Day });
         assert.deepEqual(requests[5].body, { name: 'web', san: ['web.example.test'] });
         assert.deepEqual(requests[7].body, { enabled: false });
+    });
+});
+
+test('subjects', async (t) => {
+    await t.test('a new subject needs a field', () => {
+        assert.equal(subjectCreateRequest({ organizationName: ' ', countryName: '' }), undefined);
+        assert.deepEqual(subjectCreateRequest({ organizationName: ' Example ', countryName: '' }), { organizationName: 'Example' });
+    });
+
+    await t.test('an update has the fields which changed, and empty ones removed', () => {
+        const original = { organizationName: 'Example', countryName: 'GB' };
+        assert.equal(subjectUpdateRequest(original, { ...original }), undefined, 'nothing changed');
+        assert.deepEqual(subjectUpdateRequest(original, { organizationName: 'Example', countryName: '', localityName: ' London ' }), { countryName: '', localityName: 'London' });
+        assert.equal(subjectUpdateRequest(original, { organizationName: '', countryName: '' }), undefined, 'a field is kept');
+    });
+
+    await t.test('requests', async () => {
+        const { client, requests } = fakeClient((method) => method === 'DELETE' ? json(204) : json(method === 'POST' ? 201 : 200, method === 'GET' ? { count: 0 } : { id: 7, certs: 0 }));
+        await api.listSubjects(client, 100, 50);
+        await api.getSubject(client, 7);
+        await api.createSubject(client, { organizationName: 'Example' });
+        await api.updateSubject(client, 7, { countryName: '' });
+        await api.deleteSubject(client, 7);
+        assert.deepEqual(requests.map((r) => `${r.method} ${r.url.pathname}${r.url.search}`), [
+            'GET /api/subject?offset=100&limit=50',
+            'GET /api/subject/7',
+            'POST /api/subject',
+            'PATCH /api/subject/7',
+            'DELETE /api/subject/7',
+        ]);
+        assert.deepEqual(requests[3].body, { countryName: '' });
     });
 });

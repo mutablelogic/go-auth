@@ -9,7 +9,7 @@ import type { ChangesController } from '@mutablelogic/go-server/broadcaster';
 import { ListController } from '@mutablelogic/go-server/list';
 import type { NotificationController } from '@mutablelogic/go-server/notification';
 import * as api from './httpclient.ts';
-import type { CertBundle, CertKey, CertMeta, Certificate, CreateCertRequest, RenewCertRequest } from './schema.ts';
+import type { CertBundle, CertKey, CertMeta, Certificate, CreateCertRequest, RenewCertRequest, Subject, SubjectMeta } from './schema.ts';
 
 // CertOptions are the controller's notifications, which say why the
 // certificates can't be loaded, and its changes, which load them again
@@ -104,5 +104,57 @@ export class CertController {
     // key
     privateKey(key: CertKey): Promise<CertBundle> {
         return api.getPrivateKey(this.client, key);
+    }
+}
+
+// SubjectController keeps the subjects, a page at a time, in a
+// ListController, which a gs-table shows, and creates, updates and deletes
+// them, loading the list again when they change, or certificates do, which
+// changes how many use each
+export class SubjectController {
+    readonly client: Client;
+    readonly list: ListController<Subject>;
+
+    constructor(client: Client, options: Omit<CertOptions, 'ca'> = {}) {
+        this.client = client;
+        this.list = new ListController<Subject>({
+            name: 'Subjects',
+            list: async (offset, limit) => {
+                const page = await api.listSubjects(client, offset, limit);
+                return { count: page.count, body: page.body ?? [] };
+            },
+            get: (subject) => api.getSubject(client, subject.id),
+            same: (a, b) => a.id === b.id,
+            notifications: options.notifications,
+            changes: options.changes,
+            filter: options.changes ? [{ table: 'subject' }, { table: 'cert' }] : undefined,
+            pageSize: options.pageSize,
+        });
+    }
+
+    // create creates a subject, or returns an identical one, and loads the
+    // list again
+    async create(meta: SubjectMeta): Promise<Subject> {
+        const created = await api.createSubject(this.client, meta);
+        await this.list.refresh();
+        return created;
+    }
+
+    // update updates a subject which no certificate uses, and loads the list
+    // again
+    async update(id: number, meta: SubjectMeta): Promise<Subject> {
+        const updated = await api.updateSubject(this.client, id, meta);
+        await this.list.refresh();
+        return updated;
+    }
+
+    // delete deletes a subject which no certificate uses, closes it, when
+    // it's open, and loads the list again
+    async delete(id: number): Promise<void> {
+        await api.deleteSubject(this.client, id);
+        if (this.list.current.selected?.id === id) {
+            this.list.close();
+        }
+        await this.list.refresh();
     }
 }
