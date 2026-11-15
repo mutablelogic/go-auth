@@ -120,7 +120,8 @@ func WithRoot(pemValue string) Opt {
 }
 
 // WithChannel notifies the channel of each change of a certificate, by its
-// name, and of a change of subjects, as a change of certificates, with
+// name, of a subject, by its identifier, and of an update of subjects, as a
+// change of certificates, with
 // triggers on their tables, which are dropped without a channel, so go-pg's
 // pgbroadcaster can publish the changes, whatever makes them
 func WithChannel(channel string) Opt {

@@ -37,6 +37,7 @@ type CLI struct {
 	credential.CredentialProviderCommands
 	credential.CredentialManagerCommands
 	cert.CertCommands
+	cert.SubjectCommands
 	ServerCommands
 }
 

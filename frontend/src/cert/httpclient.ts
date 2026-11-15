@@ -3,7 +3,7 @@
 // certificate's latest version.
 
 import { request, type Client } from '@mutablelogic/go-server/api';
-import type { CertBundle, CertKey, CertList, CertListRequest, CertMeta, Certificate, CreateCertRequest, RenewCertRequest } from './schema.ts';
+import type { CertBundle, CertKey, CertList, CertListRequest, CertMeta, Certificate, CreateCertRequest, RenewCertRequest, Subject, SubjectList, SubjectMeta } from './schema.ts';
 
 // listCerts returns a page of certificates, other than the root, without
 // their private keys
@@ -63,6 +63,34 @@ export async function renewCert(client: Client, key: Partial<CertKey> & { name: 
 // tags
 export async function updateCert(client: Client, key: Partial<CertKey> & { name: string }, meta: CertMeta): Promise<Certificate> {
     return request<Certificate>(client, 'PATCH', keyPath('cert', key), { body: meta });
+}
+
+// listSubjects returns a page of subjects, with the number of certificates
+// which use each
+export async function listSubjects(client: Client, offset = 0, limit?: number, signal?: AbortSignal): Promise<SubjectList> {
+    return request<SubjectList>(client, 'GET', 'subject', { query: { offset: offset || undefined, limit }, signal });
+}
+
+// getSubject returns a subject, with the number of certificates which use it
+export async function getSubject(client: Client, id: number): Promise<Subject> {
+    return request<Subject>(client, 'GET', `subject/${id}`);
+}
+
+// createSubject creates a subject, or returns an identical one, when it's
+// stored
+export async function createSubject(client: Client, meta: SubjectMeta): Promise<Subject> {
+    return request<Subject>(client, 'POST', 'subject', { body: meta });
+}
+
+// updateSubject updates a subject which no certificate uses. A field which
+// isn't set is kept, and an empty one removed.
+export async function updateSubject(client: Client, id: number, meta: SubjectMeta): Promise<Subject> {
+    return request<Subject>(client, 'PATCH', `subject/${id}`, { body: meta });
+}
+
+// deleteSubject deletes a subject which no certificate uses
+export async function deleteSubject(client: Client, id: number): Promise<void> {
+    await request<void>(client, 'DELETE', `subject/${id}`);
 }
 
 // keyPath is the path of a certificate's version, or its latest version,

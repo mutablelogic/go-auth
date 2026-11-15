@@ -29,11 +29,15 @@ import type { PageAction } from '@mutablelogic/go-server/page';
 import type { Router } from '@mutablelogic/go-server/router';
 import { CertController } from './controller.ts';
 import {
-    SubjectFields, certForm, certFormErrors, certRequest, renewForm, renewFormErrors, renewRequest, tagsError, tagsRequest,
+    certForm, certFormErrors, certRequest, renewForm, renewFormErrors, renewRequest, tagsError, tagsRequest,
     type CertForm, type CertFormErrors, type RenewForm,
 } from './form.ts';
 import { certificatePEM, download, privateKeyPEM } from './pem.ts';
-import { RootCertName, certExpired, certType, type CertFeatures, type Certificate, type SubjectMeta } from './schema.ts';
+import { copyText, formatTime, subjectView } from './parts.ts';
+import { SubjectsElement, SubjectsTag } from './subject.ts';
+
+export * from './subject.ts';
+import { RootCertName, certExpired, certType, type CertFeatures, type Certificate } from './schema.ts';
 
 // go-server's and Carbon's elements
 import '@mutablelogic/go-server/list/view';
@@ -523,16 +527,18 @@ export interface CertApp {
     features?: CertFeatures;
 }
 
-// CertPages are the module's pages: the certificate authorities, and the leaf
-// certificates
+// CertPages are the module's pages: the leaf certificates, the certificate
+// authorities, and the subjects
 export interface CertPages {
     authorities: CertificatesElement;
     certificates: CertificatesElement;
+    subjects: SubjectsElement;
 }
 
 // certModule adds the Certificates module to the app: its section, which
 // owns the menu bar's Certificates item, and the sidebar while it's active,
-// of its pages, Leaf Certificates and Certificate Authorities, which it adds
+// of its pages, Leaf Certificates, Certificate Authorities and Subjects,
+// which it adds
 // to the root, and routes to. A certificate authority's panel creates a
 // certificate on the Leaf Certificates page. The pages' ids are prefixed
 // with page-, not the hashes they're routed to, so the browser doesn't
@@ -555,7 +561,23 @@ export function certModule(app: CertApp, section = 'Certificates'): CertPages {
         app.router.add(id, page);
         return element;
     };
-    const pages = { certificates: add('certificates', 'certificate'), authorities: add('certificate-authorities', 'ca') };
+    const certificates = add('certificates', 'certificate');
+    const authorities = add('certificate-authorities', 'ca');
+
+    // The subjects' page
+    const page = document.createElement('section');
+    page.id = 'page-subjects';
+    page.className = 'page';
+    page.hidden = true;
+    const subjects = document.createElement(SubjectsTag);
+    subjects.client = app.client;
+    subjects.notifications = app.notifications;
+    subjects.changes = app.changes;
+    page.append(subjects);
+    app.root.append(page);
+    app.router.add('subjects', page);
+
+    const pages = { certificates, authorities, subjects };
     pages.authorities.createCertificate = (signer) => {
         location.hash = '#certificates';
         void pages.certificates.createLeaf(signer);
@@ -564,6 +586,7 @@ export function certModule(app: CertApp, section = 'Certificates'): CertPages {
     app.nav.setSection(section, [
         { id: 'certificates', label: 'Leaf Certificates', href: '#certificates' },
         { id: 'certificate-authorities', label: 'Certificate Authorities', href: '#certificate-authorities' },
+        { id: 'subjects', label: 'Subjects', href: '#subjects' },
     ]);
     return pages;
 }
@@ -604,43 +627,3 @@ function stateTags(cert: Certificate): TemplateResult {
         : nothing}`;
 }
 
-// subjectView is a subject's inputs
-function subjectView(subject: SubjectMeta, helper: string): TemplateResult {
-    return html`
-        <fieldset style="border: 0; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 1rem">
-            <legend class="cds--label">Subject</legend>
-            <p class="helper">${helper}</p>
-            ${SubjectFields.map(({ field, label }) => html`
-                <cds-text-input label=${label} .value=${live(subject[field] ?? '')}
-                    @input=${(event: Event) => { subject[field] = (event.target as HTMLInputElement).value; }}></cds-text-input>
-            `)}
-        </fieldset>
-    `;
-}
-
-// copyText copies the text to the clipboard, which needs a secure page, or
-// else selects it in a text area, and copies the selection
-async function copyText(text: string): Promise<void> {
-    if (navigator.clipboard && window.isSecureContext) {
-        await navigator.clipboard.writeText(text);
-        return;
-    }
-    const area = document.createElement('textarea');
-    area.value = text;
-    area.setAttribute('readonly', '');
-    area.style.position = 'fixed';
-    area.style.opacity = '0';
-    document.body.append(area);
-    area.select();
-    document.execCommand('copy');
-    area.remove();
-}
-
-// formatTime returns a time in the user's locale, or nothing
-function formatTime(value?: string): string {
-    if (!value) {
-        return '';
-    }
-    const time = new Date(value);
-    return Number.isNaN(time.getTime()) ? value : time.toLocaleString();
-}

@@ -168,3 +168,32 @@ function subjectOf(subject: SubjectMeta): SubjectMeta | undefined {
     }
     return Object.keys(result).length ? result : undefined;
 }
+
+///////////////////////////////////////////////////////////////////////////////
+// SUBJECTS
+
+// subjectCreateRequest returns the fields of a new subject which are set,
+// trimmed, or undefined when none are, as a subject needs one
+export function subjectCreateRequest(subject: SubjectMeta): SubjectMeta | undefined {
+    return subjectOf(subject);
+}
+
+// subjectUpdateRequest returns the change of a subject, from the original:
+// the fields which changed, trimmed, and those which were emptied, as empty,
+// which removes them. It's undefined when nothing changed, or every field
+// would be removed.
+export function subjectUpdateRequest(original: SubjectMeta, subject: SubjectMeta): SubjectMeta | undefined {
+    const change: SubjectMeta = {};
+    let remaining = 0;
+    for (const { field } of SubjectFields) {
+        const before = original[field]?.trim() ?? '';
+        const after = subject[field]?.trim() ?? '';
+        if (after) {
+            remaining++;
+        }
+        if (before !== after) {
+            change[field] = after;
+        }
+    }
+    return Object.keys(change).length && remaining ? change : undefined;
+}

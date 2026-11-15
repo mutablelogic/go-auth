@@ -19,11 +19,30 @@ export interface SubjectMeta {
     postalCode?: string;
 }
 
-// SubjectRef is a stored certificate's subject, with its common name, and
-// the whole subject as a distinguished name
+// SubjectRef is a stored certificate's subject, by its identifier, with its
+// common name, and the whole subject as a distinguished name
 export interface SubjectRef extends SubjectMeta {
+    id?: number;
     commonName?: string;
     name?: string;
+}
+
+// Subject is a stored subject, which certificates share, with the number of
+// certificates which use it: one which none uses can be changed or deleted.
+// subject is its fields as a distinguished name.
+export interface Subject extends SubjectMeta {
+    id: number;
+    timestamp?: string;
+    subject?: string;
+    certs: number;
+}
+
+// SubjectList is a page of subjects, in the order they were created
+export interface SubjectList {
+    count: number;
+    offset?: number;
+    limit?: number;
+    body?: Subject[];
 }
 
 // Certificate is a stored certificate, without its private key. cert is its

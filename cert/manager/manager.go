@@ -129,6 +129,7 @@ func bootstrap(ctx context.Context, conn pg.Conn, schemaName, channel string) er
 		for _, drop := range []string{
 			`DROP TRIGGER IF EXISTS cert_notify_trigger ON ${"schema"}."cert"`,
 			`DROP TRIGGER IF EXISTS cert_subject_notify_trigger ON ${"schema"}."subject"`,
+			`DROP TRIGGER IF EXISTS subject_notify_trigger ON ${"schema"}."subject"`,
 		} {
 			if err := conn.Exec(ctx, drop); err != nil {
 				return fmt.Errorf("drop trigger: %w", err)

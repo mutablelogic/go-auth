@@ -18,6 +18,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"strconv"
 	"testing"
 	"time"
 
@@ -509,40 +510,52 @@ func Test_manager_notify(t *testing.T) {
 	// Listen on the channel
 	notifications, err := test.Pool().Subscribe(ctx, "cert_test")
 	require.NoError(t, err)
-	next := func() map[string]string {
+	// next is the next notification of a table, skipping the others'
+	next := func(table string) map[string]string {
 		t.Helper()
-		select {
-		case n := <-notifications:
-			var change map[string]string
-			require.NoError(t, json.Unmarshal(n.Payload, &change))
-			assert.NotContains(t, string(n.Payload), "PRIVATE", "keys aren't notified")
-			return change
-		case <-time.After(5 * time.Second):
-			t.Fatal("no notification")
-			return nil
+		for {
+			select {
+			case n := <-notifications:
+				var change map[string]string
+				require.NoError(t, json.Unmarshal(n.Payload, &change))
+				assert.NotContains(t, string(n.Payload), "PRIVATE", "keys aren't notified")
+				if change["table"] == table {
+					return change
+				}
+			case <-time.After(5 * time.Second):
+				t.Fatal("no notification")
+				return nil
+			}
 		}
 	}
 
 	// Each change of a certificate is notified, by its name
 	ca, err := m.CreateCA(ctx, cert.CreateCertRequest{Name: "notify_ca"})
 	require.NoError(t, err)
-	assert.Equal(t, map[string]string{"action": "create", "schema": schemaName, "table": "cert", "row": "notify_ca"}, next())
+	assert.Equal(t, map[string]string{"action": "create", "schema": schemaName, "table": "cert", "row": "notify_ca"}, next("cert"))
 	_, err = m.UpdateCert(ctx, ca.CertKey, cert.CertMeta{Tags: []string{"notified"}})
 	require.NoError(t, err)
-	assert.Equal(t, map[string]string{"action": "update", "schema": schemaName, "table": "cert", "row": "notify_ca"}, next())
+	assert.Equal(t, map[string]string{"action": "update", "schema": schemaName, "table": "cert", "row": "notify_ca"}, next("cert"))
 	_, err = m.RenewCA(ctx, ca.CertKey, cert.RenewCertRequest{})
 	require.NoError(t, err)
-	assert.Equal(t, map[string]string{"action": "create", "schema": schemaName, "table": "cert", "row": "notify_ca"}, next())
+	assert.Equal(t, map[string]string{"action": "create", "schema": schemaName, "table": "cert", "row": "notify_ca"}, next("cert"))
 
 	// A change of subjects is a change of certificates, without which ones,
 	// once for the statement
 	require.NoError(t, m.Exec(ctx, `UPDATE ${"schema"}."subject" SET "organizationName" = 'Notified'`))
-	assert.Equal(t, map[string]string{"action": "update", "schema": schemaName, "table": "cert"}, next())
-	select {
-	case n := <-notifications:
-		t.Fatalf("another notification: %s", n.Payload)
-	case <-time.After(200 * time.Millisecond):
-	}
+	assert.Equal(t, map[string]string{"action": "update", "schema": schemaName, "table": "cert"}, next("cert"))
+
+	// Each change of a subject is notified, by its identifier
+	subject, err := m.CreateSubject(ctx, cert.SubjectMeta{Org: types.Ptr("Notified Subject")})
+	require.NoError(t, err)
+	id := strconv.FormatUint(subject.ID, 10)
+	assert.Equal(t, map[string]string{"action": "create", "schema": schemaName, "table": "subject", "row": id}, next("subject"))
+	_, err = m.UpdateSubject(ctx, subject.ID, cert.SubjectMeta{City: types.Ptr("Paris")})
+	require.NoError(t, err)
+	assert.Equal(t, map[string]string{"action": "update", "schema": schemaName, "table": "subject", "row": id}, next("subject"))
+	_, err = m.DeleteSubject(ctx, subject.ID)
+	require.NoError(t, err)
+	assert.Equal(t, map[string]string{"action": "delete", "schema": schemaName, "table": "subject", "row": id}, next("subject"))
 
 	// Without a channel, the triggers are dropped
 	_ = test.SchemaManager(t, schemaName, opts...)
