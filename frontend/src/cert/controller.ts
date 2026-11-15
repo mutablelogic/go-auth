@@ -42,8 +42,12 @@ export class CertController {
                 const page = await api.listCerts(client, { offset, limit, is_ca: options.ca, latest: true, enabled: this.disabled ? undefined : true, search: this.query || undefined });
                 return { count: page.count, body: page.body ?? [] };
             },
-            get: (cert) => api.getCert(client, cert).catch(() => cert),
-            same: (a, b) => a.name === b.name && a.serial === b.serial,
+            // The list has each certificate's latest version, so an item is
+            // its name, and the open one follows its latest version, when
+            // it's renewed, such as by another browser, rather than staying
+            // as a version which is no longer renewed
+            get: (cert) => api.getCert(client, { name: cert.name }).catch(() => cert),
+            same: (a, b) => a.name === b.name,
             notifications: options.notifications,
             changes: options.changes,
             filter: options.changes ? { table: 'cert' } : undefined,
