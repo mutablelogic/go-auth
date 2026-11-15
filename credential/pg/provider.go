@@ -164,6 +164,9 @@ func (self *provider) List(ctx context.Context) (_ []credential.Credential, err 
 	ctx, endSpan := otel.StartSpan(self.manager.tracer, ctx, "credential.pg.List")
 	defer func() { endSpan(err) }()
 
+	// A credential needs rotating when it's encrypted with an older
+	// passphrase than the latest
+	_, latest := self.manager.passphrases.Get(0)
 	var result []credential.Credential
 	for {
 		limit := uint64(schema.CredentialListLimit)
@@ -174,7 +177,7 @@ func (self *provider) List(ctx context.Context) (_ []credential.Credential, err 
 			return nil, err
 		}
 		for _, c := range page.Body {
-			result = append(result, credential.Credential{Key: c.Key, Description: c.Description, UpdatedAt: c.UpdatedAt})
+			result = append(result, credential.Credential{Key: c.Key, Description: c.Description, UpdatedAt: c.UpdatedAt, Rotate: latest != 0 && c.PV != latest})
 		}
 		if len(page.Body) == 0 || uint64(len(result)) >= page.Count {
 			return result, nil

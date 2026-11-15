@@ -435,3 +435,27 @@ func (l *triggerList) Scan(row pgpkg.Row) error {
 	*l.names = append(*l.names, name)
 	return nil
 }
+
+func Test_ListRotate(t *testing.T) {
+	_, ctx := test.Begin(t)
+	defer test.End(t)
+	schemaName := test.IsolatedSchema(t)
+	v1 := test.SchemaManager(t, schemaName).GetCredentialProvider().(authcredential.CredentialManager)
+	require.NoError(t, v1.Set(ctx, "old", json.RawMessage(`"x"`)))
+	list, err := v1.List(ctx)
+	require.NoError(t, err)
+	assert.False(t, list[0].Rotate, "it uses the latest passphrase")
+
+	// With a newer passphrase, it needs rotating, until it's rotated
+	v2 := test.SchemaManager(t, schemaName, credential.WithPassphrase(test.PassphraseVersion+1, "second passphrase")).GetCredentialProvider().(authcredential.CredentialManager)
+	require.NoError(t, v2.Set(ctx, "new", json.RawMessage(`"y"`)))
+	list, err = v2.List(ctx)
+	require.NoError(t, err)
+	require.Len(t, list, 2)
+	assert.False(t, list[0].Rotate)
+	assert.True(t, list[1].Rotate)
+	require.NoError(t, v2.(authcredential.CredentialRotator).Rotate(ctx, "old"))
+	list, err = v2.List(ctx)
+	require.NoError(t, err)
+	assert.False(t, list[1].Rotate)
+}

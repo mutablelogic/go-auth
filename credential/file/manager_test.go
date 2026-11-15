@@ -293,6 +293,42 @@ func Test_Describe(t *testing.T) {
 	assert.ErrorIs(t, mgr.Describe(ctx, "token", strings.Repeat("x", 4097)), auth.ErrBadParameter)
 }
 
+func Test_ListRotate(t *testing.T) {
+	ctx := context.Background()
+	path := t.TempDir()
+	v1, err := file.New(path, file.WithPassphrase(1, passphrase))
+	require.NoError(t, err)
+	require.NoError(t, v1.Set(ctx, "old", json.RawMessage(`"x"`)))
+
+	// With the latest passphrase, it doesn't need rotating
+	list, err := v1.List(ctx)
+	require.NoError(t, err)
+	assert.False(t, list[0].Rotate)
+
+	// With a newer passphrase, it does, until it's rotated
+	v2, err := file.New(path, file.WithPassphrase(1, passphrase), file.WithPassphrase(2, "second passphrase"))
+	require.NoError(t, err)
+	require.NoError(t, v2.Set(ctx, "new", json.RawMessage(`"y"`)))
+	list, err = v2.List(ctx)
+	require.NoError(t, err)
+	require.Len(t, list, 2)
+	assert.Equal(t, "new", list[0].Key)
+	assert.False(t, list[0].Rotate)
+	assert.Equal(t, "old", list[1].Key)
+	assert.True(t, list[1].Rotate)
+	require.NoError(t, v2.Rotate(ctx, "old"))
+	list, err = v2.List(ctx)
+	require.NoError(t, err)
+	assert.False(t, list[1].Rotate)
+
+	// Without a passphrase, it isn't known
+	none, err := file.New(path)
+	require.NoError(t, err)
+	list, err = none.List(ctx)
+	require.NoError(t, err)
+	assert.False(t, list[0].Rotate || list[1].Rotate)
+}
+
 func Test_Passphrases(t *testing.T) {
 	ctx := context.Background()
 	path := t.TempDir()

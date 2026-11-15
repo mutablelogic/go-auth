@@ -23,12 +23,15 @@ import (
 ////////////////////////////////////////////////////////////////////////////////
 // TYPES
 
-// Credential is a stored credential's key, its description, and when it
-// was last changed, without its value
+// Credential is a stored credential's key, its description, when it was
+// last changed, and whether it needs rotating, as it's encrypted with an
+// older passphrase than the latest, which only managers which encrypt with
+// their own passphrases say, without its value
 type Credential struct {
 	Key         string    `json:"key"`
 	Description string    `json:"description,omitempty"`
 	UpdatedAt   time.Time `json:"updated_at,omitzero"`
+	Rotate      bool      `json:"rotate,omitempty"`
 }
 
 type CredentialProvider interface {
