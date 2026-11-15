@@ -31,14 +31,6 @@ import (
 )
 
 ///////////////////////////////////////////////////////////////////////////////
-// TYPES
-
-// CertQuery is what's returned with a certificate
-type CertQuery struct {
-	Chain bool `json:"chain,omitempty" help:"Include the issuer chain, up to the root"`
-}
-
-///////////////////////////////////////////////////////////////////////////////
 // PRIVATE METHODS - PATHS
 
 // registerCert registers listing certificates, and getting, creating,
@@ -65,7 +57,7 @@ func registerCert(router *httprouter.Router, mgr *manager.Manager, auth bool, do
 			}, func(op httprequest.PathOperation) {
 				op.Summary("Get a certificate")
 				op.Description(doc.Section(3, "GET /cert/{name}").Body)
-				op.Query(jsonschema.MustFor[CertQuery]())
+				op.Query(jsonschema.MustFor[cert.GetCertRequest]())
 				op.JSONResponse(http.StatusOK, jsonschema.MustFor[cert.CertBundle](), "The latest version of the certificate")
 				op.ErrorResponse(http.StatusBadRequest, "Invalid name or query")
 				op.ErrorResponse(http.StatusNotFound, "Certificate not found")
@@ -104,7 +96,7 @@ func registerCert(router *httprouter.Router, mgr *manager.Manager, auth bool, do
 			}, func(op httprequest.PathOperation) {
 				op.Summary("Get a version of a certificate")
 				op.Description(doc.Section(3, "GET /cert/{name}/{serial}").Body)
-				op.Query(jsonschema.MustFor[CertQuery]())
+				op.Query(jsonschema.MustFor[cert.GetCertRequest]())
 				op.JSONResponse(http.StatusOK, jsonschema.MustFor[cert.CertBundle](), "The version of the certificate")
 				op.ErrorResponse(http.StatusBadRequest, "Invalid name, serial or query")
 				op.ErrorResponse(http.StatusNotFound, "Certificate not found")
@@ -143,7 +135,7 @@ func registerCert(router *httprouter.Router, mgr *manager.Manager, auth bool, do
 			}, func(op httprequest.PathOperation) {
 				op.Summary("Get a certificate with its private key")
 				op.Description(doc.Section(3, "GET /cert/{name}/key").Body)
-				op.Query(jsonschema.MustFor[CertQuery]())
+				op.Query(jsonschema.MustFor[cert.GetCertRequest]())
 				op.JSONResponse(http.StatusOK, jsonschema.MustFor[cert.CertBundle](), "The latest version of the certificate, with its private key")
 				op.ErrorResponse(http.StatusBadRequest, "Invalid name or query, or a certificate authority")
 				op.ErrorResponse(http.StatusNotFound, "Certificate not found")
@@ -158,7 +150,7 @@ func registerCert(router *httprouter.Router, mgr *manager.Manager, auth bool, do
 			}, func(op httprequest.PathOperation) {
 				op.Summary("Get a version of a certificate with its private key")
 				op.Description(doc.Section(3, "GET /cert/{name}/{serial}/key").Body)
-				op.Query(jsonschema.MustFor[CertQuery]())
+				op.Query(jsonschema.MustFor[cert.GetCertRequest]())
 				op.JSONResponse(http.StatusOK, jsonschema.MustFor[cert.CertBundle](), "The version of the certificate, with its private key")
 				op.ErrorResponse(http.StatusBadRequest, "Invalid name, serial or query, or a certificate authority")
 				op.ErrorResponse(http.StatusNotFound, "Certificate not found")
@@ -223,7 +215,7 @@ func listCerts(mgr *manager.Manager, w http.ResponseWriter, r *http.Request) {
 // private key when private is true, which is a separate operation, so it
 // can need its own scope
 func getCert(mgr *manager.Manager, w http.ResponseWriter, r *http.Request, byKey, private bool) {
-	var query CertQuery
+	var query cert.GetCertRequest
 	if err := httprequest.Query(r.URL.Query(), &query); err != nil {
 		httpresponse.Error(w, httpresponse.ErrBadRequest.Withf("%v", err))
 		return

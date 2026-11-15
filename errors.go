@@ -119,3 +119,72 @@ func HTTPError(err error) error {
 		return httpresponse.ErrInternalError.With(reason)
 	}
 }
+
+///////////////////////////////////////////////////////////////////////////////
+// CLIENT ERRORS
+
+// apiError is an error response from the API, as the auth error for its
+// status, with the reason the API gave, which wraps both
+type apiError struct {
+	code   Err
+	reason string
+	err    error
+}
+
+func (e *apiError) Error() string {
+	if e.reason == "" {
+		return e.code.Error()
+	}
+	return e.code.Error() + ": " + e.reason
+}
+
+func (e *apiError) Unwrap() []error {
+	return []error{e.code, e.err}
+}
+
+// ClientError converts an error response from an API to the auth error for
+// its status, which wraps it, so a client's callers can check it with
+// errors.Is, as they would the errors of the server's store
+func ClientError(err error) error {
+	if err == nil {
+		return nil
+	}
+
+	// The status code, and the reason, without the status text before it
+	code, reason := 0, ""
+	var response httpresponse.ErrResponse
+	var status httpresponse.Err
+	if errors.As(err, &response) {
+		code = response.Code
+		reason = strings.TrimPrefix(response.Reason, http.StatusText(code)+": ")
+		if reason == http.StatusText(code) {
+			reason = ""
+		}
+	} else if errors.As(err, &status) {
+		code = int(status)
+	}
+
+	// The auth error for the status
+	var authErr Err
+	switch code {
+	case http.StatusNotModified:
+		authErr = ErrNotModified
+	case http.StatusBadRequest:
+		authErr = ErrBadParameter
+	case http.StatusForbidden:
+		authErr = ErrForbidden
+	case http.StatusNotFound:
+		authErr = ErrNotFound
+	case http.StatusConflict:
+		authErr = ErrConflict
+	case http.StatusNotImplemented:
+		authErr = ErrNotImplemented
+	case http.StatusServiceUnavailable:
+		authErr = ErrServiceUnavailable
+	case http.StatusInternalServerError:
+		authErr = ErrInternalServerError
+	default:
+		return err
+	}
+	return &apiError{code: authErr, reason: reason, err: err}
+}

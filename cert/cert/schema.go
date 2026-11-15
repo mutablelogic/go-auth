@@ -17,6 +17,8 @@ package cert
 import (
 	"crypto/x509/pkix"
 	"math/big"
+	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -122,6 +124,11 @@ type CreateCertRequest struct {
 type RenewCertRequest struct {
 	Expiry  time.Duration `json:"expiry,omitempty" jsonschema:"new certificate validity duration" example:"8760h"`
 	Subject *SubjectMeta  `json:"subject,omitempty" jsonschema:"updated certificate subject details"`
+}
+
+// GetCertRequest is what's returned with a certificate
+type GetCertRequest struct {
+	Chain bool `json:"chain,omitempty" help:"Include the issuer chain, up to the root"`
 }
 
 type CertListRequest struct {
@@ -344,6 +351,42 @@ func SubjectRefFromMeta(id uint64, meta SubjectMeta, ts time.Time, commonName *s
 
 ////////////////////////////////////////////////////////////////////////////////
 // PUBLIC METHODS
+
+// Query is the request as URL query parameters
+func (r GetCertRequest) Query() url.Values {
+	query := url.Values{}
+	if r.Chain {
+		query.Set("chain", "true")
+	}
+	return query
+}
+
+// Query is the request as URL query parameters
+func (r CertListRequest) Query() url.Values {
+	query := url.Values{}
+	if r.Offset > 0 {
+		query.Set("offset", strconv.FormatUint(r.Offset, 10))
+	}
+	if r.Limit != nil {
+		query.Set("limit", strconv.FormatUint(*r.Limit, 10))
+	}
+	if r.IsCA != nil {
+		query.Set("is_ca", strconv.FormatBool(*r.IsCA))
+	}
+	if r.Enabled != nil {
+		query.Set("enabled", strconv.FormatBool(*r.Enabled))
+	}
+	for _, tag := range r.Tags {
+		query.Add("tags", tag)
+	}
+	if r.Valid != nil {
+		query.Set("valid", strconv.FormatBool(*r.Valid))
+	}
+	if r.Subject != nil {
+		query.Set("subject", strconv.FormatUint(*r.Subject, 10))
+	}
+	return query
+}
 
 // IsRoot is true for the root certificate
 func (c Certificate) IsRoot() bool {
