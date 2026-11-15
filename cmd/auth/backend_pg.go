@@ -17,18 +17,13 @@
 package main
 
 import (
-	"context"
-
 	// Packages
 	auth "github.com/mutablelogic/go-auth"
 	credential "github.com/mutablelogic/go-auth/credential"
 	credentialcmd "github.com/mutablelogic/go-auth/credential/cmd"
 	pgcredential "github.com/mutablelogic/go-auth/credential/pg"
 	pg "github.com/mutablelogic/go-pg"
-	pgbroadcaster "github.com/mutablelogic/go-pg/pgbroadcaster"
-	pgbroadcasterschema "github.com/mutablelogic/go-pg/pgbroadcaster/schema"
 	server "github.com/mutablelogic/go-server"
-	broadcaster "github.com/mutablelogic/go-server/broadcaster"
 )
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -49,29 +44,15 @@ const (
 ///////////////////////////////////////////////////////////////////////////////
 // PRIVATE METHODS
 
-func (flags BackendFlags) withManager(ctx server.Cmd, pool pg.PoolConn, passphrases []string, changes *broadcaster.Broadcaster, fn func(credential.CredentialManager, *follow) error) error {
+func (flags BackendFlags) withManager(ctx server.Cmd, pool pg.PoolConn, follow *follow, passphrases []string, fn func(credential.CredentialManager, bool) error) error {
 	// The pool is the server's, which the certificate manager shares
-	if pool == nil {
+	if pool == nil || follow == nil {
 		return auth.ErrBadParameter.With("a PostgreSQL connection URL is required: set --pg.url")
 	}
 
-	// The credential table's trigger notifies pgbroadcaster's channel of its
-	// changes, which pgbroadcaster publishes to the server's changes, whatever
-	// makes them, such as another server, or SQL
-	listener, err := pgbroadcaster.New(ctx.Context(), pool,
-		pgbroadcaster.WithTracer(ctx.Tracer()),
-		pgbroadcaster.WithChannel(pgbroadcasterschema.NotifyChannel),
-		pgbroadcaster.WithBroadcaster(changes),
-	)
-	if err != nil {
-		return err
-	}
+	// The credential table's trigger notifies the server's channel of its
+	// changes, which the server follows
 	return credentialcmd.WithPGCredentialManager(ctx, pool, flags.Schema, passphrases, func(manager credential.CredentialManager) error {
-		return fn(manager, &follow{
-			run: func(runctx context.Context) error {
-				return listener.Run(runctx, ctx.Logger())
-			},
-			ready: listener.WaitListening,
-		})
-	}, pgcredential.WithChannel(pgbroadcasterschema.NotifyChannel))
+		return fn(manager, true)
+	}, pgcredential.WithChannel(follow.channel))
 }

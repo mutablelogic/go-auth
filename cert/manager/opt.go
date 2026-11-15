@@ -26,6 +26,7 @@ import (
 	// Packages
 	schema "github.com/mutablelogic/go-auth/cert/schema"
 	authcrypto "github.com/mutablelogic/go-auth/crypto"
+	types "github.com/mutablelogic/go-server/pkg/types"
 	trace "go.opentelemetry.io/otel/trace"
 )
 
@@ -43,6 +44,7 @@ type opt struct {
 	rootkey    *rsa.PrivateKey
 	rootcert   *x509.Certificate
 	generate   string
+	channel    string
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -113,6 +115,20 @@ func WithRoot(pemValue string) Opt {
 		}
 		o.rootkey = key
 		o.rootcert = cert
+		return nil
+	}
+}
+
+// WithChannel notifies the channel of each change of a certificate, by its
+// name, and of a change of subjects, as a change of certificates, with
+// triggers on their tables, which are dropped without a channel, so go-pg's
+// pgbroadcaster can publish the changes, whatever makes them
+func WithChannel(channel string) Opt {
+	return func(o *opt) error {
+		if !types.IsIdentifier(channel) {
+			return fmt.Errorf("invalid channel: %q", channel)
+		}
+		o.channel = channel
 		return nil
 	}
 }

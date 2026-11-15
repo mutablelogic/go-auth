@@ -17,10 +17,15 @@
 package main
 
 import (
+	"context"
+
 	// Packages
 	pg "github.com/mutablelogic/go-pg"
+	pgbroadcaster "github.com/mutablelogic/go-pg/pgbroadcaster"
+	pgbroadcasterschema "github.com/mutablelogic/go-pg/pgbroadcaster/schema"
 	pgcmd "github.com/mutablelogic/go-pg/pkg/cmd"
 	server "github.com/mutablelogic/go-server"
+	broadcaster "github.com/mutablelogic/go-server/broadcaster"
 )
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -36,13 +41,32 @@ type PostgresFlags struct {
 // PRIVATE METHODS
 
 // withPool connects to PostgreSQL, when a URL is set, and calls fn with the
-// pool, which is nil otherwise, and closes it afterwards
-func (flags PostgresFlags) withPool(ctx server.Cmd, fn func(pg.PoolConn) error) error {
+// pool, and a follower of the changes its tables' triggers notify the
+// channel of, which pgbroadcaster publishes to the server's changes,
+// whatever makes them, such as another server, or SQL. Without a URL, both
+// are nil. The pool is closed afterwards.
+func (flags PostgresFlags) withPool(ctx server.Cmd, changes *broadcaster.Broadcaster, fn func(pg.PoolConn, *follow) error) error {
 	pool, err := flags.PostgresFlags.Connect(ctx)
 	if err != nil {
 		return err
-	} else if pool != nil {
-		defer pool.Close()
+	} else if pool == nil {
+		return fn(nil, nil)
 	}
-	return fn(pool)
+	defer pool.Close()
+
+	listener, err := pgbroadcaster.New(ctx.Context(), pool,
+		pgbroadcaster.WithTracer(ctx.Tracer()),
+		pgbroadcaster.WithChannel(pgbroadcasterschema.NotifyChannel),
+		pgbroadcaster.WithBroadcaster(changes),
+	)
+	if err != nil {
+		return err
+	}
+	return fn(pool, &follow{
+		channel: pgbroadcasterschema.NotifyChannel,
+		run: func(runctx context.Context) error {
+			return listener.Run(runctx, ctx.Logger())
+		},
+		ready: listener.WaitListening,
+	})
 }

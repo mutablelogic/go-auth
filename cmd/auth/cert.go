@@ -40,9 +40,10 @@ type CertFlags struct {
 // PRIVATE METHODS
 
 // withHandlers creates the certificate manager, in the pool, with the
-// passphrases, and calls fn with the registration of its handlers
-func (flags CertFlags) withHandlers(ctx server.Cmd, pool pg.PoolConn, passphrases []string, fn func(registerFunc) error) error {
-	if pool == nil {
+// passphrases, whose triggers notify the server's channel of its changes,
+// and calls fn with the registration of its handlers
+func (flags CertFlags) withHandlers(ctx server.Cmd, pool pg.PoolConn, follow *follow, passphrases []string, fn func(registerFunc) error) error {
+	if pool == nil || follow == nil {
 		return auth.ErrBadParameter.With("certificates need a PostgreSQL connection: set --pg.url")
 	}
 
@@ -59,5 +60,5 @@ func (flags CertFlags) withHandlers(ctx server.Cmd, pool pg.PoolConn, passphrase
 		}
 		ctx.Logger().WarnContext(ctx.Context(), "The certificate API has no authentication, as --cert.insecure is set")
 		return fn(certhandler.RegisterHandlers(mgr, false))
-	})
+	}, manager.WithChannel(follow.channel))
 }

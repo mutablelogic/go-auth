@@ -20,6 +20,7 @@ import (
 	// Packages
 	pg "github.com/mutablelogic/go-pg"
 	server "github.com/mutablelogic/go-server"
+	broadcaster "github.com/mutablelogic/go-server/broadcaster"
 )
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -31,7 +32,7 @@ type PostgresFlags struct{}
 ///////////////////////////////////////////////////////////////////////////////
 // PRIVATE METHODS
 
-// withPool calls fn without a pool
-func (PostgresFlags) withPool(_ server.Cmd, fn func(pg.PoolConn) error) error {
-	return fn(nil)
+// withPool calls fn without a pool, or a follower of its changes
+func (PostgresFlags) withPool(_ server.Cmd, _ *broadcaster.Broadcaster, fn func(pg.PoolConn, *follow) error) error {
+	return fn(nil, nil)
 }

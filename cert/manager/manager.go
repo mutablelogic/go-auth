@@ -69,7 +69,7 @@ func New(ctx context.Context, pool pg.PoolConn, opts ...Opt) (*Manager, error) {
 	bootstrapCtx, endBootstrapSpan := otel.StartSpan(self.tracer, ctx, "certmanager.bootstrap",
 		attribute.String("schema", self.schema),
 	)
-	if err := bootstrap(bootstrapCtx, pool, self.schema); err != nil {
+	if err := bootstrap(bootstrapCtx, pool, self.schema, self.channel); err != nil {
 		endBootstrapSpan(err)
 		return nil, err
 	} else {
@@ -101,7 +101,7 @@ func New(ctx context.Context, pool pg.PoolConn, opts ...Opt) (*Manager, error) {
 ///////////////////////////////////////////////////////////////////////////////
 // PRIVATE METHODS
 
-func bootstrap(ctx context.Context, conn pg.Conn, schemaName string) error {
+func bootstrap(ctx context.Context, conn pg.Conn, schemaName, channel string) error {
 	// Get all objects
 	objects, err := pg.NewQueries(strings.NewReader(schema.Objects))
 	if err != nil {
@@ -113,10 +113,26 @@ func bootstrap(ctx context.Context, conn pg.Conn, schemaName string) error {
 		return fmt.Errorf("create schema %q: %w", schemaName, err)
 	}
 
-	// Create all objects - not in a transaction
+	// Create all objects - not in a transaction. The triggers which notify
+	// the channel of the changes are only created with a channel, and
+	// dropped without one.
+	conn = conn.With("channel", channel)
 	for _, key := range objects.Keys() {
+		if strings.HasPrefix(key, "cert.notify_") && channel == "" {
+			continue
+		}
 		if err := conn.Exec(ctx, objects.Query(key)); err != nil {
 			return fmt.Errorf("create object %q: %w", key, err)
+		}
+	}
+	if channel == "" {
+		for _, drop := range []string{
+			`DROP TRIGGER IF EXISTS cert_notify_trigger ON ${"schema"}."cert"`,
+			`DROP TRIGGER IF EXISTS cert_subject_notify_trigger ON ${"schema"}."subject"`,
+		} {
+			if err := conn.Exec(ctx, drop); err != nil {
+				return fmt.Errorf("drop trigger: %w", err)
+			}
 		}
 	}
 
