@@ -25,6 +25,7 @@ import (
 	// Packages
 	cert "github.com/mutablelogic/go-auth/cert/cert"
 	manager "github.com/mutablelogic/go-auth/cert/manager"
+	test "github.com/mutablelogic/go-auth/cert/test"
 	schema "github.com/mutablelogic/go-auth/cert/schema"
 	authcrypto "github.com/mutablelogic/go-auth/crypto"
 	httpresponse "github.com/mutablelogic/go-server/pkg/httpresponse"
@@ -38,7 +39,7 @@ func TestRoot_001(t *testing.T) {
 		assert := assert.New(t)
 		require := require.New(t)
 
-		m := newTestManagerWithOpts(t, manager.WithPassphrase(1, "root-secret-1"))
+		m := test.IsolatedManager(t, manager.WithPassphrase(1, "root-secret-1"))
 		sourceRoot, parsedCert, key, pemValue := newRootPEMBundle(t, "Example Root CA", "Example Org")
 
 		root, err := m.InsertRootCert(context.Background(), pemValue)
@@ -96,7 +97,7 @@ func TestRoot_001(t *testing.T) {
 		assert := assert.New(t)
 		require := require.New(t)
 
-		m := newTestManagerWithOpts(t,
+		m := test.IsolatedManager(t,
 			manager.WithPassphrase(2, "root-secret-2"),
 			manager.WithPassphrase(9, "root-secret-9"),
 		)
@@ -132,7 +133,7 @@ func TestRoot_001(t *testing.T) {
 		assert := assert.New(t)
 		require := require.New(t)
 
-		m := newTestManager(t)
+		m := test.IsolatedManager(t)
 		_, _, _, pemValue := newRootPEMBundle(t, "Example Root CA", "Example Org")
 
 		_, err := m.InsertRootCert(context.Background(), pemValue)
@@ -144,7 +145,7 @@ func TestRoot_001(t *testing.T) {
 		assert := assert.New(t)
 		require := require.New(t)
 
-		m := newTestManagerWithOpts(t, manager.WithPassphrase(1, "root-secret-1"))
+		m := test.IsolatedManager(t, manager.WithPassphrase(1, "root-secret-1"))
 		_, _, _, pemValue := newRootPEMBundle(t, "Example Root CA", "Example Org")
 		_, err := m.InsertRootCert(context.Background(), pemValue)
 		require.NoError(err)
@@ -159,7 +160,7 @@ func TestRoot_001(t *testing.T) {
 		assert := assert.New(t)
 		require := require.New(t)
 
-		m := newTestManagerWithOpts(t, manager.WithPassphrase(1, "root-secret-1"))
+		m := test.IsolatedManager(t, manager.WithPassphrase(1, "root-secret-1"))
 
 		_, err := m.InsertRootCert(context.Background(), "")
 		require.Error(err)

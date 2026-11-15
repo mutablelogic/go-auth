@@ -24,8 +24,8 @@ import (
 	cert "github.com/mutablelogic/go-auth/cert/cert"
 	manager "github.com/mutablelogic/go-auth/cert/manager"
 	schema "github.com/mutablelogic/go-auth/cert/schema"
+	test "github.com/mutablelogic/go-auth/cert/test"
 	pg "github.com/mutablelogic/go-pg"
-	test "github.com/mutablelogic/go-pg/pkg/test"
 	types "github.com/mutablelogic/go-server/pkg/types"
 	assert "github.com/stretchr/testify/assert"
 	require "github.com/stretchr/testify/require"
@@ -33,8 +33,6 @@ import (
 
 ///////////////////////////////////////////////////////////////////////////////
 // GLOBALS
-
-var conn *test.Conn
 
 type boolResult struct {
 	Value bool
@@ -62,10 +60,7 @@ type subjectCountSelector struct {
 // TEST MAIN
 
 func TestMain(m *testing.M) {
-	test.Main(m, func(pool pg.PoolConn) (func(), error) {
-		conn = pool.(*test.Conn)
-		return nil, nil
-	})
+	test.Main(m, nil)
 }
 
 func (result *boolResult) Scan(row pg.Row) error {
@@ -113,43 +108,6 @@ func (selector subjectCountSelector) Select(bind *pg.Bind, op pg.Op) (string, er
 ///////////////////////////////////////////////////////////////////////////////
 // HELPERS
 
-func newTestManager(t *testing.T) *manager.Manager {
-	t.Helper()
-	return newTestManagerWithOpts(t)
-}
-
-func newTestManagerWithOpts(t *testing.T, opts ...manager.Opt) *manager.Manager {
-	t.Helper()
-	c := conn.Begin(t)
-	t.Cleanup(func() { c.Close() })
-
-	m, err := manager.New(context.Background(), c, opts...)
-	require.NoError(t, err)
-	require.NoError(t, m.Exec(context.Background(), `TRUNCATE cert.subject CASCADE`))
-
-	return m
-}
-
-func newCustomSchemaManager(t *testing.T, schemaName string) *manager.Manager {
-	t.Helper()
-	return newCustomSchemaManagerWithOpts(t, schemaName)
-}
-
-func newCustomSchemaManagerWithOpts(t *testing.T, schemaName string, opts ...manager.Opt) *manager.Manager {
-	t.Helper()
-	c := conn.Begin(t)
-	t.Cleanup(func() { c.Close() })
-	t.Cleanup(func() {
-		require.NoError(t, pg.SchemaDrop(context.Background(), c, schemaName))
-	})
-
-	baseOpts := append([]manager.Opt{manager.WithSchema(schemaName)}, opts...)
-	m, err := manager.New(context.Background(), c, baseOpts...)
-	require.NoError(t, err)
-
-	return m
-}
-
 func assertSchemaObjects(t *testing.T, m *manager.Manager, schemaName string) {
 	t.Helper()
 	require := require.New(t)
@@ -179,6 +137,25 @@ func assertSchemaObjects(t *testing.T, m *manager.Manager, schemaName string) {
 ///////////////////////////////////////////////////////////////////////////////
 // TESTS
 
+func Test_manager_shared(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+
+	// The shared manager has the test root, so can create a CA
+	m, ctx := test.Begin(t)
+	require.NotEmpty(test.Schema())
+
+	var root cert.Certificate
+	require.NoError(m.Get(ctx, (*schema.Certificate)(&root), schema.CertName(cert.RootCertName)))
+	assert.True(root.IsRoot())
+	require.NotNil(root.Subject)
+	assert.Equal(test.RootCommonName, types.Value(root.Subject.CommonName))
+
+	ca, err := m.CreateCA(ctx, cert.CreateCertRequest{Name: "shared_ca"})
+	require.NoError(err)
+	assert.Equal(cert.RootCertName, ca.Signer.Name)
+}
+
 func Test_manager_001(t *testing.T) {
 	t.Run("NewNilPool", func(t *testing.T) {
 		assert := assert.New(t)
@@ -195,50 +172,47 @@ func Test_manager_001(t *testing.T) {
 		assert := assert.New(t)
 		require := require.New(t)
 
-		m := newTestManager(t)
+		// Without a schema, it's "cert", which is dropped afterwards
+		m, err := manager.New(context.Background(), test.Pool())
+		require.NoError(err)
 		require.NotNil(m)
+		t.Cleanup(func() {
+			assert.NoError(pg.SchemaDrop(context.Background(), test.Pool(), "cert"))
+		})
 
 		exists, err := pg.SchemaExists(context.Background(), m, "cert")
 		require.NoError(err)
 		assert.True(exists)
 
 		assertSchemaObjects(t, m, "cert")
-		err = m.Exec(context.Background(), `TRUNCATE cert.subject CASCADE`)
-		assert.NoError(err)
 	})
 
 	t.Run("NewCustomSchema", func(t *testing.T) {
 		assert := assert.New(t)
 		require := require.New(t)
 
-		m := newCustomSchemaManager(t, "cert_test_custom")
+		schemaName := test.IsolatedSchema(t)
+		m := test.SchemaManager(t, schemaName)
 		require.NotNil(m)
 
-		exists, err := pg.SchemaExists(context.Background(), m, "cert_test_custom")
+		exists, err := pg.SchemaExists(context.Background(), m, schemaName)
 		require.NoError(err)
 		assert.True(exists)
 
-		assertSchemaObjects(t, m, "cert_test_custom")
-		err = m.Exec(context.Background(), `TRUNCATE cert_test_custom.subject CASCADE`)
-		assert.NoError(err)
+		assertSchemaObjects(t, m, schemaName)
 	})
 
 	t.Run("BootstrapIsIdempotent", func(t *testing.T) {
 		require := require.New(t)
 
-		c := conn.Begin(t)
-		defer c.Close()
-
-		m1, err := manager.New(context.Background(), c, manager.WithSchema("cert_test_idempotent"))
-		require.NoError(err)
+		schemaName := test.IsolatedSchema(t)
+		m1 := test.SchemaManager(t, schemaName)
 		require.NotNil(m1)
 
-		m2, err := manager.New(context.Background(), c, manager.WithSchema("cert_test_idempotent"))
-		require.NoError(err)
+		m2 := test.SchemaManager(t, schemaName)
 		require.NotNil(m2)
 
-		assertSchemaObjects(t, m2, "cert_test_idempotent")
-		require.NoError(pg.SchemaDrop(context.Background(), c, "cert_test_idempotent"))
+		assertSchemaObjects(t, m2, schemaName)
 	})
 
 	t.Run("NewWithRootImportsRootCert", func(t *testing.T) {
@@ -258,7 +232,7 @@ func Test_manager_001(t *testing.T) {
 		require.NoError(sourceRoot.Write(&pemValue))
 		require.NoError(sourceRoot.WritePrivateKey(&pemValue))
 
-		m := newCustomSchemaManagerWithOpts(t, "cert_test_root_import", manager.WithPassphrase(5, "root-secret-5"), manager.WithRoot(pemValue.String()))
+		m := test.IsolatedManager(t, manager.WithPassphrase(5, "root-secret-5"), manager.WithRoot(pemValue.String()))
 		require.NotNil(m)
 
 		var storedRoot cert.Certificate
@@ -283,19 +257,12 @@ func Test_manager_001(t *testing.T) {
 			cert.WithRoot(),
 		)
 		require.NoError(err)
-		schemaName := "cert_test_root_import_no_pass"
 
 		var pemValue bytes.Buffer
 		require.NoError(sourceRoot.Write(&pemValue))
 		require.NoError(sourceRoot.WritePrivateKey(&pemValue))
 
-		c := conn.Begin(t)
-		defer c.Close()
-		defer func() {
-			_ = pg.SchemaDrop(context.Background(), c, schemaName)
-		}()
-
-		m, err := manager.New(context.Background(), c, manager.WithSchema(schemaName), manager.WithRoot(pemValue.String()))
+		m, err := test.NewSchemaManager(test.IsolatedSchema(t), manager.WithRoot(pemValue.String()))
 		require.Error(err)
 		assert.Nil(m)
 		assert.EqualError(err, "root certificate storage passphrase is required")
@@ -305,7 +272,8 @@ func Test_manager_001(t *testing.T) {
 		assert := assert.New(t)
 		require := require.New(t)
 
-		m := newTestManager(t)
+		schemaName := test.IsolatedSchema(t)
+		m := test.SchemaManager(t, schemaName)
 		meta := cert.SubjectMeta{
 			Org:           types.Ptr("Example Org"),
 			Unit:          types.Ptr("Security"),
@@ -326,7 +294,7 @@ func Test_manager_001(t *testing.T) {
 		assert.Equal(first.SubjectMeta, second.SubjectMeta)
 
 		var count countResult
-		require.NoError(m.Get(context.Background(), &count, subjectCountSelector{Schema: "cert"}))
+		require.NoError(m.Get(context.Background(), &count, subjectCountSelector{Schema: schemaName}))
 		assert.Equal(uint64(1), count.Value)
 	})
 }

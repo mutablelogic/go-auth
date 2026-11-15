@@ -26,6 +26,7 @@ import (
 	cert "github.com/mutablelogic/go-auth/cert/cert"
 	manager "github.com/mutablelogic/go-auth/cert/manager"
 	schema "github.com/mutablelogic/go-auth/cert/schema"
+	test "github.com/mutablelogic/go-auth/cert/test"
 	authcrypto "github.com/mutablelogic/go-auth/crypto"
 	httpresponse "github.com/mutablelogic/go-server/pkg/httpresponse"
 	types "github.com/mutablelogic/go-server/pkg/types"
@@ -39,8 +40,7 @@ func TestCA_001(t *testing.T) {
 		require := require.New(t)
 
 		_, rootCert, _, pemValue := newRootPEMBundle(t, "Example Root CA", "Example Org")
-		m := newCustomSchemaManagerWithOpts(t,
-			"cert_test_ca_default",
+		m := test.IsolatedManager(t,
 			manager.WithPassphrase(1, "root-secret-1"),
 			manager.WithRoot(pemValue),
 		)
@@ -81,8 +81,7 @@ func TestCA_001(t *testing.T) {
 		require := require.New(t)
 
 		_, rootCert, _, pemValue := newRootPEMBundle(t, "Example Root CA", "Example Org")
-		m := newCustomSchemaManagerWithOpts(t,
-			"cert_test_ca_custom",
+		m := test.IsolatedManager(t,
 			manager.WithPassphrase(1, "root-secret-1"),
 			manager.WithRoot(pemValue),
 		)
@@ -132,8 +131,7 @@ func TestCA_001(t *testing.T) {
 		require := require.New(t)
 
 		_, rootCert, _, pemValue := newRootPEMBundle(t, "Example Root CA", "Example Org")
-		m := newCustomSchemaManagerWithOpts(t,
-			"cert_test_ca_merge_subject",
+		m := test.IsolatedManager(t,
 			manager.WithPassphrase(1, "root-secret-1"),
 			manager.WithRoot(pemValue),
 		)
@@ -169,8 +167,7 @@ func TestCA_001(t *testing.T) {
 		require := require.New(t)
 
 		_, _, _, pemValue := newRootPEMBundle(t, "Example Root CA", "Example Org")
-		m := newCustomSchemaManagerWithOpts(t,
-			"cert_test_ca_clear_subject",
+		m := test.IsolatedManager(t,
 			manager.WithPassphrase(1, "root-secret-1"),
 			manager.WithRoot(pemValue),
 		)
@@ -203,13 +200,12 @@ func TestCA_001(t *testing.T) {
 		require := require.New(t)
 
 		_, _, _, pemValue := newRootPEMBundle(t, "Example Root CA", "Example Org")
-		m := newCustomSchemaManagerWithOpts(t,
-			"cert_test_ca_effective_tags",
+		m := test.IsolatedManager(t,
 			manager.WithPassphrase(1, "root-secret-1"),
 			manager.WithRoot(pemValue),
 		)
 
-		require.NoError(m.Exec(context.Background(), `UPDATE cert_test_ca_effective_tags.cert SET tags = ARRAY['root-tag'] WHERE name = CHR(36) || 'root' || CHR(36)`))
+		require.NoError(m.Exec(context.Background(), `UPDATE ${"schema"}.cert SET tags = ARRAY['root-tag'] WHERE name = CHR(36) || 'root' || CHR(36)`))
 
 		var rootRow cert.Certificate
 		require.NoError(m.Get(context.Background(), (*schema.Certificate)(&rootRow), schema.CertName(cert.RootCertName)))
@@ -234,13 +230,12 @@ func TestCA_001(t *testing.T) {
 		require := require.New(t)
 
 		_, _, _, pemValue := newRootPEMBundle(t, "Example Root CA", "Example Org")
-		m := newCustomSchemaManagerWithOpts(t,
-			"cert_test_ca_effective_enabled",
+		m := test.IsolatedManager(t,
 			manager.WithPassphrase(1, "root-secret-1"),
 			manager.WithRoot(pemValue),
 		)
 
-		require.NoError(m.Exec(context.Background(), `UPDATE cert_test_ca_effective_enabled.cert SET enabled = FALSE WHERE name = CHR(36) || 'root' || CHR(36)`))
+		require.NoError(m.Exec(context.Background(), `UPDATE ${"schema"}.cert SET enabled = FALSE WHERE name = CHR(36) || 'root' || CHR(36)`))
 
 		var rootRow cert.Certificate
 		require.NoError(m.Get(context.Background(), (*schema.Certificate)(&rootRow), schema.CertName(cert.RootCertName)))
@@ -256,8 +251,7 @@ func TestCA_001(t *testing.T) {
 		assert := assert.New(t)
 		require := require.New(t)
 
-		m := newCustomSchemaManagerWithOpts(t,
-			"cert_test_ca_missing_root",
+		m := test.IsolatedManager(t,
 			manager.WithPassphrase(1, "root-secret-1"),
 		)
 
@@ -273,8 +267,7 @@ func TestCA_001(t *testing.T) {
 		require := require.New(t)
 
 		_, _, _, pemValue := newRootPEMBundle(t, "Example Root CA", "Example Org")
-		m := newCustomSchemaManagerWithOpts(t,
-			"cert_test_ca_encrypted_key",
+		m := test.IsolatedManager(t,
 			manager.WithPassphrase(2, "root-secret-2"),
 			manager.WithPassphrase(9, "root-secret-9"),
 			manager.WithRoot(pemValue),
@@ -310,8 +303,7 @@ func TestCA_001(t *testing.T) {
 		require := require.New(t)
 
 		_, _, _, pemValue := newRootPEMBundle(t, "Example Root CA", "Example Org")
-		m := newCustomSchemaManagerWithOpts(t,
-			"cert_test_ca_duplicate",
+		m := test.IsolatedManager(t,
 			manager.WithPassphrase(1, "root-secret-1"),
 			manager.WithRoot(pemValue),
 		)
@@ -329,8 +321,7 @@ func TestCA_001(t *testing.T) {
 		require := require.New(t)
 
 		_, _, _, pemValue := newRootPEMBundle(t, "Example Root CA", "Example Org")
-		m := newCustomSchemaManagerWithOpts(t,
-			"cert_test_ca_invalid_tags",
+		m := test.IsolatedManager(t,
 			manager.WithPassphrase(1, "root-secret-1"),
 			manager.WithRoot(pemValue),
 		)
@@ -351,8 +342,7 @@ func TestCA_001(t *testing.T) {
 		require := require.New(t)
 
 		_, _, _, pemValue := newRootPEMBundle(t, "Example Root CA", "Example Org")
-		m := newCustomSchemaManagerWithOpts(t,
-			"cert_test_ca_san",
+		m := test.IsolatedManager(t,
 			manager.WithPassphrase(1, "root-secret-1"),
 			manager.WithRoot(pemValue),
 		)
@@ -373,8 +363,7 @@ func TestCA_001(t *testing.T) {
 		require := require.New(t)
 
 		_, rootCert, _, pemValue := newRootPEMBundle(t, "Example Root CA", "Example Org")
-		m := newCustomSchemaManagerWithOpts(t,
-			"cert_test_ca_renew",
+		m := test.IsolatedManager(t,
 			manager.WithPassphrase(1, "root-secret-1"),
 			manager.WithRoot(pemValue),
 		)
@@ -414,8 +403,7 @@ func TestCA_001(t *testing.T) {
 		require := require.New(t)
 
 		_, _, _, pemValue := newRootPEMBundle(t, "Example Root CA", "Example Org")
-		m := newCustomSchemaManagerWithOpts(t,
-			"cert_test_ca_renew_merge_subject",
+		m := test.IsolatedManager(t,
 			manager.WithPassphrase(1, "root-secret-1"),
 			manager.WithRoot(pemValue),
 		)
@@ -461,8 +449,7 @@ func TestCA_001(t *testing.T) {
 		require := require.New(t)
 
 		_, _, _, pemValue := newRootPEMBundle(t, "Example Root CA", "Example Org")
-		m := newCustomSchemaManagerWithOpts(t,
-			"cert_test_ca_renew_clear_subject",
+		m := test.IsolatedManager(t,
 			manager.WithPassphrase(1, "root-secret-1"),
 			manager.WithRoot(pemValue),
 		)
@@ -503,8 +490,7 @@ func TestCA_001(t *testing.T) {
 		require := require.New(t)
 
 		rootSigner, _, _, pemValue := newRootPEMBundle(t, "Example Root CA", "Example Org")
-		m := newCustomSchemaManagerWithOpts(t,
-			"cert_test_ca_renew_san",
+		m := test.IsolatedManager(t,
 			manager.WithPassphrase(1, "root-secret-1"),
 			manager.WithRoot(pemValue),
 		)
@@ -551,8 +537,7 @@ func TestCA_001(t *testing.T) {
 		require := require.New(t)
 
 		_, _, _, pemValue := newRootPEMBundle(t, "Example Root CA", "Example Org")
-		m := newCustomSchemaManagerWithOpts(t,
-			"cert_test_ca_renew_root",
+		m := test.IsolatedManager(t,
 			manager.WithPassphrase(1, "root-secret-1"),
 			manager.WithRoot(pemValue),
 		)
@@ -572,8 +557,7 @@ func TestCA_001(t *testing.T) {
 		require := require.New(t)
 
 		_, _, _, pemValue := newRootPEMBundle(t, "Example Root CA", "Example Org")
-		m := newCustomSchemaManagerWithOpts(t,
-			"cert_test_ca_renew_leaf",
+		m := test.IsolatedManager(t,
 			manager.WithPassphrase(1, "root-secret-1"),
 			manager.WithRoot(pemValue),
 		)
@@ -595,15 +579,14 @@ func TestCA_001(t *testing.T) {
 		require := require.New(t)
 
 		_, _, _, pemValue := newRootPEMBundle(t, "Example Root CA", "Example Org")
-		m := newCustomSchemaManagerWithOpts(t,
-			"cert_test_ca_renew_disabled_root",
+		m := test.IsolatedManager(t,
 			manager.WithPassphrase(1, "root-secret-1"),
 			manager.WithRoot(pemValue),
 		)
 
 		caRow, err := m.CreateCA(context.Background(), cert.CreateCertRequest{Name: "renew_ca", Expiry: 2 * time.Hour})
 		require.NoError(err)
-		require.NoError(m.Exec(context.Background(), `UPDATE cert_test_ca_renew_disabled_root.cert SET enabled = FALSE WHERE name = CHR(36) || 'root' || CHR(36)`))
+		require.NoError(m.Exec(context.Background(), `UPDATE ${"schema"}.cert SET enabled = FALSE WHERE name = CHR(36) || 'root' || CHR(36)`))
 
 		renewed, err := m.RenewCA(context.Background(), caRow.CertKey, cert.RenewCertRequest{})
 		require.Error(err)
@@ -617,8 +600,7 @@ func TestCA_001(t *testing.T) {
 		require := require.New(t)
 
 		_, _, _, pemValue := newRootPEMBundle(t, "Example Root CA", "Example Org")
-		m := newCustomSchemaManagerWithOpts(t,
-			"cert_test_ca_renew_disabled_current",
+		m := test.IsolatedManager(t,
 			manager.WithPassphrase(1, "root-secret-1"),
 			manager.WithRoot(pemValue),
 		)
