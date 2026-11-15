@@ -22,11 +22,10 @@ import { live } from 'lit/directives/live.js';
 import { until } from 'lit/directives/until.js';
 import type { Client } from '@mutablelogic/go-server/api';
 import type { ChangesController } from '@mutablelogic/go-server/broadcaster';
-import type { Column, TableSearch, TableSetting, TableSettingChange } from '@mutablelogic/go-server/list/view';
+import type { Column, TableActionError, TableSearch, TableSetting, TableSettingChange, TableToolbarAction } from '@mutablelogic/go-server/list/view';
 import type { NavController } from '@mutablelogic/go-server/nav';
 import type { NotificationController } from '@mutablelogic/go-server/notification';
 import { PanelController, type PanelAction } from '@mutablelogic/go-server/panel';
-import type { PageAction } from '@mutablelogic/go-server/page';
 import type { Router } from '@mutablelogic/go-server/router';
 import { CertController } from './controller.ts';
 import {
@@ -294,7 +293,8 @@ export class CertificatesElement extends LitElement {
         const authorities = this.kind === 'ca';
         const show = this.controller.showDisabled;
         const searching = !!this.controller.search;
-        const actions: PageAction[] = [
+        // Create is the table's, in its toolbar, after its search and settings
+        const tools: TableToolbarAction[] = [
             authorities
                 ? { label: 'Create a certificate authority', icon: AddIcon, disabled: !root, run: () => this.create(true) }
                 : { label: 'Create a certificate', icon: AddIcon, run: () => this.create(false) },
@@ -310,11 +310,12 @@ export class CertificatesElement extends LitElement {
             : 'Such as a server\'s, which a certificate authority signs';
         return html`
             <gs-page-header heading=${this.heading ?? (authorities ? 'Certificate Authorities' : 'Leaf Certificates')}
-                subtitle=${subtitle} .icon=${authorities ? CertificateCheckIcon : CertificateIcon} .actions=${actions}></gs-page-header>
+                subtitle=${subtitle} .icon=${authorities ? CertificateCheckIcon : CertificateIcon}></gs-page-header>
             <gs-table .controller=${this.controller.list} .columns=${authorities ? authorityColumns : certificateColumns}
                 .expand=${(cert: Certificate) => this.versionsView(cert)} .itemKey=${(cert: Certificate) => cert.name}
-                .search=${authorities ? 'Search certificate authorities' : 'Search leaf certificates'} .settings=${settings}
+                .search=${authorities ? 'Search certificate authorities' : 'Search leaf certificates'} .settings=${settings} .toolbarActions=${tools}
                 @gs-table-search=${(event: CustomEvent<TableSearch>) => { void this.controller?.setSearch(event.detail.value).then(() => this.requestUpdate()); }}
+                @gs-table-action-error=${(event: CustomEvent<TableActionError<Certificate>>) => this.notifications?.error(`${event.detail.action.label} didn't work`, event.detail.error)}
                 @gs-table-setting=${(event: CustomEvent<TableSettingChange>) => {
                     if (event.detail.key === 'disabled') {
                         void this.toggleDisabled();
