@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { ApiError, type Client } from '@mutablelogic/go-server/api';
 import { credentialChange, credentialForm, credentialFormErrors, credentialRequest } from '../src/credential/form.ts';
 import { sortCredentials } from '../src/credential/controller.ts';
+import { refreshable } from '../src/credential/schema.ts';
 import * as api from '../src/credential/httpclient.ts';
 
 // fakeClient returns a client whose fetch records each request, and
@@ -153,4 +154,14 @@ test('httpclient', async (t) => {
         await api.deleteCredential(client, 'a/b');
         assert.equal(requests[0].path, '/api/credential/a%2Fb');
     });
+});
+
+test('refreshable', () => {
+    // AWS's and Bitwarden's changes made elsewhere aren't published, so the
+    // UI is refreshed by hand
+    assert.equal(refreshable('aws'), true);
+    assert.equal(refreshable('bitwarden'), true);
+    for (const backend of ['file', 'pg', '', undefined]) {
+        assert.equal(refreshable(backend), false, String(backend));
+    }
 });
