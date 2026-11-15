@@ -394,6 +394,11 @@ func (m *Manager) renewCert(ctx context.Context, current cert.CertKey, req cert.
 	if !expectCA && currentRow.IsCA {
 		return nil, httpresponse.ErrBadRequest.With("certificate is not a leaf certificate")
 	}
+	// An older version isn't renewed, which says which is the latest, even
+	// when it's disabled, as a renewed leaf certificate's older versions are
+	if err := m.isLatest(ctx, currentRow, "only the latest version of %q, serial %s, can be renewed"); err != nil {
+		return nil, err
+	}
 	if !types.Value(currentRow.Enabled) {
 		if currentRow.IsCA {
 			return nil, httpresponse.ErrConflict.With("certificate authority is disabled")
@@ -402,9 +407,6 @@ func (m *Manager) renewCert(ctx context.Context, current cert.CertKey, req cert.
 	}
 	if currentRow.Signer == nil {
 		return nil, httpresponse.ErrBadRequest.With("non-root certificate must have a signer")
-	}
-	if err := m.isLatest(ctx, currentRow, "only the latest version of %q, serial %s, can be renewed"); err != nil {
-		return nil, err
 	}
 
 	parsedCurrent, err := x509.ParseCertificate(currentRow.Cert)

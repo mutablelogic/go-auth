@@ -357,6 +357,13 @@ func Test_manager_issuers(t *testing.T) {
 		var latest cert.Certificate
 		require.NoError(t, m.Get(ctx, (*schema.Certificate)(&latest), schema.CertName("versioned")))
 		assert.Equal(t, "9", latest.Serial)
+
+		// A name's versions are the latest first, which is the one inserted
+		// last, rather than the largest serial
+		versions, err := m.ListCerts(ctx, cert.CertListRequest{Name: "versioned"})
+		require.NoError(t, err)
+		require.Len(t, versions.Body, 2)
+		assert.Equal(t, []string{"9", "10"}, []string{versions.Body[0].Serial, versions.Body[1].Serial})
 	})
 }
 
