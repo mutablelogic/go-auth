@@ -439,3 +439,62 @@ func Test_manager_review(t *testing.T) {
 		assert.Equal(t, uint64(1), list.Count)
 	})
 }
+
+func Test_manager_generatedRoot(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("GeneratedOnce", func(t *testing.T) {
+		schemaName := test.IsolatedSchema(t)
+		opts := []manager.Opt{manager.WithPassphrase(1, "root-secret-1"), manager.WithGeneratedRoot("Generated Root CA")}
+		m := test.SchemaManager(t, schemaName, opts...)
+
+		var root cert.Certificate
+		require.NoError(t, m.Get(ctx, (*schema.Certificate)(&root), schema.CertName(cert.RootCertName)))
+		require.NotNil(t, root.Subject)
+		assert.Equal(t, "Generated Root CA", types.Value(root.Subject.CommonName))
+		assert.True(t, root.IsCA)
+
+		// It signs a CA
+		ca, err := m.CreateCA(ctx, cert.CreateCertRequest{Name: "generated_ca"})
+		require.NoError(t, err)
+		assert.Equal(t, root.CertKey, types.Value(ca.Signer))
+
+		// Created again, the root is kept
+		again := test.SchemaManager(t, schemaName, opts...)
+		var kept cert.Certificate
+		require.NoError(t, again.Get(ctx, (*schema.Certificate)(&kept), schema.CertName(cert.RootCertName)))
+		assert.Equal(t, root.CertKey, kept.CertKey)
+	})
+
+	t.Run("ImportedRootIsKept", func(t *testing.T) {
+		_, pemValue, err := test.NewRoot("Imported Root CA", "Example Org")
+		require.NoError(t, err)
+		schemaName := test.IsolatedSchema(t)
+		test.SchemaManager(t, schemaName, manager.WithPassphrase(1, "root-secret-1"), manager.WithRoot(pemValue))
+
+		m := test.SchemaManager(t, schemaName, manager.WithPassphrase(1, "root-secret-1"), manager.WithGeneratedRoot("Generated Root CA"))
+		var root cert.Certificate
+		require.NoError(t, m.Get(ctx, (*schema.Certificate)(&root), schema.CertName(cert.RootCertName)))
+		assert.Equal(t, "Imported Root CA", types.Value(root.Subject.CommonName))
+	})
+
+	t.Run("NeedsAPassphrase", func(t *testing.T) {
+		_, err := test.NewSchemaManager(test.IsolatedSchema(t), manager.WithGeneratedRoot("Generated Root CA"))
+		assert.EqualError(t, err, "root certificate storage passphrase is required")
+		_, err = test.NewSchemaManager(test.IsolatedSchema(t), manager.WithGeneratedRoot(" "))
+		assert.Error(t, err)
+	})
+
+	t.Run("ImportNeedsASelfSignedCA", func(t *testing.T) {
+		// A CA which another signed isn't a root
+		root, _, err := test.NewRoot("Example Root CA", "Example Org")
+		require.NoError(t, err)
+		intermediate, err := cert.New(cert.WithCommonName("Intermediate"), cert.WithRSAKey(2048), cert.WithExpiry(time.Hour), cert.WithCA(), cert.WithSigner(root))
+		require.NoError(t, err)
+		var pemValue bytes.Buffer
+		require.NoError(t, intermediate.Write(&pemValue))
+		require.NoError(t, intermediate.WritePrivateKey(&pemValue))
+		_, err = test.NewSchemaManager(test.IsolatedSchema(t), manager.WithPassphrase(1, "root-secret-1"), manager.WithRoot(pemValue.String()))
+		assert.EqualError(t, err, "root certificate must be a self-signed certificate authority")
+	})
+}

@@ -23,6 +23,7 @@ import (
 	credential "github.com/mutablelogic/go-auth/credential"
 	httphandler "github.com/mutablelogic/go-auth/credential/httphandler"
 	frontend "github.com/mutablelogic/go-auth/frontend/cmd"
+	pg "github.com/mutablelogic/go-pg"
 	server "github.com/mutablelogic/go-server"
 	broadcaster "github.com/mutablelogic/go-server/broadcaster"
 	broadcastercmd "github.com/mutablelogic/go-server/broadcaster/cmd"
@@ -47,6 +48,9 @@ type ServerCommands struct {
 // openapi handler has
 const openapiTag = "OpenAPI"
 
+// registerFunc registers handlers with the router
+type registerFunc func(*httprouter.Router) error
+
 // follow follows the backend's changes, such as pg's notifications, and
 // publishes them, when the backend has its own changes, rather than the
 // API's: run follows them, until the context is cancelled, and ready waits
@@ -66,10 +70,15 @@ func without(fn func(credential.CredentialManager, *follow) error) func(credenti
 }
 
 // RunServer runs the credential server, with its web UI, when it's built
-// in, and the changes, which the UI follows the server with
+// in, and the changes, which the UI follows the server with. The
+// passphrases and the PostgreSQL connection are shared by the credential
+// backend and, when it's built in, the certificate manager.
 type RunServer struct {
 	cmd.RunServer
+	Passphrase  []string             `name:"passphrase" env:"${ENV_NAME}_PASSPHRASE" sep:"none" help:"Passphrase for encrypting credentials and private keys. Can be specified multiple times, for versions 1, 2 and so on, and the last is used for new ones."`
+	Postgres    PostgresFlags        `embed:"" prefix:"pg."`
 	Credential  BackendFlags         `embed:"" prefix:"credential."`
+	Cert        CertFlags            `embed:"" prefix:"cert."`
 	Broadcaster broadcastercmd.Flags `embed:"" prefix:"broadcaster."`
 	Frontend    frontend.Flags       `embed:""`
 }
@@ -79,18 +88,21 @@ type RunServer struct {
 
 func (runner *RunServer) Run(ctx server.Cmd) error {
 	return runner.Broadcaster.WithBroadcaster(ctx, &runner.RunServer, func(changes *broadcaster.Broadcaster) error {
-		return runner.Credential.withManager(ctx, changes, func(manager credential.CredentialManager, follow *follow) error {
-			ctx.Logger().InfoContext(ctx.Context(), "Credentials", "backend", backend)
-			ctx.Logger().WarnContext(ctx.Context(), "The credential API has no authentication")
-
-			// The API publishes its changes, unless the backend follows them,
-			// such as pg, whose table's trigger notifies of them
-			var publisher httphandler.Publisher
-			if follow == nil {
-				publisher = changes
-			}
-			runner.register(ctx, manager, publisher)
-			return runner.run(ctx, changes, follow)
+		return runner.Postgres.withPool(ctx, func(pool pg.PoolConn) error {
+			return runner.Credential.withManager(ctx, pool, runner.Passphrase, changes, func(manager credential.CredentialManager, follow *follow) error {
+				ctx.Logger().InfoContext(ctx.Context(), "Credentials", "backend", backend)
+				ctx.Logger().WarnContext(ctx.Context(), "The credential API has no authentication")
+				return runner.Cert.withHandlers(ctx, pool, runner.Passphrase, func(certs registerFunc) error {
+					// The API publishes its changes, unless the backend follows
+					// them, such as pg, whose table's trigger notifies of them
+					var publisher httphandler.Publisher
+					if follow == nil {
+						publisher = changes
+					}
+					runner.register(ctx, manager, publisher, certs)
+					return runner.run(ctx, changes, follow)
+				})
+			})
 		})
 	})
 }
@@ -100,9 +112,10 @@ func (runner *RunServer) Run(ctx server.Cmd) error {
 
 // register registers the configuration, with what the credential manager
 // can do, which depends on its backend, the web UI, when it's served, or
-// else a handler of / which isn't found, and the credential API, which
-// publishes its changes, which the UI follows
-func (runner *RunServer) register(ctx server.Cmd, manager credential.CredentialManager, publisher httphandler.Publisher) {
+// else a handler of / which isn't found, the credential API, which
+// publishes its changes, which the UI follows, and the certificate API,
+// when it's built in
+func (runner *RunServer) register(ctx server.Cmd, manager credential.CredentialManager, publisher httphandler.Publisher, certs registerFunc) {
 	runner.RunServer.Register(func(router *httprouter.Router) error {
 		ui, err := runner.Frontend.RegisterUI(ctx, ctx.Logger(), router, runner.RunServer.OpenAPI,
 			config.WithSection("credential", credential.FeaturesOf(backend, manager)),
@@ -121,6 +134,11 @@ func (runner *RunServer) register(ctx server.Cmd, manager credential.CredentialM
 		}
 		if err := httphandler.RegisterManagerHandlers(manager, false, opts...)(router); err != nil {
 			return err
+		}
+		if certs != nil {
+			if err := certs(router); err != nil {
+				return err
+			}
 		}
 
 		// The configuration, the API's documentation, and the changes, which

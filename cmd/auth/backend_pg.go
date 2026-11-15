@@ -24,9 +24,9 @@ import (
 	credential "github.com/mutablelogic/go-auth/credential"
 	credentialcmd "github.com/mutablelogic/go-auth/credential/cmd"
 	pgcredential "github.com/mutablelogic/go-auth/credential/pg"
+	pg "github.com/mutablelogic/go-pg"
 	pgbroadcaster "github.com/mutablelogic/go-pg/pgbroadcaster"
 	pgbroadcasterschema "github.com/mutablelogic/go-pg/pgbroadcaster/schema"
-	pgcmd "github.com/mutablelogic/go-pg/pkg/cmd"
 	server "github.com/mutablelogic/go-server"
 	broadcaster "github.com/mutablelogic/go-server/broadcaster"
 )
@@ -36,8 +36,6 @@ import (
 
 // BackendFlags stores credentials in PostgreSQL
 type BackendFlags struct {
-	credentialcmd.PGFlags
-	pgcmd.PostgresFlags
 	Schema string `name:"schema" env:"PG_SCHEMA" help:"Database schema for the credential table"`
 }
 
@@ -51,15 +49,11 @@ const (
 ///////////////////////////////////////////////////////////////////////////////
 // PRIVATE METHODS
 
-func (flags BackendFlags) withManager(ctx server.Cmd, changes *broadcaster.Broadcaster, fn func(credential.CredentialManager, *follow) error) error {
-	// Connect to the database, with go-pg's flags
-	pool, err := flags.PostgresFlags.Connect(ctx)
-	if err != nil {
-		return err
-	} else if pool == nil {
-		return auth.ErrBadParameter.With("a PostgreSQL connection URL is required: set --credential.url")
+func (flags BackendFlags) withManager(ctx server.Cmd, pool pg.PoolConn, passphrases []string, changes *broadcaster.Broadcaster, fn func(credential.CredentialManager, *follow) error) error {
+	// The pool is the server's, which the certificate manager shares
+	if pool == nil {
+		return auth.ErrBadParameter.With("a PostgreSQL connection URL is required: set --pg.url")
 	}
-	defer pool.Close()
 
 	// The credential table's trigger notifies pgbroadcaster's channel of its
 	// changes, which pgbroadcaster publishes to the server's changes, whatever
@@ -72,7 +66,7 @@ func (flags BackendFlags) withManager(ctx server.Cmd, changes *broadcaster.Broad
 	if err != nil {
 		return err
 	}
-	return flags.WithPGCredentialManager(ctx, pool, flags.Schema, func(manager credential.CredentialManager) error {
+	return credentialcmd.WithPGCredentialManager(ctx, pool, flags.Schema, passphrases, func(manager credential.CredentialManager) error {
 		return fn(manager, &follow{
 			run: func(runctx context.Context) error {
 				return listener.Run(runctx, ctx.Logger())

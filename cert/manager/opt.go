@@ -21,6 +21,7 @@ import (
 	"crypto/x509"
 	"encoding/pem"
 	"fmt"
+	"strings"
 
 	// Packages
 	schema "github.com/mutablelogic/go-auth/cert/schema"
@@ -41,6 +42,7 @@ type opt struct {
 	passphrase *authcrypto.Passphrases
 	rootkey    *rsa.PrivateKey
 	rootcert   *x509.Certificate
+	generate   string
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -115,6 +117,19 @@ func WithRoot(pemValue string) Opt {
 	}
 }
 
+// WithGeneratedRoot generates a self-signed root certificate, with the
+// common name, when no root is stored and none is imported with WithRoot, so
+// certificate authorities can be created without one. A stored root is kept.
+func WithGeneratedRoot(commonName string) Opt {
+	return func(o *opt) error {
+		if commonName = strings.TrimSpace(commonName); commonName == "" {
+			return fmt.Errorf("root certificate common name cannot be empty")
+		}
+		o.generate = commonName
+		return nil
+	}
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 // PRIVATE METHODS
 
@@ -135,6 +150,11 @@ func readRoot(data []byte) (*rsa.PrivateKey, *x509.Certificate, error) {
 	key, ok := keypair.PrivateKey.(*rsa.PrivateKey)
 	if !ok {
 		return nil, nil, fmt.Errorf("private key is not RSA")
+	}
+
+	// A root signs itself, and certificate authorities
+	if !cert.IsCA || cert.CheckSignatureFrom(cert) != nil {
+		return nil, nil, fmt.Errorf("root certificate must be a self-signed certificate authority")
 	}
 	return key, cert, nil
 }
