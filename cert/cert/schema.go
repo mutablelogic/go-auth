@@ -130,6 +130,13 @@ type RenewCertRequest struct {
 	Subject *SubjectMeta  `json:"subject,omitempty" jsonschema:"updated certificate subject details"`
 }
 
+// Features is what the server's certificate manager can do, which its web UI
+// reads from the configuration's cert section: Root is true when a root is
+// stored, without which certificate authorities can't be created
+type Features struct {
+	Root bool `json:"root"`
+}
+
 // GetCertRequest is what's returned with a certificate
 type GetCertRequest struct {
 	Chain bool `json:"chain,omitempty" help:"Include the issuer chain, up to the root"`

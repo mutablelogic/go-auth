@@ -76,6 +76,24 @@
             overflow-wrap: anywhere;
         }
 
+        /* A certificate's details, in its panel */
+        gs-panel dl.details {
+            display: grid;
+            grid-template-columns: max-content 1fr;
+            gap: 0.5rem 1rem;
+            margin: 0;
+            font-size: 0.875rem;
+        }
+
+        gs-panel dl.details dt {
+            color: var(--cds-text-secondary, #525252);
+        }
+
+        gs-panel dl.details dd {
+            margin: 0;
+            overflow-wrap: anywhere;
+        }
+
         @media (min-width: 66rem) {
             main {
                 margin-left: 16rem;

@@ -223,6 +223,17 @@ func (m *Manager) GetLatestCert(ctx context.Context, name string) (_ *cert.Certi
 	return types.Ptr(result), nil
 }
 
+// HasRoot is true when a root certificate is stored, without which
+// certificate authorities can't be created
+func (m *Manager) HasRoot(ctx context.Context) (bool, error) {
+	if _, err := m.GetLatestCert(ctx, cert.RootCertName); errors.Is(err, pg.ErrNotFound) {
+		return false, nil
+	} else if err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
 // GetPrivateKey returns the exact non-CA certificate row with its private key
 // decrypted for direct use by callers.
 func (m *Manager) GetPrivateKey(ctx context.Context, key cert.CertKey) (_ *cert.CertWithPrivateKey, err error) {

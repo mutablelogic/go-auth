@@ -1,7 +1,8 @@
 // The auth server's web UI, which is composed of modules, each of which
-// owns an item in the menu bar, and the sidebar while it's active: for now,
-// Credentials. Another app includes a module the same way, from
-// @mutablelogic/go-auth/credential/view.
+// owns an item in the menu bar, and the sidebar while it's active:
+// Credentials, and Certificates, when the server has them, which its
+// configuration's cert section says. Another app includes a module the same
+// way, from @mutablelogic/go-auth/credential/view or cert/view.
 
 import '@carbon/styles/css/styles.min.css';
 import './fonts.css';
@@ -17,6 +18,8 @@ import '@mutablelogic/go-server/notification/view';
 import { Router } from '@mutablelogic/go-server/router';
 
 // go-auth's modules
+import type { CertFeatures } from '../src/cert/schema.ts';
+import { certModule } from '../src/cert/view.ts';
 import type { CredentialFeatures } from '../src/credential/schema.ts';
 import { credentialModule } from '../src/credential/view.ts';
 
@@ -56,6 +59,10 @@ const root = document.querySelector('main')!;
 // The modules, which only offer what the server's modules can do
 const app = { nav, router, client, root, notifications, changes };
 credentialModule({ ...app, features: configSection<CredentialFeatures>(read, 'credential') });
+const certs = configSection<CertFeatures>(read, 'cert');
+if (certs) {
+    certModule({ ...app, features: certs });
+}
 
 // Show the page of the location's hash, and follow the server
 router.onRoute((route) => {

@@ -19,6 +19,7 @@ package main
 import (
 	// Packages
 	auth "github.com/mutablelogic/go-auth"
+	cert "github.com/mutablelogic/go-auth/cert/cert"
 	certcmd "github.com/mutablelogic/go-auth/cert/cmd"
 	certhandler "github.com/mutablelogic/go-auth/cert/httphandler"
 	manager "github.com/mutablelogic/go-auth/cert/manager"
@@ -42,7 +43,7 @@ type CertFlags struct {
 // withHandlers creates the certificate manager, in the pool, with the
 // passphrases, whose triggers notify the server's channel of its changes,
 // and calls fn with the registration of its handlers
-func (flags CertFlags) withHandlers(ctx server.Cmd, pool pg.PoolConn, follow *follow, passphrases []string, fn func(registerFunc) error) error {
+func (flags CertFlags) withHandlers(ctx server.Cmd, pool pg.PoolConn, follow *follow, passphrases []string, fn func(*module) error) error {
 	if pool == nil || follow == nil {
 		return auth.ErrBadParameter.With("certificates need a PostgreSQL connection: set --pg.url")
 	}
@@ -59,6 +60,16 @@ func (flags CertFlags) withHandlers(ctx server.Cmd, pool pg.PoolConn, follow *fo
 			ctx.Logger().InfoContext(ctx.Context(), "Certificates", "root", "generated")
 		}
 		ctx.Logger().WarnContext(ctx.Context(), "The certificate API has no authentication, as --cert.insecure is set")
-		return fn(certhandler.RegisterHandlers(mgr, false))
+		// The web UI includes certificates when the configuration has
+		// their section, which says whether there's a root
+		root, err := mgr.HasRoot(ctx.Context())
+		if err != nil {
+			return err
+		}
+		return fn(&module{
+			register: certhandler.RegisterHandlers(mgr, false),
+			section:  "cert",
+			features: cert.Features{Root: root},
+		})
 	}, manager.WithChannel(follow.channel))
 }
