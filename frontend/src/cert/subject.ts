@@ -7,10 +7,9 @@
 import { LitElement, html, nothing, type PropertyValues, type TemplateResult } from 'lit';
 import type { Client } from '@mutablelogic/go-server/api';
 import type { ChangesController } from '@mutablelogic/go-server/broadcaster';
-import type { Column } from '@mutablelogic/go-server/list/view';
+import type { Column, TableActionError, TableToolbarAction } from '@mutablelogic/go-server/list/view';
 import type { NotificationController } from '@mutablelogic/go-server/notification';
 import { PanelController, type PanelAction } from '@mutablelogic/go-server/panel';
-import type { PageAction } from '@mutablelogic/go-server/page';
 import { SubjectController } from './controller.ts';
 import { SubjectFields, subjectCreateRequest, subjectUpdateRequest } from './form.ts';
 import { formatTime, subjectView } from './parts.ts';
@@ -130,12 +129,14 @@ export class SubjectsElement extends LitElement {
         if (!this.controller) {
             return nothing;
         }
-        const actions: PageAction[] = [{ label: 'Create a subject', icon: AddIcon, run: () => this.edit() }];
+        // Create is the table's, in its toolbar
+        const tools: TableToolbarAction[] = [{ label: 'Create a subject', icon: AddIcon, run: () => this.edit() }];
         return html`
             <gs-page-header heading=${this.heading}
                 subtitle="Which certificates are created with, other than their names, and share"
-                .icon=${UserProfileIcon} .actions=${actions}></gs-page-header>
-            <gs-table .controller=${this.controller.list} .columns=${subjectColumns}
+                .icon=${UserProfileIcon}></gs-page-header>
+            <gs-table .controller=${this.controller.list} .columns=${subjectColumns} .toolbarActions=${tools}
+                @gs-table-action-error=${(event: CustomEvent<TableActionError<Subject>>) => this.notifications?.error(`${event.detail.action.label} didn't work`, event.detail.error)}
                 empty="No subjects are stored"></gs-table>
             <gs-panel .controller=${this.panel}>${this.body?.content ?? nothing}</gs-panel>
         `;

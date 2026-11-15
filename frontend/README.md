@@ -26,8 +26,11 @@ credentialModule({ nav, router, client, root: document.querySelector('main')!, n
 - **The page:** `ga-credentials` has its own header, which stores a credential, and, for AWS and Bitwarden, refreshes the list, since their changes made elsewhere aren't published. It has a table of the credentials, and a panel. The panel gets a credential's value with its passphrase, replaces it, rotates it, and deletes it.
 - **Values:** only shown with the passphrase they were encrypted with, so only for the file and pg backends.
 - **Parts:** an app with its own table and panel can use `CredentialController`, `credentialColumns` and the form views instead.
-- **Certificates:** `certModule` adds a Certificates section the same way, with three pages, Leaf Certificates, Certificate Authorities and Subjects. A CA's panel creates a certificate it signs, on the Leaf Certificates page. Its panel downloads a certificate, with its chain, and a leaf certificate's private key, as PEM. It also renews a certificate, enables or disables it, and changes its tags. The header creates certificate authorities and certificates.
-- **Subjects:** the Subjects page lists the subjects, with how many certificates use each, and creates them. It edits or deletes one which no certificate uses.
+- **Certificates:** `certModule` adds a Certificates section the same way, with three pages, Leaf Certificates, Certificate Authorities and Subjects. A CA's panel creates a certificate it signs, on the Leaf Certificates page. Its panel downloads a certificate, with its chain, and a leaf certificate's private key, as PEM. It also renews a certificate, enables or disables it, and changes its tags.
+- **Versions:** the certificate pages list each certificate's latest version, which alone is renewed, or signs certificates. A row expands to its older versions, which open in the panel, where they can be enabled or disabled, retagged, and downloaded.
+- **Toolbar:** each certificate table has a search, of the certificates' names, and a settings menu, whose Show disabled lists disabled certificates, and their disabled older versions, which are hidden otherwise.
+- **Create:** each table's toolbar ends with its Create button: a certificate, a certificate authority, or a subject. Create a certificate authority is disabled without a root.
+- **Subjects:** the Subjects page lists the subjects, with how many certificates use each. It edits or deletes one which no certificate uses.
 - **Configuration:** the auth server's app includes Certificates only when `/config.json` has a `cert` section, which a server built with certificates registers. Its `root` says whether a root is stored, without which certificate authorities can't be created.
 
 ## Layout

@@ -19,13 +19,13 @@
 
 import { LitElement, html, nothing, type PropertyValues, type TemplateResult } from 'lit';
 import { live } from 'lit/directives/live.js';
+import { until } from 'lit/directives/until.js';
 import type { Client } from '@mutablelogic/go-server/api';
 import type { ChangesController } from '@mutablelogic/go-server/broadcaster';
-import type { Column } from '@mutablelogic/go-server/list/view';
+import type { Column, TableActionError, TableSearch, TableSetting, TableSettingChange, TableToolbarAction } from '@mutablelogic/go-server/list/view';
 import type { NavController } from '@mutablelogic/go-server/nav';
 import type { NotificationController } from '@mutablelogic/go-server/notification';
 import { PanelController, type PanelAction } from '@mutablelogic/go-server/panel';
-import type { PageAction } from '@mutablelogic/go-server/page';
 import type { Router } from '@mutablelogic/go-server/router';
 import { CertController } from './controller.ts';
 import {
@@ -188,7 +188,9 @@ export const CertificatesTag = 'ga-certificates';
 // Body is what the panel shows, and its kind, which says whether a form is
 // open, so the panel isn't closed when the list's item is
 interface Body {
-    kind: 'certificate' | 'form';
+    // version is an older version, which isn't the list's, so the list
+    // doesn't replace it, or close the panel
+    kind: 'certificate' | 'version' | 'form';
     content: TemplateResult;
     // key is the certificate's name and serial, when it's one's, so the
     // panel isn't shown again when the list is loaded again, with the same
@@ -243,6 +245,14 @@ export class CertificatesElement extends LitElement {
     private readonly panel = new PanelController<Body>();
     private unsubscribe?: () => void;
 
+    // versions are the certificates' older versions, by their names, which
+    // are loaded when their rows are expanded, until the list is loaded
+    // again, and older are those versions' keys, which open as older
+    // versions
+    private readonly versions = new Map<string, Promise<Certificate[]>>();
+    private readonly older = new Set<string>();
+    private items?: readonly Certificate[];
+
     constructor() {
         super();
         this.kind = 'certificate';
@@ -281,17 +291,37 @@ export class CertificatesElement extends LitElement {
         }
         const root = this.features?.root ?? true;
         const authorities = this.kind === 'ca';
-        const actions: PageAction[] = authorities
-            ? [{ label: 'Create a certificate authority', icon: AddIcon, disabled: !root, run: () => this.create(true) }]
-            : [{ label: 'Create a certificate', icon: AddIcon, run: () => this.create(false) }];
+        const show = this.controller.showDisabled;
+        const searching = !!this.controller.search;
+        // Create is the table's, in its toolbar, after its search and settings
+        const tools: TableToolbarAction[] = [
+            authorities
+                ? { label: 'Create a certificate authority', icon: AddIcon, disabled: !root, run: () => this.create(true) }
+                : { label: 'Create a certificate', icon: AddIcon, run: () => this.create(false) },
+        ];
+        const settings: TableSetting[] = [{ key: 'disabled', label: 'Show disabled', checked: show }];
+        const empty = searching
+            ? (authorities ? 'No certificate authorities match' : 'No leaf certificates match')
+            : authorities
+                ? (show ? 'No certificate authorities are stored' : 'No enabled certificate authorities')
+                : (show ? 'No leaf certificates are stored' : 'No enabled leaf certificates');
         const subtitle = authorities
             ? (root ? 'Which the root signs, and which sign leaf certificates' : 'No root certificate is stored, so certificate authorities can\'t be created')
             : 'Such as a server\'s, which a certificate authority signs';
         return html`
             <gs-page-header heading=${this.heading ?? (authorities ? 'Certificate Authorities' : 'Leaf Certificates')}
-                subtitle=${subtitle} .icon=${authorities ? CertificateCheckIcon : CertificateIcon} .actions=${actions}></gs-page-header>
+                subtitle=${subtitle} .icon=${authorities ? CertificateCheckIcon : CertificateIcon}></gs-page-header>
             <gs-table .controller=${this.controller.list} .columns=${authorities ? authorityColumns : certificateColumns}
-                empty=${authorities ? 'No certificate authorities are stored' : 'No leaf certificates are stored'}></gs-table>
+                .expand=${(cert: Certificate) => this.versionsView(cert)} .itemKey=${(cert: Certificate) => cert.name}
+                .search=${authorities ? 'Search certificate authorities' : 'Search leaf certificates'} .settings=${settings} .toolbarActions=${tools}
+                @gs-table-search=${(event: CustomEvent<TableSearch>) => { void this.controller?.setSearch(event.detail.value).then(() => this.requestUpdate()); }}
+                @gs-table-action-error=${(event: CustomEvent<TableActionError<Certificate>>) => this.notifications?.error(`${event.detail.action.label} didn't work`, event.detail.error)}
+                @gs-table-setting=${(event: CustomEvent<TableSettingChange>) => {
+                    if (event.detail.key === 'disabled') {
+                        void this.toggleDisabled();
+                    }
+                }}
+                empty=${empty}></gs-table>
             <gs-panel .controller=${this.panel}>${this.body?.content ?? nothing}</gs-panel>
         `;
     }
@@ -300,7 +330,13 @@ export class CertificatesElement extends LitElement {
     // and closes the panel when it's closed, unless a form is open
     private watch() {
         this.unsubscribe?.();
-        this.unsubscribe = this.isConnected ? this.controller?.list.subscribe(({ selected }) => {
+        this.unsubscribe = this.isConnected ? this.controller?.list.subscribe(({ items, selected }) => {
+            // The older versions are loaded again, when they're shown, once
+            // the list is, as a certificate may have changed, or been renewed
+            if (items !== this.items) {
+                this.items = items;
+                this.versions.clear();
+            }
             if (selected) {
                 if (!this.panel.isOpen || this.body?.key !== keyOf(selected) || this.body.kind === 'certificate') {
                     this.show(selected);
@@ -319,15 +355,17 @@ export class CertificatesElement extends LitElement {
         this.panel.open(body);
     }
 
-    // show shows a certificate, and what can be done with it
+    // show shows a certificate, and what can be done with it. An older
+    // version isn't renewed, and doesn't sign certificates.
     private show(cert: Certificate) {
         const ca = certType(cert) === 'ca';
         const enabled = cert.enabled ?? true;
+        const older = this.older.has(keyOf(cert));
         const actions: PanelAction[] = [
             { label: enabled ? 'Disable' : 'Enable', kind: enabled ? 'danger' : 'secondary', close: false, run: () => this.enable(cert, !enabled) },
-            { label: 'Tags', kind: 'secondary', close: false, run: () => this.tags(cert) },
+            { label: 'Tags', kind: older ? 'primary' : 'secondary', close: false, run: () => this.tags(cert) },
         ];
-        if (enabled) {
+        if (enabled && !older) {
             actions.push({ label: 'Renew', kind: ca ? 'secondary' : 'primary', close: false, run: () => this.renew(cert) });
             if (ca) {
                 actions.push({ label: 'Create a certificate', kind: 'primary', close: !!this.createCertificate, run: () => this.createCertificate ? this.createCertificate(cert.name) : this.create(false, cert.name) });
@@ -341,11 +379,63 @@ export class CertificatesElement extends LitElement {
                 ${ca ? nothing : html`<cds-button kind="tertiary" size="sm" @click=${() => this.downloadKey(cert)}>Download private key${DownloadButton}</cds-button>`}
             </div>
         ` : nothing;
-        this.open(cert.name, ca ? 'Certificate authority' : 'Certificate', {
-            kind: 'certificate',
+        const note = older
+            ? html`<p class="helper" style="margin-top: 1rem">An older version, which isn't renewed${ca ? ", and doesn't sign certificates" : ''}. Its latest version is in the list.</p>`
+            : nothing;
+        this.open(cert.name, older ? `${ca ? 'Certificate authority' : 'Certificate'}, an older version` : ca ? 'Certificate authority' : 'Certificate', {
+            kind: older ? 'version' : 'certificate',
             key: keyOf(cert),
-            content: html`${certDetailsView(cert)}${downloads}`,
+            content: html`${certDetailsView(cert)}${note}${downloads}`,
         }, actions);
+    }
+
+    // versionsView shows a certificate's older versions, beneath its row,
+    // which are loaded once, until the list is loaded again, and opened in
+    // the panel
+    private versionsView(cert: Certificate): unknown {
+        let versions = this.versions.get(cert.name);
+        if (!versions) {
+            versions = this.controller!.versions(cert.name).then((found) => {
+                for (const version of found) {
+                    this.older.add(keyOf(version));
+                }
+                return found;
+            });
+            this.versions.set(cert.name, versions);
+        }
+        return until(versions.then((found) => found.length ? html`
+            <ul class="versions" style="list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.5rem">
+                ${found.map((version) => html`
+                    <li style="display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap">
+                        <cds-button kind="ghost" size="sm" @click=${() => this.openVersion(version)}>Serial ${version.serial}</cds-button>
+                        <span>Expires ${formatTime(version.not_after)}</span>
+                        ${stateTags(version)}
+                    </li>
+                `)}
+            </ul>
+        ` : html`<p class="helper" style="margin: 0">No older versions</p>`, (error: unknown) => {
+            this.notifications?.error(`${cert.name}'s older versions couldn't be loaded`, error);
+            return nothing;
+        }), html`<p class="helper" style="margin: 0">Loading older versions…</p>`);
+    }
+
+    // toggleDisabled shows disabled certificates, and their older versions,
+    // which are disabled when a leaf certificate is renewed, or hides them
+    private async toggleDisabled() {
+        if (!this.controller) {
+            return;
+        }
+        this.versions.clear();
+        await this.controller.setShowDisabled(!this.controller.showDisabled);
+        this.requestUpdate();
+    }
+
+    // openVersion opens an older version in the panel, rather than the list's
+    // item, which is closed, so the list doesn't replace it
+    private openVersion(version: Certificate) {
+        this.older.add(keyOf(version));
+        this.controller?.list.close();
+        this.show(version);
     }
 
     // createLeaf shows the form which creates a leaf certificate, signed by

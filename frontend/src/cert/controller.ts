@@ -26,16 +26,28 @@ export class CertController {
     readonly client: Client;
     readonly list: ListController<Certificate>;
 
+    // disabled lists disabled certificates too, rather than only the enabled
+    // ones, and query is the text of the names which are listed
+    private disabled = false;
+    private query = '';
+
     constructor(client: Client, options: CertOptions = {}) {
         this.client = client;
         this.list = new ListController<Certificate>({
             name: 'Certificates',
             list: async (offset, limit) => {
-                const page = await api.listCerts(client, { offset, limit, is_ca: options.ca });
+                // Only each certificate's latest version, which is renewed,
+                // and signs certificates, and whose older versions are listed
+                // with versions
+                const page = await api.listCerts(client, { offset, limit, is_ca: options.ca, latest: true, enabled: this.disabled ? undefined : true, search: this.query || undefined });
                 return { count: page.count, body: page.body ?? [] };
             },
-            get: (cert) => api.getCert(client, cert).catch(() => cert),
-            same: (a, b) => a.name === b.name && a.serial === b.serial,
+            // The list has each certificate's latest version, so an item is
+            // its name, and the open one follows its latest version, when
+            // it's renewed, such as by another browser, rather than staying
+            // as a version which is no longer renewed
+            get: (cert) => api.getCert(client, { name: cert.name }).catch(() => cert),
+            same: (a, b) => a.name === b.name,
             notifications: options.notifications,
             changes: options.changes,
             filter: options.changes ? { table: 'cert' } : undefined,
@@ -44,21 +56,54 @@ export class CertController {
     }
 
     // authorities returns the names of the certificate authorities whose
-    // latest version is enabled, as their latest version signs. A renewed CA's
-    // older version stays enabled, so whether a name is enabled is its latest
-    // version's, which the list has first of its versions.
+    // latest version is enabled, which signs certificates
     async authorities(): Promise<string[]> {
-        const latest = new Map<string, boolean>();
+        const names: string[] = [];
         for (let offset = 0; ; ) {
-            const page = await api.listCerts(this.client, { offset, limit: 100, is_ca: true });
-            for (const cert of page.body ?? []) {
-                if (!latest.has(cert.name)) {
-                    latest.set(cert.name, cert.enabled ?? true);
-                }
-            }
+            const page = await api.listCerts(this.client, { offset, limit: 100, is_ca: true, latest: true });
+            names.push(...(page.body ?? []).filter((cert) => cert.enabled ?? true).map((cert) => cert.name));
             offset += page.body?.length ?? 0;
             if (!page.body?.length || offset >= page.count) {
-                return [...latest].filter(([, enabled]) => enabled).map(([name]) => name);
+                return names;
+            }
+        }
+    }
+
+    // showDisabled is true when disabled certificates are listed too
+    get showDisabled(): boolean {
+        return this.disabled;
+    }
+
+    // setShowDisabled lists disabled certificates too, or only the enabled
+    // ones, from the first page
+    setShowDisabled(show: boolean): Promise<void> {
+        this.disabled = show;
+        return this.list.reset();
+    }
+
+    // search is the text of the names which are listed
+    get search(): string {
+        return this.query;
+    }
+
+    // setSearch lists the certificates whose names have the text, or all of
+    // them, when it's empty, from the first page
+    setSearch(text: string): Promise<void> {
+        this.query = text.trim();
+        return this.list.reset();
+    }
+
+    // versions returns the older versions of a certificate, the latest first,
+    // which aren't renewed, and don't sign certificates, which are only the
+    // enabled ones, unless disabled certificates are listed
+    async versions(name: string): Promise<Certificate[]> {
+        const versions: Certificate[] = [];
+        for (let offset = 0; ; ) {
+            const page = await api.listCerts(this.client, { offset, limit: 100, name, latest: false, enabled: this.disabled ? undefined : true });
+            versions.push(...(page.body ?? []));
+            offset += page.body?.length ?? 0;
+            if (!page.body?.length || offset >= page.count) {
+                return versions;
             }
         }
     }

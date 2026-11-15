@@ -86,6 +86,12 @@ export interface CertListRequest {
     enabled?: boolean;
     valid?: boolean;
     tags?: string[];
+    // latest is each certificate's latest version, when it's true, or its
+    // older versions, when it's false, and name is a certificate's versions
+    latest?: boolean;
+    name?: string;
+    // search is the certificates whose names have its text, in any case
+    search?: string;
 }
 
 // CreateCertRequest creates a certificate authority, or a certificate.
