@@ -241,39 +241,56 @@ func Test_Describe(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, mgr.Set(ctx, "token", json.RawMessage(`"secret"`)))
 
-	// The description is in a file beside the credential, which isn't a key
+	// The description is in the credential's own file, not encrypted, and
+	// there's no other file
 	require.NoError(t, mgr.Describe(ctx, "token", "  The API token  "))
-	data, err := os.ReadFile(filepath.Join(path, "token.description"))
+	data, err := os.ReadFile(filepath.Join(path, "token"))
 	require.NoError(t, err)
-	assert.Equal(t, "The API token", string(data))
-	info, err := os.Stat(filepath.Join(path, "token.description"))
+	assert.Equal(t, uint64(1), binary.BigEndian.Uint64(data[:8]))
+	assert.Contains(t, string(data), "The API token")
+	assert.NotContains(t, string(data), "secret")
+	entries, err := os.ReadDir(path)
 	require.NoError(t, err)
-	assert.Equal(t, os.FileMode(0o600), info.Mode().Perm())
+	assert.Len(t, entries, 1)
 	list, err := mgr.List(ctx)
 	require.NoError(t, err)
 	require.Len(t, list, 1)
-	assert.Equal(t, "token", list[0].Key)
 	assert.Equal(t, "The API token", list[0].Description)
 
-	// Replacing the value keeps it
+	// The value is the same, and it's kept when the value is replaced
+	got, err := mgr.Get(ctx, "token")
+	require.NoError(t, err)
+	assert.Equal(t, json.RawMessage(`"secret"`), got)
 	require.NoError(t, mgr.Set(ctx, "token", json.RawMessage(`"new"`)))
 	list, err = mgr.List(ctx)
 	require.NoError(t, err)
 	assert.Equal(t, "The API token", list[0].Description)
 
-	// An empty description removes it
-	require.NoError(t, mgr.Describe(ctx, "token", ""))
-	_, err = os.Stat(filepath.Join(path, "token.description"))
-	assert.ErrorIs(t, err, os.ErrNotExist)
+	// A description needs no passphrase, as the value isn't decrypted
+	none, err := file.New(path)
+	require.NoError(t, err)
+	require.NoError(t, none.Describe(ctx, "token", "Without a passphrase"))
+	got, err = mgr.Get(ctx, "token")
+	require.NoError(t, err)
+	assert.Equal(t, json.RawMessage(`"new"`), got)
 
-	// Deleting the credential deletes its description
-	require.NoError(t, mgr.Describe(ctx, "token", "again"))
-	require.NoError(t, mgr.Delete(ctx, "token"))
-	_, err = os.Stat(filepath.Join(path, "token.description"))
-	assert.ErrorIs(t, err, os.ErrNotExist)
+	// Rotating keeps it
+	v2, err := file.New(path, file.WithPassphrase(1, passphrase), file.WithPassphrase(2, "second passphrase"))
+	require.NoError(t, err)
+	require.NoError(t, v2.Rotate(ctx, "token"))
+	list, err = v2.List(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, "Without a passphrase", list[0].Description)
+
+	// An empty description removes it
+	require.NoError(t, v2.Describe(ctx, "token", ""))
+	list, err = v2.List(ctx)
+	require.NoError(t, err)
+	assert.Empty(t, list[0].Description)
 
 	assert.ErrorIs(t, mgr.Describe(ctx, "missing", "x"), auth.ErrNotFound)
 	assert.ErrorIs(t, mgr.Describe(ctx, "../x", "x"), auth.ErrBadParameter)
+	assert.ErrorIs(t, mgr.Describe(ctx, "token", strings.Repeat("x", 4097)), auth.ErrBadParameter)
 }
 
 func Test_Passphrases(t *testing.T) {

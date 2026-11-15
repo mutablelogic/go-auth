@@ -17,10 +17,8 @@ package file
 import (
 	"context"
 	"crypto/subtle"
-	"encoding/binary"
 	"encoding/json"
 	"errors"
-	"io"
 	"io/fs"
 	"maps"
 	"os"
@@ -28,6 +26,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"unicode/utf8"
 
 	// Packages
 	auth "github.com/mutablelogic/go-auth"
@@ -43,10 +42,9 @@ import (
 // TYPES
 
 // Manager stores credentials in files in a directory, one for each key,
-// encrypted with a passphrase. Each file is the passphrase version, as eight
-// big-endian bytes, followed by the encrypted credential. A credential's
-// description is in a file beside it, whose name is the key, with
-// .description.
+// encrypted with a passphrase. Each file is a record: the passphrase
+// version, the credential's description, which isn't encrypted, and the
+// encrypted credential.
 type Manager struct {
 	opt
 	sync.Mutex
@@ -66,13 +64,6 @@ const (
 	// credential file, so that only their owner can read them
 	dirPerm  = 0o700
 	filePerm = 0o600
-
-	// versionSize is the size of the passphrase version at the start of a file
-	versionSize = 8
-
-	// descriptionSuffix is added to a key, for the file of its description,
-	// which isn't a key, as a key has no "."
-	descriptionSuffix = ".description"
 )
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -196,8 +187,9 @@ func (self *Manager) Get(ctx context.Context, key string) (_ json.RawMessage, er
 }
 
 // Set encrypts the credential with the latest passphrase, and writes it to
-// the key's file, replacing any credential with the key. Returns an error if
-// the key isn't valid, the value isn't JSON, or there is no passphrase.
+// the key's file, keeping its description, replacing any credential with
+// the key. Returns an error if the key isn't valid, the value isn't JSON, or
+// there is no passphrase.
 func (self *Manager) Set(ctx context.Context, key string, value json.RawMessage) (err error) {
 	_, endSpan := otel.StartSpan(self.tracer, ctx, "credential.file.Set",
 		attribute.String("key", key),
@@ -219,14 +211,18 @@ func (self *Manager) Set(ctx context.Context, key string, value json.RawMessage)
 	if err != nil {
 		return auth.ErrInternalServerError.Withf("credential %q: %w", key, err)
 	}
-	data := binary.BigEndian.AppendUint64(make([]byte, 0, versionSize+len(encrypted)), version)
-	data = append(data, encrypted...)
 
-	// Write to a temporary file, which is only readable by its owner, and
-	// rename it, so the file is replaced whole
+	// Keep the description of the credential it replaces, unless its file
+	// isn't valid, which is replaced
 	self.Lock()
 	defer self.Unlock()
-	return self.write(key, data)
+	description := ""
+	if existing, err := self.readRecord(key); err == nil {
+		description = existing.description
+	} else if !errors.Is(err, auth.ErrNotFound) && !errors.Is(err, errInvalid) {
+		return err
+	}
+	return self.write(key, record{version: version, description: description, encrypted: encrypted}.encode())
 }
 
 // List returns the stored credentials, in key order, with their
@@ -251,8 +247,14 @@ func (self *Manager) List(ctx context.Context) (_ []credential.Credential, err e
 		} else if err != nil {
 			return nil, auth.ErrInternalServerError.Withf("credential %q: %w", entry.Name(), err)
 		}
-		description, err := self.description(entry.Name())
-		if err != nil {
+		// The description is in the file, which is listed without it when
+		// it isn't valid
+		description := ""
+		if r, err := self.readRecord(entry.Name()); err == nil {
+			description = r.description
+		} else if errors.Is(err, auth.ErrNotFound) {
+			continue
+		} else if !errors.Is(err, errInvalid) {
 			return nil, err
 		}
 		result = append(result, credential.Credential{Key: entry.Name(), Description: description, UpdatedAt: info.ModTime().UTC()})
@@ -277,15 +279,14 @@ func (self *Manager) Delete(ctx context.Context, key string) (err error) {
 		return auth.ErrNotFound.Withf("credential %q not found", key)
 	} else if err != nil {
 		return auth.ErrInternalServerError.Withf("credential %q: %w", key, err)
-	} else if err := os.Remove(filepath.Join(self.path, key+descriptionSuffix)); err != nil && !errors.Is(err, fs.ErrNotExist) {
-		return auth.ErrInternalServerError.Withf("credential %q: %w", key, err)
 	}
 	return nil
 }
 
-// Describe sets the description of the key's credential, in a file beside
-// it, which isn't encrypted, as a description isn't secret, or removes it,
-// when it's empty, and returns ErrNotFound when there's no credential
+// Describe sets the description of the key's credential, in its file,
+// which isn't encrypted, as a description isn't secret, so it needs no
+// passphrase, or removes it, when it's empty, and returns ErrNotFound when
+// there's no credential
 func (self *Manager) Describe(ctx context.Context, key, description string) (err error) {
 	_, endSpan := otel.StartSpan(self.tracer, ctx, "credential.file.Describe",
 		attribute.String("key", key),
@@ -295,20 +296,22 @@ func (self *Manager) Describe(ctx context.Context, key, description string) (err
 	if err := validateKey(key); err != nil {
 		return err
 	}
+	description = strings.TrimSpace(description)
+	if len(description) > maxDescription {
+		return auth.ErrBadParameter.Withf("credential %q: its description is more than %d bytes", key, maxDescription)
+	} else if !utf8.ValidString(description) {
+		return auth.ErrBadParameter.Withf("credential %q: its description isn't UTF-8", key)
+	}
+
+	// The encrypted value is written again, as it is
 	self.Lock()
 	defer self.Unlock()
-	if _, err := os.Stat(filepath.Join(self.path, key)); errors.Is(err, fs.ErrNotExist) {
-		return auth.ErrNotFound.Withf("credential %q not found", key)
-	} else if err != nil {
-		return auth.ErrInternalServerError.Withf("credential %q: %w", key, err)
+	r, err := self.readRecord(key)
+	if err != nil {
+		return err
 	}
-	if description = strings.TrimSpace(description); description == "" {
-		if err := os.Remove(filepath.Join(self.path, key+descriptionSuffix)); err != nil && !errors.Is(err, fs.ErrNotExist) {
-			return auth.ErrInternalServerError.Withf("credential %q: %w", key, err)
-		}
-		return nil
-	}
-	return self.writeFile(key, key+descriptionSuffix, []byte(description))
+	r.description = description
+	return self.write(key, r.encode())
 }
 
 // Decrypt returns the credential for the key, as JSON, when the passphrase
@@ -323,23 +326,23 @@ func (self *Manager) Decrypt(ctx context.Context, key, passphrase string) (_ jso
 	if err := validateKey(key); err != nil {
 		return nil, err
 	}
-	version, err := self.version(key)
+	r, err := self.readRecord(key)
 	if err != nil {
 		return nil, err
 	}
 
 	// The passphrase must be the one for the file's version, which must be
 	// registered. An empty passphrase never matches.
-	stored, resolved := self.passphrases.Get(version)
-	if version == 0 || resolved != version || passphrase == "" || subtle.ConstantTimeCompare([]byte(stored), []byte(passphrase)) != 1 {
+	stored, resolved := self.passphrases.Get(r.version)
+	if r.version == 0 || resolved != r.version || passphrase == "" || subtle.ConstantTimeCompare([]byte(stored), []byte(passphrase)) != 1 {
 		return nil, auth.ErrForbidden.With("invalid passphrase")
 	}
-	return self.read(key)
+	return self.decrypt(key, r)
 }
 
-// Rotate re-encrypts the file for the key with the latest passphrase, and
-// returns ErrNotModified when it already uses it, or ErrNotFound when there
-// isn't one
+// Rotate re-encrypts the file for the key with the latest passphrase,
+// keeping its description, and returns ErrNotModified when it already uses
+// it, or ErrNotFound when there isn't one
 func (self *Manager) Rotate(ctx context.Context, key string) (err error) {
 	_, endSpan := otel.StartSpan(self.tracer, ctx, "credential.file.Rotate",
 		attribute.String("key", key),
@@ -357,12 +360,13 @@ func (self *Manager) Rotate(ctx context.Context, key string) (err error) {
 	// Hold the lock while reading, so a Set in the meantime isn't replaced
 	self.Lock()
 	defer self.Unlock()
-	if version, err := self.version(key); err != nil {
+	r, err := self.readRecord(key)
+	if err != nil {
 		return err
-	} else if version == latest {
+	} else if r.version == latest {
 		return auth.ErrNotModified.Withf("credential %q already uses the latest passphrase version", key)
 	}
-	data, err := self.read(key)
+	data, err := self.decrypt(key, r)
 	if err != nil {
 		return err
 	}
@@ -370,7 +374,7 @@ func (self *Manager) Rotate(ctx context.Context, key string) (err error) {
 	if err != nil {
 		return auth.ErrInternalServerError.Withf("credential %q: %w", key, err)
 	}
-	return self.write(key, append(binary.BigEndian.AppendUint64(nil, latest), encrypted...))
+	return self.write(key, record{version: latest, description: r.description, encrypted: encrypted}.encode())
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -400,34 +404,6 @@ func pathErr(path string, err error) error {
 	return auth.ErrInternalServerError.Withf("credential path %q: %w", path, err)
 }
 
-// description returns the description of the key's credential, or nothing,
-// when it has none
-func (self *Manager) description(key string) (string, error) {
-	data, err := os.ReadFile(filepath.Join(self.path, key+descriptionSuffix))
-	if errors.Is(err, fs.ErrNotExist) {
-		return "", nil
-	} else if err != nil {
-		return "", auth.ErrInternalServerError.Withf("credential %q: %w", key, err)
-	}
-	return string(data), nil
-}
-
-// version returns the passphrase version of the key's file
-func (self *Manager) version(key string) (uint64, error) {
-	f, err := os.Open(filepath.Join(self.path, key))
-	if errors.Is(err, fs.ErrNotExist) {
-		return 0, auth.ErrNotFound.Withf("credential %q not found", key)
-	} else if err != nil {
-		return 0, auth.ErrInternalServerError.Withf("credential %q: %w", key, err)
-	}
-	defer f.Close()
-	var header [versionSize]byte
-	if _, err := io.ReadFull(f, header[:]); err != nil {
-		return 0, auth.ErrInternalServerError.Withf("credential %q is invalid", key)
-	}
-	return binary.BigEndian.Uint64(header[:]), nil
-}
-
 // lookup returns the credential for the placeholder name, which must be a
 // string. An environment variable is used as it is, as it's a string even
 // when it looks like JSON, such as a number.
@@ -451,24 +427,40 @@ func (self *Manager) lookup(ctx context.Context, name string) (string, error) {
 // read returns the decrypted credential for the key, or ErrNotFound when
 // there is no file for it
 func (self *Manager) read(key string) (json.RawMessage, error) {
+	r, err := self.readRecord(key)
+	if err != nil {
+		return nil, err
+	}
+	return self.decrypt(key, r)
+}
+
+// readRecord returns the record of the key's file, ErrNotFound when there
+// isn't one, or an error which is errInvalid, as ErrInternalServerError,
+// when it isn't a record
+func (self *Manager) readRecord(key string) (*record, error) {
 	data, err := os.ReadFile(filepath.Join(self.path, key))
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil, auth.ErrNotFound.Withf("credential %q not found", key)
 	} else if err != nil {
 		return nil, auth.ErrInternalServerError.Withf("credential %q: %w", key, err)
-	} else if len(data) <= versionSize {
-		return nil, auth.ErrInternalServerError.Withf("credential %q is invalid", key)
 	}
+	r, err := decodeRecord(data)
+	if err != nil {
+		return nil, auth.ErrInternalServerError.Withf("credential %q: %w", key, err)
+	}
+	return r, nil
+}
 
-	// Decrypt with the passphrase for the file's version
-	version := binary.BigEndian.Uint64(data[:versionSize])
-	passphrase, resolved := self.passphrases.Get(version)
+// decrypt returns the record's credential, decrypted with the passphrase
+// for its version
+func (self *Manager) decrypt(key string, r *record) (json.RawMessage, error) {
+	passphrase, resolved := self.passphrases.Get(r.version)
 	if len(self.passphrases.Keys()) == 0 {
 		return nil, errNoPassphrase(key)
-	} else if version == 0 || resolved != version {
-		return nil, auth.ErrServiceUnavailable.Withf("credential %q: no passphrase for version %d", key, version)
+	} else if r.version == 0 || resolved != r.version {
+		return nil, auth.ErrServiceUnavailable.Withf("credential %q: no passphrase for version %d", key, r.version)
 	}
-	decrypted, err := crypto.Decrypt[[]byte](passphrase, data[versionSize:])
+	decrypted, err := crypto.Decrypt[[]byte](passphrase, r.encrypted)
 	if err != nil {
 		return nil, auth.ErrInternalServerError.Withf("credential %q: %w", key, err)
 	} else if !json.Valid(decrypted) {
@@ -480,15 +472,8 @@ func (self *Manager) read(key string) (json.RawMessage, error) {
 // write replaces the key's file with the data, by writing a temporary file
 // in the directory and renaming it
 func (self *Manager) write(key string, data []byte) (err error) {
-	return self.writeFile(key, key, data)
-}
-
-// writeFile replaces the file of the name, such as the key's, or its
-// description's, with the data, by writing a temporary file in the
-// directory and renaming it
-func (self *Manager) writeFile(key, name string, data []byte) (err error) {
 	// The temporary file's name starts with ".", which isn't a valid key
-	tmp, err := os.CreateTemp(self.path, "."+name+".*")
+	tmp, err := os.CreateTemp(self.path, "."+key+".*")
 	if err != nil {
 		return auth.ErrInternalServerError.Withf("credential %q: %w", key, err)
 	}
@@ -511,7 +496,7 @@ func (self *Manager) writeFile(key, name string, data []byte) (err error) {
 		return auth.ErrInternalServerError.Withf("credential %q: %w", key, err)
 	} else if err := tmp.Close(); err != nil {
 		return auth.ErrInternalServerError.Withf("credential %q: %w", key, err)
-	} else if err := os.Rename(tmp.Name(), filepath.Join(self.path, name)); err != nil {
+	} else if err := os.Rename(tmp.Name(), filepath.Join(self.path, key)); err != nil {
 		return auth.ErrInternalServerError.Withf("credential %q: %w", key, err)
 	}
 
