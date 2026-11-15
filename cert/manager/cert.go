@@ -106,7 +106,7 @@ func (m *Manager) CreateCert(ctx context.Context, req cert.CreateCertRequest, ca
 	// inherited fields.
 	certSubject := cert.MergeSubjectMeta(cert.SubjectMetaFromPKIXName(caCert.Subject), req.Subject)
 
-	expires, err := capExpiry(req.Expiry, cert.DefaultCertExpiry, "certificate authority", caCert.NotBefore, caCert.NotAfter)
+	validFrom, expires, err := capExpiry(req.Expiry, cert.DefaultCertExpiry, "certificate authority", caCert.NotBefore, caCert.NotAfter)
 	if err != nil {
 		return nil, err
 	}
@@ -116,7 +116,7 @@ func (m *Manager) CreateCert(ctx context.Context, req cert.CreateCertRequest, ca
 		cert.WithSubject(certSubject),
 		cert.WithSAN(req.SAN...),
 		cert.WithRSAKey(0),
-		cert.WithExpiry(expires),
+		cert.WithValidity(validFrom, expires),
 		cert.WithSigner(caSigner),
 	}...)
 	if err != nil {
@@ -125,6 +125,9 @@ func (m *Manager) CreateCert(ctx context.Context, req cert.CreateCertRequest, ca
 
 	var certRow cert.Certificate
 	if err = m.Tx(ctx, func(conn pg.Conn) error {
+		if err := lockName(ctx, conn, req.Name); err != nil {
+			return err
+		}
 		var existing cert.Certificate
 		if err := conn.Get(ctx, (*schema.Certificate)(&existing), schema.CertName(req.Name)); err == nil {
 			return httpresponse.ErrConflict.Withf("certificate %q already exists", req.Name)
@@ -175,7 +178,11 @@ func (m *Manager) UpdateCert(ctx context.Context, key cert.CertKey, meta cert.Ce
 	)
 	defer func() { endSpan(err) }()
 
-	if key.Name == cert.RootCertName {
+	// The key is trimmed first, so the root can't be updated with spaces
+	// around its name
+	if key, err = key.Validate(); err != nil {
+		return nil, err
+	} else if key.Name == cert.RootCertName {
 		return nil, httpresponse.ErrBadRequest.With("root certificate cannot be updated")
 	}
 
@@ -240,22 +247,32 @@ func (m *Manager) GetCertChain(ctx context.Context, key cert.CertKey) (_ []cert.
 ///////////////////////////////////////////////////////////////////////////////
 // PRIVATE METHODS
 
-func capExpiry(expiry, defaultExpiry time.Duration, label string, notBefore, notAfter time.Time) (time.Duration, error) {
+// lockName serializes creating certificates with the name, until the
+// transaction ends, so two can't be created with the same name at once, or
+// renewed to the same serial
+func lockName(ctx context.Context, conn pg.Conn, name string) error {
+	return conn.With("name", name).Exec(ctx, schema.LockName)
+}
+
+// capExpiry is when a certificate is valid from, which is now, and until,
+// which is after the expiry, or the default expiry when it's not set, but
+// never after its signer. Both are worked out from one reading of the clock,
+// so the time it takes to create the certificate doesn't change them.
+func capExpiry(expiry, defaultExpiry time.Duration, label string, notBefore, notAfter time.Time) (time.Time, time.Time, error) {
 	now := time.Now().Truncate(time.Second)
 	if now.Before(notBefore) {
-		return 0, fmt.Errorf("%s is not valid yet", label)
+		return time.Time{}, time.Time{}, fmt.Errorf("%s is not valid yet", label)
 	}
-	remaining := notAfter.Sub(now).Truncate(time.Second)
-	if remaining <= 0 {
-		return 0, fmt.Errorf("%s has expired", label)
+	if !notAfter.After(now) {
+		return time.Time{}, time.Time{}, fmt.Errorf("%s has expired", label)
 	}
 	if expiry <= 0 {
 		expiry = defaultExpiry
 	}
-	if expiry > remaining {
-		return remaining, nil
+	if expires := now.Add(expiry); expires.Before(notAfter) {
+		return now, expires, nil
 	}
-	return expiry, nil
+	return now, notAfter, nil
 }
 
 func (selector certChainSelector) Select(bind *pg.Bind, op pg.Op) (string, error) {
@@ -334,7 +351,7 @@ func (m *Manager) renewCert(ctx context.Context, current cert.CertKey, req cert.
 	subject := cert.MergeSubjectMeta(cert.SubjectMetaFromPKIXName(parsedCurrent.Subject), req.Subject)
 
 	currentLifetime := currentRow.NotAfter.Sub(currentRow.NotBefore)
-	expires, err := capExpiry(req.Expiry, currentLifetime, signerLabel, signerCert.NotBefore, signerCert.NotAfter)
+	validFrom, expires, err := capExpiry(req.Expiry, currentLifetime, signerLabel, signerCert.NotBefore, signerCert.NotAfter)
 	if err != nil {
 		return nil, err
 	}
@@ -349,7 +366,7 @@ func (m *Manager) renewCert(ctx context.Context, current cert.CertKey, req cert.
 		cert.WithCommonName(currentRow.Name),
 		cert.WithSubject(subject),
 		cert.WithRSAKey(0),
-		cert.WithExpiry(expires),
+		cert.WithValidity(validFrom, expires),
 		cert.WithSerial(nextSerial),
 		cert.WithSigner(signer),
 	}
@@ -368,6 +385,9 @@ func (m *Manager) renewCert(ctx context.Context, current cert.CertKey, req cert.
 
 	var renewedRow cert.Certificate
 	if err = m.Tx(ctx, func(conn pg.Conn) error {
+		if err := lockName(ctx, conn, nextKey.Name); err != nil {
+			return err
+		}
 		var existing cert.Certificate
 		if err := conn.Get(ctx, (*schema.Certificate)(&existing), schema.CertKey(nextKey)); err == nil {
 			return httpresponse.ErrConflict.Withf("certificate %q already has serial %q", nextKey.Name, nextKey.Serial)
@@ -375,10 +395,15 @@ func (m *Manager) renewCert(ctx context.Context, current cert.CertKey, req cert.
 			return err
 		}
 
-		var disabled cert.Certificate
-		falseValue := false
-		if err := conn.Update(ctx, (*schema.Certificate)(&disabled), schema.CertKey(current), schema.CertMeta(cert.CertMeta{Enabled: &falseValue})); err != nil {
-			return err
+		// A renewed leaf replaces the current one, which is disabled. A renewed
+		// CA doesn't: the current one stays enabled until it's disabled or
+		// expires, so its leaves can still be used, and renewed with the new one
+		if !expectCA {
+			var disabled cert.Certificate
+			falseValue := false
+			if err := conn.Update(ctx, (*schema.Certificate)(&disabled), schema.CertKey(current), schema.CertMeta(cert.CertMeta{Enabled: &falseValue})); err != nil {
+				return err
+			}
 		}
 
 		var subjectRow cert.Subject
@@ -422,10 +447,13 @@ func (m *Manager) renewalSigner(ctx context.Context, current cert.Certificate, e
 		return signerKey, rootSigner, rootCert, "root certificate", nil
 	}
 
+	// The latest version of the signer signs the renewal, so a leaf renews
+	// with its CA's replacement when the CA has been renewed
 	var signerRow cert.Certificate
-	if err := m.Get(ctx, (*schema.Certificate)(&signerRow), schema.CertKey(signerKey)); err != nil {
+	if err := m.Get(ctx, (*schema.Certificate)(&signerRow), schema.CertName(signerKey.Name)); err != nil {
 		return cert.CertKey{}, nil, nil, "", err
 	}
+	signerKey = signerRow.CertKey
 	if !signerRow.IsCA {
 		return cert.CertKey{}, nil, nil, "", httpresponse.ErrBadRequest.With("signer is not a certificate authority")
 	}

@@ -64,34 +64,23 @@ WITH issuer_row AS (
 	SELECT id
 	FROM ${"schema"}.cert
 	WHERE name = @issuer_name AND serial = @issuer_serial
-), upserted AS (
-	INSERT INTO ${"schema"}.cert AS existing (
+), inserted AS (
+	-- A certificate is never replaced: its name and serial are unique, so a
+	-- second insert is a conflict, and a new row can only refer to rows
+	-- which already exist, so issuers can't form a cycle
+	INSERT INTO ${"schema"}.cert (
 		name, serial, subject, issuer, cert, key, not_before, not_after, is_ca, enabled, tags, pv
 	) VALUES (
 		@name, @serial, @subject, (SELECT id FROM issuer_row), @cert, @key, @not_before, @not_after, @is_ca, @enabled, @tags, @pv
-	) ON CONFLICT (name, serial) DO UPDATE SET
-		subject = @subject,
-		cert = @cert,
-		key = @key,
-		not_before = @not_before,
-		not_after = @not_after,
-		is_ca = @is_ca,
-		enabled = @enabled,
-		tags = @tags,
-		pv = @pv,
-		ts = CURRENT_TIMESTAMP
-	-- A stored certificate keeps its issuer, so that a new row only refers to
-	-- rows which already exist, and the issuers can't form a cycle, which
-	-- the chain queries would follow forever. Nothing is returned otherwise.
-	WHERE existing.issuer IS NOT DISTINCT FROM EXCLUDED.issuer
+	)
 	RETURNING
 		id, name, serial, subject, issuer, cert, not_before, not_after, is_ca, enabled, tags, ts
 )
 SELECT
-	upserted.id,
-	upserted.name,
-	upserted.serial,
-	upserted.subject,
+	inserted.id,
+	inserted.name,
+	inserted.serial,
+	inserted.subject,
 	subject_row."organizationName",
 	subject_row."organizationalUnit",
 	subject_row."countryName",
@@ -102,20 +91,20 @@ SELECT
 	subject_row."ts",
 	issuer.name AS signer_name,
 	issuer.serial AS signer_serial,
-	upserted.cert,
-	upserted.not_before,
-	upserted.not_after,
-	upserted.is_ca,
-	COALESCE(effective.effective_enabled, upserted.enabled) AS enabled,
-	COALESCE(upserted.tags, '{}'::TEXT[]) AS tags,
-	COALESCE(effective.effective_tags, COALESCE(upserted.tags, '{}'::TEXT[])) AS effective_tags,
-	upserted.ts
-FROM upserted
-LEFT JOIN ${"schema"}.subject AS subject_row ON subject_row.id = upserted.subject
-LEFT JOIN ${"schema"}.cert AS issuer ON issuer.id = upserted.issuer
+	inserted.cert,
+	inserted.not_before,
+	inserted.not_after,
+	inserted.is_ca,
+	COALESCE(effective.effective_enabled, inserted.enabled) AS enabled,
+	COALESCE(inserted.tags, '{}'::TEXT[]) AS tags,
+	COALESCE(effective.effective_tags, COALESCE(inserted.tags, '{}'::TEXT[])) AS effective_tags,
+	inserted.ts
+FROM inserted
+LEFT JOIN ${"schema"}.subject AS subject_row ON subject_row.id = inserted.subject
+LEFT JOIN ${"schema"}.cert AS issuer ON issuer.id = inserted.issuer
 LEFT JOIN LATERAL (
 	WITH RECURSIVE chain AS (
-		SELECT upserted.id, upserted.issuer, upserted.enabled, COALESCE(upserted.tags, '{}'::TEXT[]) AS tags
+		SELECT inserted.id, inserted.issuer, inserted.enabled, COALESCE(inserted.tags, '{}'::TEXT[]) AS tags
 		UNION ALL
 		SELECT parent.id, parent.issuer, parent.enabled, COALESCE(parent.tags, '{}'::TEXT[]) AS tags
 		FROM ${"schema"}.cert AS parent

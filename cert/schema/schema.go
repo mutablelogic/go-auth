@@ -34,6 +34,11 @@ const (
 	SchemaName = "cert"
 )
 
+// LockName serializes creating certificates with a name, bound as name, until
+// the transaction ends. It's run with Exec, which doesn't look up the named
+// queries.
+const LockName = `SELECT pg_advisory_xact_lock(hashtext(${'schema'} || '.' || @name))`
+
 const (
 	// Maximum number of subjects to return in a list query
 	SubjectListLimit = 100

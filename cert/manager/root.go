@@ -62,13 +62,16 @@ func (m *Manager) InsertRootCert(ctx context.Context, pemValue string) (_ *cert.
 		return nil, err
 	}
 
-	return m.insertRootCert(ctx, imported, privateKey)
+	return m.insertRootCert(ctx, imported, privateKey, false)
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 // PRIVATE METHODS
 
-func (m *Manager) insertRootCert(ctx context.Context, imported *x509.Certificate, privateKey *rsa.PrivateKey) (_ *cert.Certificate, err error) {
+// insertRootCert stores the root certificate. When it's stored already, it's
+// a conflict, unless same is true and it's the same certificate, which is
+// returned, so a manager created with a root can be created again.
+func (m *Manager) insertRootCert(ctx context.Context, imported *x509.Certificate, privateKey *rsa.PrivateKey, same bool) (_ *cert.Certificate, err error) {
 	ctx, endSpan := otel.StartSpan(m.tracer, ctx, "certmanager.insertRootCert",
 		attribute.String("name", cert.RootCertName),
 	)
@@ -94,8 +97,15 @@ func (m *Manager) insertRootCert(ctx context.Context, imported *x509.Certificate
 	// In a transaction, check if the root certificate already exists, insert the subject, and insert the certificate
 	var certRow cert.Certificate
 	err = m.Tx(ctx, func(conn pg.Conn) error {
+		if err := lockName(ctx, conn, cert.RootCertName); err != nil {
+			return err
+		}
 		var existing cert.Certificate
 		if err := conn.Get(ctx, (*schema.Certificate)(&existing), schema.CertName(cert.RootCertName)); err == nil {
+			if same && bytes.Equal(existing.Cert, imported.Raw) {
+				certRow = existing
+				return nil
+			}
 			return httpresponse.ErrConflict.With("root certificate already exists")
 		} else if !errors.Is(err, pg.ErrNotFound) {
 			return err

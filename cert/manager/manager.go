@@ -77,9 +77,11 @@ func New(ctx context.Context, pool pg.PoolConn, opts ...Opt) (*Manager, error) {
 		self.PoolConn = pool
 	}
 
-	// Import the configured root certificate if one was supplied.
+	// Import the configured root certificate if one was supplied. When it's
+	// stored already, such as when a server restarts, that's fine, but not a
+	// different root certificate.
 	if self.rootkey != nil && self.rootcert != nil {
-		if _, err := self.insertRootCert(ctx, self.rootcert, self.rootkey); err != nil {
+		if _, err := self.insertRootCert(ctx, self.rootcert, self.rootkey, true); err != nil {
 			return nil, err
 		}
 	}

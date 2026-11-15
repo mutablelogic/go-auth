@@ -358,7 +358,7 @@ func TestCA_001(t *testing.T) {
 		assert.EqualError(err, "Bad Request: san is only supported for leaf certificates")
 	})
 
-	t.Run("RenewCADisablesCurrentAndPreservesDefaults", func(t *testing.T) {
+	t.Run("RenewCAKeepsCurrentAndPreservesDefaults", func(t *testing.T) {
 		assert := assert.New(t)
 		require := require.New(t)
 
@@ -389,7 +389,7 @@ func TestCA_001(t *testing.T) {
 
 		var oldRow cert.Certificate
 		require.NoError(m.Get(context.Background(), (*schema.Certificate)(&oldRow), schema.CertKey(caRow.CertKey)))
-		assert.False(types.Value(oldRow.Enabled))
+		assert.True(types.Value(oldRow.Enabled), "the current CA stays enabled, for its leaves")
 
 		var newRow cert.Certificate
 		require.NoError(m.Get(context.Background(), (*schema.Certificate)(&newRow), schema.CertKey(renewed.CertKey)))

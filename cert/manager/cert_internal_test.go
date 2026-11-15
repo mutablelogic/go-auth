@@ -34,7 +34,7 @@ func Test_capExpiry_001(t *testing.T) {
 		require := require.New(t)
 
 		now := time.Now().Truncate(time.Second)
-		expires, err := capExpiry(cert.DefaultCertExpiry, cert.DefaultCertExpiry, "certificate authority", now.Add(time.Minute), now.Add(2*time.Hour))
+		_, expires, err := capExpiry(cert.DefaultCertExpiry, cert.DefaultCertExpiry, "certificate authority", now.Add(time.Minute), now.Add(2*time.Hour))
 		require.Error(err)
 		assert.Zero(expires)
 		assert.EqualError(err, "certificate authority is not valid yet")
@@ -45,7 +45,7 @@ func Test_capExpiry_001(t *testing.T) {
 		require := require.New(t)
 
 		now := time.Now().Truncate(time.Second)
-		expires, err := capExpiry(cert.DefaultCertExpiry, cert.DefaultCertExpiry, "certificate authority", now.Add(-2*time.Hour), now.Add(-time.Second))
+		_, expires, err := capExpiry(cert.DefaultCertExpiry, cert.DefaultCertExpiry, "certificate authority", now.Add(-2*time.Hour), now.Add(-time.Second))
 		require.Error(err)
 		assert.Zero(expires)
 		assert.EqualError(err, "certificate authority has expired")
@@ -56,7 +56,7 @@ func Test_capExpiry_001(t *testing.T) {
 		require := require.New(t)
 
 		now := time.Now().Truncate(time.Second)
-		expires, err := capExpiry(cert.DefaultCACertExpiry, cert.DefaultCACertExpiry, "root certificate", now.Add(time.Minute), now.Add(2*time.Hour))
+		_, expires, err := capExpiry(cert.DefaultCACertExpiry, cert.DefaultCACertExpiry, "root certificate", now.Add(time.Minute), now.Add(2*time.Hour))
 		require.Error(err)
 		assert.Zero(expires)
 		assert.EqualError(err, "root certificate is not valid yet")
@@ -67,7 +67,7 @@ func Test_capExpiry_001(t *testing.T) {
 		require := require.New(t)
 
 		now := time.Now().Truncate(time.Second)
-		expires, err := capExpiry(cert.DefaultCACertExpiry, cert.DefaultCACertExpiry, "root certificate", now.Add(-2*time.Hour), now.Add(-time.Second))
+		_, expires, err := capExpiry(cert.DefaultCACertExpiry, cert.DefaultCACertExpiry, "root certificate", now.Add(-2*time.Hour), now.Add(-time.Second))
 		require.Error(err)
 		assert.Zero(expires)
 		assert.EqualError(err, "root certificate has expired")

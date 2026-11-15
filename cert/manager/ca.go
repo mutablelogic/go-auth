@@ -73,7 +73,7 @@ func (m *Manager) CreateCA(ctx context.Context, req cert.CreateCertRequest) (_ *
 
 	// Cap the requested expiry to the remaining validity of the root certificate,
 	// defaulting to DefaultCACertExpiry if not provided
-	expires, err := capExpiry(req.Expiry, cert.DefaultCACertExpiry, "root certificate", rootCert.NotBefore, rootCert.NotAfter)
+	validFrom, expires, err := capExpiry(req.Expiry, cert.DefaultCACertExpiry, "root certificate", rootCert.NotBefore, rootCert.NotAfter)
 	if err != nil {
 		return nil, err
 	}
@@ -84,7 +84,7 @@ func (m *Manager) CreateCA(ctx context.Context, req cert.CreateCertRequest) (_ *
 		cert.WithSubject(caSubject),
 		cert.WithRSAKey(0),
 		cert.WithCA(),
-		cert.WithExpiry(expires),
+		cert.WithValidity(validFrom, expires),
 		cert.WithSigner(rootSigner),
 	}...)
 	if err != nil {
@@ -94,6 +94,9 @@ func (m *Manager) CreateCA(ctx context.Context, req cert.CreateCertRequest) (_ *
 	// Insert the CA certificate and metadata into the database, linked to the root certificate as its signer
 	var certRow cert.Certificate
 	if err = m.Tx(ctx, func(conn pg.Conn) error {
+		if err := lockName(ctx, conn, req.Name); err != nil {
+			return err
+		}
 		var existing cert.Certificate
 		if err := conn.Get(ctx, (*schema.Certificate)(&existing), schema.CertName(req.Name)); err == nil {
 			return httpresponse.ErrConflict.Withf("certificate %q already exists", req.Name)

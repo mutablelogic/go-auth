@@ -329,19 +329,19 @@ func Test_manager_issuers(t *testing.T) {
 		assert.Contains(t, err.Error(), "cert_issuer_check")
 	})
 
-	t.Run("IssuerIsKept", func(t *testing.T) {
-		// Another issuer, or itself, which would be a cycle
-		for _, signer := range []cert.CertKey{ca2.CertKey, leaf.CertKey} {
-			moved := *row
-			moved.Signer = types.Ptr(signer)
-			_, err := insert(moved)
-			assert.ErrorIs(t, err, pg.ErrNotFound, signer.String())
+	t.Run("NeverReplaced", func(t *testing.T) {
+		// With the same issuer, another, or itself, which would be a cycle
+		for _, signer := range []cert.CertKey{ca1.CertKey, ca2.CertKey, leaf.CertKey} {
+			again := *row
+			again.Signer = types.Ptr(signer)
+			_, err := insert(again)
+			assert.ErrorIs(t, pg.NormalizeError(err), pg.ErrConflict, signer.String())
 		}
 
-		// The same issuer replaces it
-		same, err := insert(*row)
-		require.NoError(t, err)
-		assert.Equal(t, ca1.CertKey, types.Value(same.Signer))
+		// The stored certificate is unchanged
+		var stored cert.Certificate
+		require.NoError(t, m.Get(ctx, (*schema.Certificate)(&stored), schema.CertKey(leaf.CertKey)))
+		assert.Equal(t, ca1.CertKey, types.Value(stored.Signer))
 	})
 
 	t.Run("LatestIsInsertedLast", func(t *testing.T) {
@@ -354,5 +354,88 @@ func Test_manager_issuers(t *testing.T) {
 		var latest cert.Certificate
 		require.NoError(t, m.Get(ctx, (*schema.Certificate)(&latest), schema.CertName("versioned")))
 		assert.Equal(t, "9", latest.Serial)
+	})
+}
+
+func Test_manager_review(t *testing.T) {
+	ctx := context.Background()
+	_, pemValue, err := test.NewRoot("Example Root CA", "Example Org")
+	require.NoError(t, err)
+
+	t.Run("RootNameIsTrimmedBeforeUpdate", func(t *testing.T) {
+		m := test.IsolatedManager(t, manager.WithPassphrase(1, "root-secret-1"), manager.WithRoot(pemValue))
+		var root cert.Certificate
+		require.NoError(t, m.Get(ctx, (*schema.Certificate)(&root), schema.CertName(cert.RootCertName)))
+
+		disabled := false
+		_, err := m.UpdateCert(ctx, cert.CertKey{Name: " " + cert.RootCertName + " ", Serial: root.Serial}, cert.CertMeta{Enabled: &disabled})
+		assert.EqualError(t, err, "Bad Request: root certificate cannot be updated")
+	})
+
+	t.Run("SameRootOnRestart", func(t *testing.T) {
+		schemaName := test.IsolatedSchema(t)
+		opts := []manager.Opt{manager.WithPassphrase(1, "root-secret-1"), manager.WithRoot(pemValue)}
+		test.SchemaManager(t, schemaName, opts...)
+
+		// The same root again is fine
+		_, err := test.NewSchemaManager(schemaName, opts...)
+		assert.NoError(t, err)
+
+		// A different one isn't
+		_, otherPEM, err := test.NewRoot("Other Root CA", "Other Org")
+		require.NoError(t, err)
+		_, err = test.NewSchemaManager(schemaName, manager.WithPassphrase(1, "root-secret-1"), manager.WithRoot(otherPEM))
+		assert.EqualError(t, err, "Conflict: root certificate already exists")
+
+		// The explicit import is still a conflict
+		m := test.SchemaManager(t, schemaName, manager.WithPassphrase(1, "root-secret-1"))
+		_, err = m.InsertRootCert(ctx, pemValue)
+		assert.EqualError(t, err, "Conflict: root certificate already exists")
+	})
+
+	t.Run("LeafRenewsWithRenewedCA", func(t *testing.T) {
+		m := test.IsolatedManager(t, manager.WithPassphrase(1, "root-secret-1"), manager.WithRoot(pemValue))
+		ca, err := m.CreateCA(ctx, cert.CreateCertRequest{Name: "rollover_ca"})
+		require.NoError(t, err)
+		leaf, err := m.CreateCert(ctx, cert.CreateCertRequest{Name: "rollover_leaf", Expiry: time.Hour}, ca.CertKey)
+		require.NoError(t, err)
+
+		renewedCA, err := m.RenewCA(ctx, ca.CertKey, cert.RenewCertRequest{})
+		require.NoError(t, err)
+
+		// The leaf is still enabled, and renews with the new CA
+		var current cert.Certificate
+		require.NoError(t, m.Get(ctx, (*schema.Certificate)(&current), schema.CertKey(leaf.CertKey)))
+		assert.True(t, types.Value(current.Enabled))
+
+		renewed, err := m.RenewCert(ctx, leaf.CertKey, cert.RenewCertRequest{})
+		require.NoError(t, err)
+		assert.Equal(t, renewedCA.CertKey, types.Value(renewed.Signer))
+	})
+
+	t.Run("ConcurrentCreatesOneVersion", func(t *testing.T) {
+		m := test.IsolatedManager(t, manager.WithPassphrase(1, "root-secret-1"), manager.WithRoot(pemValue))
+
+		const n = 4
+		errs := make(chan error, n)
+		for range n {
+			go func() {
+				_, err := m.CreateCA(ctx, cert.CreateCertRequest{Name: "racing_ca"})
+				errs <- err
+			}()
+		}
+		var created int
+		for range n {
+			if err := <-errs; err == nil {
+				created++
+			} else {
+				assert.EqualError(t, err, `Conflict: certificate "racing_ca" already exists`)
+			}
+		}
+		assert.Equal(t, 1, created)
+
+		list, err := m.ListCerts(ctx, cert.CertListRequest{})
+		require.NoError(t, err)
+		assert.Equal(t, uint64(1), list.Count)
 	})
 }
