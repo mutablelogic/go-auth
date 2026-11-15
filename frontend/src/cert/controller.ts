@@ -26,6 +26,10 @@ export class CertController {
     readonly client: Client;
     readonly list: ListController<Certificate>;
 
+    // showDisabled lists disabled certificates too, rather than only the
+    // enabled ones
+    private disabled = false;
+
     constructor(client: Client, options: CertOptions = {}) {
         this.client = client;
         this.list = new ListController<Certificate>({
@@ -34,7 +38,7 @@ export class CertController {
                 // Only each certificate's latest version, which is renewed,
                 // and signs certificates, and whose older versions are listed
                 // with versions
-                const page = await api.listCerts(client, { offset, limit, is_ca: options.ca, latest: true });
+                const page = await api.listCerts(client, { offset, limit, is_ca: options.ca, latest: true, enabled: this.disabled ? undefined : true });
                 return { count: page.count, body: page.body ?? [] };
             },
             get: (cert) => api.getCert(client, cert).catch(() => cert),
@@ -60,27 +64,31 @@ export class CertController {
         }
     }
 
+    // showDisabled is true when disabled certificates are listed too
+    get showDisabled(): boolean {
+        return this.disabled;
+    }
+
+    // setShowDisabled lists disabled certificates too, or only the enabled
+    // ones, from the first page
+    setShowDisabled(show: boolean): Promise<void> {
+        this.disabled = show;
+        return this.list.reset();
+    }
+
     // versions returns the older versions of a certificate, the latest first,
-    // which aren't renewed, and don't sign certificates
+    // which aren't renewed, and don't sign certificates, which are only the
+    // enabled ones, unless disabled certificates are listed
     async versions(name: string): Promise<Certificate[]> {
         const versions: Certificate[] = [];
         for (let offset = 0; ; ) {
-            const page = await api.listCerts(this.client, { offset, limit: 100, name, latest: false });
+            const page = await api.listCerts(this.client, { offset, limit: 100, name, latest: false, enabled: this.disabled ? undefined : true });
             versions.push(...(page.body ?? []));
             offset += page.body?.length ?? 0;
             if (!page.body?.length || offset >= page.count) {
                 return versions;
             }
         }
-    }
-
-    // setEnabled enables or disables the certificates, and loads the list
-    // again, once
-    async setEnabled(certs: readonly CertKey[], enabled: boolean): Promise<void> {
-        for (const cert of certs) {
-            await api.updateCert(this.client, cert, { enabled });
-        }
-        await this.list.refresh();
     }
 
     // subjects returns the stored subjects which have fields, which a

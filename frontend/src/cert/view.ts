@@ -22,7 +22,7 @@ import { live } from 'lit/directives/live.js';
 import { until } from 'lit/directives/until.js';
 import type { Client } from '@mutablelogic/go-server/api';
 import type { ChangesController } from '@mutablelogic/go-server/broadcaster';
-import type { Column, TableAction, TableActionError } from '@mutablelogic/go-server/list/view';
+import type { Column } from '@mutablelogic/go-server/list/view';
 import type { NavController } from '@mutablelogic/go-server/nav';
 import type { NotificationController } from '@mutablelogic/go-server/notification';
 import { PanelController, type PanelAction } from '@mutablelogic/go-server/panel';
@@ -292,9 +292,13 @@ export class CertificatesElement extends LitElement {
         }
         const root = this.features?.root ?? true;
         const authorities = this.kind === 'ca';
-        const actions: PageAction[] = authorities
-            ? [{ label: 'Create a certificate authority', icon: AddIcon, disabled: !root, run: () => this.create(true) }]
-            : [{ label: 'Create a certificate', icon: AddIcon, run: () => this.create(false) }];
+        const show = this.controller.showDisabled;
+        const actions: PageAction[] = [
+            { label: show ? 'Hide disabled' : 'Show disabled', kind: 'tertiary', run: () => this.toggleDisabled() },
+            authorities
+                ? { label: 'Create a certificate authority', icon: AddIcon, disabled: !root, run: () => this.create(true) }
+                : { label: 'Create a certificate', icon: AddIcon, run: () => this.create(false) },
+        ];
         const subtitle = authorities
             ? (root ? 'Which the root signs, and which sign leaf certificates' : 'No root certificate is stored, so certificate authorities can\'t be created')
             : 'Such as a server\'s, which a certificate authority signs';
@@ -303,13 +307,9 @@ export class CertificatesElement extends LitElement {
                 subtitle=${subtitle} .icon=${authorities ? CertificateCheckIcon : CertificateIcon} .actions=${actions}></gs-page-header>
             <gs-table .controller=${this.controller.list} .columns=${authorities ? authorityColumns : certificateColumns}
                 .expand=${(cert: Certificate) => this.versionsView(cert)} .itemKey=${(cert: Certificate) => cert.name}
-                .actions=${this.batchActions()}
-                @gs-table-action-error=${(event: CustomEvent<TableActionError<Certificate>>) => {
-                    if (!(event.detail.error instanceof SelectionKept)) {
-                        this.notifications?.error(`${event.detail.action.label} didn't work`, event.detail.error);
-                    }
-                }}
-                empty=${authorities ? 'No certificate authorities are stored' : 'No leaf certificates are stored'}></gs-table>
+                empty=${authorities
+                    ? (show ? 'No certificate authorities are stored' : 'No enabled certificate authorities')
+                    : (show ? 'No leaf certificates are stored' : 'No enabled leaf certificates')}></gs-table>
             <gs-panel .controller=${this.panel}>${this.body?.content ?? nothing}</gs-panel>
         `;
     }
@@ -407,40 +407,23 @@ export class CertificatesElement extends LitElement {
         }), html`<p class="helper" style="margin: 0">Loading older versions…</p>`);
     }
 
+    // toggleDisabled shows disabled certificates, and their older versions,
+    // which are disabled when a leaf certificate is renewed, or hides them
+    private async toggleDisabled() {
+        if (!this.controller) {
+            return;
+        }
+        this.versions.clear();
+        await this.controller.setShowDisabled(!this.controller.showDisabled);
+        this.requestUpdate();
+    }
+
     // openVersion opens an older version in the panel, rather than the list's
     // item, which is closed, so the list doesn't replace it
     private openVersion(version: Certificate) {
         this.older.add(keyOf(version));
         this.controller?.list.close();
         this.show(version);
-    }
-
-    // batchActions enable or disable the selected certificates
-    private batchActions(): TableAction<Certificate>[] {
-        return [
-            {
-                label: 'Disable',
-                kind: 'danger',
-                run: async (certs) => {
-                    const ca = this.kind === 'ca';
-                    if (!this.controller || !confirm(ca
-                        ? `Disable ${certs.length === 1 ? certs[0].name : `${certs.length} certificate authorities`}? The certificates they signed are disabled too.`
-                        : `Disable ${certs.length === 1 ? certs[0].name : `${certs.length} certificates`}?`)) {
-                        throw new SelectionKept();
-                    }
-                    await this.controller.setEnabled(certs, false);
-                    this.notifications?.push({ kind: 'success', title: certs.length === 1 ? `${certs[0].name} was disabled` : `${certs.length} certificates were disabled` });
-                },
-            },
-            {
-                label: 'Enable',
-                kind: 'secondary',
-                run: async (certs) => {
-                    await this.controller?.setEnabled(certs, true);
-                    this.notifications?.push({ kind: 'success', title: certs.length === 1 ? `${certs[0].name} was enabled` : `${certs.length} certificates were enabled` });
-                },
-            },
-        ];
     }
 
     // createLeaf shows the form which creates a leaf certificate, signed by
@@ -696,10 +679,6 @@ export function certModule(app: CertApp, section = 'Certificates'): CertPages {
 
 ///////////////////////////////////////////////////////////////////////////////
 // PRIVATE METHODS
-
-// SelectionKept is thrown by a batch action which isn't confirmed, so the
-// selection is kept, and isn't an error
-class SelectionKept extends Error {}
 
 // signerName is the name of a certificate's signer, which is Root for the
 // root's
