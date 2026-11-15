@@ -298,3 +298,61 @@ func Test_manager_001(t *testing.T) {
 		assert.Equal(uint64(1), count.Value)
 	})
 }
+
+func Test_manager_issuers(t *testing.T) {
+	ctx := context.Background()
+	_, pemValue, err := test.NewRoot("Example Root CA", "Example Org")
+	require.NoError(t, err)
+	m := test.IsolatedManager(t, manager.WithPassphrase(1, "root-secret-1"), manager.WithRoot(pemValue))
+
+	ca1, err := m.CreateCA(ctx, cert.CreateCertRequest{Name: "ca_one"})
+	require.NoError(t, err)
+	ca2, err := m.CreateCA(ctx, cert.CreateCertRequest{Name: "ca_two"})
+	require.NoError(t, err)
+	leaf, err := m.CreateCert(ctx, cert.CreateCertRequest{Name: "leaf"}, ca1.CertKey)
+	require.NoError(t, err)
+	row, err := m.GetPrivateKey(ctx, leaf.CertKey)
+	require.NoError(t, err)
+
+	insert := func(row cert.CertWithPrivateKey) (cert.Certificate, error) {
+		var result cert.Certificate
+		err := m.Insert(ctx, (*schema.Certificate)(&result), schema.CertWithPrivateKey(row))
+		return result, err
+	}
+
+	t.Run("SignerMustBeStored", func(t *testing.T) {
+		orphan := *row
+		orphan.CertKey = cert.CertKey{Name: "orphan", Serial: "1"}
+		orphan.Signer = &cert.CertKey{Name: "missing", Serial: "1"}
+		_, err := insert(orphan)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "cert_issuer_check")
+	})
+
+	t.Run("IssuerIsKept", func(t *testing.T) {
+		// Another issuer, or itself, which would be a cycle
+		for _, signer := range []cert.CertKey{ca2.CertKey, leaf.CertKey} {
+			moved := *row
+			moved.Signer = types.Ptr(signer)
+			_, err := insert(moved)
+			assert.ErrorIs(t, err, pg.ErrNotFound, signer.String())
+		}
+
+		// The same issuer replaces it
+		same, err := insert(*row)
+		require.NoError(t, err)
+		assert.Equal(t, ca1.CertKey, types.Value(same.Signer))
+	})
+
+	t.Run("LatestIsInsertedLast", func(t *testing.T) {
+		for _, serial := range []string{"10", "9"} {
+			version := *row
+			version.CertKey = cert.CertKey{Name: "versioned", Serial: serial}
+			_, err := insert(version)
+			require.NoError(t, err)
+		}
+		var latest cert.Certificate
+		require.NoError(t, m.Get(ctx, (*schema.Certificate)(&latest), schema.CertName("versioned")))
+		assert.Equal(t, "9", latest.Serial)
+	})
+}
