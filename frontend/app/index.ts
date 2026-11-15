@@ -43,7 +43,7 @@ if (status) {
 }
 
 // The navigation, of the modules' sections, and the router of their pages
-const nav = new NavController({ name: 'auth', href: '#', pages: [] });
+const nav = new NavController({ name: 'auth', prefix: 'go', href: '#', pages: [] });
 const header = document.querySelector('gs-header');
 const sideNav = document.querySelector('gs-side-nav');
 if (header && sideNav) {

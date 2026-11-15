@@ -32,6 +32,7 @@ import '@mutablelogic/go-server/list/view';
 import '@mutablelogic/go-server/page/view';
 import '@mutablelogic/go-server/panel/view';
 import '@carbon/web-components/es/components/checkbox/index.js';
+import '@carbon/web-components/es/components/copy-button/index.js';
 import '@carbon/web-components/es/components/password-input/index.js';
 import '@carbon/web-components/es/components/text-input/index.js';
 import '@carbon/web-components/es/components/textarea/index.js';
@@ -41,12 +42,28 @@ import PasswordIcon from '@carbon/icons/es/password/32.js';
 ///////////////////////////////////////////////////////////////////////////////
 // PARTS
 
-// credentialColumns are the columns of a table of credentials: the key, and
-// when it was last changed, which sort it
+// credentialColumns are the columns of a table of credentials: the key,
+// which can be copied, without opening the credential, and when it was last
+// changed, which sort it
 export const credentialColumns: Column<Credential>[] = [
-    { header: 'Key', cell: (credential) => credential.key, sort: 'key', sortFirst: 'ascending' },
+    { header: 'Key', cell: (credential) => keyView(credential.key), sort: 'key', sortFirst: 'ascending' },
     { header: 'Updated', cell: (credential) => formatTime(credential.updated_at), sort: 'updated_at' },
 ];
+
+// keyView is a credential's key, in a monospace font, with a button which
+// copies it. A click on the button doesn't reach the table's row, so it
+// doesn't open the credential.
+export function keyView(key: string): TemplateResult {
+    return html`
+        <span class="ga-key" style="display: inline-flex; align-items: center; gap: 0.25rem">
+            <code style="font-family: 'IBM Plex Mono', monospace; font-size: 0.875rem">${key}</code>
+            <cds-copy-button size="sm" feedback="Copied" @click=${(event: Event) => {
+                event.stopPropagation();
+                void copyText(key);
+            }}>Copy ${key}</cds-copy-button>
+        </span>
+    `;
+}
 
 // credentialFormView is the form which stores a credential: its key, which
 // is fixed when it replaces one, and its value, as a password, or, when
@@ -397,6 +414,24 @@ function backendName(backend?: string): string {
         default:
             return backend ? `the ${backend} backend` : 'the backend';
     }
+}
+
+// copyText copies the text to the clipboard, which needs a secure page, or
+// else selects it in a text area, and copies the selection
+async function copyText(text: string): Promise<void> {
+    if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(text);
+        return;
+    }
+    const area = document.createElement('textarea');
+    area.value = text;
+    area.setAttribute('readonly', '');
+    area.style.position = 'fixed';
+    area.style.opacity = '0';
+    document.body.append(area);
+    area.select();
+    document.execCommand('copy');
+    area.remove();
 }
 
 // formatTime returns a time in the user's locale, or nothing
