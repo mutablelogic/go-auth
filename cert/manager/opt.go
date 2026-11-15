@@ -25,8 +25,8 @@ import (
 
 	// Packages
 	schema "github.com/mutablelogic/go-auth/cert/schema"
-	types "github.com/mutablelogic/go-server/pkg/types"
 	authcrypto "github.com/mutablelogic/go-auth/crypto"
+	types "github.com/mutablelogic/go-server/pkg/types"
 	trace "go.opentelemetry.io/otel/trace"
 )
 
