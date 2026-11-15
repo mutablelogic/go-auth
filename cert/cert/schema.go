@@ -94,7 +94,7 @@ type Certificate struct {
 	Signer    *CertKey    `json:"signer,omitempty" jsonschema:"certificate authority that signed this certificate"`
 	Subject   *SubjectRef `json:"subject,omitempty" readonly:"" jsonschema:"certificate subject details"`
 	SubjectID *uint64     `json:"-"`
-	SAN       []string    `json:"san,omitempty" readonly:"" jsonschema:"subject alternative names: domains, wildcards, IPs or CIDR ranges" example:"[\"*.example.com\",\"192.168.1.1\",\"10.0.0.0/8\"]"`
+	SAN       []string    `json:"san,omitempty" readonly:"" jsonschema:"subject alternative names: DNS names, wildcards and IP addresses" example:"[\"*.example.com\",\"192.168.1.1\"]"`
 	NotBefore time.Time   `json:"not_before,omitzero" jsonschema:"start of certificate validity period" example:"2026-01-01T00:00:00Z"`
 	NotAfter  time.Time   `json:"not_after,omitzero" jsonschema:"end of certificate validity period" example:"2027-01-01T00:00:00Z"`
 	IsCA      bool        `json:"is_ca,omitempty" jsonschema:"whether this is a certificate authority" example:"false"`
@@ -121,7 +121,7 @@ type CreateCertRequest struct {
 	Name    string        `json:"name,omitempty" jsonschema:"unique certificate name" example:"my_cert"`
 	Expiry  time.Duration `json:"expiry,omitempty" jsonschema:"certificate validity duration" example:"8760h"`
 	Subject *SubjectMeta  `json:"subject,omitempty" optional:"" jsonschema:"certificate subject details"`
-	SAN     []string      `json:"san,omitempty" optional:"" jsonschema:"subject alternative names: domains, wildcards, IPs or CIDR ranges" example:"[\"*.example.com\",\"192.168.1.1\",\"10.0.0.0/8\"]"`
+	SAN     []string      `json:"san,omitempty" optional:"" jsonschema:"subject alternative names: DNS names, wildcards and IP addresses" example:"[\"*.example.com\",\"192.168.1.1\"]"`
 	Tags    []string      `json:"tags,omitempty" jsonschema:"labels for grouping and filtering certificates" example:"[\"tag1\",\"tag2\"]"`
 }
 

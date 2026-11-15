@@ -138,7 +138,7 @@ export function certFormView(form: CertForm, authorities: readonly string[], err
                     ${authorities.map((name) => html`<cds-select-item value=${name} ?selected=${name === form.signer}>${name}</cds-select-item>`)}
                 </cds-select>
                 <cds-textarea label="SAN entries" rows="3" .value=${live(form.san)}
-                    helper-text="DNS names, wildcards, IP addresses and CIDR ranges, separated by commas or lines"
+                    helper-text="DNS names, wildcards such as *.example.com, and IP addresses, separated by commas or lines"
                     ?invalid=${!!errors.san} invalid-text=${errors.san ?? ''}
                     @input=${(event: Event) => { form.san = (event.target as HTMLTextAreaElement).value; }}></cds-textarea>
             `}

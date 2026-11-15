@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import type { Client } from '@mutablelogic/go-server/api';
-import { certForm, certFormErrors, certRequest, renewForm, renewFormErrors, renewRequest, splitList, subjectCreateRequest, subjectUpdateRequest, tagsError, tagsRequest } from '../src/cert/form.ts';
+import { certForm, certFormErrors, certRequest, validSAN, renewForm, renewFormErrors, renewRequest, splitList, subjectCreateRequest, subjectUpdateRequest, tagsError, tagsRequest } from '../src/cert/form.ts';
 import { certificatePEM, pem, privateKeyPEM } from '../src/cert/pem.ts';
 import { Day, RootCertName, certExpired, certType } from '../src/cert/schema.ts';
 import * as api from '../src/cert/httpclient.ts';
@@ -64,6 +64,17 @@ test('certForm', async (t) => {
             localityName: '', streetAddress: '', postalCode: '',
         });
         assert.equal(certRequest({ ...certForm(false, 'ca'), name: 'web' }, subjects).subject, undefined, 'the default is the signer\'s');
+    });
+
+    await t.test('SAN entries are DNS names, wildcards or IP addresses', () => {
+        for (const entry of ['web.example.test', '*.example.test', 'localhost', 'a-b.c1', '10.0.0.1', '::1', '2001:db8::1', '999.1.1.1']) {
+            assert.ok(validSAN(entry), entry);
+        }
+        for (const entry of ['10.0.0.0/8', 'example.test.', '*.', '*', 'a.*.test', '-a.test', 'a-.test', 'a..test', 'under_score.test', 'x'.repeat(64) + '.test', ':::1']) {
+            assert.ok(!validSAN(entry), entry);
+        }
+        const errors = certFormErrors({ ...certForm(false, 'ca'), name: 'web', san: 'ok.example.test, 10.0.0.0/8, bad_name' });
+        assert.equal(errors.san, "10.0.0.0/8, bad_name aren't DNS names, wildcards or IP addresses");
     });
 
     await t.test('only the subject fields which are set are sent', () => {
