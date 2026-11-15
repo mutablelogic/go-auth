@@ -18,7 +18,6 @@ import (
 	"context"
 	"crypto/x509"
 	"errors"
-	"fmt"
 	"math/big"
 	"time"
 
@@ -66,7 +65,7 @@ func (m *Manager) CreateCert(ctx context.Context, req cert.CreateCertRequest, ca
 	defer func() { endSpan(err) }()
 
 	if req.Name == "" {
-		return nil, fmt.Errorf("name is required")
+		return nil, httpresponse.ErrBadRequest.With("name is required")
 	}
 	if err := cert.ValidateSAN(req.SAN...); err != nil {
 		return nil, httpresponse.ErrBadRequest.With(err.Error())
@@ -194,6 +193,36 @@ func (m *Manager) UpdateCert(ctx context.Context, key cert.CertKey, meta cert.Ce
 	return types.Ptr(result), nil
 }
 
+// GetCert returns the certificate with the name and serial, without its
+// private key
+func (m *Manager) GetCert(ctx context.Context, key cert.CertKey) (_ *cert.Certificate, err error) {
+	ctx, endSpan := otel.StartSpan(m.tracer, ctx, "certmanager.GetCert",
+		attribute.String("cert", key.String()),
+	)
+	defer func() { endSpan(err) }()
+
+	var result cert.Certificate
+	if err = m.Get(ctx, (*schema.Certificate)(&result), schema.CertKey(key)); err != nil {
+		return nil, err
+	}
+	return types.Ptr(result), nil
+}
+
+// GetLatestCert returns the latest version of the certificate with the
+// name, without its private key
+func (m *Manager) GetLatestCert(ctx context.Context, name string) (_ *cert.Certificate, err error) {
+	ctx, endSpan := otel.StartSpan(m.tracer, ctx, "certmanager.GetLatestCert",
+		attribute.String("name", name),
+	)
+	defer func() { endSpan(err) }()
+
+	var result cert.Certificate
+	if err = m.Get(ctx, (*schema.Certificate)(&result), schema.CertName(name)); err != nil {
+		return nil, err
+	}
+	return types.Ptr(result), nil
+}
+
 // GetPrivateKey returns the exact non-CA certificate row with its private key
 // decrypted for direct use by callers.
 func (m *Manager) GetPrivateKey(ctx context.Context, key cert.CertKey) (_ *cert.CertWithPrivateKey, err error) {
@@ -261,10 +290,10 @@ func lockName(ctx context.Context, conn pg.Conn, name string) error {
 func capExpiry(expiry, defaultExpiry time.Duration, label string, notBefore, notAfter time.Time) (time.Time, time.Time, error) {
 	now := time.Now().Truncate(time.Second)
 	if now.Before(notBefore) {
-		return time.Time{}, time.Time{}, fmt.Errorf("%s is not valid yet", label)
+		return time.Time{}, time.Time{}, httpresponse.ErrConflict.Withf("%s is not valid yet", label)
 	}
 	if !notAfter.After(now) {
-		return time.Time{}, time.Time{}, fmt.Errorf("%s has expired", label)
+		return time.Time{}, time.Time{}, httpresponse.ErrConflict.Withf("%s has expired", label)
 	}
 	if expiry <= 0 {
 		expiry = defaultExpiry
