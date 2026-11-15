@@ -34,18 +34,6 @@ import (
 ///////////////////////////////////////////////////////////////////////////////
 // TYPES
 
-// FileFlags stores credentials in encrypted files in a directory, which is
-// passed to the helpers
-type FileFlags struct {
-	Passphrase []string `name:"passphrase" env:"${ENV_NAME}_PASSPHRASE" sep:"none" help:"Passphrase for encrypting credentials. Can be specified multiple times, for versions 1, 2 and so on, and the last is used for new credentials."`
-}
-
-// PGFlags stores credentials in PostgreSQL, in a pool and schema which are
-// passed to the helpers
-type PGFlags struct {
-	Passphrase []string `name:"passphrase" env:"${ENV_NAME}_PASSPHRASE" sep:"none" help:"Passphrase for encrypting credentials. Can be specified multiple times, for versions 1, 2 and so on, and the last is used for new credentials."`
-}
-
 // AWSFlags stores credentials in AWS Secrets Manager. The region and
 // credentials are otherwise from the AWS environment variables, such as
 // AWS_REGION and AWS_PROFILE, and the shared configuration files.
@@ -80,10 +68,11 @@ func WithEnvCredentialProvider(ctx server.Cmd, fn func(provider.CredentialProvid
 // PUBLIC METHODS - FILE
 
 // WithFileCredentialManager creates the file backend in the directory at the
-// path, which is created with permissions 0700 and must be writable,
-// without the environment as a fallback, and calls fn with it
-func (flags FileFlags) WithFileCredentialManager(ctx server.Cmd, path string, fn func(provider.CredentialManager) error) error {
-	mgr, err := filecredential.New(path, flags.options(ctx)...)
+// path, which is created with permissions 0700 and must be writable, with
+// the passphrases, for versions 1, 2 and so on, without the environment as a
+// fallback, and calls fn with it
+func WithFileCredentialManager(ctx server.Cmd, path string, passphrases []string, fn func(provider.CredentialManager) error) error {
+	mgr, err := filecredential.New(path, fileOptions(ctx, passphrases)...)
 	if err != nil {
 		return err
 	}
@@ -92,9 +81,10 @@ func (flags FileFlags) WithFileCredentialManager(ctx server.Cmd, path string, fn
 
 // WithFileCredentialProvider creates the file backend in the directory at
 // the path, which is created with permissions 0700 and must be writable,
-// with the environment as a fallback when env is true, and calls fn with it
-func (flags FileFlags) WithFileCredentialProvider(ctx server.Cmd, path string, env bool, fn func(provider.CredentialProvider) error) error {
-	opts := flags.options(ctx)
+// with the passphrases, and the environment as a fallback when env is true,
+// and calls fn with it
+func WithFileCredentialProvider(ctx server.Cmd, path string, passphrases []string, env bool, fn func(provider.CredentialProvider) error) error {
+	opts := fileOptions(ctx, passphrases)
 	if env {
 		opts = append(opts, filecredential.WithEnv())
 	}
@@ -105,9 +95,9 @@ func (flags FileFlags) WithFileCredentialProvider(ctx server.Cmd, path string, e
 	return fn(mgr)
 }
 
-func (flags FileFlags) options(ctx server.Cmd) []filecredential.Opt {
+func fileOptions(ctx server.Cmd, passphrases []string) []filecredential.Opt {
 	opts := []filecredential.Opt{filecredential.WithTracer(ctx.Tracer())}
-	for i, passphrase := range flags.Passphrase {
+	for i, passphrase := range passphrases {
 		opts = append(opts, filecredential.WithPassphrase(uint64(i+1), passphrase))
 	}
 	return opts
@@ -117,11 +107,12 @@ func (flags FileFlags) options(ctx server.Cmd) []filecredential.Opt {
 // PUBLIC METHODS - PG
 
 // WithPGCredentialManager creates the pg backend in the pool and schema,
-// which is the default when it's empty, without the environment as a
-// fallback, and calls fn with it, with the store's own options, such as
-// pg.WithChannel. It needs a passphrase.
-func (flags PGFlags) WithPGCredentialManager(ctx server.Cmd, pool pg.PoolConn, schema string, fn func(provider.CredentialManager) error, opts ...pgcredential.Opt) error {
-	mgr, err := pgcredential.New(ctx.Context(), pool, append(flags.options(ctx, schema), opts...)...)
+// which is the default when it's empty, with the passphrases, for versions 1,
+// 2 and so on, without the environment as a fallback, and calls fn with it,
+// with the store's own options, such as pg.WithChannel. It needs a
+// passphrase.
+func WithPGCredentialManager(ctx server.Cmd, pool pg.PoolConn, schema string, passphrases []string, fn func(provider.CredentialManager) error, opts ...pgcredential.Opt) error {
+	mgr, err := pgcredential.New(ctx.Context(), pool, append(pgOptions(ctx, schema, passphrases), opts...)...)
 	if err != nil {
 		return err
 	}
@@ -133,11 +124,12 @@ func (flags PGFlags) WithPGCredentialManager(ctx server.Cmd, pool pg.PoolConn, s
 }
 
 // WithPGCredentialProvider creates the pg backend in the pool and schema,
-// which is the default when it's empty, with the environment as a fallback
-// when env is true, and calls fn with it. Without a passphrase, credentials
-// are only from the environment, or there are none without env.
-func (flags PGFlags) WithPGCredentialProvider(ctx server.Cmd, pool pg.PoolConn, schema string, env bool, fn func(provider.CredentialProvider) error) error {
-	opts := flags.options(ctx, schema)
+// which is the default when it's empty, with the passphrases, and the
+// environment as a fallback when env is true, and calls fn with it. Without a
+// passphrase, credentials are only from the environment, or there are none
+// without env.
+func WithPGCredentialProvider(ctx server.Cmd, pool pg.PoolConn, schema string, passphrases []string, env bool, fn func(provider.CredentialProvider) error) error {
+	opts := pgOptions(ctx, schema, passphrases)
 	if env {
 		opts = append(opts, pgcredential.WithEnv())
 	}
@@ -148,12 +140,12 @@ func (flags PGFlags) WithPGCredentialProvider(ctx server.Cmd, pool pg.PoolConn, 
 	return fn(mgr.GetCredentialProvider())
 }
 
-func (flags PGFlags) options(ctx server.Cmd, schema string) []pgcredential.Opt {
+func pgOptions(ctx server.Cmd, schema string, passphrases []string) []pgcredential.Opt {
 	opts := []pgcredential.Opt{pgcredential.WithTracer(ctx.Tracer())}
 	if schema := strings.TrimSpace(schema); schema != "" {
 		opts = append(opts, pgcredential.WithSchema(schema))
 	}
-	for i, passphrase := range flags.Passphrase {
+	for i, passphrase := range passphrases {
 		opts = append(opts, pgcredential.WithPassphrase(uint64(i+1), passphrase))
 	}
 	return opts

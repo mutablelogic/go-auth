@@ -14,11 +14,15 @@ ifeq ($(filter $(AUTH_BACKEND),file pg aws bitwarden),)
 $(error AUTH_BACKEND is $(AUTH_BACKEND), but should be file, pg, aws or bitwarden)
 endif
 
+# The certificate manager, with AUTH_CERT=1, which is its build tag, cert.
+# It needs PostgreSQL, which it shares with the pg backend.
+AUTH_CERT ?=
+
 # The commands embed the web UI, with the "frontend" tag, once it's built
 # into frontend/app/dist, by make frontend, which needs npm, and a token which
 # can read GitHub Packages, in GITHUB_TOKEN
 comma := ,
-TAGS = $(strip $(filter-out file,$(AUTH_BACKEND)) $(if $(wildcard $(TS_DIR)/app/dist/index.html),frontend,))
+TAGS = $(strip $(filter-out file,$(AUTH_BACKEND)) $(if $(filter 1 yes true,$(AUTH_CERT)),cert,) $(if $(wildcard $(TS_DIR)/app/dist/index.html),frontend,))
 BUILD_TAGS = $(if $(TAGS),-tags $(subst $() ,$(comma),$(TAGS)),)
 
 # Set OS and Architecture
@@ -43,14 +47,14 @@ all: build
 # BUILD
 
 # Build the web UI, and then the commands in the cmd directory, which embed
-# it, with the server's backend set by AUTH_BACKEND, such as
-# make AUTH_BACKEND=pg
+# it, with the server's backend set by AUTH_BACKEND, and the certificate
+# manager by AUTH_CERT, such as make AUTH_BACKEND=pg AUTH_CERT=1
 .PHONY: build
 build: frontend
 	@$(MAKE) --no-print-directory tidy $(CMD_DIR)
 
 $(CMD_DIR): go-dep mkdir
-	@echo Build command $(notdir $@) GOOS=${OS} GOARCH=${ARCH} AUTH_BACKEND=${AUTH_BACKEND}
+	@echo Build command $(notdir $@) GOOS=${OS} GOARCH=${ARCH} AUTH_BACKEND=${AUTH_BACKEND} AUTH_CERT=${AUTH_CERT}
 	@GOOS=${OS} GOARCH=${ARCH} ${GO} build ${BUILD_TAGS} ${BUILD_FLAGS} -o ${BUILD_DIR}/$(notdir $@) ./$@
 
 # Build the web UI's modules into frontend/dist, and the auth server's app

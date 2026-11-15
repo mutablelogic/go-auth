@@ -23,6 +23,7 @@ import (
 	// Packages
 	credential "github.com/mutablelogic/go-auth/credential"
 	credentialcmd "github.com/mutablelogic/go-auth/credential/cmd"
+	pg "github.com/mutablelogic/go-pg"
 	server "github.com/mutablelogic/go-server"
 	broadcaster "github.com/mutablelogic/go-server/broadcaster"
 )
@@ -33,7 +34,6 @@ import (
 // BackendFlags stores credentials in encrypted files, in a directory in the
 // user's configuration directory, unless --credential.path is set
 type BackendFlags struct {
-	credentialcmd.FileFlags
 	Path string `name:"path" env:"${ENV_NAME}_CREDENTIAL_PATH" help:"Directory for credential files, created with permissions 0700. Defaults to a directory in the user's configuration directory."`
 }
 
@@ -47,7 +47,7 @@ const (
 ///////////////////////////////////////////////////////////////////////////////
 // PRIVATE METHODS
 
-func (flags BackendFlags) withManager(ctx server.Cmd, _ *broadcaster.Broadcaster, fn func(credential.CredentialManager, *follow) error) error {
+func (flags BackendFlags) withManager(ctx server.Cmd, _ pg.PoolConn, passphrases []string, _ *broadcaster.Broadcaster, fn func(credential.CredentialManager, *follow) error) error {
 	path := flags.Path
 	if path == "" {
 		config, err := os.UserConfigDir()
@@ -56,9 +56,9 @@ func (flags BackendFlags) withManager(ctx server.Cmd, _ *broadcaster.Broadcaster
 		}
 		path = filepath.Join(config, ctx.Name(), "credential")
 	}
-	if len(flags.Passphrase) == 0 {
-		ctx.Logger().WarnContext(ctx.Context(), "No passphrase, so credentials can't be stored or read: set --credential.passphrase")
+	if len(passphrases) == 0 {
+		ctx.Logger().WarnContext(ctx.Context(), "No passphrase, so credentials can't be stored or read: set --passphrase")
 	}
 	ctx.Logger().InfoContext(ctx.Context(), "Credential files", "path", path)
-	return flags.WithFileCredentialManager(ctx, path, without(fn))
+	return credentialcmd.WithFileCredentialManager(ctx, path, passphrases, without(fn))
 }
