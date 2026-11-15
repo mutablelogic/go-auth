@@ -1,7 +1,7 @@
 // The forms which create a certificate authority or a certificate, renew
 // one, and change a certificate's tags
 
-import { Day, NamePattern, type CertMeta, type CreateCertRequest, type RenewCertRequest, type SubjectMeta } from './schema.ts';
+import { Day, NamePattern, type CertMeta, type CreateCertRequest, type RenewCertRequest, type Subject, type SubjectMeta } from './schema.ts';
 
 // SubjectFields are a subject's inputs, by its JSON field
 export const SubjectFields: readonly { field: keyof SubjectMeta; label: string }[] = [
@@ -17,6 +17,8 @@ export const SubjectFields: readonly { field: keyof SubjectMeta; label: string }
 // CertForm is what the create form's inputs set: a certificate authority,
 // or a leaf certificate, which a CA signs, and which can have SAN entries.
 // Lists are separated by commas, spaces or lines, and the expiry is in days.
+// Its subject is a stored subject, when subjectId is set, or else the
+// fields of subject which are set, which replace the signer's.
 export interface CertForm {
     ca: boolean;
     name: string;
@@ -25,6 +27,7 @@ export interface CertForm {
     san: string;
     tags: string;
     subject: SubjectMeta;
+    subjectId?: number;
 }
 
 // RenewForm is what the renew form's inputs set: the expiry in days, which
@@ -82,14 +85,16 @@ export function renewFormErrors(form: RenewForm): CertFormErrors {
     return expiry ? { expiry } : {};
 }
 
-// certRequest returns the request of the create form
-export function certRequest(form: CertForm): CreateCertRequest {
+// certRequest returns the request of the create form, with the stored
+// subject which it chose, of the subjects, when it chose one
+export function certRequest(form: CertForm, subjects: readonly Subject[] = []): CreateCertRequest {
     const req: CreateCertRequest = { name: form.name.trim() };
     const expiry = expiryNanoseconds(form.expiry);
     if (expiry) {
         req.expiry = expiry;
     }
-    const subject = subjectOf(form.subject);
+    const stored = form.subjectId === undefined ? undefined : subjects.find((s) => s.id === form.subjectId);
+    const subject = stored ? exactSubject(stored) : subjectOf(form.subject);
     if (subject) {
         req.subject = subject;
     }
@@ -102,6 +107,17 @@ export function certRequest(form: CertForm): CreateCertRequest {
         req.tags = tags;
     }
     return req;
+}
+
+// exactSubject returns every field of a stored subject, with those it
+// doesn't have as empty, which removes them rather than keeping the
+// signer's, so a certificate is created with the subject as it is
+export function exactSubject(subject: SubjectMeta): SubjectMeta {
+    const result: SubjectMeta = {};
+    for (const { field } of SubjectFields) {
+        result[field] = subject[field]?.trim() ?? '';
+    }
+    return result;
 }
 
 // renewRequest returns the request of the renew form

@@ -37,7 +37,7 @@ import { copyText, formatTime, subjectView } from './parts.ts';
 import { SubjectsElement, SubjectsTag } from './subject.ts';
 
 export * from './subject.ts';
-import { RootCertName, certExpired, certType, type CertFeatures, type Certificate } from './schema.ts';
+import { RootCertName, certExpired, certType, type CertFeatures, type Certificate, type Subject } from './schema.ts';
 
 // go-server's and Carbon's elements
 import '@mutablelogic/go-server/list/view';
@@ -122,7 +122,7 @@ export function certDetailsView(cert: Certificate): TemplateResult {
 
 // certFormView is the form which creates a certificate authority, or a
 // certificate, which a certificate authority of the list signs
-export function certFormView(form: CertForm, authorities: readonly string[], errors: CertFormErrors = {}): TemplateResult {
+export function certFormView(form: CertForm, authorities: readonly string[], errors: CertFormErrors = {}, subjects: readonly Subject[] = []): TemplateResult {
     return html`
         <div class="form">
             <cds-text-input label="Name" .value=${live(form.name)}
@@ -150,7 +150,15 @@ export function certFormView(form: CertForm, authorities: readonly string[], err
                 helper-text="Separated by commas, which the certificates it signs inherit"
                 ?invalid=${!!errors.tags} invalid-text=${errors.tags ?? ''}
                 @input=${(event: Event) => { form.tags = (event.target as HTMLInputElement).value; }}></cds-text-input>
-            ${subjectView(form.subject, form.ca ? 'Its subject, which is the root\'s when it\'s empty' : 'Its subject, which is its certificate authority\'s when it\'s empty')}
+            <cds-select label-text="Subject" .value=${live(form.subjectId === undefined ? '' : String(form.subjectId))}
+                helper-text=${form.ca ? 'Default is the root\'s subject. Subjects are created on the Subjects page.' : 'Default is its certificate authority\'s subject. Subjects are created on the Subjects page.'}
+                @cds-select-selected=${(event: CustomEvent<{ value: string }>) => {
+                    const value = event.detail?.value ?? '';
+                    form.subjectId = value ? Number(value) : undefined;
+                }}>
+                <cds-select-item value="" ?selected=${form.subjectId === undefined}>Default</cds-select-item>
+                ${subjects.map((subject) => html`<cds-select-item value=${String(subject.id)} ?selected=${subject.id === form.subjectId}>${subject.subject}</cds-select-item>`)}
+            </cds-select>
         </div>
     `;
 }
@@ -352,7 +360,7 @@ export class CertificatesElement extends LitElement {
         if (!this.controller) {
             return;
         }
-        const authorities = ca ? [] : await this.controller.authorities();
+        const [authorities, subjects] = await Promise.all([ca ? [] : this.controller.authorities(), this.controller.subjects()]);
         if (!ca && !authorities.length) {
             this.notifications?.push({ kind: 'info', title: 'There\'s no enabled certificate authority to sign a certificate' });
             return;
@@ -365,12 +373,12 @@ export class CertificatesElement extends LitElement {
         const selected = this.controller.list.current.selected;
         const key = selected ? keyOf(selected) : undefined;
         const rerender = () => {
-            this.body = { kind: 'form', key, content: certFormView(form, authorities, errors) };
+            this.body = { kind: 'form', key, content: certFormView(form, authorities, errors, subjects) };
         };
         this.open(ca ? 'Create a certificate authority' : 'Create a certificate', ca ? 'Certificate authority' : 'Certificate', {
             kind: 'form',
             key,
-            content: certFormView(form, authorities, errors),
+            content: certFormView(form, authorities, errors, subjects),
         }, [{ label: 'Cancel', kind: 'secondary' }, {
             label: 'Create',
             kind: 'primary',
@@ -381,7 +389,7 @@ export class CertificatesElement extends LitElement {
                 if (Object.keys(errors).length || !this.controller) {
                     return;
                 }
-                const created = await this.controller.create(certRequest(form), ca ? undefined : form.signer);
+                const created = await this.controller.create(certRequest(form, subjects), ca ? undefined : form.signer);
                 this.notifications?.push({ kind: 'success', title: `${created.name} was created` });
                 this.select(created);
             },

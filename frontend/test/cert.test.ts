@@ -56,6 +56,16 @@ test('certForm', async (t) => {
         assert.ok(certFormErrors({ ...certForm(true), name: 'ca', san: 'x.example.test' }).san);
     });
 
+    await t.test('a stored subject is sent as it is, which removes the signer\'s other fields', () => {
+        const subjects = [{ id: 3, certs: 0, organizationName: 'Stored Org', countryName: 'GB', subject: 'O=Stored Org,C=GB' }];
+        const req = certRequest({ ...certForm(false, 'ca'), name: 'web', subjectId: 3 }, subjects);
+        assert.deepEqual(req.subject, {
+            organizationName: 'Stored Org', organizationalUnit: '', countryName: 'GB', stateOrProvinceName: '',
+            localityName: '', streetAddress: '', postalCode: '',
+        });
+        assert.equal(certRequest({ ...certForm(false, 'ca'), name: 'web' }, subjects).subject, undefined, 'the default is the signer\'s');
+    });
+
     await t.test('only the subject fields which are set are sent', () => {
         const req = certRequest({ ...certForm(true), name: 'ca', subject: { organizationName: ' Example ', countryName: '' } });
         assert.deepEqual(req.subject, { organizationName: 'Example' });
