@@ -31,15 +31,6 @@ import (
 )
 
 ///////////////////////////////////////////////////////////////////////////////
-// TYPES
-
-// CertQuery is what's returned with a certificate
-type CertQuery struct {
-	Chain   bool `json:"chain,omitempty" help:"Include the issuer chain, up to the root"`
-	Private bool `json:"private,omitempty" help:"Include the private key, of a leaf certificate"`
-}
-
-///////////////////////////////////////////////////////////////////////////////
 // PRIVATE METHODS - PATHS
 
 // registerCert registers listing certificates, and getting, creating,
@@ -66,7 +57,7 @@ func registerCert(router *httprouter.Router, mgr *manager.Manager, auth bool, do
 			}, func(op httprequest.PathOperation) {
 				op.Summary("Get a certificate")
 				op.Description(doc.Section(3, "GET /cert/{name}").Body)
-				op.Query(jsonschema.MustFor[CertQuery]())
+				op.Query(jsonschema.MustFor[cert.GetCertRequest]())
 				op.JSONResponse(http.StatusOK, jsonschema.MustFor[cert.CertBundle](), "The latest version of the certificate")
 				op.ErrorResponse(http.StatusBadRequest, "Invalid name or query, or the private key of a certificate authority")
 				op.ErrorResponse(http.StatusNotFound, "Certificate not found")
@@ -105,7 +96,7 @@ func registerCert(router *httprouter.Router, mgr *manager.Manager, auth bool, do
 			}, func(op httprequest.PathOperation) {
 				op.Summary("Get a version of a certificate")
 				op.Description(doc.Section(3, "GET /cert/{name}/{serial}").Body)
-				op.Query(jsonschema.MustFor[CertQuery]())
+				op.Query(jsonschema.MustFor[cert.GetCertRequest]())
 				op.JSONResponse(http.StatusOK, jsonschema.MustFor[cert.CertBundle](), "The version of the certificate")
 				op.ErrorResponse(http.StatusBadRequest, "Invalid name, serial or query, or the private key of a certificate authority")
 				op.ErrorResponse(http.StatusNotFound, "Certificate not found")
@@ -194,7 +185,7 @@ func listCerts(mgr *manager.Manager, w http.ResponseWriter, r *http.Request) {
 // asked for
 func getCert(mgr *manager.Manager, w http.ResponseWriter, r *http.Request, byKey bool) {
 	// A private key isn't cached
-	var query CertQuery
+	var query cert.GetCertRequest
 	if err := httprequest.Query(r.URL.Query(), &query); err != nil {
 		httpresponse.Error(w, httpresponse.ErrBadRequest.Withf("%v", err))
 		return
@@ -280,7 +271,7 @@ func renewCert(mgr *manager.Manager, w http.ResponseWriter, r *http.Request, byK
 
 // certBundle is the certificate, with its issuer chain and private key when
 // they're asked for. A disabled certificate is a conflict.
-func certBundle(ctx context.Context, mgr *manager.Manager, key cert.CertKey, query CertQuery) (*cert.CertBundle, error) {
+func certBundle(ctx context.Context, mgr *manager.Manager, key cert.CertKey, query cert.GetCertRequest) (*cert.CertBundle, error) {
 	bundle := new(cert.CertBundle)
 	if query.Private {
 		withKey, err := mgr.GetPrivateKey(ctx, key)
