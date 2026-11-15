@@ -51,6 +51,15 @@ const openapiTag = "OpenAPI"
 // registerFunc registers handlers with the router
 type registerFunc func(*httprouter.Router) error
 
+// module is a module of the server, which isn't always built in, such as
+// certificates: its handlers, and the section of the configuration, which
+// says what it can do, and that the web UI includes it
+type module struct {
+	register registerFunc
+	section  string
+	features any
+}
+
 // follow follows the changes which PostgreSQL's triggers notify the channel
 // of, and publishes them, whatever makes them: run follows them, until the
 // context is cancelled, and ready waits until it does, so the server doesn't
@@ -92,7 +101,7 @@ func (runner *RunServer) Run(ctx server.Cmd) error {
 			return runner.Credential.withManager(ctx, pool, follow, runner.Passphrase, func(manager credential.CredentialManager, notified bool) error {
 				ctx.Logger().InfoContext(ctx.Context(), "Credentials", "backend", backend)
 				ctx.Logger().WarnContext(ctx.Context(), "The credential API has no authentication")
-				return runner.Cert.withHandlers(ctx, pool, follow, runner.Passphrase, func(certs registerFunc) error {
+				return runner.Cert.withHandlers(ctx, pool, follow, runner.Passphrase, func(certs *module) error {
 					// The API publishes its changes, unless the backend's
 					// trigger notifies of them, as pg's does
 					var publisher httphandler.Publisher
@@ -115,11 +124,13 @@ func (runner *RunServer) Run(ctx server.Cmd) error {
 // else a handler of / which isn't found, the credential API, which
 // publishes its changes, which the UI follows, and the certificate API,
 // when it's built in
-func (runner *RunServer) register(ctx server.Cmd, manager credential.CredentialManager, publisher httphandler.Publisher, certs registerFunc) {
+func (runner *RunServer) register(ctx server.Cmd, manager credential.CredentialManager, publisher httphandler.Publisher, certs *module) {
 	runner.RunServer.Register(func(router *httprouter.Router) error {
-		ui, err := runner.Frontend.RegisterUI(ctx, ctx.Logger(), router, runner.RunServer.OpenAPI,
-			config.WithSection("credential", credential.FeaturesOf(backend, manager)),
-		)
+		sections := []config.Opt{config.WithSection("credential", credential.FeaturesOf(backend, manager))}
+		if certs != nil {
+			sections = append(sections, config.WithSection(certs.section, certs.features))
+		}
+		ui, err := runner.Frontend.RegisterUI(ctx, ctx.Logger(), router, runner.RunServer.OpenAPI, sections...)
 		if err != nil {
 			return err
 		}
@@ -136,7 +147,7 @@ func (runner *RunServer) register(ctx server.Cmd, manager credential.CredentialM
 			return err
 		}
 		if certs != nil {
-			if err := certs(router); err != nil {
+			if err := certs.register(router); err != nil {
 				return err
 			}
 		}

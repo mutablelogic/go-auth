@@ -15,6 +15,7 @@
 // are the package's peer dependencies.
 
 import { LitElement, html, nothing, type PropertyValues, type TemplateResult } from 'lit';
+import { live } from 'lit/directives/live.js';
 import { ApiError, type Client } from '@mutablelogic/go-server/api';
 import type { ChangesController } from '@mutablelogic/go-server/broadcaster';
 import type { Column } from '@mutablelogic/go-server/list/view';
@@ -77,24 +78,24 @@ export function keyView(key: string, rotate = false): TemplateResult {
 export function credentialFormView(form: CredentialForm, rerender: () => void, errors: CredentialFormErrors = {}): TemplateResult {
     return html`
         <div class="form">
-            <cds-text-input label="Key" value=${form.key} ?readonly=${form.replace}
+            <cds-text-input label="Key" .value=${live(form.key)} ?readonly=${form.replace}
                 helper-text=${form.replace ? 'The credential which is changed' : 'A letter, then letters, digits, _ and -, such as OPENAI_API_KEY'}
                 ?invalid=${!!errors.key} invalid-text=${errors.key ?? ''}
                 @input=${(event: Event) => { form.key = (event.target as HTMLInputElement).value; }}></cds-text-input>
-            <cds-text-input label="Description" value=${form.description}
+            <cds-text-input label="Description" .value=${live(form.description)}
                 helper-text="What it's for, which isn't secret, so it's shown in the list"
                 @input=${(event: Event) => { form.description = (event.target as HTMLInputElement).value; }}></cds-text-input>
             ${form.json ? html`
-                <cds-textarea label="Value" rows="6" value=${form.value}
+                <cds-textarea label="Value" rows="6" .value=${live(form.value)}
                     helper-text=${form.replace ? 'Leave it empty to keep the value' : 'Any JSON, such as an object with a user and a password'}
                     ?invalid=${!!errors.value} invalid-text=${errors.value ?? ''}
                     @input=${(event: Event) => { form.value = (event.target as HTMLTextAreaElement).value; }}></cds-textarea>
             ` : html`
-                <cds-password-input label="Value" value=${form.value} autocomplete="off"
+                <cds-password-input label="Value" .value=${live(form.value)} autocomplete="off"
                     helper-text=${form.replace ? 'Leave it empty to keep the value' : 'Stored encrypted, and never shown without its passphrase'}
                     ?invalid=${!!errors.value} invalid-text=${errors.value ?? ''}
                     @input=${(event: Event) => { form.value = (event.target as HTMLInputElement).value; }}></cds-password-input>
-                <cds-password-input label="Value again" value=${form.confirm} autocomplete="off"
+                <cds-password-input label="Value again" .value=${live(form.confirm)} autocomplete="off"
                     helper-text="The same value, to be sure it's right"
                     ?invalid=${!!errors.confirm} invalid-text=${errors.confirm ?? ''}
                     @input=${(event: Event) => { form.confirm = (event.target as HTMLInputElement).value; }}></cds-password-input>
@@ -113,7 +114,7 @@ export function credentialFormView(form: CredentialForm, rerender: () => void, e
 export function passphraseFormView(state: { passphrase: string }, error?: string): TemplateResult {
     return html`
         <div class="form">
-            <cds-password-input label="Passphrase" value=${state.passphrase} autocomplete="off"
+            <cds-password-input label="Passphrase" .value=${live(state.passphrase)} autocomplete="off"
                 helper-text="The passphrase the credential was encrypted with"
                 ?invalid=${!!error} invalid-text=${error ?? ''}
                 @input=${(event: Event) => { state.passphrase = (event.target as HTMLInputElement).value; }}></cds-password-input>

@@ -32,6 +32,6 @@ type CertFlags struct{}
 // PRIVATE METHODS
 
 // withHandlers calls fn without the certificate handlers
-func (CertFlags) withHandlers(_ server.Cmd, _ pg.PoolConn, _ *follow, _ []string, fn func(registerFunc) error) error {
+func (CertFlags) withHandlers(_ server.Cmd, _ pg.PoolConn, _ *follow, _ []string, fn func(*module) error) error {
 	return fn(nil)
 }
