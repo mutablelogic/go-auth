@@ -92,7 +92,15 @@ export interface CertListRequest {
     name?: string;
     // search is the certificates whose names have its text, in any case
     search?: string;
+    // sort is the column they're sorted by, in the order, ascending unless
+    // it's desc, rather than by name, then each name's versions, the latest
+    // first
+    sort?: CertSort;
+    order?: 'asc' | 'desc';
 }
+
+// CertSort is a column which certificates are sorted by
+export type CertSort = 'name' | 'signer' | 'expires';
 
 // CreateCertRequest creates a certificate authority, or a certificate.
 // expiry is in nanoseconds, as Go's durations are, and the server's default
@@ -148,4 +156,20 @@ export function certType(cert: Certificate): 'root' | 'ca' | 'certificate' {
 // certExpired is true when the certificate's validity has ended, at the time
 export function certExpired(cert: Certificate, now = Date.now()): boolean {
     return !!cert.not_after && Date.parse(cert.not_after) <= now;
+}
+
+// CertValidity is whether a certificate is valid at a time, has expired, or
+// isn't valid yet
+export type CertValidity = 'valid' | 'expired' | 'pending';
+
+// certValidity is whether the certificate is valid at the time, between its
+// not_before and not_after, or has expired, or isn't valid yet
+export function certValidity(cert: Certificate, now = Date.now()): CertValidity {
+    if (certExpired(cert, now)) {
+        return 'expired';
+    }
+    if (cert.not_before && Date.parse(cert.not_before) > now) {
+        return 'pending';
+    }
+    return 'valid';
 }

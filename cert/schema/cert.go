@@ -185,8 +185,11 @@ func (c CertListRequest) Select(bind *pg.Bind, op pg.Op) (string, error) {
 	} else {
 		bind.Set("where", "WHERE "+where)
 	}
-	// A name's versions are the latest first, which is the one inserted last
-	bind.Set("orderby", `ORDER BY cert_row."name" ASC, cert_row."id" DESC`)
+	if orderby, err := certOrderBy(c.Sort, c.Order); err != nil {
+		return "", err
+	} else {
+		bind.Set("orderby", orderby)
+	}
 	offsetlimit := pg.OffsetLimit(c.OffsetLimit)
 	offsetlimit.Bind(bind, CertListLimit)
 
@@ -397,4 +400,42 @@ func (c CertMeta) Update(bind *pg.Bind) error {
 	}
 
 	return nil
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// PRIVATE METHODS
+
+// certSorts are the columns which certificates are sorted by
+var certSorts = map[string]string{
+	"name":    `cert_row."name"`,
+	"signer":  `issuer."name"`,
+	"expires": `cert_row."not_after"`,
+}
+
+// certOrderBy returns the order of a list of certificates: by the column of
+// the sort, in the order, then by name, then each name's versions, the
+// latest first, which is the one inserted last
+func certOrderBy(sort, order string) (string, error) {
+	var direction string
+	switch strings.ToLower(order) {
+	case "", "asc":
+		direction = "ASC"
+	case "desc":
+		direction = "DESC"
+	default:
+		return "", httpresponse.ErrBadRequest.Withf("order %q is invalid, which is asc or desc", order)
+	}
+	terms := []string{}
+	if sort != "" {
+		column, exists := certSorts[strings.ToLower(sort)]
+		if !exists {
+			return "", httpresponse.ErrBadRequest.Withf("sort %q is invalid, which is name, signer or expires", sort)
+		}
+		terms = append(terms, column+" "+direction+" NULLS LAST")
+	}
+	if !strings.EqualFold(sort, "name") {
+		terms = append(terms, `cert_row."name" ASC`)
+	}
+	terms = append(terms, `cert_row."id" DESC`)
+	return "ORDER BY " + strings.Join(terms, ", "), nil
 }

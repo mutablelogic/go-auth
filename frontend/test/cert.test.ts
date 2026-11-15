@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import type { Client } from '@mutablelogic/go-server/api';
 import { certForm, certFormErrors, certRequest, validSAN, renewForm, renewFormErrors, renewRequest, splitList, subjectCreateRequest, subjectUpdateRequest, tagsError, tagsRequest } from '../src/cert/form.ts';
 import { certificatePEM, pem, privateKeyPEM } from '../src/cert/pem.ts';
-import { Day, RootCertName, certExpired, certType } from '../src/cert/schema.ts';
+import { Day, RootCertName, certExpired, certType, certValidity } from '../src/cert/schema.ts';
 import * as api from '../src/cert/httpclient.ts';
 
 // fakeClient returns a client whose fetch records each request, and
@@ -84,8 +84,8 @@ test('certForm', async (t) => {
 
     await t.test('renewing keeps what is not set', () => {
         assert.deepEqual(renewRequest(renewForm()), {});
-        assert.deepEqual(renewRequest({ expiry: '7', subject: { localityName: 'London' } }), { expiry: 7 * Day, subject: { localityName: 'London' } });
-        assert.ok(renewFormErrors({ expiry: 'soon', subject: {} }).expiry);
+        assert.deepEqual(renewRequest({ expiry: '7' }), { expiry: 7 * Day });
+        assert.ok(renewFormErrors({ expiry: 'soon' }).expiry);
     });
 
     await t.test('tags', () => {
@@ -114,6 +114,9 @@ test('schema', () => {
     assert.equal(certType({ name: 'web', serial: '1' }), 'certificate');
     assert.equal(certExpired({ name: 'web', serial: '1', not_after: '2000-01-01T00:00:00Z' }), true);
     assert.equal(certExpired({ name: 'web', serial: '1', not_after: '2999-01-01T00:00:00Z' }), false);
+    assert.equal(certValidity({ name: 'web', serial: '1', not_before: '2000-01-01T00:00:00Z', not_after: '2999-01-01T00:00:00Z' }), 'valid');
+    assert.equal(certValidity({ name: 'web', serial: '1', not_after: '2000-01-01T00:00:00Z' }), 'expired');
+    assert.equal(certValidity({ name: 'web', serial: '1', not_before: '2999-01-01T00:00:00Z', not_after: '2999-12-31T00:00:00Z' }), 'pending');
 });
 
 test('httpclient', async (t) => {
@@ -129,6 +132,7 @@ test('httpclient', async (t) => {
             : json(method === 'PATCH' || method === 'GET' ? 200 : 201, { name: 'web', serial: '1' }));
 
         await api.listCerts(client, { offset: 10, limit: 5, is_ca: true, tags: ['prod', 'web'] });
+        await api.listCerts(client, { sort: 'expires', order: 'desc' });
         await api.getCert(client, { name: 'web' }, true);
         await api.getPrivateKey(client, { name: 'web', serial: '1' });
         await api.createCA(client, { name: 'ca' });
@@ -139,6 +143,7 @@ test('httpclient', async (t) => {
 
         assert.deepEqual(requests.map((r) => `${r.method} ${r.url.pathname}${r.url.search}`), [
             'GET /api/cert?offset=10&limit=5&is_ca=true&tags=prod&tags=web',
+            'GET /api/cert?sort=expires&order=desc',
             'GET /api/cert/web?chain=true',
             'GET /api/cert/web/1/key',
             'POST /api/ca',
@@ -147,9 +152,9 @@ test('httpclient', async (t) => {
             'POST /api/cert/web/renew',
             'PATCH /api/cert/web/1',
         ]);
-        assert.deepEqual(requests[4].body, { expiry: Day });
-        assert.deepEqual(requests[5].body, { name: 'web', san: ['web.example.test'] });
-        assert.deepEqual(requests[7].body, { enabled: false });
+        assert.deepEqual(requests[5].body, { expiry: Day });
+        assert.deepEqual(requests[6].body, { name: 'web', san: ['web.example.test'] });
+        assert.deepEqual(requests[8].body, { enabled: false });
     });
 });
 

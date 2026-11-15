@@ -50,6 +50,7 @@ Lists certificates, other than the root, without their private keys.
 - **Filters:** `is_ca`, `enabled`, `valid` (within its validity period), `tags` (all of them) and `subject`.
 - **Versions:** `latest=true` lists each certificate's latest version, and `latest=false` the older ones. `name` lists a certificate's versions, the latest first.
 - **Search:** `search` lists the certificates whose names have its text, in any case.
+- **Sort:** `sort` is `name`, `signer` or `expires`, and `order` is `asc`, the default, or `desc`. Ties are by name, then the latest version first, which is also the order without a sort.
 - **Pages:** `offset` and `limit`.
 
 ### GET /cert/{name}
