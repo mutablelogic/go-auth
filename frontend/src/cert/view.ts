@@ -33,7 +33,7 @@ import {
     type CertForm, type CertFormErrors, type RenewForm,
 } from './form.ts';
 import { certificatePEM, download, privateKeyPEM } from './pem.ts';
-import { copyText, formatTime, subjectView } from './parts.ts';
+import { copyText, formatTime } from './parts.ts';
 import { SubjectsElement, SubjectsTag } from './subject.ts';
 
 export * from './subject.ts';
@@ -57,6 +57,10 @@ import CertificateCheckIcon from '@carbon/icons/es/certificate--check/32.js';
 
 ///////////////////////////////////////////////////////////////////////////////
 // PARTS
+
+// DefaultSubject is the subject select's value for the default subject.
+// Carbon's select treats an empty value as no selection, so it isn't empty.
+const DefaultSubject = 'default';
 
 // DownloadButton is a download icon, in a button
 const DownloadButton = iconLoader(DownloadIcon, { slot: 'icon' });
@@ -148,13 +152,13 @@ export function certFormView(form: CertForm, authorities: readonly string[], err
                 helper-text="Separated by commas, which the certificates it signs inherit"
                 ?invalid=${!!errors.tags} invalid-text=${errors.tags ?? ''}
                 @input=${(event: Event) => { form.tags = (event.target as HTMLInputElement).value; }}></cds-text-input>
-            <cds-select label-text="Subject" .value=${live(form.subjectId === undefined ? '' : String(form.subjectId))}
+            <cds-select label-text="Subject" .value=${live(form.subjectId === undefined ? DefaultSubject : String(form.subjectId))}
                 helper-text=${form.ca ? 'Default is the root\'s subject. Subjects are created on the Subjects page.' : 'Default is its certificate authority\'s subject. Subjects are created on the Subjects page.'}
                 @cds-select-selected=${(event: CustomEvent<{ value: string }>) => {
-                    const value = event.detail?.value ?? '';
-                    form.subjectId = value ? Number(value) : undefined;
+                    const value = event.detail?.value ?? DefaultSubject;
+                    form.subjectId = value === DefaultSubject ? undefined : Number(value);
                 }}>
-                <cds-select-item value="" ?selected=${form.subjectId === undefined}>Default</cds-select-item>
+                <cds-select-item value=${DefaultSubject} ?selected=${form.subjectId === undefined}>Default</cds-select-item>
                 ${subjects.map((subject) => html`<cds-select-item value=${String(subject.id)} ?selected=${subject.id === form.subjectId}>${subject.subject}</cds-select-item>`)}
             </cds-select>
         </div>
@@ -172,7 +176,7 @@ export function renewFormView(form: RenewForm, cert: Certificate, errors: CertFo
                 helper-text="The current lifetime when it's empty, and never after its signer"
                 ?invalid=${!!errors.expiry} invalid-text=${errors.expiry ?? ''}
                 @input=${(event: Event) => { form.expiry = (event.target as HTMLInputElement).value; }}></cds-text-input>
-            ${subjectView(form.subject, 'The fields which change, which are kept when they\'re empty')}
+            <p class="helper">Its subject is kept. A certificate with another subject is created with another name.</p>
         </div>
     `;
 }

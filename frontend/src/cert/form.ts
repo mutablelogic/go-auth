@@ -30,12 +30,10 @@ export interface CertForm {
     subjectId?: number;
 }
 
-// RenewForm is what the renew form's inputs set: the expiry in days, which
-// is the current lifetime when it's empty, and the subject, whose fields
-// are kept when they're empty
+// RenewForm is what the renew form's input sets: the expiry in days, which
+// is the current lifetime when it's empty. The subject is kept.
 export interface RenewForm {
     expiry: string;
-    subject: SubjectMeta;
 }
 
 // CertFormErrors are what's wrong with a form, by its input
@@ -49,7 +47,7 @@ export function certForm(ca: boolean, signer = ''): CertForm {
 
 // renewForm returns the form which renews a certificate
 export function renewForm(): RenewForm {
-    return { expiry: '', subject: {} };
+    return { expiry: '' };
 }
 
 // certFormErrors returns what's wrong with the form, which isn't sent until
@@ -132,10 +130,6 @@ export function renewRequest(form: RenewForm): RenewCertRequest {
     const expiry = expiryNanoseconds(form.expiry);
     if (expiry) {
         req.expiry = expiry;
-    }
-    const subject = subjectOf(form.subject);
-    if (subject) {
-        req.subject = subject;
     }
     return req;
 }

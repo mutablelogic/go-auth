@@ -84,8 +84,8 @@ test('certForm', async (t) => {
 
     await t.test('renewing keeps what is not set', () => {
         assert.deepEqual(renewRequest(renewForm()), {});
-        assert.deepEqual(renewRequest({ expiry: '7', subject: { localityName: 'London' } }), { expiry: 7 * Day, subject: { localityName: 'London' } });
-        assert.ok(renewFormErrors({ expiry: 'soon', subject: {} }).expiry);
+        assert.deepEqual(renewRequest({ expiry: '7' }), { expiry: 7 * Day });
+        assert.ok(renewFormErrors({ expiry: 'soon' }).expiry);
     });
 
     await t.test('tags', () => {
