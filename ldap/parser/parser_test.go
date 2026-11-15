@@ -77,6 +77,26 @@ func TestParseObjectClassLists(t *testing.T) {
 	assert.Equal(map[string][]string{"X-ORIGIN": {"a", "b"}}, result.Extensions)
 }
 
+func TestParseEscapesAndDescriptorOIDs(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+
+	// RFC 4512's escapes, in any case, in descriptions and extensions
+	class, err := New(`( 1.2.3.6 NAME 'example' DESC 'Owner\27s \5Centry\5c' X-ORIGIN 'it\27s' )`).ParseObjectClass()
+	require.NoError(err)
+	assert.Equal(`Owner's \entry\`, class.Description)
+	assert.Equal(map[string][]string{"X-ORIGIN": {"it's"}}, class.Extensions)
+
+	// 389 DS's schema has descriptors as OIDs, such as nsCertConfig-oid
+	class, err = New("( nsCertConfig-oid NAME 'nsCertConfig' SUP top STRUCTURAL MUST cn )").ParseObjectClass()
+	require.NoError(err)
+	assert.Equal("nsCertConfig-oid", class.NumericOID)
+	attr, err := New("( nsCertConfig-oid NAME 'nsCert' SYNTAX 1.3.6.1.4.1.1466.115.121.1.15{256} )").ParseAttributeType()
+	require.NoError(err)
+	assert.Equal("nsCertConfig-oid", attr.NumericOID)
+	assert.Equal("1.3.6.1.4.1.1466.115.121.1.15{256}", attr.Syntax)
+}
+
 func TestParseInvalid(t *testing.T) {
 	for _, definition := range []string{
 		"1.2.3 NAME 'missing paren' )",
@@ -87,6 +107,17 @@ func TestParseInvalid(t *testing.T) {
 		"( 1.2.3 NAME 'unterminated )",
 		"( 1.2.3 NAME 'a' ; )",
 		"( 1.2.3 NAME 'a' DESC )",
+		"( 1.2.3{64} NAME 'length' )",
+		"( '1.2.3' NAME 'quoted' )",
+		"( 1.2.3 NAME 'a' ) 'unterminated",
+		"( 1.2.3 NAME 'a' DESC 'bad \\n escape' )",
+		"( 1.2.3 NAME 'a' DESC 'short \\2' )",
+		"( 1.2.3 NAME 'a' SUP ( ) )",
+		"( 1.2.3 NAME 'a' SUP ( $ ) )",
+		"( 1.2.3 NAME 'a' SUP ( top $ ) )",
+		"( 1.2.3 NAME 'a' SUP ( $ top ) )",
+		"( 1.2.3 NAME 'a' SUP ( top person ) )",
+		"( 1.2.3 NAME 'a' SUP ( top $ $ person ) )",
 	} {
 		_, err := New(definition).ParseObjectClass()
 		assert.ErrorIs(t, err, auth.ErrBadParameter, definition)
