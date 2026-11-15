@@ -28,6 +28,9 @@ import (
 // SubjectID selects a subject by its row identifier
 type SubjectID uint64
 
+// SubjectLock locks a subject, until the transaction ends
+type SubjectLock uint64
+
 // SubjectMeta inserts and updates a subject
 type SubjectMeta cert.SubjectMeta
 
@@ -60,6 +63,19 @@ func (n SubjectID) Select(bind *pg.Bind, op pg.Op) (string, error) {
 		return bind.Query("subject.delete"), nil
 	default:
 		return "", httpresponse.ErrInternalError.Withf("unsupported SubjectID operation %q", op)
+	}
+}
+
+func (n SubjectLock) Select(bind *pg.Bind, op pg.Op) (string, error) {
+	if n == 0 {
+		return "", httpresponse.ErrBadRequest.With("id is missing")
+	}
+	bind.Set("id", n)
+	switch op {
+	case pg.Get:
+		return bind.Query("subject.lock"), nil
+	default:
+		return "", httpresponse.ErrInternalError.Withf("unsupported SubjectLock operation %q", op)
 	}
 }
 
@@ -136,7 +152,7 @@ func (n SubjectMeta) Update(bind *pg.Bind) error {
 
 func (n *Subject) Scan(row pg.Row) error {
 	// Scan from row
-	if err := row.Scan(&n.ID, &n.Org, &n.Unit, &n.Country, &n.City, &n.State, &n.StreetAddress, &n.PostalCode, &n.Ts); err != nil {
+	if err := row.Scan(&n.ID, &n.Org, &n.Unit, &n.Country, &n.City, &n.State, &n.StreetAddress, &n.PostalCode, &n.Ts, &n.Certs); err != nil {
 		return err
 	}
 
@@ -161,5 +177,11 @@ func (n *SubjectList) Scan(row pg.Row) error {
 }
 
 func (n *SubjectList) ScanCount(row pg.Row) error {
-	return row.Scan(&n.Count)
+	if err := row.Scan(&n.Count); err != nil {
+		return err
+	}
+	offsetlimit := pg.OffsetLimit(n.OffsetLimit)
+	offsetlimit.Clamp(n.Count)
+	n.OffsetLimit = cert.OffsetLimit(offsetlimit)
+	return nil
 }

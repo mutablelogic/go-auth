@@ -167,15 +167,18 @@ type SubjectMeta struct {
 	PostalCode    *string `json:"postalCode,omitempty" example:"94105"`
 }
 
+// Subject is a stored subject, which certificates share, with the number of
+// certificates which use it: one which none uses can be changed or deleted
 type Subject struct {
-	ID uint64 `json:"id"`
+	ID uint64 `json:"id" readonly:""`
 	SubjectMeta
-	Ts      time.Time `json:"timestamp,omitzero"`
-	Subject *string   `json:"subject,omitempty"`
+	Ts      time.Time `json:"timestamp,omitzero" readonly:""`
+	Subject *string   `json:"subject,omitempty" readonly:""`
+	Certs   uint64    `json:"certs" readonly:"" help:"Number of certificates which use the subject"`
 }
 
 type SubjectRef struct {
-	ID uint64 `json:"-"`
+	ID uint64 `json:"id" help:"The subject's identifier"`
 	SubjectMeta
 	Ts         time.Time `json:"timestamp,omitzero"`
 	CommonName *string   `json:"commonName,omitempty"`
@@ -368,6 +371,18 @@ func (r GetCertRequest) Query() url.Values {
 	query := url.Values{}
 	if r.Chain {
 		query.Set("chain", "true")
+	}
+	return query
+}
+
+// Query is the request as URL query parameters
+func (r SubjectListRequest) Query() url.Values {
+	query := url.Values{}
+	if r.Offset > 0 {
+		query.Set("offset", strconv.FormatUint(r.Offset, 10))
+	}
+	if r.Limit != nil {
+		query.Set("limit", strconv.FormatUint(*r.Limit, 10))
 	}
 	return query
 }

@@ -44,6 +44,9 @@ func (m *Manager) ListCerts(ctx context.Context, req cert.CertListRequest) (_ *c
 	ctx, endSpan := otel.StartSpan(m.tracer, ctx, "certmanager.ListCerts", attribute.String("request", req.String()))
 	defer func() { endSpan(err) }()
 
+	// The limit is at most the query's, so the response says which
+	// certificates it has, and the next page starts after them
+	req.OffsetLimit = clampLimit(req.OffsetLimit, schema.CertListLimit)
 	result := cert.CertList{CertListRequest: req}
 	if err = m.PoolConn.List(ctx, (*schema.CertList)(&result), schema.CertListRequest(req)); err != nil {
 		return nil, err
