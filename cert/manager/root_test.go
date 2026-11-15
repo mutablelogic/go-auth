@@ -25,8 +25,8 @@ import (
 	// Packages
 	cert "github.com/mutablelogic/go-auth/cert/cert"
 	manager "github.com/mutablelogic/go-auth/cert/manager"
-	test "github.com/mutablelogic/go-auth/cert/test"
 	schema "github.com/mutablelogic/go-auth/cert/schema"
+	test "github.com/mutablelogic/go-auth/cert/test"
 	authcrypto "github.com/mutablelogic/go-auth/crypto"
 	httpresponse "github.com/mutablelogic/go-server/pkg/httpresponse"
 	types "github.com/mutablelogic/go-server/pkg/types"
