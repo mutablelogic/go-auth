@@ -18,8 +18,10 @@ import (
 	"encoding/pem"
 	"fmt"
 	"io"
+	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	// Packages
 	cert "github.com/mutablelogic/go-auth/cert/cert"
@@ -57,12 +59,27 @@ func writeBlock(w io.Writer, c cert.Certificate, what, blockType string, data []
 	}
 	if comments {
 		for _, line := range commentLines(c, what) {
-			if _, err := fmt.Fprintln(w, "# "+line); err != nil {
+			if _, err := fmt.Fprintln(w, "# "+escape(line)); err != nil {
 				return err
 			}
 		}
 	}
 	return pem.Encode(w, &pem.Block{Type: blockType, Bytes: data})
+}
+
+// escape escapes the control characters in a comment, such as line endings
+// in a subject, which would otherwise end the comment, and could put a PEM
+// block before the certificate
+func escape(line string) string {
+	var b strings.Builder
+	for _, r := range line {
+		if unicode.IsControl(r) {
+			b.WriteString(strings.Trim(strconv.QuoteRune(r), "'"))
+		} else {
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
 }
 
 // commentLines are the certificate's details
