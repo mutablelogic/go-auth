@@ -1,4 +1,5 @@
-// CertController keeps the certificates, a page at a time, in a
+// CertController keeps the certificates, or only the certificate
+// authorities, or leaf certificates, a page at a time, in a
 // ListController, which a gs-table shows, and creates, renews and changes
 // them, loading the list again when they change. The server pages them, in
 // name order, with the latest version of each name first.
@@ -16,6 +17,9 @@ export interface CertOptions {
     notifications?: NotificationController;
     changes?: ChangesController;
     pageSize?: number;
+    // ca lists only certificate authorities, when it's true, or only leaf
+    // certificates, when it's false, or both when it's not set
+    ca?: boolean;
 }
 
 export class CertController {
@@ -27,7 +31,7 @@ export class CertController {
         this.list = new ListController<Certificate>({
             name: 'Certificates',
             list: async (offset, limit) => {
-                const page = await api.listCerts(client, { offset, limit });
+                const page = await api.listCerts(client, { offset, limit, is_ca: options.ca });
                 return { count: page.count, body: page.body ?? [] };
             },
             get: (cert) => api.getCert(client, cert).catch(() => cert),

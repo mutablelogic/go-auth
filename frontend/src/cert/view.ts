@@ -1,15 +1,18 @@
 // go-auth's certificates, as Lit elements, of Carbon's web components, which
 // an app includes:
 //
-// - ga-certificates is a Certificates page: its header, which creates a
-//   certificate authority or a certificate, the table of the certificates,
-//   and a panel, which opens one, downloads it, with its chain, and its
-//   private key, renews it, enables or disables it, and changes its tags.
-//   It's given the API's client, and the app's notifications.
-// - certModule adds it to an app as a module, which owns the Certificates
-//   item in the app's menu bar, and its sidebar while it's active.
-// - certColumns, certFormView and certDetailsView are its parts, for an app
-//   which shows certificates in its own table and panel.
+// - ga-certificates is a page of certificate authorities, or of leaf
+//   certificates, by its kind: its header, which creates one, the table of
+//   them, and a panel, which opens one, downloads it, with its chain, and a
+//   leaf certificate's private key, renews it, enables or disables it, and
+//   changes its tags. It's given the API's client, and the app's
+//   notifications.
+// - certModule adds a Certificate Authorities page, and a Leaf Certificates
+//   page, to an app as a module, which owns the Certificates item in the
+//   app's menu bar, and its sidebar, of the two pages, while it's active.
+// - authorityColumns, certificateColumns, certFormView and certDetailsView
+//   are its parts, for an app which shows certificates in its own table and
+//   panel.
 //
 // They need lit, @carbon/web-components and @mutablelogic/go-server, which
 // are the package's peer dependencies.
@@ -46,6 +49,7 @@ import iconLoader from '@carbon/web-components/es/globals/internal/icon-loader.j
 import AddIcon from '@carbon/icons/es/add/16.js';
 import DownloadIcon from '@carbon/icons/es/download/16.js';
 import CertificateIcon from '@carbon/icons/es/certificate/32.js';
+import CertificateCheckIcon from '@carbon/icons/es/certificate--check/32.js';
 
 ///////////////////////////////////////////////////////////////////////////////
 // PARTS
@@ -53,12 +57,23 @@ import CertificateIcon from '@carbon/icons/es/certificate/32.js';
 // DownloadButton is a download icon, in a button
 const DownloadButton = iconLoader(DownloadIcon, { slot: 'icon' });
 
-// certColumns are the columns of a table of certificates: the name, which
-// can be copied, without opening the certificate, what it is, its signer,
-// when it expires, its state, and its tags, with those it inherits
-export const certColumns: Column<Certificate>[] = [
+// authorityColumns are the columns of a table of certificate authorities,
+// which the root signs: the name, which can be copied, without opening the
+// certificate, when it expires, its state, and its tags
+export const authorityColumns: Column<Certificate>[] = [
     { header: 'Name', cell: (cert) => nameView(cert.name) },
-    { header: 'Type', cell: (cert) => typeTag(cert) },
+    { header: 'Expires', cell: (cert) => formatTime(cert.not_after) },
+    { header: 'State', cell: (cert) => stateTags(cert) },
+    { header: 'Tags', cell: (cert) => (cert.effective_tags ?? []).join(', ') },
+];
+
+// certificateColumns are the columns of a table of leaf certificates: the
+// name, which can be copied, without opening the certificate, its SAN
+// entries, the certificate authority which signed it, when it expires, its
+// state, and its tags, with those it inherits
+export const certificateColumns: Column<Certificate>[] = [
+    { header: 'Name', cell: (cert) => nameView(cert.name) },
+    { header: 'SAN', cell: (cert) => (cert.san ?? []).join(', ') },
     { header: 'Signer', cell: (cert) => signerName(cert) },
     { header: 'Expires', cell: (cert) => formatTime(cert.not_after) },
     { header: 'State', cell: (cert) => stateTags(cert) },
@@ -176,7 +191,9 @@ export class CertificatesElement extends LitElement {
         notifications: { attribute: false },
         changes: { attribute: false },
         features: { attribute: false },
+        kind: { type: String },
         heading: { type: String },
+        createCertificate: { attribute: false },
         body: { state: true },
     };
 
@@ -196,8 +213,17 @@ export class CertificatesElement extends LitElement {
     // configuration, such as whether a root is stored
     declare features?: CertFeatures;
 
-    // heading is the page's title
-    declare heading: string;
+    // kind is what the page has: certificate authorities, or leaf
+    // certificates, which is set before it's connected
+    declare kind: 'ca' | 'certificate';
+
+    // heading is the page's title, which is the kind's when it's not set
+    declare heading?: string;
+
+    // createCertificate creates a leaf certificate, which a certificate
+    // authority signs, when it's set, such as on another page of leaf
+    // certificates. Otherwise it's created in this page's panel.
+    declare createCertificate?: (signer: string) => void;
 
     // body is what the panel shows
     declare private body?: Body;
@@ -207,7 +233,7 @@ export class CertificatesElement extends LitElement {
 
     constructor() {
         super();
-        this.heading = 'Certificates';
+        this.kind = 'certificate';
         this.panel.onClose(() => this.controller?.list.close());
         this.panel.onError((error, action) => this.notifications?.error(`${action.label} didn't work`, error));
     }
@@ -230,7 +256,7 @@ export class CertificatesElement extends LitElement {
 
     protected override willUpdate(changed: PropertyValues<this>) {
         if (!this.controller && this.client) {
-            this.controller = new CertController(this.client, { notifications: this.notifications, changes: this.changes });
+            this.controller = new CertController(this.client, { notifications: this.notifications, changes: this.changes, ca: this.kind === 'ca' });
         }
         if (changed.has('controller') || changed.has('client')) {
             this.watch();
@@ -242,16 +268,18 @@ export class CertificatesElement extends LitElement {
             return nothing;
         }
         const root = this.features?.root ?? true;
-        const actions: PageAction[] = [
-            { label: 'Create a certificate authority', kind: 'secondary', disabled: !root, run: () => this.create(true) },
-            { label: 'Create a certificate', icon: AddIcon, run: () => this.create(false) },
-        ];
+        const authorities = this.kind === 'ca';
+        const actions: PageAction[] = authorities
+            ? [{ label: 'Create a certificate authority', icon: AddIcon, disabled: !root, run: () => this.create(true) }]
+            : [{ label: 'Create a certificate', icon: AddIcon, run: () => this.create(false) }];
+        const subtitle = authorities
+            ? (root ? 'Which the root signs, and which sign leaf certificates' : 'No root certificate is stored, so certificate authorities can\'t be created')
+            : 'Such as a server\'s, which a certificate authority signs';
         return html`
-            <gs-page-header heading=${this.heading}
-                subtitle=${root ? 'Certificate authorities, which the root signs, and the certificates they sign' : 'No root certificate is stored, so certificate authorities can\'t be created'}
-                .icon=${CertificateIcon} .actions=${actions}></gs-page-header>
-            <gs-table .controller=${this.controller.list} .columns=${certColumns}
-                empty="No certificates are stored"></gs-table>
+            <gs-page-header heading=${this.heading ?? (authorities ? 'Certificate Authorities' : 'Leaf Certificates')}
+                subtitle=${subtitle} .icon=${authorities ? CertificateCheckIcon : CertificateIcon} .actions=${actions}></gs-page-header>
+            <gs-table .controller=${this.controller.list} .columns=${authorities ? authorityColumns : certificateColumns}
+                empty=${authorities ? 'No certificate authorities are stored' : 'No leaf certificates are stored'}></gs-table>
             <gs-panel .controller=${this.panel}>${this.body?.content ?? nothing}</gs-panel>
         `;
     }
@@ -290,7 +318,7 @@ export class CertificatesElement extends LitElement {
         if (enabled) {
             actions.push({ label: 'Renew', kind: ca ? 'secondary' : 'primary', close: false, run: () => this.renew(cert) });
             if (ca) {
-                actions.push({ label: 'Create a certificate', kind: 'primary', close: false, run: () => this.create(false, cert.name) });
+                actions.push({ label: 'Create a certificate', kind: 'primary', close: !!this.createCertificate, run: () => this.createCertificate ? this.createCertificate(cert.name) : this.create(false, cert.name) });
             }
         }
         // A certificate which is enabled is downloaded, with its chain, and a
@@ -306,6 +334,12 @@ export class CertificatesElement extends LitElement {
             key: keyOf(cert),
             content: html`${certDetailsView(cert)}${downloads}`,
         }, actions);
+    }
+
+    // createLeaf shows the form which creates a leaf certificate, signed by
+    // the certificate authority, when it's set
+    createLeaf(signer?: string): Promise<void> {
+        return this.create(false, signer);
     }
 
     // create shows the form which creates a certificate authority, or a
@@ -441,7 +475,9 @@ export class CertificatesElement extends LitElement {
     // renewed, in the list, so it's selected, rather than what was, and shows
     // it
     private select(cert: Certificate) {
-        this.controller?.list.open(cert);
+        if ((certType(cert) === 'ca') === (this.kind === 'ca')) {
+            this.controller?.list.open(cert);
+        }
         this.show(cert);
     }
 
@@ -481,28 +517,49 @@ export interface CertApp {
     features?: CertFeatures;
 }
 
+// CertPages are the module's pages: the certificate authorities, and the leaf
+// certificates
+export interface CertPages {
+    authorities: CertificatesElement;
+    certificates: CertificatesElement;
+}
+
 // certModule adds the Certificates module to the app: its section, which
 // owns the menu bar's Certificates item, and the sidebar while it's active,
-// of its page, which it adds to the root, and routes to. The page's id is
-// page-certificates, not the hash it's routed to, so the browser doesn't
-// scroll to it.
-export function certModule(app: CertApp, section = 'Certificates'): CertificatesElement {
-    const page = document.createElement('section');
-    page.id = 'page-certificates';
-    page.className = 'page';
-    page.hidden = true;
+// of its pages, Certificate Authorities and Leaf Certificates, which it adds
+// to the root, and routes to. A certificate authority's panel creates a
+// certificate on the Leaf Certificates page. The pages' ids are prefixed
+// with page-, not the hashes they're routed to, so the browser doesn't
+// scroll to them.
+export function certModule(app: CertApp, section = 'Certificates'): CertPages {
+    const add = (id: string, kind: 'ca' | 'certificate') => {
+        const page = document.createElement('section');
+        page.id = `page-${id}`;
+        page.className = 'page';
+        page.hidden = true;
 
-    const element = document.createElement(CertificatesTag);
-    element.client = app.client;
-    element.notifications = app.notifications;
-    element.changes = app.changes;
-    element.features = app.features;
-    page.append(element);
-    app.root.append(page);
+        const element = document.createElement(CertificatesTag);
+        element.kind = kind;
+        element.client = app.client;
+        element.notifications = app.notifications;
+        element.changes = app.changes;
+        element.features = app.features;
+        page.append(element);
+        app.root.append(page);
+        app.router.add(id, page);
+        return element;
+    };
+    const pages = { authorities: add('certificate-authorities', 'ca'), certificates: add('certificates', 'certificate') };
+    pages.authorities.createCertificate = (signer) => {
+        location.hash = '#certificates';
+        void pages.certificates.createLeaf(signer);
+    };
 
-    app.nav.setSection(section, [{ id: 'certificates', label: 'Certificates', href: '#certificates' }]);
-    app.router.add('certificates', page);
-    return element;
+    app.nav.setSection(section, [
+        { id: 'certificate-authorities', label: 'Certificate Authorities', href: '#certificate-authorities' },
+        { id: 'certificates', label: 'Leaf Certificates', href: '#certificates' },
+    ]);
+    return pages;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
