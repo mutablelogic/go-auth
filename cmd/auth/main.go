@@ -21,6 +21,7 @@ import (
 	"strings"
 
 	// Packages
+	cert "github.com/mutablelogic/go-auth/cert/cmd"
 	credential "github.com/mutablelogic/go-auth/credential/cmd"
 	cmd "github.com/mutablelogic/go-server/pkg/cmd"
 	httpresponse "github.com/mutablelogic/go-server/pkg/httpresponse"
@@ -30,11 +31,12 @@ import (
 ///////////////////////////////////////////////////////////////////////////////
 // TYPES
 
-// CLI has the credential client commands, and the server commands, unless
-// it's built with the client tag
+// CLI has the credential and certificate client commands, and the server
+// commands, unless it's built with the client tag
 type CLI struct {
 	credential.CredentialProviderCommands
 	credential.CredentialManagerCommands
+	cert.CertCommands
 	ServerCommands
 }
 
@@ -42,7 +44,7 @@ type CLI struct {
 // LIFECYCLE
 
 func main() {
-	if err := cmd.Main(CLI{}, "Credential server and client", version.Version()); err != nil {
+	if err := cmd.Main(CLI{}, "Credential and certificate server and client", version.Version()); err != nil {
 		str, code := formatError(err)
 		fmt.Fprintln(os.Stderr, "Error:", str)
 		os.Exit(code)
