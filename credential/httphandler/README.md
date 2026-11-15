@@ -20,6 +20,10 @@ Get the key of a stored credential, its description, and the time it was last ch
 
 Get a credential's value, with the passphrase it was encrypted with as the request body, as `text/plain`, which must match exactly, including any spaces or line endings. This is a `POST` rather than a `GET`, as the request has a body, and the response is sent with `Cache-Control: no-store`, so the value isn't cached. Returns the credential as JSON. Returns 400 if the key or request body is invalid, 403 if the passphrase isn't the credential's passphrase, or 404 if there's no credential for the key. Only for backends which encrypt with their own passphrases. Needs the `credential:decrypt` scope.
 
+### PATCH /credential/{key}
+
+Change a stored credential's description, without its value. The request body is a JSON object with its `description`, which is removed when it's empty. Returns the key, and the description. Returns 400 if the key or request body is invalid, 403 if the backend refuses the write, or 404 if there's no credential for the key. Needs the `credential:write` scope.
+
 ### DELETE /credential/{key}
 
 Delete a stored credential. A credential from the environment can't be deleted. Returns 400 if the key is invalid, or 404 if there's no credential for the key. Needs the `credential:write` scope.

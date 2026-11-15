@@ -67,6 +67,20 @@ func Test_Manager(t *testing.T) {
 		var meta credential.Credential
 		require.Equal(t, http.StatusOK, s.JSON(t, http.MethodGet, "credential/described", nil, &meta))
 		assert.Equal(t, "What it's for", meta.Description)
+
+		// The description changes without the value, and an empty one
+		// removes it
+		require.Equal(t, http.StatusOK, s.JSON(t, http.MethodPatch, "credential/described", map[string]any{"description": "Another"}, &meta))
+		assert.Equal(t, "Another", meta.Description)
+		status, _, body := decrypt(t, s, "described", passphrase)
+		require.Equal(t, http.StatusOK, status)
+		assert.JSONEq(t, `"y"`, string(body), "the value isn't changed")
+		require.Equal(t, http.StatusOK, s.JSON(t, http.MethodPatch, "credential/described", map[string]any{"description": ""}, &meta))
+		var removed credential.Credential
+		require.Equal(t, http.StatusOK, s.JSON(t, http.MethodGet, "credential/described", nil, &removed))
+		assert.Empty(t, removed.Description)
+		status, _ = s.Do(t, http.MethodPatch, "credential/missing", map[string]any{"description": "x"})
+		assert.Equal(t, http.StatusNotFound, status)
 		status, _ = s.Do(t, http.MethodDelete, "credential/described", nil)
 		require.Equal(t, http.StatusNoContent, status)
 	})
@@ -180,6 +194,8 @@ func Test_Provider(t *testing.T) {
 	assert.Equal(t, http.StatusMethodNotAllowed, status)
 	status, _ = s.Do(t, http.MethodPost, "credential/token/rotate", nil)
 	assert.Equal(t, http.StatusNotFound, status)
+	status, _ = s.Do(t, http.MethodPatch, "credential/token", map[string]any{"description": "x"})
+	assert.Equal(t, http.StatusMethodNotAllowed, status)
 	s.Reset()
 
 	// The specification only has the provider's operations

@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { ApiError, type Client } from '@mutablelogic/go-server/api';
-import { credentialForm, credentialFormErrors, credentialRequest } from '../src/credential/form.ts';
+import { credentialChange, credentialForm, credentialFormErrors, credentialRequest } from '../src/credential/form.ts';
 import { sortCredentials } from '../src/credential/controller.ts';
 import * as api from '../src/credential/httpclient.ts';
 
@@ -35,13 +35,13 @@ test('credentialForm', async (t) => {
 
     await t.test('the key is an identifier', () => {
         for (const key of ['1abc', 'a b', 'a/b', '.hidden', 'x'.repeat(65)]) {
-            assert.ok(credentialFormErrors({ ...credentialForm(), key, value: 'v' }).key, key);
+            assert.ok(credentialFormErrors({ ...credentialForm(), key, value: 'v', confirm: 'v' }).key, key);
         }
-        assert.deepEqual(credentialFormErrors({ ...credentialForm(), key: ' token-1_a ', value: 'v' }), {});
+        assert.deepEqual(credentialFormErrors({ ...credentialForm(), key: ' token-1_a ', value: 'v', confirm: 'v' }), {});
     });
 
     await t.test('a value is text, or JSON when json is set', () => {
-        const text = { ...credentialForm({ key: 'token' }), value: 'hunter2' };
+        const text = { ...credentialForm({ key: 'token' }), value: 'hunter2', confirm: 'hunter2' };
         assert.equal(text.replace, true);
         assert.deepEqual(credentialRequest(text), { key: 'token', credentials: 'hunter2', description: '' });
 
@@ -57,6 +57,26 @@ test('credentialForm', async (t) => {
         assert.equal(form.description, 'The API token');
         assert.equal(credentialRequest({ ...form, value: 'v' }).description, 'The API token');
         assert.equal(credentialRequest({ ...form, value: 'v', description: '  ' }).description, '', 'an empty one removes it');
+    });
+
+    await t.test('a text value is typed twice, and JSON once', () => {
+        const form = { ...credentialForm(), key: 'token', value: 'hunter2' };
+        assert.ok(credentialFormErrors(form).confirm, 'not typed again');
+        assert.ok(credentialFormErrors({ ...form, confirm: 'hunter3' }).confirm, 'not the same');
+        assert.deepEqual(credentialFormErrors({ ...form, confirm: 'hunter2' }), {});
+        assert.deepEqual(credentialFormErrors({ ...form, value: '{"a":1}', json: true }), {}, 'JSON is typed once');
+    });
+
+    await t.test('editing changes the value, the description alone, or nothing', () => {
+        const form = credentialForm({ key: 'token', description: 'The API token' });
+        assert.deepEqual(credentialFormErrors(form), {}, 'an empty value is kept');
+        assert.equal(credentialChange(form), 'none');
+        assert.equal(credentialChange({ ...form, description: ' The API token ' }), 'none');
+        assert.equal(credentialChange({ ...form, description: 'Changed' }), 'description');
+        assert.equal(credentialChange({ ...form, description: '' }), 'description', 'removing it is a change');
+        assert.equal(credentialChange({ ...form, value: 'v', confirm: 'v' }), 'value');
+        assert.ok(credentialFormErrors({ ...form, confirm: 'x' }).confirm, 'the value again, without the value');
+        assert.equal(credentialChange({ ...credentialForm(), key: 'new', value: '' }), 'none');
     });
 });
 
@@ -118,6 +138,14 @@ test('httpclient', async (t) => {
         assert.equal(await api.rotateCredential(client, 'token'), false);
         status = 404;
         await assert.rejects(api.rotateCredential(client, 'token'), ApiError);
+    });
+
+    await t.test('changes a description, without the value', async () => {
+        const { client, requests } = fakeClient(() => json(200, { key: 'token', description: 'Changed' }));
+        assert.deepEqual(await api.describeCredential(client, 'token', 'Changed'), { key: 'token', description: 'Changed' });
+        assert.equal(requests[0].method, 'PATCH');
+        assert.equal(requests[0].path, '/api/credential/token');
+        assert.deepEqual(JSON.parse(String(requests[0].init.body)), { description: 'Changed' });
     });
 
     await t.test('keys are escaped in paths', async () => {

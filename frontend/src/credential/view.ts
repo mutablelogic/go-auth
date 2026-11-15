@@ -24,7 +24,7 @@ import { PanelController, type PanelAction } from '@mutablelogic/go-server/panel
 import type { PageAction } from '@mutablelogic/go-server/page';
 import type { Router } from '@mutablelogic/go-server/router';
 import { CredentialController } from './controller.ts';
-import { credentialForm, credentialFormErrors, credentialRequest, type CredentialForm, type CredentialFormErrors } from './form.ts';
+import { credentialChange, credentialForm, credentialFormErrors, credentialRequest, type CredentialForm, type CredentialFormErrors } from './form.ts';
 import type { Credential, CredentialFeatures } from './schema.ts';
 
 // go-server's and Carbon's elements
@@ -66,15 +66,16 @@ export function keyView(key: string): TemplateResult {
     `;
 }
 
-// credentialFormView is the form which stores a credential: its key, which
-// is fixed when it replaces one, and its value, as a password, or, when
-// it's JSON, in a text area. rerender is called when the JSON checkbox
-// changes which input it shows.
+// credentialFormView is the form which stores a credential, or edits one:
+// its key, which is fixed when it edits one, its description, and its
+// value, as a password, which is typed again, or, when it's JSON, in a text
+// area, once. When it edits one, an empty value keeps it. rerender is called
+// when the JSON checkbox changes which inputs it shows.
 export function credentialFormView(form: CredentialForm, rerender: () => void, errors: CredentialFormErrors = {}): TemplateResult {
     return html`
         <div class="form">
             <cds-text-input label="Key" value=${form.key} ?readonly=${form.replace}
-                helper-text=${form.replace ? 'The credential whose value is replaced' : 'A letter, then letters, digits, _ and -, such as OPENAI_API_KEY'}
+                helper-text=${form.replace ? 'The credential which is changed' : 'A letter, then letters, digits, _ and -, such as OPENAI_API_KEY'}
                 ?invalid=${!!errors.key} invalid-text=${errors.key ?? ''}
                 @input=${(event: Event) => { form.key = (event.target as HTMLInputElement).value; }}></cds-text-input>
             <cds-text-input label="Description" value=${form.description}
@@ -82,17 +83,22 @@ export function credentialFormView(form: CredentialForm, rerender: () => void, e
                 @input=${(event: Event) => { form.description = (event.target as HTMLInputElement).value; }}></cds-text-input>
             ${form.json ? html`
                 <cds-textarea label="Value" rows="6" value=${form.value}
-                    helper-text="Any JSON, such as an object with a user and a password"
+                    helper-text=${form.replace ? 'Leave it empty to keep the value' : 'Any JSON, such as an object with a user and a password'}
                     ?invalid=${!!errors.value} invalid-text=${errors.value ?? ''}
                     @input=${(event: Event) => { form.value = (event.target as HTMLTextAreaElement).value; }}></cds-textarea>
             ` : html`
                 <cds-password-input label="Value" value=${form.value} autocomplete="off"
-                    helper-text="Stored encrypted, and never shown without its passphrase"
+                    helper-text=${form.replace ? 'Leave it empty to keep the value' : 'Stored encrypted, and never shown without its passphrase'}
                     ?invalid=${!!errors.value} invalid-text=${errors.value ?? ''}
                     @input=${(event: Event) => { form.value = (event.target as HTMLInputElement).value; }}></cds-password-input>
+                <cds-password-input label="Value again" value=${form.confirm} autocomplete="off"
+                    helper-text="The same value, to be sure it's right"
+                    ?invalid=${!!errors.confirm} invalid-text=${errors.confirm ?? ''}
+                    @input=${(event: Event) => { form.confirm = (event.target as HTMLInputElement).value; }}></cds-password-input>
             `}
             <cds-checkbox .checked=${form.json} @cds-checkbox-changed=${(event: Event) => {
                 form.json = (event.target as HTMLInputElement).checked;
+                form.confirm = '';
                 rerender();
             }}>The value is JSON</cds-checkbox>
         </div>
@@ -250,7 +256,7 @@ export class CredentialsElement extends LitElement {
         if (rotate) {
             actions.push({ label: 'Rotate', kind: 'secondary', close: false, run: () => this.rotate(credential) });
         }
-        actions.push({ label: 'Replace value', kind: decrypt ? 'secondary' : 'primary', close: false, run: () => this.store(credential) });
+        actions.push({ label: 'Edit', kind: decrypt ? 'secondary' : 'primary', close: false, run: () => this.store(credential) });
         if (decrypt) {
             actions.push({ label: 'Get value', kind: 'primary', close: false, run: () => this.passphrase(credential) });
         }
@@ -262,8 +268,9 @@ export class CredentialsElement extends LitElement {
         }, actions);
     }
 
-    // store shows the form which stores a new credential, or replaces the
-    // value of one, which stores it, and shows it
+    // store shows the form which stores a new credential, or edits one,
+    // which changes its value and description, or its description alone,
+    // and shows it
     private store(credential?: Credential) {
         const form = credentialForm(credential);
         let errors: CredentialFormErrors = {};
@@ -273,11 +280,11 @@ export class CredentialsElement extends LitElement {
         const cancel: PanelAction = credential
             ? { label: 'Cancel', kind: 'secondary', close: false, run: () => this.show(credential) }
             : { label: 'Cancel', kind: 'secondary' };
-        this.open(credential ? `Replace ${credential.key}` : 'Store a credential', 'Credential', {
+        this.open(credential ? `Edit ${credential.key}` : 'Store a credential', 'Credential', {
             kind: 'form',
             content: credentialFormView(form, rerender, errors),
         }, [cancel, {
-            label: credential ? 'Replace' : 'Store',
+            label: credential ? 'Save' : 'Store',
             kind: 'primary',
             close: false,
             run: async () => {
@@ -286,9 +293,25 @@ export class CredentialsElement extends LitElement {
                 if (Object.keys(errors).length || !this.controller) {
                     return;
                 }
-                const stored = await this.controller.set(credentialRequest(form));
-                this.notifications?.push({ kind: 'success', title: credential ? `${stored.key} was replaced` : `${stored.key} was stored` });
-                this.show(stored);
+                switch (credentialChange(form)) {
+                    case 'value': {
+                        const stored = await this.controller.set(credentialRequest(form));
+                        this.notifications?.push({ kind: 'success', title: credential ? `${stored.key} was changed` : `${stored.key} was stored` });
+                        this.show({ key: stored.key, description: form.description.trim() || undefined, updated_at: stored.updated_at ?? credential?.updated_at });
+                        break;
+                    }
+                    case 'description': {
+                        const described = await this.controller.describe(form.key.trim(), form.description);
+                        this.notifications?.push({ kind: 'success', title: `${described.key}'s description was changed` });
+                        this.show({ key: described.key, description: described.description || undefined, updated_at: credential?.updated_at });
+                        break;
+                    }
+                    default:
+                        this.notifications?.push({ kind: 'info', title: 'Nothing was changed' });
+                        if (credential) {
+                            this.show(credential);
+                        }
+                }
             },
         }]);
     }

@@ -88,6 +88,20 @@ func (c *Client) GetCredentialMeta(ctx context.Context, key string) (*credential
 	return &response, nil
 }
 
+// DescribeCredential changes the description of the stored credential for
+// the key, without its value, or removes it, when it's empty
+func (c *Client) DescribeCredential(ctx context.Context, key, description string) (*credential.Credential, error) {
+	req, err := client.NewJSONRequestEx(http.MethodPatch, credential.CredentialDescription{Description: description}, types.ContentTypeAny)
+	if err != nil {
+		return nil, err
+	}
+	var response credential.Credential
+	if err := c.DoWithContext(ctx, req, &response, client.OptPath("credential", key)); err != nil {
+		return nil, clientErr(err)
+	}
+	return &response, nil
+}
+
 // DeleteCredential deletes the stored credential for the key
 func (c *Client) DeleteCredential(ctx context.Context, key string) error {
 	return clientErr(c.DoWithContext(ctx, client.MethodDelete, nil, client.OptPath("credential", key)))

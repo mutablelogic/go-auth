@@ -117,6 +117,18 @@ func registerKey(router *httprouter.Router, provider credential.CredentialProvid
 			})
 		}
 		if manager != nil {
+			path.Patch(func(w http.ResponseWriter, r *http.Request) {
+				describe(manager, w, r)
+			}, func(op httprequest.PathOperation) {
+				op.Summary("Change a credential's description")
+				op.Description(doc.Section(3, "PATCH /credential/{key}").Body)
+				op.RequestBody(jsonschema.MustFor[credential.CredentialDescription]())
+				op.JSONResponse(http.StatusOK, jsonschema.MustFor[credential.Credential](), "The credential, with its description")
+				op.ErrorResponse(http.StatusBadRequest, "Invalid key or request body")
+				op.ErrorResponse(http.StatusForbidden, "The backend refused the write")
+				op.ErrorResponse(http.StatusNotFound, "Credential not found")
+				security(op, auth, credential.ScopeCredentialWrite)
+			})
 			path.Delete(func(w http.ResponseWriter, r *http.Request) {
 				remove(manager, w, r)
 			}, func(op httprequest.PathOperation) {
@@ -235,6 +247,20 @@ func decrypt(decrypter credential.CredentialDecrypter, w http.ResponseWriter, r 
 		return
 	}
 	httpresponse.JSON(w, http.StatusOK, httprequest.Indent(r), value)
+}
+
+func describe(manager credential.CredentialManager, w http.ResponseWriter, r *http.Request) {
+	key := r.PathValue("key")
+	var req credential.CredentialDescription
+	if err := httprequest.Read(r, &req); err != nil {
+		httpresponse.Error(w, httpresponse.ErrBadRequest.Withf("%v", err))
+		return
+	}
+	if err := manager.Describe(r.Context(), key, req.Description); err != nil {
+		httpresponse.Error(w, auth.HTTPError(err), key)
+		return
+	}
+	httpresponse.JSON(w, http.StatusOK, httprequest.Indent(r), credential.Credential{Key: key, Description: strings.TrimSpace(req.Description)})
 }
 
 func remove(manager credential.CredentialManager, w http.ResponseWriter, r *http.Request) {

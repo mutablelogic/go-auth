@@ -86,6 +86,16 @@ func Test_Manager(t *testing.T) {
 		meta, err := c.GetCredentialMeta(ctx, "token")
 		require.NoError(t, err)
 		assert.Equal(t, "The API token", meta.Description)
+
+		// The description changes without the value
+		described, err := c.DescribeCredential(ctx, "token", "Changed")
+		require.NoError(t, err)
+		assert.Equal(t, "Changed", described.Description)
+		var value string
+		require.NoError(t, c.GetCredential(ctx, "token", passphrase, &value))
+		assert.Equal(t, "secret", value)
+		_, err = c.DescribeCredential(ctx, "missing", "x")
+		assert.ErrorIs(t, err, auth.ErrNotFound)
 	})
 
 	t.Run("Meta", func(t *testing.T) {

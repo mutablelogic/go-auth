@@ -51,6 +51,14 @@ export class CredentialController {
         return stored;
     }
 
+    // describe changes a credential's description, without its value, and
+    // loads the list again
+    async describe(key: string, description: string): Promise<Credential> {
+        const described = await api.describeCredential(this.client, key, description);
+        await this.list.refresh();
+        return described;
+    }
+
     // value returns a credential's value, with its passphrase
     value(key: string, passphrase: string): Promise<unknown> {
         return api.getCredential(this.client, key, passphrase);

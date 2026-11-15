@@ -46,6 +46,12 @@ type CredentialSet struct {
 	Description *string         `json:"description,omitempty" help:"Credential description, such as what it's for, which is kept when it isn't set, and removed when it's empty"`
 }
 
+// CredentialDescription is a request to change a credential's description,
+// without its value
+type CredentialDescription struct {
+	Description string `json:"description" help:"Credential description, such as what it's for, which is removed when it's empty"`
+}
+
 // CredentialList is the stored credentials, without their values
 type CredentialList struct {
 	Count uint64       `json:"count"`

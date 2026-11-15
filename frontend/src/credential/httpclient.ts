@@ -41,6 +41,12 @@ export async function getCredential(client: Client, key: string, passphrase: str
     return JSON.parse(text);
 }
 
+// describeCredential changes a stored credential's description, without its
+// value, or removes it, when it's empty
+export async function describeCredential(client: Client, key: string, description: string): Promise<Credential> {
+    return request<Credential>(client, 'PATCH', `credential/${encodeURIComponent(key)}`, { body: { description } });
+}
+
 // deleteCredential deletes a stored credential
 export async function deleteCredential(client: Client, key: string): Promise<void> {
     await request<void>(client, 'DELETE', `credential/${encodeURIComponent(key)}`);
