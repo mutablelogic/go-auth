@@ -16,10 +16,12 @@ package pg
 
 import (
 	// Packages
+	auth "github.com/mutablelogic/go-auth"
 	credential "github.com/mutablelogic/go-auth/credential"
 	env "github.com/mutablelogic/go-auth/credential/env"
 	schema "github.com/mutablelogic/go-auth/credential/pg/schema"
 	crypto "github.com/mutablelogic/go-auth/crypto"
+	types "github.com/mutablelogic/go-server/pkg/types"
 	trace "go.opentelemetry.io/otel/trace"
 )
 
@@ -35,6 +37,7 @@ type opt struct {
 	passphrases *crypto.Passphrases
 	env         credential.CredentialProvider
 	useEnv      bool
+	channel     string
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -84,6 +87,20 @@ func WithTracer(tracer trace.Tracer) Opt {
 func WithPassphrase(version uint64, passphrase string) Opt {
 	return func(o *opt) error {
 		return o.passphrases.Set(version, passphrase)
+	}
+}
+
+// WithChannel notifies the channel of each change of a credential, by its
+// key, without its value, with a trigger, which go-pg's pgbroadcaster
+// publishes, such as to a web UI, whatever makes the change. Without it,
+// there's no trigger.
+func WithChannel(channel string) Opt {
+	return func(o *opt) error {
+		if !types.IsIdentifier(channel) {
+			return auth.ErrBadParameter.Withf("invalid channel: %q", channel)
+		}
+		o.channel = channel
+		return nil
 	}
 }
 

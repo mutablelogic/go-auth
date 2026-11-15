@@ -17,6 +17,8 @@
 package main
 
 import (
+	"context"
+
 	// Packages
 	credential "github.com/mutablelogic/go-auth/credential"
 	httphandler "github.com/mutablelogic/go-auth/credential/httphandler"
@@ -40,6 +42,19 @@ type ServerCommands struct {
 	cmd.OpenAPICommands
 }
 
+// follow follows the backend's changes, such as pg's notifications, and
+// publishes them, until the context is cancelled, when the backend has its
+// own changes, rather than the API's
+type follow func(context.Context) error
+
+// without calls fn with a manager, without a follower of its changes, which
+// the API publishes
+func without(fn func(credential.CredentialManager, follow) error) func(credential.CredentialManager) error {
+	return func(manager credential.CredentialManager) error {
+		return fn(manager, nil)
+	}
+}
+
 // RunServer runs the credential server, with its web UI, when it's built
 // in, and the changes, which the UI follows the server with
 type RunServer struct {
@@ -54,11 +69,18 @@ type RunServer struct {
 
 func (runner *RunServer) Run(ctx server.Cmd) error {
 	return runner.Broadcaster.WithBroadcaster(ctx, &runner.RunServer, func(changes *broadcaster.Broadcaster) error {
-		return runner.Credential.withManager(ctx, func(manager credential.CredentialManager) error {
+		return runner.Credential.withManager(ctx, changes, func(manager credential.CredentialManager, follow follow) error {
 			ctx.Logger().InfoContext(ctx.Context(), "Credentials", "backend", backend)
 			ctx.Logger().WarnContext(ctx.Context(), "The credential API has no authentication")
-			runner.register(ctx, manager, changes)
-			return runner.run(ctx, changes)
+
+			// The API publishes its changes, unless the backend follows them,
+			// such as pg, whose table's trigger notifies of them
+			var publisher httphandler.Publisher
+			if follow == nil {
+				publisher = changes
+			}
+			runner.register(ctx, manager, publisher)
+			return runner.run(ctx, changes, follow)
 		})
 	})
 }
@@ -70,7 +92,7 @@ func (runner *RunServer) Run(ctx server.Cmd) error {
 // can do, which depends on its backend, the web UI, when it's served, or
 // else a handler of / which isn't found, and the credential API, which
 // publishes its changes, which the UI follows
-func (runner *RunServer) register(ctx server.Cmd, manager credential.CredentialManager, changes *broadcaster.Broadcaster) {
+func (runner *RunServer) register(ctx server.Cmd, manager credential.CredentialManager, publisher httphandler.Publisher) {
 	runner.RunServer.Register(func(router *httprouter.Router) error {
 		ui, err := runner.Frontend.RegisterUI(ctx, ctx.Logger(), router, runner.RunServer.OpenAPI,
 			config.WithSection("credential", credential.FeaturesOf(backend, manager)),
@@ -83,16 +105,26 @@ func (runner *RunServer) register(ctx server.Cmd, manager credential.CredentialM
 				return err
 			}
 		}
-		return httphandler.RegisterManagerHandlers(manager, false, httphandler.WithPublisher(changes))(router)
+		var opts []httphandler.Opt
+		if publisher != nil {
+			opts = append(opts, httphandler.WithPublisher(publisher))
+		}
+		return httphandler.RegisterManagerHandlers(manager, false, opts...)(router)
 	})
 }
 
-// run runs the broadcaster and the server, until either stops
-func (runner *RunServer) run(ctx server.Cmd, changes *broadcaster.Broadcaster) error {
+// run runs the broadcaster, the backend's follower of its changes, when it
+// has one, and the server, until any of them stops
+func (runner *RunServer) run(ctx server.Cmd, changes *broadcaster.Broadcaster, follow follow) error {
 	group, groupctx := errgroup.WithContext(ctx.Context())
 	group.Go(func() error {
 		return changes.Run(groupctx)
 	})
+	if follow != nil {
+		group.Go(func() error {
+			return follow(groupctx)
+		})
+	}
 	group.Go(func() error {
 		return runner.RunServer.Run(ctx.WithContext(groupctx))
 	})

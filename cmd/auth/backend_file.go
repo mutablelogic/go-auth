@@ -24,6 +24,7 @@ import (
 	credential "github.com/mutablelogic/go-auth/credential"
 	credentialcmd "github.com/mutablelogic/go-auth/credential/cmd"
 	server "github.com/mutablelogic/go-server"
+	broadcaster "github.com/mutablelogic/go-server/broadcaster"
 )
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -46,7 +47,7 @@ const (
 ///////////////////////////////////////////////////////////////////////////////
 // PRIVATE METHODS
 
-func (flags BackendFlags) withManager(ctx server.Cmd, fn func(credential.CredentialManager) error) error {
+func (flags BackendFlags) withManager(ctx server.Cmd, _ *broadcaster.Broadcaster, fn func(credential.CredentialManager, follow) error) error {
 	path := flags.Path
 	if path == "" {
 		config, err := os.UserConfigDir()
@@ -59,5 +60,5 @@ func (flags BackendFlags) withManager(ctx server.Cmd, fn func(credential.Credent
 		ctx.Logger().WarnContext(ctx.Context(), "No passphrase, so credentials can't be stored or read: set --credential.passphrase")
 	}
 	ctx.Logger().InfoContext(ctx.Context(), "Credential files", "path", path)
-	return flags.WithFileCredentialManager(ctx, path, fn)
+	return flags.WithFileCredentialManager(ctx, path, without(fn))
 }

@@ -17,12 +17,18 @@
 package main
 
 import (
+	"context"
+
 	// Packages
 	auth "github.com/mutablelogic/go-auth"
 	credential "github.com/mutablelogic/go-auth/credential"
 	credentialcmd "github.com/mutablelogic/go-auth/credential/cmd"
+	pgcredential "github.com/mutablelogic/go-auth/credential/pg"
+	pgbroadcaster "github.com/mutablelogic/go-pg/pgbroadcaster"
+	pgbroadcasterschema "github.com/mutablelogic/go-pg/pgbroadcaster/schema"
 	pgcmd "github.com/mutablelogic/go-pg/pkg/cmd"
 	server "github.com/mutablelogic/go-server"
+	broadcaster "github.com/mutablelogic/go-server/broadcaster"
 )
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -45,7 +51,7 @@ const (
 ///////////////////////////////////////////////////////////////////////////////
 // PRIVATE METHODS
 
-func (flags BackendFlags) withManager(ctx server.Cmd, fn func(credential.CredentialManager) error) error {
+func (flags BackendFlags) withManager(ctx server.Cmd, changes *broadcaster.Broadcaster, fn func(credential.CredentialManager, follow) error) error {
 	// Connect to the database, with go-pg's flags
 	pool, err := flags.PostgresFlags.Connect(ctx)
 	if err != nil {
@@ -55,5 +61,20 @@ func (flags BackendFlags) withManager(ctx server.Cmd, fn func(credential.Credent
 	}
 	defer pool.Close()
 
-	return flags.WithPGCredentialManager(ctx, pool, flags.Schema, fn)
+	// The credential table's trigger notifies pgbroadcaster's channel of its
+	// changes, which pgbroadcaster publishes to the server's changes, whatever
+	// makes them, such as another server, or SQL
+	listener, err := pgbroadcaster.New(ctx.Context(), pool,
+		pgbroadcaster.WithTracer(ctx.Tracer()),
+		pgbroadcaster.WithChannel(pgbroadcasterschema.NotifyChannel),
+		pgbroadcaster.WithBroadcaster(changes),
+	)
+	if err != nil {
+		return err
+	}
+	return flags.WithPGCredentialManager(ctx, pool, flags.Schema, func(manager credential.CredentialManager) error {
+		return fn(manager, func(runctx context.Context) error {
+			return listener.Run(runctx, ctx.Logger())
+		})
+	}, pgcredential.WithChannel(pgbroadcasterschema.NotifyChannel))
 }

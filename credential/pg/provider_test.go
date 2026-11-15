@@ -19,6 +19,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"testing"
+	"time"
 
 	// Packages
 	auth "github.com/mutablelogic/go-auth"
@@ -26,6 +27,7 @@ import (
 	credential "github.com/mutablelogic/go-auth/credential/pg"
 	schema "github.com/mutablelogic/go-auth/credential/pg/schema"
 	test "github.com/mutablelogic/go-auth/credential/pg/test"
+	pgpkg "github.com/mutablelogic/go-pg"
 	assert "github.com/stretchr/testify/assert"
 	require "github.com/stretchr/testify/require"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
@@ -372,4 +374,64 @@ func Test_Describe(t *testing.T) {
 	assert.Empty(t, list[0].Description)
 
 	assert.ErrorIs(t, provider.Describe(ctx, "missing", "x"), auth.ErrNotFound)
+}
+
+func Test_Notify(t *testing.T) {
+	_, ctx := test.Begin(t)
+	defer test.End(t)
+	schemaName := test.IsolatedSchema(t)
+	mgr := test.SchemaManager(t, schemaName, credential.WithChannel("credential_test"))
+	provider := mgr.GetCredentialProvider().(authcredential.CredentialManager)
+
+	// Listen on the channel
+	notifications, err := test.Pool().Subscribe(ctx, "credential_test")
+	require.NoError(t, err)
+	next := func() map[string]string {
+		t.Helper()
+		select {
+		case n := <-notifications:
+			var change map[string]string
+			require.NoError(t, json.Unmarshal(n.Payload, &change))
+			assert.NotContains(t, string(n.Payload), "secret", "the value isn't notified")
+			return change
+		case <-time.After(5 * time.Second):
+			t.Fatal("no notification")
+			return nil
+		}
+	}
+
+	// Each change is notified, by its key, as go-pg's pgbroadcaster publishes
+	require.NoError(t, provider.Set(ctx, "token", json.RawMessage(`"secret"`)))
+	assert.Equal(t, map[string]string{"action": "create", "schema": schemaName, "table": "credential", "row": "token"}, next())
+	require.NoError(t, provider.Set(ctx, "token", json.RawMessage(`"secret2"`)))
+	assert.Equal(t, "update", next()["action"])
+	require.NoError(t, provider.Describe(ctx, "token", "described"))
+	assert.Equal(t, "update", next()["action"])
+	require.NoError(t, provider.Delete(ctx, "token"))
+	assert.Equal(t, map[string]string{"action": "delete", "schema": schemaName, "table": "credential", "row": "token"}, next())
+
+	// Without a channel, the trigger is dropped
+	_ = test.SchemaManager(t, schemaName)
+	var triggers []string
+	require.NoError(t, test.Pool().List(ctx, &triggerList{&triggers}, triggerQuery{schemaName}))
+	assert.Empty(t, triggers)
+}
+
+// triggerQuery lists the triggers on a schema's credential table
+type triggerQuery struct{ schema string }
+
+func (q triggerQuery) Select(bind *pgpkg.Bind, _ pgpkg.Op) (string, error) {
+	bind.Set("trigger_schema", q.schema)
+	return `SELECT tgname FROM pg_trigger T JOIN pg_class C ON C.oid = T.tgrelid JOIN pg_namespace N ON N.oid = C.relnamespace WHERE N.nspname = @trigger_schema AND C.relname = 'credential' AND NOT T.tgisinternal`, nil
+}
+
+type triggerList struct{ names *[]string }
+
+func (l *triggerList) Scan(row pgpkg.Row) error {
+	var name string
+	if err := row.Scan(&name); err != nil {
+		return err
+	}
+	*l.names = append(*l.names, name)
+	return nil
 }
