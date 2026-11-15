@@ -139,6 +139,56 @@ func (m *Manager) insertRootCert(ctx context.Context, imported *x509.Certificate
 	return types.Ptr(certRow), nil
 }
 
+// generateRoot generates a self-signed root certificate, with the common
+// name, and stores it, when no root is stored. When another manager stores
+// one at the same time, that's the root.
+func (m *Manager) generateRoot(ctx context.Context, commonName string) (err error) {
+	ctx, endSpan := otel.StartSpan(m.tracer, ctx, "certmanager.generateRoot",
+		attribute.String("name", commonName),
+	)
+	defer func() { endSpan(err) }()
+
+	stored := func() (bool, error) {
+		var existing cert.Certificate
+		if err := m.Get(ctx, (*schema.Certificate)(&existing), schema.CertName(cert.RootCertName)); err == nil {
+			return true, nil
+		} else if errors.Is(err, pg.ErrNotFound) {
+			return false, nil
+		} else {
+			return false, err
+		}
+	}
+	if exists, err := stored(); err != nil || exists {
+		return err
+	}
+
+	// Generate it, and store it
+	root, err := cert.New(
+		cert.WithCommonName(commonName),
+		cert.WithRSAKey(4096),
+		cert.WithExpiry(cert.DefaultRootExpiry),
+		cert.WithRoot(),
+	)
+	if err != nil {
+		return err
+	}
+	key, ok := root.PrivateKey().(*rsa.PrivateKey)
+	if !ok {
+		return fmt.Errorf("private key is not RSA")
+	}
+	imported, err := x509.ParseCertificate(root.SchemaCert().Certificate.Cert)
+	if err != nil {
+		return err
+	}
+	if _, err := m.insertRootCert(ctx, imported, key, false); err != nil {
+		if exists, _ := stored(); exists {
+			return nil
+		}
+		return err
+	}
+	return nil
+}
+
 func rootCertRow(subjectID uint64, privateKey *rsa.PrivateKey, imported *x509.Certificate) (cert.CertWithPrivateKey, error) {
 	if imported == nil {
 		return cert.CertWithPrivateKey{}, fmt.Errorf("root certificate is required")

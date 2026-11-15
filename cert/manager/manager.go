@@ -84,6 +84,11 @@ func New(ctx context.Context, pool pg.PoolConn, opts ...Opt) (*Manager, error) {
 		if _, err := self.insertRootCert(ctx, self.rootcert, self.rootkey, true); err != nil {
 			return nil, err
 		}
+	} else if self.generate != "" {
+		// Or generate one, when none is stored
+		if err := self.generateRoot(ctx, self.generate); err != nil {
+			return nil, err
+		}
 	}
 
 	// Blank out root material from memory

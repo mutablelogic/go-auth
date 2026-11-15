@@ -32,7 +32,8 @@ import (
 // CertFlags configure the certificate manager, which needs PostgreSQL
 type CertFlags struct {
 	certcmd.ServerFlags
-	Schema string `name:"schema" env:"${ENV_NAME}_CERT_SCHEMA" help:"Database schema for the certificate tables, which is cert when it's not set"`
+	Insecure bool   `name:"insecure" env:"${ENV_NAME}_CERT_INSECURE" help:"Serve the certificate API, which has no authentication yet, so anyone who can reach the server can create certificates and get their private keys"`
+	Schema   string `name:"schema" env:"${ENV_NAME}_CERT_SCHEMA" help:"Database schema for the certificate tables, which is cert when it's not set"`
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -44,9 +45,19 @@ func (flags CertFlags) withHandlers(ctx server.Cmd, pool pg.PoolConn, passphrase
 	if pool == nil {
 		return auth.ErrBadParameter.With("certificates need a PostgreSQL connection: set --pg.url")
 	}
+
+	// Until the API has authentication, serving it is a choice, as it
+	// issues certificates under the root, and returns their private keys
+	if !flags.Insecure {
+		return auth.ErrBadParameter.With("the certificate API has no authentication yet, so anyone who can reach the server could create certificates and get their private keys: set --cert.insecure to serve it anyway")
+	}
 	return flags.WithCertManager(ctx, pool, flags.Schema, passphrases, func(mgr *manager.Manager) error {
-		ctx.Logger().InfoContext(ctx.Context(), "Certificates", "root", flags.Root != "")
-		ctx.Logger().WarnContext(ctx.Context(), "The certificate API has no authentication")
+		if flags.Root != "" {
+			ctx.Logger().InfoContext(ctx.Context(), "Certificates", "root", flags.Root)
+		} else {
+			ctx.Logger().InfoContext(ctx.Context(), "Certificates", "root", "generated")
+		}
+		ctx.Logger().WarnContext(ctx.Context(), "The certificate API has no authentication, as --cert.insecure is set")
 		return fn(certhandler.RegisterHandlers(mgr, false))
 	})
 }

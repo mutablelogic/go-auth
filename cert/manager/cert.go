@@ -112,7 +112,7 @@ func (m *Manager) CreateCert(ctx context.Context, req cert.CreateCertRequest, ca
 
 	leafCert, err := cert.New([]cert.Opt{
 		cert.WithCommonName(req.Name),
-		cert.WithSubject(certSubject),
+		withSubject(certSubject),
 		cert.WithSAN(req.SAN...),
 		cert.WithRSAKey(0),
 		cert.WithValidity(validFrom, expires),
@@ -276,6 +276,15 @@ func (m *Manager) GetCertChain(ctx context.Context, key cert.CertKey) (_ []cert.
 ///////////////////////////////////////////////////////////////////////////////
 // PRIVATE METHODS
 
+// withSubject sets the subject, unless it's empty, such as a generated
+// root's, which has only a common name, as cert.WithSubject needs a field
+func withSubject(subject cert.SubjectMeta) cert.Opt {
+	if subject == (cert.SubjectMeta{}) {
+		return func(*cert.Cert) error { return nil }
+	}
+	return cert.WithSubject(subject)
+}
+
 // lockName serializes creating certificates with the name, until the
 // transaction ends, so two can't be created with the same name at once, or
 // renewed to the same serial
@@ -393,7 +402,7 @@ func (m *Manager) renewCert(ctx context.Context, current cert.CertKey, req cert.
 
 	opts := []cert.Opt{
 		cert.WithCommonName(currentRow.Name),
-		cert.WithSubject(subject),
+		withSubject(subject),
 		cert.WithRSAKey(0),
 		cert.WithValidity(validFrom, expires),
 		cert.WithSerial(nextSerial),
