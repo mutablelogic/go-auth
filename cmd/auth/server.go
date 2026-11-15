@@ -43,13 +43,18 @@ type ServerCommands struct {
 }
 
 // follow follows the backend's changes, such as pg's notifications, and
-// publishes them, until the context is cancelled, when the backend has its
-// own changes, rather than the API's
-type follow func(context.Context) error
+// publishes them, when the backend has its own changes, rather than the
+// API's: run follows them, until the context is cancelled, and ready waits
+// until it does, so the server doesn't accept a change before it would be
+// published
+type follow struct {
+	run   func(context.Context) error
+	ready func(context.Context) error
+}
 
 // without calls fn with a manager, without a follower of its changes, which
 // the API publishes
-func without(fn func(credential.CredentialManager, follow) error) func(credential.CredentialManager) error {
+func without(fn func(credential.CredentialManager, *follow) error) func(credential.CredentialManager) error {
 	return func(manager credential.CredentialManager) error {
 		return fn(manager, nil)
 	}
@@ -69,7 +74,7 @@ type RunServer struct {
 
 func (runner *RunServer) Run(ctx server.Cmd) error {
 	return runner.Broadcaster.WithBroadcaster(ctx, &runner.RunServer, func(changes *broadcaster.Broadcaster) error {
-		return runner.Credential.withManager(ctx, changes, func(manager credential.CredentialManager, follow follow) error {
+		return runner.Credential.withManager(ctx, changes, func(manager credential.CredentialManager, follow *follow) error {
 			ctx.Logger().InfoContext(ctx.Context(), "Credentials", "backend", backend)
 			ctx.Logger().WarnContext(ctx.Context(), "The credential API has no authentication")
 
@@ -114,18 +119,25 @@ func (runner *RunServer) register(ctx server.Cmd, manager credential.CredentialM
 }
 
 // run runs the broadcaster, the backend's follower of its changes, when it
-// has one, and the server, until any of them stops
-func (runner *RunServer) run(ctx server.Cmd, changes *broadcaster.Broadcaster, follow follow) error {
+// has one, and the server, until any of them stops. The server starts once
+// the follower is ready, so no change is accepted before it would be
+// published, and doesn't start when the follower fails.
+func (runner *RunServer) run(ctx server.Cmd, changes *broadcaster.Broadcaster, follow *follow) error {
 	group, groupctx := errgroup.WithContext(ctx.Context())
 	group.Go(func() error {
 		return changes.Run(groupctx)
 	})
 	if follow != nil {
 		group.Go(func() error {
-			return follow(groupctx)
+			return follow.run(groupctx)
 		})
 	}
 	group.Go(func() error {
+		if follow != nil {
+			if err := follow.ready(groupctx); err != nil {
+				return err
+			}
+		}
 		return runner.RunServer.Run(ctx.WithContext(groupctx))
 	})
 	return group.Wait()

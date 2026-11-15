@@ -44,6 +44,6 @@ const (
 ///////////////////////////////////////////////////////////////////////////////
 // PRIVATE METHODS
 
-func (flags BackendFlags) withManager(ctx server.Cmd, _ *broadcaster.Broadcaster, fn func(credential.CredentialManager, follow) error) error {
+func (flags BackendFlags) withManager(ctx server.Cmd, _ *broadcaster.Broadcaster, fn func(credential.CredentialManager, *follow) error) error {
 	return flags.WithAWSCredentialManager(ctx, without(fn))
 }

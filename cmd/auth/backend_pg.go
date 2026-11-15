@@ -51,7 +51,7 @@ const (
 ///////////////////////////////////////////////////////////////////////////////
 // PRIVATE METHODS
 
-func (flags BackendFlags) withManager(ctx server.Cmd, changes *broadcaster.Broadcaster, fn func(credential.CredentialManager, follow) error) error {
+func (flags BackendFlags) withManager(ctx server.Cmd, changes *broadcaster.Broadcaster, fn func(credential.CredentialManager, *follow) error) error {
 	// Connect to the database, with go-pg's flags
 	pool, err := flags.PostgresFlags.Connect(ctx)
 	if err != nil {
@@ -73,8 +73,11 @@ func (flags BackendFlags) withManager(ctx server.Cmd, changes *broadcaster.Broad
 		return err
 	}
 	return flags.WithPGCredentialManager(ctx, pool, flags.Schema, func(manager credential.CredentialManager) error {
-		return fn(manager, func(runctx context.Context) error {
-			return listener.Run(runctx, ctx.Logger())
+		return fn(manager, &follow{
+			run: func(runctx context.Context) error {
+				return listener.Run(runctx, ctx.Logger())
+			},
+			ready: listener.WaitListening,
 		})
 	}, pgcredential.WithChannel(pgbroadcasterschema.NotifyChannel))
 }
