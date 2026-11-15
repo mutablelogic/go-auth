@@ -18,6 +18,7 @@ import (
 	"context"
 	"crypto/rsa"
 	"crypto/x509"
+	"fmt"
 	"math/big"
 	"net"
 	"testing"
@@ -816,14 +817,16 @@ func TestCert_001(t *testing.T) {
 		leafRow, err := m.CreateCert(context.Background(), cert.CreateCertRequest{Name: "leaf_cert", Expiry: time.Hour}, caRow.CertKey)
 		require.NoError(err)
 
-		_, err = m.RenewCert(context.Background(), leafRow.CertKey, cert.RenewCertRequest{})
+		latest, err := m.RenewCert(context.Background(), leafRow.CertKey, cert.RenewCertRequest{})
 		require.NoError(err)
 
+		// The disabled older version isn't renewed, which says which is the
+		// latest
 		renewed, err := m.RenewCert(context.Background(), leafRow.CertKey, cert.RenewCertRequest{})
 		require.Error(err)
 		assert.Nil(renewed)
 		assert.ErrorIs(err, httpresponse.ErrConflict)
-		assert.EqualError(err, "Conflict: certificate is disabled")
+		assert.EqualError(err, fmt.Sprintf("Conflict: only the latest version of %q, serial %s, can be renewed", "leaf_cert", latest.Serial))
 	})
 
 	t.Run("UpdateCertUpdatesRawTagsAndEnabled", func(t *testing.T) {

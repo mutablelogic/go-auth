@@ -185,7 +185,8 @@ func (c CertListRequest) Select(bind *pg.Bind, op pg.Op) (string, error) {
 	} else {
 		bind.Set("where", "WHERE "+where)
 	}
-	bind.Set("orderby", `ORDER BY cert_row."name" ASC, cert_row."serial"::NUMERIC DESC, cert_row."id" DESC`)
+	// A name's versions are the latest first, which is the one inserted last
+	bind.Set("orderby", `ORDER BY cert_row."name" ASC, cert_row."id" DESC`)
 	offsetlimit := pg.OffsetLimit(c.OffsetLimit)
 	offsetlimit.Bind(bind, CertListLimit)
 
