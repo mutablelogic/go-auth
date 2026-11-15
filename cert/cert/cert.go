@@ -170,6 +170,11 @@ func Read(r io.Reader) (*Cert, error) {
 		data = rest
 	}
 
+	// A certificate is required, with or without its private key
+	if cert.x509.Raw == nil {
+		return nil, fmt.Errorf("missing certificate")
+	}
+
 	// Set name from serial number if not set
 	if cert.Name == "" {
 		cert.Name = fmt.Sprintf("%x", cert.x509.SerialNumber)

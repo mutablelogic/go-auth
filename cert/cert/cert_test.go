@@ -126,6 +126,23 @@ func Test_Cert_002(t *testing.T) {
 	})
 }
 
+func Test_Cert_ReadRequiresCertificate(t *testing.T) {
+	assert := assert.New(t)
+	leaf, err := cert.New(cert.WithCommonName("test"), cert.WithRSAKey(2048), cert.WithExpiry(time.Hour))
+	if !assert.NoError(err) {
+		t.FailNow()
+	}
+
+	// Nothing, or only the private key
+	_, err = cert.Read(bytes.NewReader(nil))
+	assert.EqualError(err, "missing certificate")
+
+	var data bytes.Buffer
+	assert.NoError(leaf.WritePrivateKey(&data))
+	_, err = cert.Read(&data)
+	assert.EqualError(err, "missing certificate")
+}
+
 func Test_Cert_003(t *testing.T) {
 	assert := assert.New(t)
 

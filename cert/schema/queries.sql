@@ -65,13 +65,12 @@ WITH issuer_row AS (
 	FROM ${"schema"}.cert
 	WHERE name = @issuer_name AND serial = @issuer_serial
 ), upserted AS (
-	INSERT INTO ${"schema"}.cert (
+	INSERT INTO ${"schema"}.cert AS existing (
 		name, serial, subject, issuer, cert, key, not_before, not_after, is_ca, enabled, tags, pv
 	) VALUES (
 		@name, @serial, @subject, (SELECT id FROM issuer_row), @cert, @key, @not_before, @not_after, @is_ca, @enabled, @tags, @pv
 	) ON CONFLICT (name, serial) DO UPDATE SET
 		subject = @subject,
-		issuer = (SELECT id FROM issuer_row),
 		cert = @cert,
 		key = @key,
 		not_before = @not_before,
@@ -81,6 +80,10 @@ WITH issuer_row AS (
 		tags = @tags,
 		pv = @pv,
 		ts = CURRENT_TIMESTAMP
+	-- A stored certificate keeps its issuer, so that a new row only refers to
+	-- rows which already exist, and the issuers can't form a cycle, which
+	-- the chain queries would follow forever. Nothing is returned otherwise.
+	WHERE existing.issuer IS NOT DISTINCT FROM EXCLUDED.issuer
 	RETURNING
 		id, name, serial, subject, issuer, cert, not_before, not_after, is_ca, enabled, tags, ts
 )
@@ -316,7 +319,7 @@ WHERE cert_row.id = (
 	SELECT selected.id
 	FROM ${"schema"}.cert AS selected
 	WHERE selected.name = @name
-	ORDER BY selected.serial::NUMERIC DESC, selected.id DESC
+	ORDER BY selected.id DESC
 	LIMIT 1
 );
 
@@ -542,6 +545,6 @@ WHERE cert_row.id = (
 	SELECT selected.id
 	FROM ${"schema"}.cert AS selected
 	WHERE selected.name = @name
-	ORDER BY selected.serial::NUMERIC DESC, selected.id DESC
+	ORDER BY selected.id DESC
 	LIMIT 1
 );
