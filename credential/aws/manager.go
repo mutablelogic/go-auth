@@ -53,6 +53,7 @@ type client interface {
 	CreateSecret(context.Context, *secretsmanager.CreateSecretInput, ...func(*secretsmanager.Options)) (*secretsmanager.CreateSecretOutput, error)
 	ListSecrets(context.Context, *secretsmanager.ListSecretsInput, ...func(*secretsmanager.Options)) (*secretsmanager.ListSecretsOutput, error)
 	DeleteSecret(context.Context, *secretsmanager.DeleteSecretInput, ...func(*secretsmanager.Options)) (*secretsmanager.DeleteSecretOutput, error)
+	UpdateSecret(context.Context, *secretsmanager.UpdateSecretInput, ...func(*secretsmanager.Options)) (*secretsmanager.UpdateSecretOutput, error)
 }
 
 var _ credential.CredentialProvider = (*Manager)(nil)
@@ -217,7 +218,7 @@ func (self *Manager) List(ctx context.Context) (_ []credential.Credential, err e
 			if updated.IsZero() {
 				updated = awssdk.ToTime(entry.CreatedDate)
 			}
-			result = append(result, credential.Credential{Key: key, UpdatedAt: updated.UTC()})
+			result = append(result, credential.Credential{Key: key, Description: awssdk.ToString(entry.Description), UpdatedAt: updated.UTC()})
 		}
 		if awssdk.ToString(output.NextToken) == "" {
 			break
@@ -228,6 +229,27 @@ func (self *Manager) List(ctx context.Context) (_ []credential.Credential, err e
 		return strings.Compare(a.Key, b.Key)
 	})
 	return result, nil
+}
+
+// Describe sets the description of the key's secret, which AWS keeps
+// beside it, unencrypted, or removes it, when it's empty, without changing
+// its value, and returns ErrNotFound when there isn't one
+func (self *Manager) Describe(ctx context.Context, key, description string) (err error) {
+	ctx, endSpan := otel.StartSpan(self.tracer, ctx, "credential.aws.Describe",
+		attribute.String("key", key),
+	)
+	defer func() { endSpan(err) }()
+
+	if err := validateKey(key); err != nil {
+		return err
+	}
+	if _, err := self.client.UpdateSecret(ctx, &secretsmanager.UpdateSecretInput{
+		SecretId:    awssdk.String(self.name(key)),
+		Description: awssdk.String(strings.TrimSpace(description)),
+	}); err != nil {
+		return awsErr(key, err)
+	}
+	return nil
 }
 
 // Delete schedules the key's secret for deletion, after the recovery window

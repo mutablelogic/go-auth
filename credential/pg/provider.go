@@ -174,7 +174,7 @@ func (self *provider) List(ctx context.Context) (_ []credential.Credential, err 
 			return nil, err
 		}
 		for _, c := range page.Body {
-			result = append(result, credential.Credential{Key: c.Key, UpdatedAt: c.UpdatedAt})
+			result = append(result, credential.Credential{Key: c.Key, Description: c.Description, UpdatedAt: c.UpdatedAt})
 		}
 		if len(page.Body) == 0 || uint64(len(result)) >= page.Count {
 			return result, nil
@@ -191,6 +191,18 @@ func (self *provider) Delete(ctx context.Context, key string) (err error) {
 	defer func() { endSpan(err) }()
 
 	_, err = self.manager.DeleteCredential(ctx, schema.CredentialKey{Key: key})
+	return err
+}
+
+// Describe sets the description of the stored credential for the key, or
+// removes it, when it's empty, and returns ErrNotFound when there isn't one
+func (self *provider) Describe(ctx context.Context, key, description string) (err error) {
+	ctx, endSpan := otel.StartSpan(self.manager.tracer, ctx, "credential.pg.Describe",
+		attribute.String("key", key),
+	)
+	defer func() { endSpan(err) }()
+
+	_, err = self.manager.DescribeCredential(ctx, schema.CredentialKey{Key: key}, description)
 	return err
 }
 

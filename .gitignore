@@ -31,3 +31,8 @@ go.work.sum
 # .idea/
 # .vscode/
 build
+
+# The web UI, which make frontend builds
+node_modules
+frontend/dist
+frontend/app/dist

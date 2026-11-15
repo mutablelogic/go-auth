@@ -340,3 +340,36 @@ func Test_DeleteRotate(t *testing.T) {
 	_, err = provider.Get(ctx, "key")
 	assert.ErrorIs(t, err, auth.ErrNotFound)
 }
+
+func Test_Describe(t *testing.T) {
+	_, ctx := test.Begin(t)
+	defer test.End(t)
+	mgr := test.IsolatedManager(t)
+	provider := mgr.GetCredentialProvider().(authcredential.CredentialManager)
+	require.NoError(t, provider.Set(ctx, "token", json.RawMessage(`"secret"`)))
+	before, err := mgr.GetCredentialMeta(ctx, schema.CredentialKey{Key: "token"})
+	require.NoError(t, err)
+
+	// The description is listed, and doesn't change when it was updated
+	require.NoError(t, provider.Describe(ctx, "token", "  The API token  "))
+	list, err := provider.List(ctx)
+	require.NoError(t, err)
+	require.Len(t, list, 1)
+	assert.Equal(t, "The API token", list[0].Description)
+	assert.Equal(t, before.UpdatedAt, list[0].UpdatedAt)
+	meta, err := mgr.GetCredentialMeta(ctx, schema.CredentialKey{Key: "token"})
+	require.NoError(t, err)
+	assert.Equal(t, "The API token", meta.Description)
+
+	// Replacing the value keeps it, and an empty description removes it
+	require.NoError(t, provider.Set(ctx, "token", json.RawMessage(`"new"`)))
+	list, err = provider.List(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, "The API token", list[0].Description)
+	require.NoError(t, provider.Describe(ctx, "token", ""))
+	list, err = provider.List(ctx)
+	require.NoError(t, err)
+	assert.Empty(t, list[0].Description)
+
+	assert.ErrorIs(t, provider.Describe(ctx, "missing", "x"), auth.ErrNotFound)
+}

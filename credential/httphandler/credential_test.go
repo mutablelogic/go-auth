@@ -25,6 +25,7 @@ import (
 	envcredential "github.com/mutablelogic/go-auth/credential/env"
 	filecredential "github.com/mutablelogic/go-auth/credential/file"
 	httphandler "github.com/mutablelogic/go-auth/credential/httphandler"
+	schema "github.com/mutablelogic/go-server/broadcaster/schema"
 	httprouter "github.com/mutablelogic/go-server/pkg/httprouter"
 	test "github.com/mutablelogic/go-server/test"
 	assert "github.com/stretchr/testify/assert"
@@ -54,6 +55,35 @@ func Test_Manager(t *testing.T) {
 		assert.Equal(t, "token", stored.Key)
 		status, _ := s.Do(t, http.MethodPut, "credential", map[string]any{"key": "object", "credentials": map[string]string{"user": "admin"}})
 		require.Equal(t, http.StatusOK, status)
+	})
+
+	t.Run("Description", func(t *testing.T) {
+		// A description is set with the value, listed, and kept when the
+		// value is replaced without one
+		var stored credential.Credential
+		require.Equal(t, http.StatusOK, s.JSON(t, http.MethodPut, "credential", map[string]any{"key": "described", "credentials": "x", "description": " What it's for "}, &stored))
+		assert.Equal(t, "What it's for", stored.Description)
+		status, _ := s.Do(t, http.MethodPut, "credential", map[string]any{"key": "described", "credentials": "y"})
+		require.Equal(t, http.StatusOK, status)
+		var meta credential.Credential
+		require.Equal(t, http.StatusOK, s.JSON(t, http.MethodGet, "credential/described", nil, &meta))
+		assert.Equal(t, "What it's for", meta.Description)
+
+		// The description changes without the value, and an empty one
+		// removes it
+		require.Equal(t, http.StatusOK, s.JSON(t, http.MethodPatch, "credential/described", map[string]any{"description": "Another"}, &meta))
+		assert.Equal(t, "Another", meta.Description)
+		status, _, body := decrypt(t, s, "described", passphrase)
+		require.Equal(t, http.StatusOK, status)
+		assert.JSONEq(t, `"y"`, string(body), "the value isn't changed")
+		require.Equal(t, http.StatusOK, s.JSON(t, http.MethodPatch, "credential/described", map[string]any{"description": ""}, &meta))
+		var removed credential.Credential
+		require.Equal(t, http.StatusOK, s.JSON(t, http.MethodGet, "credential/described", nil, &removed))
+		assert.Empty(t, removed.Description)
+		status, _ = s.Do(t, http.MethodPatch, "credential/missing", map[string]any{"description": "x"})
+		assert.Equal(t, http.StatusNotFound, status)
+		status, _ = s.Do(t, http.MethodDelete, "credential/described", nil)
+		require.Equal(t, http.StatusNoContent, status)
 	})
 
 	t.Run("SetInvalid", func(t *testing.T) {
@@ -165,6 +195,8 @@ func Test_Provider(t *testing.T) {
 	assert.Equal(t, http.StatusMethodNotAllowed, status)
 	status, _ = s.Do(t, http.MethodPost, "credential/token/rotate", nil)
 	assert.Equal(t, http.StatusNotFound, status)
+	status, _ = s.Do(t, http.MethodPatch, "credential/token", map[string]any{"description": "x"})
+	assert.Equal(t, http.StatusMethodNotAllowed, status)
 	s.Reset()
 
 	// The specification only has the provider's operations
@@ -182,6 +214,9 @@ func Test_ProviderNoPassphrase(t *testing.T) {
 	status, _ := s.Do(t, http.MethodPut, "credential", credential.CredentialSet{Key: "GOAUTH_TEST_HTTP", Credentials: json.RawMessage(`"x"`)})
 	assert.Equal(t, http.StatusNotImplemented, status)
 
+	status, _ = s.Do(t, http.MethodPut, "credential", map[string]any{"key": "GOAUTH_TEST_HTTP", "credentials": "x", "description": "d"})
+	assert.Equal(t, http.StatusNotImplemented, status, "a provider has no descriptions")
+
 	status, _, _ = decrypt(t, s, "GOAUTH_TEST_HTTP", passphrase)
 	assert.Equal(t, http.StatusNotFound, status)
 	s.Reset()
@@ -194,4 +229,43 @@ func Test_Auth(t *testing.T) {
 	router, err := httprouter.NewRouter(context.Background(), http.NewServeMux(), "/api", "", "test", "0.0.0")
 	require.NoError(t, err)
 	assert.Error(t, httphandler.RegisterManagerHandlers(mgr, true)(router))
+}
+
+// publisher records the changes which are published
+type publisher struct {
+	changes []schema.Change
+}
+
+func (p *publisher) Publish(change schema.Change) int {
+	p.changes = append(p.changes, change)
+	return 0
+}
+
+func Test_Publish(t *testing.T) {
+	// A change is published after each write which succeeds, by the key,
+	// without the value
+	mgr, err := filecredential.New(t.TempDir(), filecredential.WithPassphrase(1, passphrase))
+	require.NoError(t, err)
+	var p publisher
+	s := test.NewServer(t, httphandler.RegisterManagerHandlers(mgr, false, httphandler.WithPublisher(&p)))
+
+	status, _ := s.Do(t, http.MethodPut, "credential", map[string]any{"key": "token", "credentials": "secret"})
+	require.Equal(t, http.StatusOK, status)
+	status, _ = s.Do(t, http.MethodPatch, "credential/token", map[string]any{"description": "d"})
+	require.Equal(t, http.StatusOK, status)
+	status, _ = s.Do(t, http.MethodPost, "credential/token/rotate", nil)
+	require.Equal(t, http.StatusNotModified, status, "nothing changed, so nothing is published")
+	status, _ = s.Do(t, http.MethodDelete, "credential/token", nil)
+	require.Equal(t, http.StatusNoContent, status)
+	status, _ = s.Do(t, http.MethodDelete, "credential/token", nil)
+	require.Equal(t, http.StatusNotFound, status, "a failure isn't published")
+
+	assert.Equal(t, []schema.Change{
+		{Action: schema.ChangeUpdate, Table: "credential", Row: "token"},
+		{Action: schema.ChangeUpdate, Table: "credential", Row: "token"},
+		{Action: schema.ChangeDelete, Table: "credential", Row: "token"},
+	}, p.changes)
+	for _, change := range p.changes {
+		assert.Empty(t, change.Data, "no value is published")
+	}
 }

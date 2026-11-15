@@ -30,10 +30,14 @@ import (
 	types "github.com/mutablelogic/go-server/pkg/types"
 	attribute "go.opentelemetry.io/otel/attribute"
 	trace "go.opentelemetry.io/otel/trace"
+	errgroup "golang.org/x/sync/errgroup"
 )
 
 ////////////////////////////////////////////////////////////////////////////////
 // TYPES
+
+// listConcurrency is how many secrets List reads at once, for their notes
+const listConcurrency = 4
 
 // Manager stores credentials as secrets in Bitwarden Secrets Manager, one
 // for each key, which are encrypted and decrypted here with the
@@ -198,10 +202,11 @@ func (self *Manager) Set(ctx context.Context, key string, value json.RawMessage)
 		return err
 	}
 	existing.Value = text
-	return writeErr(key, self.client.updateSecret(ctx, *existing))
+	return writeErr(key, self.client.updateSecret(ctx, *existing, true))
 }
 
-// List returns the stored credentials, in key order, without their values:
+// List returns the stored credentials, in key order, with their
+// descriptions, which are their notes, without their values:
 // the secrets the machine account can read, whose keys are valid. A key
 // which is on more than one secret is listed for each of them.
 func (self *Manager) List(ctx context.Context) (_ []credential.Credential, err error) {
@@ -218,10 +223,67 @@ func (self *Manager) List(ctx context.Context) (_ []credential.Credential, err e
 			result = append(result, credential.Credential{Key: s.Key, UpdatedAt: s.Revised})
 		}
 	}
+
+	// The list doesn't have the secrets' notes, which are their
+	// descriptions, so each is read, a few at a time
+	group, groupctx := errgroup.WithContext(ctx)
+	group.SetLimit(listConcurrency)
+	n := 0
+	for _, s := range secrets {
+		if validateKey(s.Key) != nil {
+			continue
+		}
+		index, id := n, s.ID
+		n++
+		group.Go(func() error {
+			full, err := self.client.getSecret(groupctx, id)
+			if errors.Is(err, auth.ErrNotFound) {
+				// Deleted since it was listed
+				return nil
+			} else if err != nil {
+				return err
+			}
+			result[index].Description = full.Note
+			return nil
+		})
+	}
+	if err := group.Wait(); err != nil {
+		return nil, err
+	}
+
 	slices.SortStableFunc(result, func(a, b credential.Credential) int {
 		return strings.Compare(a.Key, b.Key)
 	})
 	return result, nil
+}
+
+// Describe sets the description of the key's secret, which is its note,
+// encrypted, as its key and value are, or removes it, when it's empty,
+// without changing its value, and returns ErrNotFound when there isn't one,
+// or ErrConflict when there's more than one
+func (self *Manager) Describe(ctx context.Context, key, description string) (err error) {
+	ctx, endSpan := otel.StartSpan(self.tracer, ctx, "credential.bitwarden.Describe",
+		attribute.String("key", key),
+	)
+	defer func() { endSpan(err) }()
+
+	if err := validateKey(key); err != nil {
+		return err
+	}
+	index, err := self.index(ctx)
+	if err != nil {
+		return err
+	}
+	id, err := find(key, index)
+	if err != nil {
+		return err
+	}
+	existing, err := self.client.getSecret(ctx, id)
+	if err != nil {
+		return err
+	}
+	existing.Note = strings.TrimSpace(description)
+	return writeErr(key, self.client.updateSecret(ctx, *existing, false))
 }
 
 // Delete deletes the key's secret, and returns ErrNotFound when there isn't

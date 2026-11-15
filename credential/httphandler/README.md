@@ -6,19 +6,23 @@ Credentials store secret material, such as API keys or tokens, under a key, for 
 
 ### GET /credential
 
-List the stored credentials in key order, without their values. Credentials from the environment aren't listed. Returns `count`, and the key of each credential with the time it was last changed, when the backend records it. Needs the `credential:read` scope.
+List the stored credentials in key order, without their values. Credentials from the environment aren't listed. Returns `count`, and each credential's key and description, with the time it was last changed, when the backend records it. Needs the `credential:read` scope.
 
 ### PUT /credential
 
-Store a credential, replacing any credential with the same key. The request body is a JSON object with the `key`, an identifier of up to 64 letters, digits, `_` and `-`, starting with a letter, and the `credentials`, which can be any JSON value. Returns the key. Returns 400 if the key or credentials are invalid, 403 if the backend refuses the write, or 503 if the backend has no passphrase. Needs the `credential:write` scope.
+Store a credential, replacing any credential with the same key. The request body is a JSON object with the `key`, an identifier of up to 64 letters, digits, `_` and `-`, starting with a letter, and the `credentials`, which can be any JSON value, and, optionally, its `description`, such as what it's for, which is kept when it isn't set, and removed when it's empty. Returns the key, and the description, when it's set. Returns 400 if the key or credentials are invalid, 403 if the backend refuses the write, or 503 if the backend has no passphrase. Needs the `credential:write` scope.
 
 ### GET /credential/{key}
 
-Get the key of a stored credential, and the time it was last changed, without its value. Use it to check that a credential exists. Returns 400 if the key is invalid, or 404 if there's no credential for the key. Needs the `credential:read` scope.
+Get the key of a stored credential, its description, and the time it was last changed, without its value. Use it to check that a credential exists. Returns 400 if the key is invalid, or 404 if there's no credential for the key. Needs the `credential:read` scope.
 
 ### POST /credential/{key}
 
 Get a credential's value, with the passphrase it was encrypted with as the request body, as `text/plain`, which must match exactly, including any spaces or line endings. This is a `POST` rather than a `GET`, as the request has a body, and the response is sent with `Cache-Control: no-store`, so the value isn't cached. Returns the credential as JSON. Returns 400 if the key or request body is invalid, 403 if the passphrase isn't the credential's passphrase, or 404 if there's no credential for the key. Only for backends which encrypt with their own passphrases. Needs the `credential:decrypt` scope.
+
+### PATCH /credential/{key}
+
+Change a stored credential's description, without its value. The request body is a JSON object with its `description`, which is removed when it's empty. Returns the key, and the description. Returns 400 if the key or request body is invalid, 403 if the backend refuses the write, or 404 if there's no credential for the key. Needs the `credential:write` scope.
 
 ### DELETE /credential/{key}
 

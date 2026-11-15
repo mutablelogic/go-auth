@@ -45,13 +45,14 @@ type fakeClient struct {
 	sync.Mutex
 	secrets map[string]*string // nil is a binary secret
 	kms     map[string]string
+	desc    map[string]string
 	reads   int
 	deleted []*secretsmanager.DeleteSecretInput
 	err     error // returned by every call, when set
 }
 
 func newFakeClient() *fakeClient {
-	return &fakeClient{secrets: make(map[string]*string), kms: make(map[string]string)}
+	return &fakeClient{secrets: make(map[string]*string), kms: make(map[string]string), desc: make(map[string]string)}
 }
 
 func (c *fakeClient) GetSecretValue(_ context.Context, in *secretsmanager.GetSecretValueInput, _ ...func(*secretsmanager.Options)) (*secretsmanager.GetSecretValueOutput, error) {
@@ -126,7 +127,11 @@ func (c *fakeClient) ListSecrets(_ context.Context, in *secretsmanager.ListSecre
 	output := &secretsmanager.ListSecretsOutput{}
 	for i := start; i < len(names) && i < start+2; i++ {
 		changed := time.Date(2026, 1, 1, 0, 0, i, 0, time.UTC)
-		output.SecretList = append(output.SecretList, smtypes.SecretListEntry{Name: awssdk.String(names[i]), LastChangedDate: &changed})
+		entry := smtypes.SecretListEntry{Name: awssdk.String(names[i]), LastChangedDate: &changed}
+		if description, ok := c.desc[names[i]]; ok {
+			entry.Description = awssdk.String(description)
+		}
+		output.SecretList = append(output.SecretList, entry)
 	}
 	if start+2 < len(names) {
 		output.NextToken = awssdk.String(strconv.Itoa(start + 2))
@@ -146,6 +151,21 @@ func (c *fakeClient) DeleteSecret(_ context.Context, in *secretsmanager.DeleteSe
 	delete(c.secrets, *in.SecretId)
 	c.deleted = append(c.deleted, in)
 	return &secretsmanager.DeleteSecretOutput{Name: in.SecretId}, nil
+}
+
+func (c *fakeClient) UpdateSecret(_ context.Context, in *secretsmanager.UpdateSecretInput, _ ...func(*secretsmanager.Options)) (*secretsmanager.UpdateSecretOutput, error) {
+	c.Lock()
+	defer c.Unlock()
+	if c.err != nil {
+		return nil, c.err
+	}
+	if _, exists := c.secrets[*in.SecretId]; !exists {
+		return nil, &smtypes.ResourceNotFoundException{Message: awssdk.String("not found")}
+	}
+	if in.Description != nil {
+		c.desc[*in.SecretId] = *in.Description
+	}
+	return &secretsmanager.UpdateSecretOutput{Name: in.SecretId}, nil
 }
 
 // racingClient creates the secret just before CreateSecret, as if another
@@ -362,6 +382,32 @@ func Test_Delete(t *testing.T) {
 			assert.ErrorIs(t, err, auth.ErrBadParameter, days)
 		}
 	})
+}
+
+func Test_Describe(t *testing.T) {
+	ctx := context.Background()
+	fake := newFakeClient()
+	fake.secrets["app/key"] = awssdk.String(`"x"`)
+	mgr, err := New(ctx, withClient(fake), WithPrefix("app/"))
+	require.NoError(t, err)
+
+	// The description is kept beside the secret, and listed
+	require.NoError(t, mgr.Describe(ctx, "key", "  The API key  "))
+	assert.Equal(t, "The API key", fake.desc["app/key"])
+	assert.Equal(t, `"x"`, *fake.secrets["app/key"], "the value isn't changed")
+	list, err := mgr.List(ctx)
+	require.NoError(t, err)
+	require.Len(t, list, 1)
+	assert.Equal(t, "The API key", list[0].Description)
+
+	// An empty description removes it
+	require.NoError(t, mgr.Describe(ctx, "key", ""))
+	list, err = mgr.List(ctx)
+	require.NoError(t, err)
+	assert.Empty(t, list[0].Description)
+
+	assert.ErrorIs(t, mgr.Describe(ctx, "missing", "x"), auth.ErrNotFound)
+	assert.ErrorIs(t, mgr.Describe(ctx, "a/b", "x"), auth.ErrBadParameter)
 }
 
 func Test_Errors(t *testing.T) {

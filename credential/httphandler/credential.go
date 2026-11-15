@@ -17,10 +17,12 @@ package httphandler
 import (
 	"errors"
 	"net/http"
+	"strings"
 
 	// Packages
 	auth "github.com/mutablelogic/go-auth"
 	credential "github.com/mutablelogic/go-auth/credential"
+	schema "github.com/mutablelogic/go-server/broadcaster/schema"
 	httprequest "github.com/mutablelogic/go-server/pkg/httprequest"
 	httpresponse "github.com/mutablelogic/go-server/pkg/httpresponse"
 	httprouter "github.com/mutablelogic/go-server/pkg/httprouter"
@@ -37,6 +39,9 @@ type keyParams struct {
 	Key string `json:"key" help:"Credential key"`
 }
 
+// notifyFunc publishes a change of a credential, by its key
+type notifyFunc func(schema.ChangeAction, string)
+
 ///////////////////////////////////////////////////////////////////////////////
 // GLOBALS
 
@@ -49,7 +54,7 @@ const (
 
 // registerCredential registers listing, for a manager, and storing
 // credentials
-func registerCredential(router *httprouter.Router, provider credential.CredentialProvider, manager credential.CredentialManager, auth bool, doc *opts.MarkdownDoc) error {
+func registerCredential(router *httprouter.Router, provider credential.CredentialProvider, manager credential.CredentialManager, auth bool, doc *opts.MarkdownDoc, notify notifyFunc) error {
 	return router.Register("credential", nil, func(path httprequest.PathItem) {
 		path.Tag(tag)
 		if manager != nil {
@@ -64,7 +69,7 @@ func registerCredential(router *httprouter.Router, provider credential.Credentia
 			})
 		}
 		path.Put(func(w http.ResponseWriter, r *http.Request) {
-			set(provider, w, r)
+			set(provider, w, r, notify)
 		}, func(op httprequest.PathOperation) {
 			op.Summary("Store a credential")
 			op.Description(doc.Section(3, "PUT /credential").Body)
@@ -82,7 +87,7 @@ func registerCredential(router *httprouter.Router, provider credential.Credentia
 // registerKey registers getting the metadata of, and deleting, a
 // credential, for a manager, and getting its value with its passphrase, for
 // a provider which encrypts with its own passphrases
-func registerKey(router *httprouter.Router, provider credential.CredentialProvider, manager credential.CredentialManager, auth bool, doc *opts.MarkdownDoc) error {
+func registerKey(router *httprouter.Router, provider credential.CredentialProvider, manager credential.CredentialManager, auth bool, doc *opts.MarkdownDoc, notify notifyFunc) error {
 	decrypter, canDecrypt := provider.(credential.CredentialDecrypter)
 	if manager == nil && !canDecrypt {
 		return nil
@@ -116,8 +121,20 @@ func registerKey(router *httprouter.Router, provider credential.CredentialProvid
 			})
 		}
 		if manager != nil {
+			path.Patch(func(w http.ResponseWriter, r *http.Request) {
+				describe(manager, w, r, notify)
+			}, func(op httprequest.PathOperation) {
+				op.Summary("Change a credential's description")
+				op.Description(doc.Section(3, "PATCH /credential/{key}").Body)
+				op.RequestBody(jsonschema.MustFor[credential.CredentialDescription]())
+				op.JSONResponse(http.StatusOK, jsonschema.MustFor[credential.Credential](), "The credential, with its description")
+				op.ErrorResponse(http.StatusBadRequest, "Invalid key or request body")
+				op.ErrorResponse(http.StatusForbidden, "The backend refused the write")
+				op.ErrorResponse(http.StatusNotFound, "Credential not found")
+				security(op, auth, credential.ScopeCredentialWrite)
+			})
 			path.Delete(func(w http.ResponseWriter, r *http.Request) {
-				remove(manager, w, r)
+				remove(manager, w, r, notify)
 			}, func(op httprequest.PathOperation) {
 				op.Summary("Delete a credential")
 				op.Description(doc.Section(3, "DELETE /credential/{key}").Body)
@@ -132,7 +149,7 @@ func registerKey(router *httprouter.Router, provider credential.CredentialProvid
 
 // registerRotate registers rotating a credential, for a manager which
 // encrypts with its own passphrases
-func registerRotate(router *httprouter.Router, manager credential.CredentialManager, auth bool, doc *opts.MarkdownDoc) error {
+func registerRotate(router *httprouter.Router, manager credential.CredentialManager, auth bool, doc *opts.MarkdownDoc, notify notifyFunc) error {
 	rotator, ok := manager.(credential.CredentialRotator)
 	if manager == nil || !ok {
 		return nil
@@ -140,7 +157,7 @@ func registerRotate(router *httprouter.Router, manager credential.CredentialMana
 	return router.Register("credential/{key}/rotate", jsonschema.MustFor[keyParams](), func(path httprequest.PathItem) {
 		path.Tag(tag)
 		path.Post(func(w http.ResponseWriter, r *http.Request) {
-			rotate(rotator, w, r)
+			rotate(rotator, w, r, notify)
 		}, func(op httprequest.PathOperation) {
 			op.Summary("Rotate a credential")
 			op.Description(doc.Section(3, "POST /credential/{key}/rotate").Body)
@@ -174,7 +191,7 @@ func list(manager credential.CredentialManager, w http.ResponseWriter, r *http.R
 	httpresponse.JSON(w, http.StatusOK, httprequest.Indent(r), credential.CredentialList{Count: uint64(len(result)), Body: result})
 }
 
-func set(provider credential.CredentialProvider, w http.ResponseWriter, r *http.Request) {
+func set(provider credential.CredentialProvider, w http.ResponseWriter, r *http.Request, notify notifyFunc) {
 	var req credential.CredentialSet
 	if err := httprequest.Read(r, &req); err != nil {
 		httpresponse.Error(w, httpresponse.ErrBadRequest.Withf("%v", err))
@@ -183,11 +200,27 @@ func set(provider credential.CredentialProvider, w http.ResponseWriter, r *http.
 		httpresponse.Error(w, httpresponse.ErrBadRequest.With("credentials are required"))
 		return
 	}
+
+	// A description needs a manager, which keeps them
+	manager, describes := provider.(credential.CredentialManager)
+	if req.Description != nil && !describes {
+		httpresponse.Error(w, httpresponse.ErrNotImplemented.With("credentials have no descriptions"), req.Key)
+		return
+	}
 	if err := provider.Set(r.Context(), req.Key, req.Credentials); err != nil {
 		httpresponse.Error(w, auth.HTTPError(err), req.Key)
 		return
 	}
-	httpresponse.JSON(w, http.StatusOK, httprequest.Indent(r), credential.Credential{Key: req.Key})
+	result := credential.Credential{Key: req.Key}
+	if req.Description != nil {
+		if err := manager.Describe(r.Context(), req.Key, *req.Description); err != nil {
+			httpresponse.Error(w, auth.HTTPError(err), req.Key)
+			return
+		}
+		result.Description = strings.TrimSpace(*req.Description)
+	}
+	notify(schema.ChangeUpdate, req.Key)
+	httpresponse.JSON(w, http.StatusOK, httprequest.Indent(r), result)
 }
 
 func get(manager credential.CredentialManager, w http.ResponseWriter, r *http.Request) {
@@ -221,22 +254,39 @@ func decrypt(decrypter credential.CredentialDecrypter, w http.ResponseWriter, r 
 	httpresponse.JSON(w, http.StatusOK, httprequest.Indent(r), value)
 }
 
-func remove(manager credential.CredentialManager, w http.ResponseWriter, r *http.Request) {
+func describe(manager credential.CredentialManager, w http.ResponseWriter, r *http.Request, notify notifyFunc) {
+	key := r.PathValue("key")
+	var req credential.CredentialDescription
+	if err := httprequest.Read(r, &req); err != nil {
+		httpresponse.Error(w, httpresponse.ErrBadRequest.Withf("%v", err))
+		return
+	}
+	if err := manager.Describe(r.Context(), key, req.Description); err != nil {
+		httpresponse.Error(w, auth.HTTPError(err), key)
+		return
+	}
+	notify(schema.ChangeUpdate, key)
+	httpresponse.JSON(w, http.StatusOK, httprequest.Indent(r), credential.Credential{Key: key, Description: strings.TrimSpace(req.Description)})
+}
+
+func remove(manager credential.CredentialManager, w http.ResponseWriter, r *http.Request, notify notifyFunc) {
 	key := r.PathValue("key")
 	if err := manager.Delete(r.Context(), key); err != nil {
 		httpresponse.Error(w, auth.HTTPError(err), key)
 	} else {
+		notify(schema.ChangeDelete, key)
 		httpresponse.Empty(w, http.StatusNoContent)
 	}
 }
 
-func rotate(rotator credential.CredentialRotator, w http.ResponseWriter, r *http.Request) {
+func rotate(rotator credential.CredentialRotator, w http.ResponseWriter, r *http.Request, notify notifyFunc) {
 	key := r.PathValue("key")
 	if err := rotator.Rotate(r.Context(), key); errors.Is(err, auth.ErrNotModified) {
 		httpresponse.Empty(w, http.StatusNotModified)
 	} else if err != nil {
 		httpresponse.Error(w, auth.HTTPError(err), key)
 	} else {
+		notify(schema.ChangeUpdate, key)
 		httpresponse.Empty(w, http.StatusNoContent)
 	}
 }
