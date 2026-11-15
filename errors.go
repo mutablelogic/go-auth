@@ -17,6 +17,7 @@ package auth
 import (
 	"errors"
 	"fmt"
+	"net/http"
 	"strings"
 
 	// Packages
@@ -36,6 +37,7 @@ const (
 	ErrInternalServerError
 	ErrInvalidProvider
 	ErrForbidden
+	ErrNotModified
 )
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -67,6 +69,8 @@ func (e Err) Error() string {
 		return "invalid auth provider"
 	case ErrForbidden:
 		return "forbidden"
+	case ErrNotModified:
+		return "not modified"
 	}
 	return fmt.Sprintf("error code %d", int(e))
 }
@@ -75,8 +79,11 @@ func (e Err) With(args ...any) error {
 	return fmt.Errorf("%w: %s", e, fmt.Sprint(args...))
 }
 
+// Withf returns the error with a formatted reason. Errors in the arguments
+// formatted with %w are wrapped, so errors.Is and errors.As match them as
+// well as the Err.
 func (e Err) Withf(format string, args ...any) error {
-	return fmt.Errorf("%w: %s", e, fmt.Sprintf(format, args...))
+	return fmt.Errorf("%w: "+format, append([]any{e}, args...)...)
 }
 
 // HTTPError converts an auth.Err to an appropriate httpresponse error, preserving the
@@ -106,6 +113,8 @@ func HTTPError(err error) error {
 		return httpresponse.ErrNotAuthorized.With(reason)
 	case ErrForbidden:
 		return httpresponse.ErrForbidden.With(reason)
+	case ErrNotModified:
+		return httpresponse.Err(http.StatusNotModified).With(reason)
 	default:
 		return httpresponse.ErrInternalError.With(reason)
 	}
