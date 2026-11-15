@@ -526,7 +526,7 @@ export interface CertPages {
 
 // certModule adds the Certificates module to the app: its section, which
 // owns the menu bar's Certificates item, and the sidebar while it's active,
-// of its pages, Certificate Authorities and Leaf Certificates, which it adds
+// of its pages, Leaf Certificates and Certificate Authorities, which it adds
 // to the root, and routes to. A certificate authority's panel creates a
 // certificate on the Leaf Certificates page. The pages' ids are prefixed
 // with page-, not the hashes they're routed to, so the browser doesn't
@@ -549,15 +549,15 @@ export function certModule(app: CertApp, section = 'Certificates'): CertPages {
         app.router.add(id, page);
         return element;
     };
-    const pages = { authorities: add('certificate-authorities', 'ca'), certificates: add('certificates', 'certificate') };
+    const pages = { certificates: add('certificates', 'certificate'), authorities: add('certificate-authorities', 'ca') };
     pages.authorities.createCertificate = (signer) => {
         location.hash = '#certificates';
         void pages.certificates.createLeaf(signer);
     };
 
     app.nav.setSection(section, [
-        { id: 'certificate-authorities', label: 'Certificate Authorities', href: '#certificate-authorities' },
         { id: 'certificates', label: 'Leaf Certificates', href: '#certificates' },
+        { id: 'certificate-authorities', label: 'Certificate Authorities', href: '#certificate-authorities' },
     ]);
     return pages;
 }
