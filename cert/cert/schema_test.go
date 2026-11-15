@@ -75,7 +75,7 @@ func Test_Query(t *testing.T) {
 	assert := assert.New(t)
 
 	assert.Empty(cert.GetCertRequest{}.Query())
-	assert.Equal("chain=true&private=true", cert.GetCertRequest{Chain: true, Private: true}.Query().Encode())
+	assert.Equal("chain=true", cert.GetCertRequest{Chain: true}.Query().Encode())
 
 	assert.Empty(cert.CertListRequest{}.Query())
 	limit, subject := uint64(5), uint64(7)

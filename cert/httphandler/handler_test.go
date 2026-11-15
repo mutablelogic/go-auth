@@ -19,7 +19,10 @@ import (
 	"crypto/x509"
 	"encoding/json"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
+	"slices"
+	"strings"
 	"testing"
 
 	// Packages
@@ -28,7 +31,7 @@ import (
 	manager "github.com/mutablelogic/go-auth/cert/manager"
 	certtest "github.com/mutablelogic/go-auth/cert/test"
 	httprouter "github.com/mutablelogic/go-server/pkg/httprouter"
-	openapi "github.com/mutablelogic/go-server/pkg/openapi/schema"
+	openapischema "github.com/mutablelogic/go-server/pkg/openapi/schema"
 	types "github.com/mutablelogic/go-server/pkg/types"
 	test "github.com/mutablelogic/go-server/test"
 	assert "github.com/stretchr/testify/assert"
@@ -127,7 +130,7 @@ func Test_Cert(t *testing.T) {
 	})
 
 	t.Run("PrivateKey", func(t *testing.T) {
-		status, header, body := s.Request(t, http.MethodGet, "cert/web?private=true", nil)
+		status, header, body := s.Request(t, http.MethodGet, "cert/web/key", nil)
 		require.Equal(t, http.StatusOK, status)
 		assert.Equal(t, "no-store", header.Get("Cache-Control"))
 		var bundle cert.CertBundle
@@ -136,7 +139,17 @@ func Test_Cert(t *testing.T) {
 		assert.NoError(t, err, "the key is decrypted")
 
 		// Not a CA's
-		status, _ = s.Do(t, http.MethodGet, "cert/issuing_ca?private=true", nil)
+		// A version, with its chain
+		var version cert.CertBundle
+		require.Equal(t, http.StatusOK, s.JSON(t, http.MethodGet, "cert/web/"+leaf.Serial+"/key?chain=true", nil, &version))
+		assert.NotEmpty(t, version.Key)
+		assert.Len(t, version.Chain, 2)
+
+		// Not without asking for it, and not a CA's
+		var plain cert.CertBundle
+		require.Equal(t, http.StatusOK, s.JSON(t, http.MethodGet, "cert/web", nil, &plain))
+		assert.Empty(t, plain.Key)
+		status, _ = s.Do(t, http.MethodGet, "cert/issuing_ca/key", nil)
 		assert.Equal(t, http.StatusBadRequest, status)
 	})
 
@@ -209,12 +222,14 @@ func Test_Spec(t *testing.T) {
 		"/cert":                       "Certificates",
 		"/cert/{name}":                "Certificates",
 		"/cert/{name}/{serial}":       "Certificates",
+		"/cert/{name}/key":            "Certificates",
+		"/cert/{name}/{serial}/key":   "Certificates",
 		"/cert/{name}/renew":          "Certificates",
 		"/cert/{name}/{serial}/renew": "Certificates",
 	} {
 		item, ok := paths.MapOfPathItemValues[test.Prefix+path]
 		if assert.True(t, ok, path) {
-			for _, op := range []*openapi.Operation{item.Get, item.Post, item.Patch} {
+			for _, op := range []*openapischema.Operation{item.Get, item.Post, item.Patch} {
 				if op != nil {
 					assert.Equal(t, []string{tag}, op.Tags, path)
 				}
@@ -224,11 +239,61 @@ func Test_Spec(t *testing.T) {
 }
 
 func Test_Auth(t *testing.T) {
-	// With auth, the operations need a registered security scheme
 	mgr, _ := certtest.Begin(t)
+
+	// With auth, the operations need a registered security scheme
 	router, err := httprouter.NewRouter(context.Background(), http.NewServeMux(), "/api", "", "test", "0.0.0")
 	require.NoError(t, err)
 	assert.Error(t, httphandler.RegisterHandlers(mgr, true)(router))
+
+	// With one, which grants the scopes in a header, reading a certificate
+	// needs cert:read, and its private key cert:key
+	mux := http.NewServeMux()
+	router, err = httprouter.NewRouter(context.Background(), mux, "/api", "", "test", "0.0.0")
+	require.NoError(t, err)
+	require.NoError(t, router.RegisterSecurityScheme("bearerAuth", scopeScheme{}))
+	require.NoError(t, httphandler.RegisterHandlers(mgr, true)(router))
+	server := httptest.NewServer(mux)
+	defer server.Close()
+
+	ca, err := mgr.CreateCA(context.Background(), cert.CreateCertRequest{Name: "auth_ca"})
+	require.NoError(t, err)
+	_, err = mgr.CreateCert(context.Background(), cert.CreateCertRequest{Name: "auth_leaf"}, ca.CertKey)
+	require.NoError(t, err)
+
+	get := func(path string, scopes ...string) int {
+		req, err := http.NewRequest(http.MethodGet, server.URL+"/api/"+path, nil)
+		require.NoError(t, err)
+		req.Header.Set("X-Scopes", strings.Join(scopes, ","))
+		resp, err := http.DefaultClient.Do(req)
+		require.NoError(t, err)
+		defer resp.Body.Close()
+		return resp.StatusCode
+	}
+	assert.Equal(t, http.StatusOK, get("cert/auth_leaf", cert.ScopeCertRead))
+	assert.Equal(t, http.StatusForbidden, get("cert/auth_leaf"))
+	assert.Equal(t, http.StatusForbidden, get("cert/auth_leaf/key", cert.ScopeCertRead), "reading doesn't give the key")
+	assert.Equal(t, http.StatusOK, get("cert/auth_leaf/key", cert.ScopeCertKey))
+}
+
+// scopeScheme grants the scopes in the X-Scopes header
+type scopeScheme struct{}
+
+func (scopeScheme) Spec() openapischema.SecurityScheme {
+	return openapischema.SecurityScheme{Type: "http", Scheme: "bearer"}
+}
+
+func (scopeScheme) Wrap(handler http.HandlerFunc, scopes []string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		granted := strings.Split(r.Header.Get("X-Scopes"), ",")
+		for _, scope := range scopes {
+			if !slices.Contains(granted, scope) {
+				w.WriteHeader(http.StatusForbidden)
+				return
+			}
+		}
+		handler(w, r)
+	}
 }
 
 func decode(body []byte, v any) error {

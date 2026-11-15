@@ -54,11 +54,23 @@ func (c *Client) ListCerts(ctx context.Context, req cert.CertListRequest) (*cert
 }
 
 // GetCert returns a version of a certificate, or its latest version when the
-// key has no serial, with its issuer chain or private key when they're
-// asked for. A disabled certificate is a conflict.
+// key has no serial, with its issuer chain when it's asked for. A disabled
+// certificate is a conflict.
 func (c *Client) GetCert(ctx context.Context, key cert.CertKey, req cert.GetCertRequest) (*cert.CertBundle, error) {
 	var response cert.CertBundle
 	if err := c.DoWithContext(ctx, client.MethodGet, &response, client.OptPath(keyPath("cert", key)...), client.OptQuery(req.Query())); err != nil {
+		return nil, auth.ClientError(err)
+	}
+	return &response, nil
+}
+
+// GetPrivateKey returns a version of a leaf certificate, or its latest
+// version when the key has no serial, with its private key, decrypted, and
+// its issuer chain when it's asked for. A certificate authority's private
+// key is never returned.
+func (c *Client) GetPrivateKey(ctx context.Context, key cert.CertKey, req cert.GetCertRequest) (*cert.CertBundle, error) {
+	var response cert.CertBundle
+	if err := c.DoWithContext(ctx, client.MethodGet, &response, client.OptPath(keyPath("cert", key, "key")...), client.OptQuery(req.Query())); err != nil {
 		return nil, auth.ClientError(err)
 	}
 	return &response, nil

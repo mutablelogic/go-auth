@@ -128,8 +128,7 @@ type RenewCertRequest struct {
 
 // GetCertRequest is what's returned with a certificate
 type GetCertRequest struct {
-	Chain   bool `json:"chain,omitempty" help:"Include the issuer chain, up to the root"`
-	Private bool `json:"private,omitempty" help:"Include the private key, of a leaf certificate"`
+	Chain bool `json:"chain,omitempty" help:"Include the issuer chain, up to the root"`
 }
 
 type CertListRequest struct {
@@ -358,9 +357,6 @@ func (r GetCertRequest) Query() url.Values {
 	query := url.Values{}
 	if r.Chain {
 		query.Set("chain", "true")
-	}
-	if r.Private {
-		query.Set("private", "true")
 	}
 	return query
 }

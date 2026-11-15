@@ -5,7 +5,7 @@ Manages X.509 certificate authorities and leaf certificates, from a root certifi
 - **Chain of trust:** root → intermediate certificate authority (CA) → leaf certificate.
 - **Key:** a certificate is identified by its name and serial number. Its latest version is the one created last.
 - **Root:** imported once, when the server starts. It can't be renewed, replaced or updated through the API, and only signs CAs.
-- **Private keys:** encrypted at rest with the server's storage passphrases. Only a leaf certificate's key is returned, when it's asked for. A CA's never is.
+- **Private keys:** encrypted at rest with the server's storage passphrases. A leaf certificate's key is returned by its own operation, which needs `cert:key`. A CA's never is.
 - **Expiry:** the default is five years for a CA and 90 days for a leaf certificate. It's capped at the signer's expiry.
 
 ## Certificate Authorities
@@ -54,8 +54,15 @@ Lists certificates, other than the root, without their private keys.
 Returns the latest version of a certificate.
 
 - **`chain`:** includes its issuers, up to the root.
-- **`private`:** includes its private key, for a leaf certificate only. When scopes are checked, the private key needs `cert:key` too.
 - A disabled certificate is a conflict.
+
+### GET /cert/{name}/key
+
+Returns the latest version of a leaf certificate, with its private key, decrypted.
+
+- It's a separate operation, which needs `cert:key`, so reading certificates doesn't give their keys.
+- **`chain`:** includes its issuers, up to the root.
+- A certificate authority's key is never returned, and a disabled certificate is a conflict.
 
 ### POST /cert/{name}
 
@@ -75,6 +82,10 @@ Updates the enabled state and tags of the latest version of a certificate.
 ### GET /cert/{name}/{serial}
 
 Returns a version of a certificate, as getting it by name does.
+
+### GET /cert/{name}/{serial}/key
+
+Returns a version of a leaf certificate, with its private key, as getting it by name does.
 
 ### POST /cert/{name}/{serial}
 

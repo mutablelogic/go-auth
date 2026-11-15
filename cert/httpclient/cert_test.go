@@ -76,7 +76,7 @@ func Test_Client(t *testing.T) {
 	assert.ErrorIs(t, err, auth.ErrNotFound)
 
 	t.Run("Get", func(t *testing.T) {
-		bundle, err := c.GetCert(ctx, cert.CertKey{Name: "client_leaf"}, cert.GetCertRequest{Chain: true, Private: true})
+		bundle, err := c.GetPrivateKey(ctx, cert.CertKey{Name: "client_leaf"}, cert.GetCertRequest{Chain: true})
 		require.NoError(t, err)
 		assert.Equal(t, leaf.CertKey, bundle.CertKey)
 		require.Len(t, bundle.Chain, 2)
@@ -89,7 +89,7 @@ func Test_Client(t *testing.T) {
 		assert.Empty(t, version.Key)
 		assert.Empty(t, version.Chain)
 
-		_, err = c.GetCert(ctx, cert.CertKey{Name: "client_ca"}, cert.GetCertRequest{Private: true})
+		_, err = c.GetPrivateKey(ctx, cert.CertKey{Name: "client_ca"}, cert.GetCertRequest{})
 		assert.ErrorIs(t, err, auth.ErrBadParameter, "not a CA's private key")
 	})
 
