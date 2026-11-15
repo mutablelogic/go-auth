@@ -342,6 +342,11 @@ func (c CertWithPrivateKey) Insert(bind *pg.Bind) (string, error) {
 	return bind.Query("cert.insert"), nil
 }
 
+// Update updates the certificate's metadata, so with Insert it's a pg.Writer
+func (c CertWithPrivateKey) Update(bind *pg.Bind) error {
+	return CertMeta(c.CertMeta).Update(bind)
+}
+
 func (c CertMeta) Insert(bind *pg.Bind) (string, error) {
 	_ = bind
 	return "", httpresponse.ErrNotImplemented.With("cert meta insert is not supported")

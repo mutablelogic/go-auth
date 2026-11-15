@@ -153,6 +153,20 @@ func WithExpiry(expires time.Duration) Opt {
 	}
 }
 
+// WithValidity sets when the certificate is valid from and until, which are
+// worked out together, such as to cap its expiry at its signer's, so the time
+// it takes to create the certificate doesn't change them
+func WithValidity(notBefore, notAfter time.Time) Opt {
+	return func(o *Cert) error {
+		o.x509.NotBefore = notBefore.Truncate(time.Second).UTC()
+		o.x509.NotAfter = notAfter.Truncate(time.Second).UTC()
+		if !o.x509.NotAfter.After(o.x509.NotBefore) {
+			return fmt.Errorf("expiry is not after the start of validity")
+		}
+		return nil
+	}
+}
+
 // Set random serial number
 func WithRandomSerial() Opt {
 	return func(o *Cert) error {
