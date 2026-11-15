@@ -88,6 +88,14 @@ unit-test: go-dep
 	@echo Unit Tests
 	@${GO} test ./...
 
+# The ldap/manager integration tests start OpenLDAP, 389 DS and SMB LDS
+# containers, so need docker. LDAPMANAGER_INTEGRATION_SERVER chooses some
+# of them, such as openldap,389ds.
+.PHONY: integration-test
+integration-test: go-dep
+	@echo Integration Tests
+	@${GO} test -tags integration -timeout 20m ./ldap/...
+
 .PHONY: coverage-test
 coverage-test: go-dep mkdir
 	@echo Test Coverage

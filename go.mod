@@ -17,6 +17,7 @@ require (
 	github.com/mutablelogic/go-server v1.8.7
 	github.com/mutablelogic/go-tokenizer v0.0.3
 	github.com/stretchr/testify v1.12.1
+	github.com/testcontainers/testcontainers-go v0.45.0
 	github.com/youmark/pkcs8 v0.0.0-20240726163527-a2c0da244d78
 	go.opentelemetry.io/otel v1.47.0
 	go.opentelemetry.io/otel/sdk v1.47.0
@@ -105,7 +106,6 @@ require (
 	github.com/rivo/uniseg v0.4.7 // indirect
 	github.com/shirou/gopsutil/v4 v4.26.10 // indirect
 	github.com/sirupsen/logrus v1.10.2 // indirect
-	github.com/testcontainers/testcontainers-go v0.45.0 // indirect
 	github.com/tklauser/go-sysconf v0.4.0 // indirect
 	github.com/tklauser/numcpus v0.12.0 // indirect
 	github.com/xo/terminfo v1.2.0 // indirect
