@@ -150,6 +150,23 @@ func (c CertListRequest) Select(bind *pg.Bind, op pg.Op) (string, error) {
 			bind.Append("where", `(cert_row."not_before" > CURRENT_TIMESTAMP OR cert_row."not_after" <= CURRENT_TIMESTAMP)`)
 		}
 	}
+	if c.Latest != nil {
+		// The latest version of a name is the one inserted last. The where
+		// clause isn't expanded again, so the schema is expanded here.
+		latest := bind.Replace(`cert_row."id" = (SELECT MAX(version."id") FROM ${"schema"}."cert" AS version WHERE version."name" = cert_row."name")`)
+		if *c.Latest {
+			bind.Append("where", latest)
+		} else {
+			bind.Append("where", "NOT ("+latest+")")
+		}
+	}
+	if c.Name != "" {
+		name, err := cert.ValidateCertName(c.Name)
+		if err != nil {
+			return "", err
+		}
+		bind.Append("where", `cert_row."name" = `+bind.Set("name_filter", name))
+	}
 	if c.Subject != nil {
 		if types.Value(c.Subject) == 0 {
 			return "", httpresponse.ErrBadRequest.With("subject is invalid")
