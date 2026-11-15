@@ -39,6 +39,19 @@ const (
 )
 
 const (
+	// ScopeCertRead grants permission to list certificates, and get them and
+	// their chains, without their private keys
+	ScopeCertRead = "cert:read"
+
+	// ScopeCertWrite grants permission to create, renew and update
+	// certificate authorities and certificates
+	ScopeCertWrite = "cert:write"
+
+	// ScopeCertKey grants permission to get a leaf certificate's private key
+	ScopeCertKey = "cert:key"
+)
+
+const (
 	// DefaultCACertExpiry is the default validity period for intermediate
 	// certificate authorities.
 	DefaultCACertExpiry = 5 * 365 * 24 * time.Hour

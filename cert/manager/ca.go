@@ -17,7 +17,6 @@ package manager
 import (
 	"context"
 	"errors"
-	"fmt"
 
 	// Packages
 	cert "github.com/mutablelogic/go-auth/cert/cert"
@@ -45,7 +44,7 @@ func (m *Manager) CreateCA(ctx context.Context, req cert.CreateCertRequest) (_ *
 
 	// Check arguments
 	if req.Name == "" {
-		return nil, fmt.Errorf("name is required")
+		return nil, httpresponse.ErrBadRequest.With("name is required")
 	}
 	if len(req.SAN) > 0 {
 		return nil, httpresponse.ErrBadRequest.With("san is only supported for leaf certificates")

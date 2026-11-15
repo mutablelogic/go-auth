@@ -37,7 +37,7 @@ func Test_capExpiry_001(t *testing.T) {
 		_, expires, err := capExpiry(cert.DefaultCertExpiry, cert.DefaultCertExpiry, "certificate authority", now.Add(time.Minute), now.Add(2*time.Hour))
 		require.Error(err)
 		assert.Zero(expires)
-		assert.EqualError(err, "certificate authority is not valid yet")
+		assert.EqualError(err, "Conflict: certificate authority is not valid yet")
 	})
 
 	t.Run("RejectsExpiredCA", func(t *testing.T) {
@@ -48,7 +48,7 @@ func Test_capExpiry_001(t *testing.T) {
 		_, expires, err := capExpiry(cert.DefaultCertExpiry, cert.DefaultCertExpiry, "certificate authority", now.Add(-2*time.Hour), now.Add(-time.Second))
 		require.Error(err)
 		assert.Zero(expires)
-		assert.EqualError(err, "certificate authority has expired")
+		assert.EqualError(err, "Conflict: certificate authority has expired")
 	})
 
 	t.Run("RejectsFutureRoot", func(t *testing.T) {
@@ -59,7 +59,7 @@ func Test_capExpiry_001(t *testing.T) {
 		_, expires, err := capExpiry(cert.DefaultCACertExpiry, cert.DefaultCACertExpiry, "root certificate", now.Add(time.Minute), now.Add(2*time.Hour))
 		require.Error(err)
 		assert.Zero(expires)
-		assert.EqualError(err, "root certificate is not valid yet")
+		assert.EqualError(err, "Conflict: root certificate is not valid yet")
 	})
 
 	t.Run("RejectsExpiredRoot", func(t *testing.T) {
@@ -70,7 +70,7 @@ func Test_capExpiry_001(t *testing.T) {
 		_, expires, err := capExpiry(cert.DefaultCACertExpiry, cert.DefaultCACertExpiry, "root certificate", now.Add(-2*time.Hour), now.Add(-time.Second))
 		require.Error(err)
 		assert.Zero(expires)
-		assert.EqualError(err, "root certificate has expired")
+		assert.EqualError(err, "Conflict: root certificate has expired")
 	})
 }
 
