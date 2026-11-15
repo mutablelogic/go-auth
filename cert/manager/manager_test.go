@@ -17,6 +17,7 @@ package manager_test
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"testing"
 	"time"
 
@@ -497,4 +498,68 @@ func Test_manager_generatedRoot(t *testing.T) {
 		_, err = test.NewSchemaManager(test.IsolatedSchema(t), manager.WithPassphrase(1, "root-secret-1"), manager.WithRoot(pemValue.String()))
 		assert.EqualError(t, err, "root certificate must be a self-signed certificate authority")
 	})
+}
+
+func Test_manager_notify(t *testing.T) {
+	ctx := context.Background()
+	schemaName := test.IsolatedSchema(t)
+	opts := []manager.Opt{manager.WithPassphrase(1, "root-secret-1"), manager.WithGeneratedRoot("Notify Root CA")}
+	m := test.SchemaManager(t, schemaName, append(opts, manager.WithChannel("cert_test"))...)
+
+	// Listen on the channel
+	notifications, err := test.Pool().Subscribe(ctx, "cert_test")
+	require.NoError(t, err)
+	next := func() map[string]string {
+		t.Helper()
+		select {
+		case n := <-notifications:
+			var change map[string]string
+			require.NoError(t, json.Unmarshal(n.Payload, &change))
+			assert.NotContains(t, string(n.Payload), "PRIVATE", "keys aren't notified")
+			return change
+		case <-time.After(5 * time.Second):
+			t.Fatal("no notification")
+			return nil
+		}
+	}
+
+	// Each change of a certificate is notified, by its name
+	ca, err := m.CreateCA(ctx, cert.CreateCertRequest{Name: "notify_ca"})
+	require.NoError(t, err)
+	assert.Equal(t, map[string]string{"action": "create", "schema": schemaName, "table": "cert", "row": "notify_ca"}, next())
+	_, err = m.UpdateCert(ctx, ca.CertKey, cert.CertMeta{Tags: []string{"notified"}})
+	require.NoError(t, err)
+	assert.Equal(t, map[string]string{"action": "update", "schema": schemaName, "table": "cert", "row": "notify_ca"}, next())
+	_, err = m.RenewCA(ctx, ca.CertKey, cert.RenewCertRequest{})
+	require.NoError(t, err)
+	assert.Equal(t, map[string]string{"action": "create", "schema": schemaName, "table": "cert", "row": "notify_ca"}, next())
+
+	// A change of subjects is a change of certificates, without which ones,
+	// once for the statement
+	require.NoError(t, m.Exec(ctx, `UPDATE ${"schema"}."subject" SET "organizationName" = 'Notified'`))
+	assert.Equal(t, map[string]string{"action": "update", "schema": schemaName, "table": "cert"}, next())
+	select {
+	case n := <-notifications:
+		t.Fatalf("another notification: %s", n.Payload)
+	case <-time.After(200 * time.Millisecond):
+	}
+
+	// Without a channel, the triggers are dropped
+	_ = test.SchemaManager(t, schemaName, opts...)
+	var count countResult
+	require.NoError(t, m.Get(ctx, &count, triggerCountSelector{Schema: schemaName}))
+	assert.Equal(t, uint64(0), count.Value)
+}
+
+type triggerCountSelector struct {
+	Schema string
+}
+
+func (selector triggerCountSelector) Select(bind *pg.Bind, op pg.Op) (string, error) {
+	bind.Set("trigger_schema", selector.Schema)
+	return `
+		SELECT COUNT(*)
+		FROM information_schema.triggers
+		WHERE trigger_schema = @trigger_schema
+	`, nil
 }

@@ -51,21 +51,21 @@ const openapiTag = "OpenAPI"
 // registerFunc registers handlers with the router
 type registerFunc func(*httprouter.Router) error
 
-// follow follows the backend's changes, such as pg's notifications, and
-// publishes them, when the backend has its own changes, rather than the
-// API's: run follows them, until the context is cancelled, and ready waits
-// until it does, so the server doesn't accept a change before it would be
-// published
+// follow follows the changes which PostgreSQL's triggers notify the channel
+// of, and publishes them, whatever makes them: run follows them, until the
+// context is cancelled, and ready waits until it does, so the server doesn't
+// accept a change before it would be published
 type follow struct {
-	run   func(context.Context) error
-	ready func(context.Context) error
+	channel string
+	run     func(context.Context) error
+	ready   func(context.Context) error
 }
 
-// without calls fn with a manager, without a follower of its changes, which
-// the API publishes
-func without(fn func(credential.CredentialManager, *follow) error) func(credential.CredentialManager) error {
+// unnotified calls fn with a manager which doesn't notify of its changes,
+// which the API publishes
+func unnotified(fn func(credential.CredentialManager, bool) error) func(credential.CredentialManager) error {
 	return func(manager credential.CredentialManager) error {
-		return fn(manager, nil)
+		return fn(manager, false)
 	}
 }
 
@@ -88,15 +88,15 @@ type RunServer struct {
 
 func (runner *RunServer) Run(ctx server.Cmd) error {
 	return runner.Broadcaster.WithBroadcaster(ctx, &runner.RunServer, func(changes *broadcaster.Broadcaster) error {
-		return runner.Postgres.withPool(ctx, func(pool pg.PoolConn) error {
-			return runner.Credential.withManager(ctx, pool, runner.Passphrase, changes, func(manager credential.CredentialManager, follow *follow) error {
+		return runner.Postgres.withPool(ctx, changes, func(pool pg.PoolConn, follow *follow) error {
+			return runner.Credential.withManager(ctx, pool, follow, runner.Passphrase, func(manager credential.CredentialManager, notified bool) error {
 				ctx.Logger().InfoContext(ctx.Context(), "Credentials", "backend", backend)
 				ctx.Logger().WarnContext(ctx.Context(), "The credential API has no authentication")
-				return runner.Cert.withHandlers(ctx, pool, runner.Passphrase, func(certs registerFunc) error {
-					// The API publishes its changes, unless the backend follows
-					// them, such as pg, whose table's trigger notifies of them
+				return runner.Cert.withHandlers(ctx, pool, follow, runner.Passphrase, func(certs registerFunc) error {
+					// The API publishes its changes, unless the backend's
+					// trigger notifies of them, as pg's does
 					var publisher httphandler.Publisher
-					if follow == nil {
+					if !notified {
 						publisher = changes
 					}
 					runner.register(ctx, manager, publisher, certs)
@@ -149,8 +149,8 @@ func (runner *RunServer) register(ctx server.Cmd, manager credential.CredentialM
 	})
 }
 
-// run runs the broadcaster, the backend's follower of its changes, when it
-// has one, and the server, until any of them stops. The server starts once
+// run runs the broadcaster, the follower of PostgreSQL's changes, when
+// there's a database, and the server, until any of them stops. The server starts once
 // the follower is ready, so no change is accepted before it would be
 // published, and doesn't start when the follower fails.
 func (runner *RunServer) run(ctx server.Cmd, changes *broadcaster.Broadcaster, follow *follow) error {
