@@ -11,7 +11,7 @@ import { GroupController, listAllUsers, loadEntrySchemas, type EntrySchemas } fr
 import { entryAttrs, entryForm, entryFormErrors, type EntryFormErrors } from './form.ts';
 import * as api from './httpclient.ts';
 import { LdapPage, attrsView, entryFormView } from './parts.ts';
-import { first, memberCount, rdnValue, sameDN, type LdapObject } from './schema.ts';
+import { dnKey, first, memberCount, rdnValue, sameDN, type LdapObject } from './schema.ts';
 
 // go-server's and Carbon's elements
 import '@mutablelogic/go-server/list/view';
@@ -140,6 +140,12 @@ export class LdapGroupsElement extends LdapPage {
         }) : undefined;
     }
 
+    // stillOpen returns whether what was opened, when opened was the count,
+    // is still open, so a response for it can change the panel
+    private stillOpen(opened: number): boolean {
+        return this.opened === opened && this.panel.isOpen;
+    }
+
     // open shows the body in the panel, with its header and actions
     private open(title: string, subtitle: string, body: Body, actions: PanelAction[]) {
         this.opened++;
@@ -238,15 +244,22 @@ export class LdapGroupsElement extends LdapPage {
                 if (Object.keys(errors).length || !this.client) {
                     return;
                 }
+                // The response only changes the panel when the form is still
+                // open, and is otherwise only said
                 const attrs = entryAttrs(form);
+                const opened = this.opened;
                 if (!group) {
                     const created = await api.createGroup(this.client, form.name.trim(), attrs);
                     this.notifications?.push({ kind: 'success', title: `${rdnValue(created.dn)} was created` });
-                    this.select(created);
+                    if (this.stillOpen(opened)) {
+                        this.select(created);
+                    }
                 } else if (Object.keys(attrs).length) {
                     const updated = await api.updateGroup(this.client, rdnValue(group.dn), attrs);
                     this.notifications?.push({ kind: 'success', title: `${rdnValue(updated.dn)} was changed` });
-                    this.select(updated);
+                    if (this.stillOpen(opened)) {
+                        this.select(updated);
+                    }
                 } else {
                     this.notifications?.push({ kind: 'info', title: 'Nothing was changed' });
                     this.show(group);
@@ -278,8 +291,10 @@ export class LdapGroupsElement extends LdapPage {
             listAllUsers(client, { attr: ['uid', 'cn'] }),
             listAllUsers(client, { group: name, attr: ['uid', 'cn'] }),
         ]).then(([all, members]) => {
-            const dns = members.map((user) => user.dn);
-            return all.filter((user) => !dns.some((dn) => sameDN(dn, user.dn))).map((user) => rdnValue(user.dn));
+            // Members by their DNs' keys, once, rather than each user with
+            // each member
+            const keys = new Set(members.map((user) => dnKey(user.dn)));
+            return all.filter((user) => !keys.has(dnKey(user.dn))).map((user) => rdnValue(user.dn));
         });
         const view = (error?: string) => html`
             <div class="form">
@@ -305,9 +320,12 @@ export class LdapGroupsElement extends LdapPage {
                         this.body = { kind: 'member', dn: group.dn, content: view('Choose a user') };
                         return;
                     }
+                    const opened = this.opened;
                     const updated = await api.addGroupUsers(client, name, [state.user]);
                     this.notifications?.push({ kind: 'success', title: `${state.user} was added to ${name}` });
-                    this.show(updated);
+                    if (this.stillOpen(opened)) {
+                        this.show(updated);
+                    }
                 },
             },
         ]);
@@ -329,7 +347,7 @@ export class LdapGroupsElement extends LdapPage {
             return;
         }
         this.notifications?.push({ kind: 'success', title: `${user} was removed from ${name}` });
-        if (this.opened === opened && this.panel.isOpen) {
+        if (this.stillOpen(opened)) {
             this.show(updated);
         }
     }
@@ -340,9 +358,12 @@ export class LdapGroupsElement extends LdapPage {
         if (!this.client || !confirm(`Delete ${name}? Its members stay, without it.`)) {
             return;
         }
+        const opened = this.opened;
         await api.deleteGroup(this.client, name);
         this.notifications?.push({ kind: 'success', title: `${name} was deleted` });
-        this.panel.close();
+        if (this.stillOpen(opened)) {
+            this.panel.close();
+        }
     }
 }
 

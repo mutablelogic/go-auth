@@ -8,7 +8,7 @@ import type { AttributeType, ObjectClass } from '../src/ldap/schema.ts';
 import { listAll } from '../src/ldap/controller.ts';
 import { GroupController, LdapStatusController, ObjectController, UserController } from '../src/ldap/controller.ts';
 import {
-    binarySize, escapeFilter, first, hasClass, memberCount, isBinary, parentDN, rdn, rdnValue, sameDN, searchFilter, splitDN, valueText, values,
+    binarySize, dnKey, escapeFilter, first, hasClass, memberCount, isBinary, parentDN, rdn, rdnValue, sameDN, searchFilter, splitDN, valueText, values,
     type LdapObject,
 } from '../src/ldap/schema.ts';
 
@@ -94,6 +94,7 @@ test('schema', async (t) => {
         assert.equal(parentDN('uid=x,ou=team\\ ,dc=test'), 'ou=team\\ ,dc=test', 'an escaped trailing space');
         assert.deepEqual(splitDN(' ou=a\\  , dc=test '), ['ou=a\\ ', 'dc=test']);
         assert.ok(!sameDN('ou=team\\ ,dc=test', 'ou=team,dc=test'));
+        assert.equal(dnKey('UID=Alice, OU=Users ,dc=Test'), 'uid=alice,ou=users,dc=test', 'the same for the same DNs');
         assert.equal(parentDN(object.dn), 'ou=users,dc=example,dc=test');
         assert.equal(parentDN('dc=test'), '');
         assert.ok(sameDN('UID=Alice, OU=Users,DC=Example,DC=Test', 'uid=alice,ou=users,dc=example,dc=test'));

@@ -239,8 +239,13 @@ export function parentDN(dn: string): string {
 // sameDN returns whether two DNs are the same, in any case, and spacing
 // around their RDNs
 export function sameDN(a: string, b: string): boolean {
-    const normal = (dn: string) => splitDN(dn).map((part) => part.toLowerCase()).join(',');
-    return normal(a) === normal(b);
+    return dnKey(a) === dnKey(b);
+}
+
+// dnKey returns a DN in lower case, without spacing around its RDNs, which
+// is the same for DNs which are the same, such as for a set of them
+export function dnKey(dn: string): string {
+    return splitDN(dn).map((part) => part.toLowerCase()).join(',');
 }
 
 // splitDN returns the RDNs of the DN, at commas which aren't escaped,
