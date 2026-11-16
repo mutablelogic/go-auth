@@ -151,6 +151,9 @@ func (manager *Manager) Delete(ctx context.Context, dn string) (_ *schema.Object
 	absdn, err := manager.absdn(dn)
 	if err != nil {
 		return nil, err
+	} else if manager.isCounter(absdn) {
+		// Without it, the next IDs would start again, at ones in use
+		return nil, httpresponse.ErrForbidden.Withf("%q has the next user or group ID, so it can't be deleted", absdn.String())
 	}
 	object, err := manager.delete(ctx, absdn.String())
 	if err != nil {

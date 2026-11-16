@@ -8,7 +8,7 @@ import type { AttributeType, ObjectClass } from '../src/ldap/schema.ts';
 import { listAll } from '../src/ldap/controller.ts';
 import { GroupController, LdapStatusController, ObjectController, UserController } from '../src/ldap/controller.ts';
 import {
-    binarySize, dnKey, escapeFilter, first, hasClass, memberCount, isBinary, parentDN, rdn, rdnValue, sameDN, searchFilter, splitDN, valueText, values,
+    binarySize, dnKey, entryKind, escapeFilter, first, hasChildren, hasClass, isBranch, isCounter, memberCount, isBinary, parentDN, rdn, rdnValue, sameDN, searchFilter, splitDN, valueText, values,
     type LdapObject,
 } from '../src/ldap/schema.ts';
 
@@ -384,4 +384,25 @@ test('groups', async (t) => {
         assert.deepEqual(entryFormErrors(form), {});
         assert.deepEqual(entryAttrs(form), { description: ['Engineers'] });
     });
+});
+
+test('objects', async () => {
+    assert.equal(hasChildren({ dn: 'ou=a', attrs: { hasSubordinates: ['TRUE'] } }), true);
+    assert.equal(hasChildren({ dn: 'cn=a', attrs: { hasSubordinates: ['FALSE'] } }), false);
+    assert.equal(hasChildren({ dn: 'cn=a', attrs: {} }), undefined, "when the directory doesn't say");
+    assert.equal(entryKind({ dn: 'ou=a', attrs: { objectClass: ['top', 'organizationalUnit'] } }), 'container');
+    assert.equal(entryKind({ dn: 'uid=a', attrs: { objectClass: ['inetOrgPerson', 'posixAccount'] } }), 'person');
+    assert.equal(entryKind({ dn: 'cn=a', attrs: { objectClass: ['groupOfUniqueNames'] } }), 'group');
+    assert.equal(entryKind({ dn: 'cn=a', attrs: { objectClass: ['device'] } }), 'entry');
+
+    // Branches are in the tree, and leaves in the table
+    assert.ok(isBranch({ dn: 'ou=a', attrs: { objectClass: ['organizationalUnit'], hasSubordinates: ['FALSE'] } }), 'an empty container');
+    assert.ok(isBranch({ dn: 'cn=a', attrs: { objectClass: ['device'], hasSubordinates: ['TRUE'] } }), 'an entry with entries under it');
+    assert.ok(!isBranch({ dn: 'uid=a', attrs: { objectClass: ['inetOrgPerson'], hasSubordinates: ['FALSE'] } }));
+    assert.ok(!isBranch({ dn: 'uid=a', attrs: { objectClass: ['inetOrgPerson'] } }), "a person, when the directory doesn't say");
+
+    // The entries with the next IDs, directly under the base DN
+    assert.ok(isCounter('cn=lastuid,dc=example,dc=test', 'dc=example,dc=test'));
+    assert.ok(isCounter('CN=LastGID, DC=Example,DC=Test', 'dc=example,dc=test'));
+    assert.ok(!isCounter('cn=lastuid,ou=users,dc=example,dc=test', 'dc=example,dc=test'));
 });

@@ -215,6 +215,42 @@ export function memberCount(group: LdapObject): number {
     return Math.max(dns.size, values(group, 'memberUid').length);
 }
 
+// hasChildren returns whether the entry has entries under it, as its
+// hasSubordinates says, or undefined, when the directory doesn't say
+export function hasChildren(object: LdapObject): boolean | undefined {
+    const value = first(object, 'hasSubordinates');
+    return value === undefined ? undefined : value.toUpperCase() === 'TRUE';
+}
+
+// entryKind returns what an entry is, from its object classes, for its
+// icon: a container, such as an organizational unit, a person, a group, or
+// another entry
+export function entryKind(object: LdapObject): 'container' | 'person' | 'group' | 'entry' {
+    const has = (...names: string[]) => names.some((name) => hasClass(object, name));
+    if (has('person', 'user', 'account', 'inetOrgPerson', 'posixAccount')) {
+        return 'person';
+    } else if (has('group', 'groupOfNames', 'groupOfUniqueNames', 'groupOfMembers', 'posixGroup')) {
+        return 'group';
+    } else if (has('organizationalUnit', 'organization', 'domain', 'dcObject', 'container', 'builtinDomain')) {
+        return 'container';
+    }
+    return 'entry';
+}
+
+// isBranch returns whether an entry is a branch, shown in a tree: one which
+// has entries under it, or is a container, such as an organizational unit,
+// which can have them, rather than a leaf, such as a person
+export function isBranch(object: LdapObject): boolean {
+    return hasChildren(object) === true || entryKind(object) === 'container';
+}
+
+// isCounter returns whether the DN is one of the entries which have the
+// next user or group ID, cn=lastuid and cn=lastgid under the base DN, which
+// the server doesn't delete
+export function isCounter(dn: string, base: string): boolean {
+    return ['lastuid', 'lastgid'].some((name) => sameDN(dn, `cn=${name},${base}`));
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 // DNS
 
