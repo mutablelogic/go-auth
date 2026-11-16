@@ -153,7 +153,7 @@ func (c *Client) resource(ctx context.Context, endpoint, expected string) (*Reso
 		return nil, goauth.ErrServiceUnavailable.Withf("resource metadata %q: %v", endpoint, err)
 	} else if metadata.Resource == "" {
 		return nil, goauth.ErrServiceUnavailable.Withf("resource metadata %q has no resource", endpoint)
-	} else if metadata.Resource != strings.TrimSpace(expected) {
+	} else if !sameResource(metadata.Resource, expected) {
 		// Another resource's, whose token isn't this one's, as RFC 9728 has
 		// it
 		return nil, goauth.ErrServiceUnavailable.Withf("resource metadata %q is of the resource %q, not %q", endpoint, metadata.Resource, expected)
@@ -251,10 +251,13 @@ func wellKnown(raw, path string) []string {
 	suffix := strings.Trim(u.EscapedPath(), "/")
 	candidates := []string{}
 	if suffix != "" {
-		candidates = append(candidates,
-			base.JoinPath(path, suffix).String(),
-			base.JoinPath(suffix, path).String(),
-		)
+		// A resource's path is inserted as it is, with a slash at its end,
+		// when it has one, as RFC 9728 has it, as well as without, which
+		// some servers use, while an issuer's is without, as RFC 8414 has it
+		if path == ResourceMetadataPath && strings.HasSuffix(u.EscapedPath(), "/") {
+			candidates = append(candidates, base.JoinPath(path, suffix).String()+"/")
+		}
+		candidates = append(candidates, base.JoinPath(path, suffix).String(), base.JoinPath(suffix, path).String())
 	}
 	candidates = append(candidates, base.JoinPath(path).String())
 	seen := map[string]bool{}
@@ -266,6 +269,29 @@ func wellKnown(raw, path string) []string {
 		}
 	}
 	return result
+}
+
+// sameResource returns whether the resource metadata's resource is the
+// resource's: the same, apart from a slash at the end of its path, or, as
+// some servers say, its origin, or a parent of its path, with the same
+// scheme and host, and without a query, or fragment. Another host's, or
+// another path's, such as a sibling's, isn't.
+func sameResource(metadata, resource string) bool {
+	// A resource is sent as it's named, so one with spaces isn't one
+	resource = strings.TrimSpace(resource)
+	if metadata == "" || metadata != strings.TrimSpace(metadata) {
+		return false
+	}
+	m, err := url.Parse(metadata)
+	if err != nil || m.RawQuery != "" || m.Fragment != "" || m.User != nil {
+		return false
+	}
+	r, err := url.Parse(resource)
+	if err != nil || !strings.EqualFold(m.Scheme, r.Scheme) || !strings.EqualFold(m.Host, r.Host) || m.Host == "" {
+		return false
+	}
+	parent, path := strings.TrimRight(m.EscapedPath(), "/"), strings.TrimRight(r.EscapedPath(), "/")
+	return parent == path || strings.HasPrefix(path, parent+"/")
 }
 
 // sameIssuer returns true when the metadata's issuer is the issuer,
