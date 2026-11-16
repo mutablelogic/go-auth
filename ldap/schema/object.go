@@ -43,7 +43,7 @@ type PasswordResponse struct {
 }
 
 type ObjectPutRequest struct {
-	Attrs Attrs `json:"attrs"`
+	Attrs Attrs `json:"attrs,omitempty"`
 }
 
 type ObjectPasswordRequest struct {

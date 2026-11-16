@@ -52,6 +52,11 @@ const (
 	AttrAttributeTypes = "attributeTypes"
 	AttrSubSchemaDN    = "subschemaSubentry"
 
+	// Scopes of the HTTP handlers: reading the directory, and changing it,
+	// which includes binding as an entry, and changing its password
+	ScopeLDAPRead  = "ldap:read"
+	ScopeLDAPWrite = "ldap:write"
+
 	// Tables of the changes the manager publishes, with SchemaName as their
 	// schema
 	TableObject     = "object"

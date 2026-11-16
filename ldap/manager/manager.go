@@ -371,7 +371,7 @@ func ldaperr(err error) error {
 	switch code {
 	case ldap.LDAPResultInvalidCredentials:
 		return httpresponse.ErrNotAuthorized.With("Invalid credentials")
-	case ldap.ErrorFilterCompile, ldap.ErrorFilterDecompile, ldap.LDAPResultFilterError, ldap.LDAPResultParamError, ldap.LDAPResultInvalidAttributeSyntax, ldap.LDAPResultObjectClassViolation, ldap.LDAPResultNamingViolation, ldap.LDAPResultUnwillingToPerform, ldap.LDAPResultUndefinedAttributeType, ldap.LDAPResultNotAllowedOnRDN:
+	case ldap.ErrorFilterCompile, ldap.ErrorFilterDecompile, ldap.LDAPResultFilterError, ldap.LDAPResultParamError, ldap.LDAPResultInvalidAttributeSyntax, ldap.LDAPResultObjectClassViolation, ldap.LDAPResultNamingViolation, ldap.LDAPResultUnwillingToPerform, ldap.LDAPResultUndefinedAttributeType, ldap.LDAPResultNotAllowedOnRDN, ldap.LDAPResultInvalidDNSyntax:
 		return httpresponse.ErrBadRequest.With(err.Error())
 	case ldap.LDAPResultInsufficientAccessRights:
 		return httpresponse.ErrForbidden.With(err.Error())
