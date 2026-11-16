@@ -6,7 +6,7 @@
 //   bar, and its sidebar, of Users, Groups, Objects and Schema, while it's
 //   active. Users and Groups are only when the directory has them.
 
-import { LitElement, css, html, nothing, type TemplateResult } from 'lit';
+import { LitElement, html, nothing, type TemplateResult } from 'lit';
 import type { Client } from '@mutablelogic/go-server/api';
 import type { ChangesController } from '@mutablelogic/go-server/broadcaster';
 import type { NavController } from '@mutablelogic/go-server/nav';
@@ -54,17 +54,6 @@ export class LdapPageElement extends LitElement {
         current: { state: true },
     };
 
-    static override styles = css`
-        :host {
-            display: block;
-        }
-        .status {
-            display: inline-flex;
-            align-items: center;
-            gap: 0.5rem;
-        }
-    `;
-
     kind: LdapPageKind = 'users';
     status?: LdapStatusController;
     client?: Client;
@@ -72,6 +61,12 @@ export class LdapPageElement extends LitElement {
     changes?: ChangesController;
     private current?: LdapStatus;
     private unsubscribe?: () => void;
+
+    // The page is in the light DOM, as the certificate pages are, so Carbon's
+    // styles, such as the header's theme, apply to it
+    protected override createRenderRoot(): HTMLElement {
+        return this;
+    }
 
     override connectedCallback(): void {
         super.connectedCallback();
@@ -90,7 +85,6 @@ export class LdapPageElement extends LitElement {
         const page = pages[this.kind];
         return html`
             <gs-page-header heading=${page.heading} .icon=${page.icon} .details=${this.current ? statusView(this.current) : nothing}></gs-page-header>
-            <slot></slot>
         `;
     }
 }
@@ -109,7 +103,7 @@ declare global {
 // and port, and the user it binds as
 export function statusView(status: LdapStatus): TemplateResult {
     return html`
-        <span class="status">
+        <span style="display: inline-flex; align-items: center; gap: 0.5rem">
             ${status.connected
                 ? html`<cds-tag type="green" size="sm">Connected</cds-tag>`
                 : html`<cds-tag type="red" size="sm">Disconnected</cds-tag>`}
