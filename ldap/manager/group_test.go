@@ -309,3 +309,80 @@ func Test_GroupMembersExact(t *testing.T) {
 		assert.True(t, strings.EqualFold(carol.DN, list.Body[0].DN))
 	})
 }
+
+func Test_UsersAndGroupsTogether(t *testing.T) {
+	test.ForEach(t, func(t *testing.T, ctx context.Context, server test.Server, m *manager.Manager) {
+		// Users and groups under the same DN, with another entry, which are
+		// told apart by their object classes
+		ou := test.OU(t, ctx, m)
+		both := test.Manager(t, ctx, server, manager.WithUserDN(ou), manager.WithGroupDN(ou))
+		alice, err := both.CreateUser(ctx, "alice", userAttrs("alice", "first Passw0rd!"), true)
+		require.NoError(t, err)
+		staff, err := both.CreateGroup(ctx, "staff", nil)
+		require.NoError(t, err)
+		_, err = m.Create(ctx, "ou=other,"+ou, schema.Attrs{"objectClass": {"top", "organizationalUnit"}, "ou": {"other"}})
+		require.NoError(t, err)
+
+		users, err := both.ListUsers(ctx, schema.UserListRequest{})
+		require.NoError(t, err)
+		assert.Equal(t, uint64(1), users.Count, "alice")
+		require.Len(t, users.Body, 1)
+		assert.True(t, strings.EqualFold(alice.DN, users.Body[0].DN))
+
+		groups, err := both.ListGroups(ctx, schema.GroupListRequest{})
+		require.NoError(t, err)
+		assert.Equal(t, uint64(1), groups.Count, "staff")
+		require.Len(t, groups.Body, 1)
+		assert.True(t, strings.EqualFold(staff.DN, groups.Body[0].DN))
+
+		// With the request's filter too
+		users, err = both.ListUsers(ctx, schema.UserListRequest{ListRequest: schema.ListRequest{Filter: types.Ptr("(objectClass=*)")}})
+		require.NoError(t, err)
+		assert.Equal(t, uint64(1), users.Count)
+
+		// A group isn't a user, nor a user a group, by name
+		_, err = both.GetUser(ctx, "staff")
+		assert.ErrorIs(t, err, httpresponse.ErrNotFound)
+		_, err = both.GetGroup(ctx, "alice")
+		assert.ErrorIs(t, err, httpresponse.ErrNotFound)
+		_, err = both.GetUser(ctx, "alice")
+		assert.NoError(t, err)
+		_, err = both.GetGroup(ctx, "staff")
+		assert.NoError(t, err)
+	})
+}
+
+func Test_GroupClassByOID(t *testing.T) {
+	test.ForEach(t, func(t *testing.T, ctx context.Context, server test.Server, m *manager.Manager) {
+		// A group, and a manager whose groups' class is the group's class's
+		// OID, which the directory matches, in a list and by name
+		ou := test.OU(t, ctx, m)
+		group, err := test.Manager(t, ctx, server, manager.WithGroupDN(ou)).CreateGroup(ctx, "byoid", nil)
+		require.NoError(t, err)
+		var class string
+		for _, value := range group.GetAll("objectClass") {
+			if !strings.EqualFold(value, "top") {
+				class = value
+				break
+			}
+		}
+		classes, err := m.ListObjectClasses(ctx, schema.ObjectClassListRequest{Filter: types.Ptr(class)})
+		require.NoError(t, err)
+		require.NotEmpty(t, classes.Body)
+		oid := test.Manager(t, ctx, server, manager.WithGroupDN(ou, classes.Body[0].NumericOID))
+
+		list, err := oid.ListGroups(ctx, schema.GroupListRequest{})
+		require.NoError(t, err)
+		assert.Equal(t, uint64(1), list.Count, "by %s's OID %s", class, classes.Body[0].NumericOID)
+		_, err = oid.GetGroup(ctx, "byoid")
+		assert.NoError(t, err)
+
+		// A class which isn't one, which nothing is
+		top := test.Manager(t, ctx, server, manager.WithGroupDN(ou, "top"))
+		list, err = top.ListGroups(ctx, schema.GroupListRequest{})
+		require.NoError(t, err)
+		assert.Zero(t, list.Count)
+		_, err = top.GetGroup(ctx, "byoid")
+		assert.ErrorIs(t, err, httpresponse.ErrNotFound)
+	})
+}

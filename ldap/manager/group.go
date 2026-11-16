@@ -47,7 +47,11 @@ func (manager *Manager) ListGroups(ctx context.Context, req schema.GroupListRequ
 	if err != nil {
 		return nil, err
 	}
+
+	// Only entries which have one of the groups' classes, as others, such
+	// as users, can be beside them
 	list := req.ListRequest
+	list.Filter = types.Ptr(andFilter(req.Filter, classFilter(manager.groupSelectClasses())))
 	if req.User != nil {
 		groups, err := manager.groupsFilter(ctx, *req.User)
 		if err != nil {
@@ -55,7 +59,7 @@ func (manager *Manager) ListGroups(ctx context.Context, req schema.GroupListRequ
 		} else if groups == "" {
 			return &schema.ObjectList{}, nil
 		}
-		list.Filter = types.Ptr(andFilter(req.Filter, groups))
+		list.Filter = types.Ptr(andFilter(list.Filter, groups))
 	}
 	return manager.list(ctx, ldap.ScopeSingleLevel, base.String(), list, nil)
 }
@@ -71,7 +75,15 @@ func (manager *Manager) GetGroup(ctx context.Context, name string) (_ *schema.Ob
 	if err != nil {
 		return nil, err
 	}
-	return manager.get(ctx, dn.String())
+	// The directory matches the classes, by any of their names, or OIDs, as
+	// a list of groups does
+	group, err := manager.find(ctx, dn.String(), classFilter(manager.groupSelectClasses()))
+	if err != nil {
+		return nil, err
+	} else if group == nil {
+		return nil, httpresponse.ErrNotFound.Withf("Group %q not found", name)
+	}
+	return group, nil
 }
 
 // CreateGroup adds a group with the name, as its cn, and the attributes,
@@ -462,6 +474,38 @@ func andFilter(filter *string, other string) string {
 		return other
 	}
 	return "(&" + *filter + other + ")"
+}
+
+// groupSelectClasses returns the classes which make an entry a group:
+// those set, or else any of those well known, so groups which another
+// class was created with, such as groupOfUniqueNames beside groupOfNames,
+// are groups too
+func (manager *Manager) groupSelectClasses() []string {
+	if len(manager.groups.ObjectClass) > 0 {
+		return manager.groups.ObjectClass
+	}
+	return append(append([]string{}, schema.WellKnownGroupClasses...), "posixGroup")
+}
+
+// classFilter returns a filter of the entries which have one of the object
+// classes, other than top, which every entry has, or of none, without
+// another
+func classFilter(classes []string) string {
+	var filters []string
+	for _, class := range classes {
+		if !strings.EqualFold(class, "top") {
+			filters = append(filters, "(objectClass="+ldap.EscapeFilter(class)+")")
+		}
+	}
+	switch len(filters) {
+	case 0:
+		// None, so nothing is one
+		return "(!(objectClass=*))"
+	case 1:
+		return filters[0]
+	default:
+		return "(|" + strings.Join(filters, "") + ")"
+	}
 }
 
 // requiredMember returns the attribute which a group of the classes needs

@@ -337,6 +337,13 @@ func Test_isPassword(t *testing.T) {
 	assert.False(t, isUserPassword("unicodePwd"))
 }
 
+func Test_classFilter(t *testing.T) {
+	assert.Equal(t, "(objectClass=person)", classFilter([]string{"top", "person"}))
+	assert.Equal(t, "(|(objectClass=a)(objectClass=b\\2a))", classFilter([]string{"a", "b*"}))
+	assert.Equal(t, "(!(objectClass=*))", classFilter([]string{"top"}), "none, which nothing matches")
+	assert.Equal(t, "(!(objectClass=*))", classFilter(nil))
+}
+
 func Test_superiors(t *testing.T) {
 	subschema := &subschema{classes: parseObjectClasses([]string{
 		"( 2.5.6.0 NAME 'top' ABSTRACT MUST objectClass )",
