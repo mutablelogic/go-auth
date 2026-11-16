@@ -294,8 +294,10 @@ func (manager *Manager) search(ctx context.Context, scope int, dn, filter string
 	req := ldap.NewSearchRequest(dn, scope, ldap.NeverDerefAliases, max, 0, false, filter, attrs, controls)
 	for {
 		r := manager.conn.SearchAsync(ctx, req, 0)
+		entries := 0
 		for r.Next() {
 			if entry := r.Entry(); entry != nil {
+				entries++
 				if err := fn(hidePasswords(schema.NewObjectFromEntry(entry))); errors.Is(err, io.EOF) {
 					return nil
 				} else if err != nil {
@@ -304,10 +306,16 @@ func (manager *Manager) search(ctx context.Context, scope int, dn, filter string
 			}
 		}
 		if err := r.Err(); err != nil {
+			manager.forgetClosed(err)
 			return ldaperr(err)
 		} else if err := ctx.Err(); err != nil {
 			// A search which is cancelled ends without an error
 			return err
+		} else if entries == 0 && manager.conn.IsClosing() {
+			// So does one on a connection which is lost, which isn't an entry
+			// which isn't found
+			manager.forgetClosed(nil)
+			return httpresponse.ErrGatewayError.With("The connection to the directory is lost")
 		}
 
 		// The next page, when there is one

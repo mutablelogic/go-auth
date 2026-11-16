@@ -25,6 +25,7 @@ import (
 	manager "github.com/mutablelogic/go-auth/ldap/manager"
 	schema "github.com/mutablelogic/go-auth/ldap/schema"
 	test "github.com/mutablelogic/go-auth/ldap/test"
+	httpresponse "github.com/mutablelogic/go-server/pkg/httpresponse"
 	types "github.com/mutablelogic/go-server/pkg/types"
 	assert "github.com/stretchr/testify/assert"
 	require "github.com/stretchr/testify/require"
@@ -98,4 +99,34 @@ func Test_ObjectListChildren(t *testing.T) {
 		}
 		assert.True(t, found, "the OU")
 	})
+}
+
+func Test_StatusDropped(t *testing.T) {
+	// A read which fails, as the connection is lost, is disconnected, and
+	// Run reconnects at once, rather than at its next check
+	d := test.NewFake(t, false)
+	d.Set("dc=example,dc=test", map[string][]string{"objectClass": {"top", "domain"}, "dc": {"example"}})
+	m, err := manager.New(manager.WithUrl(d.URL("ldap")), manager.WithBaseDN("dc=example,dc=test"))
+	require.NoError(t, err)
+
+	runCtx, stop := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- m.Run(runCtx, slogDiscard()) }()
+	defer func() {
+		stop()
+		<-done
+	}()
+	require.Eventually(t, func() bool { return m.Status().Connected }, 5*time.Second, 10*time.Millisecond)
+
+	for name, read := range map[string]func() error{
+		"search": func() error { _, err := m.Get(context.Background(), "dc=example,dc=test"); return err },
+		"whoami": func() error { _, err := m.WhoAmI(context.Background()); return err },
+	} {
+		connections := d.Connections()
+		d.Drop()
+		var err error
+		require.Eventually(t, func() bool { err = read(); return err != nil }, 5*time.Second, 10*time.Millisecond, name)
+		assert.NotErrorIs(t, err, httpresponse.ErrNotFound, "%s: a lost connection isn't an entry which isn't found", name)
+		assert.Eventually(t, func() bool { return d.Connections() > connections && m.Status().Connected }, 5*time.Second, 10*time.Millisecond, "%s: reconnected", name)
+	}
 }

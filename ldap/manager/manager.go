@@ -253,6 +253,19 @@ func (manager *Manager) cleanup(ctx context.Context, fn func(*ldap.Conn) error) 
 	return ldaperr(whileOpen(ctx, conn, func() error { return fn(conn) }))
 }
 
+// forgetClosed forgets the manager's connection, when the request's error
+// is that it's lost, or it's closed, so its status is disconnected, and Run
+// reconnects at once
+func (manager *Manager) forgetClosed(err error) {
+	if manager.conn == nil {
+		return
+	}
+	if ldapErrorCode(err) == ldap.ErrorNetwork || manager.conn.IsClosing() {
+		_ = ldapDisconnect(manager.conn)
+		manager.forget()
+	}
+}
+
 // forget forgets the manager's connection, which is closed, and wakes Run,
 // which reconnects
 func (manager *Manager) forget() {
@@ -291,6 +304,7 @@ func (manager *Manager) WhoAmI(ctx context.Context) (_ string, err error) {
 	}
 	whoami, err := manager.conn.WhoAmI([]ldap.Control{})
 	if err != nil {
+		manager.forgetClosed(err)
 		return "", ldaperr(err)
 	}
 	return whoami.AuthzID, nil
