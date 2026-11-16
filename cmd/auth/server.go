@@ -53,7 +53,7 @@ type registerFunc func(*httprouter.Router) error
 
 // module is a module of the server, which isn't always built in, such as
 // certificates: its handlers, and the section of the configuration, which
-// says what it can do, and that the web UI includes it
+// says what it can do, and that the web UI includes it, when it has one
 type module struct {
 	register registerFunc
 	section  string
@@ -88,6 +88,7 @@ type RunServer struct {
 	Postgres    PostgresFlags        `embed:"" prefix:"pg."`
 	Credential  BackendFlags         `embed:"" prefix:"credential."`
 	Cert        CertFlags            `embed:"" prefix:"cert."`
+	LDAP        LDAPFlags            `embed:"" prefix:"ldap."`
 	Broadcaster broadcastercmd.Flags `embed:"" prefix:"broadcaster."`
 	Frontend    frontend.Flags       `embed:""`
 }
@@ -102,14 +103,16 @@ func (runner *RunServer) Run(ctx server.Cmd) error {
 				ctx.Logger().InfoContext(ctx.Context(), "Credentials", "backend", backend)
 				ctx.Logger().WarnContext(ctx.Context(), "The credential API has no authentication")
 				return runner.Cert.withHandlers(ctx, pool, follow, runner.Passphrase, func(certs *module) error {
-					// The API publishes its changes, unless the backend's
-					// trigger notifies of them, as pg's does
-					var publisher httphandler.Publisher
-					if !notified {
-						publisher = changes
-					}
-					runner.register(ctx, manager, publisher, certs)
-					return runner.run(ctx, changes, follow)
+					return runner.LDAP.withHandlers(ctx, changes, func(ldap *module) error {
+						// The API publishes its changes, unless the backend's
+						// trigger notifies of them, as pg's does
+						var publisher httphandler.Publisher
+						if !notified {
+							publisher = changes
+						}
+						runner.register(ctx, manager, publisher, certs, ldap)
+						return runner.run(ctx, changes, follow)
+					})
 				})
 			})
 		})
@@ -122,13 +125,15 @@ func (runner *RunServer) Run(ctx server.Cmd) error {
 // register registers the configuration, with what the credential manager
 // can do, which depends on its backend, the web UI, when it's served, or
 // else a handler of / which isn't found, the credential API, which
-// publishes its changes, which the UI follows, and the certificate API,
-// when it's built in
-func (runner *RunServer) register(ctx server.Cmd, manager credential.CredentialManager, publisher httphandler.Publisher, certs *module) {
+// publishes its changes, which the UI follows, and the modules' APIs, such
+// as certificates' and LDAP's, when they're built in
+func (runner *RunServer) register(ctx server.Cmd, manager credential.CredentialManager, publisher httphandler.Publisher, modules ...*module) {
 	runner.RunServer.Register(func(router *httprouter.Router) error {
 		sections := []config.Opt{config.WithSection("credential", credential.FeaturesOf(backend, manager))}
-		if certs != nil {
-			sections = append(sections, config.WithSection(certs.section, certs.features))
+		for _, module := range modules {
+			if module != nil && module.section != "" {
+				sections = append(sections, config.WithSection(module.section, module.features))
+			}
 		}
 		ui, err := runner.Frontend.RegisterUI(ctx, ctx.Logger(), router, runner.RunServer.OpenAPI, sections...)
 		if err != nil {
@@ -146,9 +151,11 @@ func (runner *RunServer) register(ctx server.Cmd, manager credential.CredentialM
 		if err := httphandler.RegisterManagerHandlers(manager, false, opts...)(router); err != nil {
 			return err
 		}
-		if certs != nil {
-			if err := certs.register(router); err != nil {
-				return err
+		for _, module := range modules {
+			if module != nil {
+				if err := module.register(router); err != nil {
+					return err
+				}
 			}
 		}
 
