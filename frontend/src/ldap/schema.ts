@@ -200,6 +200,21 @@ export function hasClass(object: LdapObject, name: string): boolean {
     return values(object, 'objectClass').some((value) => !isBinary(value) && value.toLowerCase() === name.toLowerCase());
 }
 
+// memberCount returns how many members a group has: those by DN, other
+// than itself, which a group that needs a member has, or by name, in
+// memberUid, which can be the same users, whichever is more
+export function memberCount(group: LdapObject): number {
+    const dns = new Set<string>();
+    for (const attr of ['member', 'uniqueMember']) {
+        for (const value of values(group, attr)) {
+            if (typeof value === 'string' && !sameDN(value, group.dn)) {
+                dns.add(value.toLowerCase());
+            }
+        }
+    }
+    return Math.max(dns.size, values(group, 'memberUid').length);
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 // DNS
 

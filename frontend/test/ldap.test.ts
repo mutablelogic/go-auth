@@ -8,7 +8,7 @@ import type { AttributeType, ObjectClass } from '../src/ldap/schema.ts';
 import { listAll } from '../src/ldap/controller.ts';
 import { GroupController, LdapStatusController, ObjectController, UserController } from '../src/ldap/controller.ts';
 import {
-    binarySize, escapeFilter, first, hasClass, isBinary, parentDN, rdn, rdnValue, sameDN, searchFilter, splitDN, valueText, values,
+    binarySize, escapeFilter, first, hasClass, memberCount, isBinary, parentDN, rdn, rdnValue, sameDN, searchFilter, splitDN, valueText, values,
     type LdapObject,
 } from '../src/ldap/schema.ts';
 
@@ -356,4 +356,31 @@ test('listAll', async () => {
     assert.equal(items.length, 2500);
     assert.deepEqual(pages, [[0, 1000], [1000, 1000], [2000, 1000]]);
     assert.deepEqual(await listAll(async () => ({ count: 5 })), [], 'an empty page');
+});
+
+test('groups', async (t) => {
+    await t.test('members, by DN other than itself, or by name', () => {
+        const dn = 'cn=eng,ou=groups,dc=test';
+        assert.equal(memberCount({ dn, attrs: { member: [dn] } }), 0, 'itself');
+        assert.equal(memberCount({ dn, attrs: { member: [dn, 'uid=a,ou=users,dc=test', 'UID=A,ou=users,dc=test'], uniqueMember: ['uid=b,ou=users,dc=test'] } }), 2);
+        assert.equal(memberCount({ dn, attrs: { memberUid: ['a', 'b', 'c'], member: ['uid=a,ou=users,dc=test'] } }), 3);
+    });
+
+    await t.test("a group's form hides its members and ID, which the server sets", () => {
+        const groupClasses: ObjectClass[] = [
+            { numericOid: 'g', name: ['groupOfNames'], superClasses: ['top'], must: ['member', 'cn'], may: ['description', 'ou', 'owner'] },
+            { numericOid: 'p', name: ['posixGroup'], superClasses: ['top'], must: ['gidNumber'], may: ['memberUid', 'userPassword'] },
+            { numericOid: '5', name: ['top'], must: ['objectClass'] },
+        ];
+        const schema = entrySchema('group', groupClasses, [...types, ...['member', 'ou', 'owner', 'memberUid'].map((n) => ({ numericOid: n, name: [n], syntax: '1.3.6.1.4.1.1466.115.121.1.15' }))]);
+        assert.equal(namingAttr(schema), 'cn');
+        const form = entryForm(schema);
+        assert.ok(!form.allocateGID);
+        assert.deepEqual(formFields(form), ['description']);
+        assert.deepEqual(addable(form), ['ou', 'owner'], 'not members, nor the password');
+        form.name = 'eng';
+        form.values.description = 'Engineers';
+        assert.deepEqual(entryFormErrors(form), {});
+        assert.deepEqual(entryAttrs(form), { description: ['Engineers'] });
+    });
 });
