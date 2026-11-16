@@ -29,8 +29,45 @@ func Test_WellKnown(t *testing.T) {
 		"https://example.com/v1/mcp/.well-known/oauth-protected-resource",
 		"https://example.com/.well-known/oauth-protected-resource",
 	}, wellKnown("https://example.com/v1/mcp?x=1", ResourceMetadataPath))
+	assert.Equal(t, []string{
+		"https://example.com/.well-known/oauth-protected-resource/mcp/",
+		"https://example.com/mcp/.well-known/oauth-protected-resource",
+		"https://example.com/.well-known/oauth-protected-resource",
+	}, wellKnown("https://example.com/mcp/", ResourceMetadataPath), "with its slash")
 	assert.Equal(t, []string{"https://example.com/.well-known/oauth-authorization-server"}, wellKnown("https://example.com/", OAuthMetadataPath))
 	assert.Nil(t, wellKnown("not a url", OAuthMetadataPath))
 	assert.Equal(t, "https://example.com:8443", origin("https://example.com:8443/mcp"))
 	assert.Empty(t, origin("/mcp"))
+}
+
+func Test_SameResource(t *testing.T) {
+	// The resource, apart from a slash at its end, its origin, or a parent
+	for _, metadata := range []string{
+		"https://example.com/v1/mcp",
+		"https://example.com/v1/mcp/",
+		"https://example.com/v1",
+		"https://example.com",
+		"https://example.com/",
+		"HTTPS://EXAMPLE.COM/v1",
+	} {
+		assert.True(t, sameResource(metadata, "https://example.com/v1/mcp"), metadata)
+	}
+	assert.True(t, sameResource("https://example.com/mcp", "https://example.com/mcp/"))
+
+	// Not another host, scheme, port, path or sibling, or a resource with a
+	// query
+	for _, metadata := range []string{
+		"",
+		"https://other.example.com/v1/mcp",
+		"http://example.com/v1/mcp",
+		"https://example.com:8443/v1/mcp",
+		"https://example.com/v1/mcp/sub",
+		"https://example.com/v1/mc",
+		"https://example.com/v2",
+		"https://example.com/v1?tenant=a",
+		"https://user@example.com/v1",
+		"/v1/mcp",
+	} {
+		assert.False(t, sameResource(metadata, "https://example.com/v1/mcp"), metadata)
+	}
 }
