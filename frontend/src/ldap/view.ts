@@ -11,6 +11,7 @@
 import { html } from 'lit';
 import type { Client } from '@mutablelogic/go-server/api';
 import type { ChangesController } from '@mutablelogic/go-server/broadcaster';
+import { configSection, getConfig } from '@mutablelogic/go-server/config';
 import type { NavController } from '@mutablelogic/go-server/nav';
 import type { NotificationController } from '@mutablelogic/go-server/notification';
 import type { Router } from '@mutablelogic/go-server/router';
@@ -94,6 +95,9 @@ export interface LdapApp {
     status: LdapStatus;
     notifications?: NotificationController;
     changes?: ChangesController;
+    // refreshStatus reads the status again, when changes may have been
+    // missed, which is the configuration's ldap section, without it
+    refreshStatus?: () => Promise<LdapStatus | undefined>;
 }
 
 // LdapPages are the module's pages, with the status they follow
@@ -111,7 +115,7 @@ export interface LdapPages {
 // the directory has them. The pages' ids are prefixed with page-, not the
 // hashes they're routed to, so the browser doesn't scroll to them.
 export function ldapModule(app: LdapApp, section = 'LDAP'): LdapPages {
-    const status = new LdapStatusController(app.status, app.changes);
+    const status = new LdapStatusController(app.status, app.changes, app.refreshStatus ?? (() => getConfig().then((config) => configSection<LdapStatus>(config, 'ldap'))));
     const add = <E extends LdapPage>(kind: LdapPageKind, element: E): E => {
         const page = document.createElement('section');
         page.id = `page-${pages[kind].id}`;

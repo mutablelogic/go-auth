@@ -41,6 +41,10 @@ function fakeChanges() {
             this.on(filter, fn);
             return () => {};
         },
+        onConnect() { return this; },
+        onDisconnect() { return this; },
+        onShutdown() { return this; },
+        onError() { return this; },
     };
     const send = (change: Change) => {
         for (const { filters, fn } of listeners) {
@@ -84,6 +88,11 @@ test('schema', async (t) => {
         assert.equal(rdn(object.dn), 'uid=alice');
         assert.equal(rdnValue('cn=Smith\\, J,ou=x'), 'Smith, J');
         assert.equal(rdnValue('cn=a\\2cb,ou=x'), 'a,b', 'hex escapes');
+        assert.equal(rdnValue('uid=Jos\\c3\\a9,ou=users'), 'José', 'UTF-8 hex escapes');
+        assert.equal(rdnValue('uid=Jos\u00e9 ,ou=users'), 'José', 'not escaped');
+        assert.equal(parentDN('uid=x,ou=team\\ ,dc=test'), 'ou=team\\ ,dc=test', 'an escaped trailing space');
+        assert.deepEqual(splitDN(' ou=a\\  , dc=test '), ['ou=a\\ ', 'dc=test']);
+        assert.ok(!sameDN('ou=team\\ ,dc=test', 'ou=team,dc=test'));
         assert.equal(parentDN(object.dn), 'ou=users,dc=example,dc=test');
         assert.equal(parentDN('dc=test'), '');
         assert.ok(sameDN('UID=Alice, OU=Users,DC=Example,DC=Test', 'uid=alice,ou=users,dc=example,dc=test'));
@@ -160,6 +169,36 @@ test('controllers', async (t) => {
         assert.deepEqual(seen, [true, false, true]);
     });
 
+    await t.test('status is read again when changes may have been missed', async () => {
+        const { changes } = fakeChanges();
+        let listener: ((change?: Change) => void) | undefined;
+        (changes as unknown as { on: (f: unknown, fn: (change?: Change) => void) => void }).on = (_, fn) => { listener = fn; };
+        const status = new LdapStatusController({ host: 'ldap', port: 636, user: 'cn=admin', connected: true, base_dn: 'dc=test' }, changes,
+            async () => ({ host: 'ldap', port: 636, user: 'cn=admin', connected: false, base_dn: 'dc=test' }));
+        listener?.(undefined);
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        assert.equal(status.current.connected, false);
+    });
+
+    await t.test("users follow groups' changes, and groups users'", async () => {
+        const { client, requests } = fakeClient(() => json(200, { count: 0 }));
+        const { changes, send } = fakeChanges();
+        const users = new UserController(client, { changes });
+        const groups = new GroupController(client, { changes });
+        await users.list.refresh();
+        await groups.list.refresh();
+        const count = (path: string) => requests.filter((r) => r.url.pathname === path).length;
+        const wait = () => new Promise((resolve) => setTimeout(resolve, 50));
+        let before = count('/api/ldap/user');
+        send({ schema: 'ldap', table: 'group', action: 'update', row: 'eng' });
+        await wait();
+        assert.ok(count('/api/ldap/user') > before, "a group's members changed");
+        before = count('/api/ldap/group');
+        send({ schema: 'ldap', table: 'user', action: 'update', row: 'alice' });
+        await wait();
+        assert.ok(count('/api/ldap/group') > before, "a user's groups changed");
+    });
+
     await t.test('users and groups are searched', async () => {
         const { client, requests } = fakeClient(() => json(200, { count: 1, body: [{ dn: 'uid=alice,ou=users' }] }));
         const users = new UserController(client);
@@ -187,12 +226,14 @@ test('controllers', async (t) => {
         assert.equal(requests[0].url.searchParams.get('prefix'), null, 'the base DN');
         assert.equal(requests[1].url.searchParams.get('offset'), '2');
 
-        const parents: string[] = [];
-        objects.onChange((parent) => parents.push(parent));
+        // Any change is of all the entries, as changes which arrive together
+        // are only the last
+        let changed = 0;
+        objects.onChange(() => changed++);
         send({ schema: 'ldap', table: 'object', action: 'create', row: 'ou=x,ou=a,dc=test' });
-        send({ schema: 'ldap', table: 'object', action: 'update', row: 'ou=y,ou=b,dc=test', data: { previous: 'ou=y,ou=a,dc=test' } });
         send({ schema: 'ldap', table: 'user', action: 'create', row: 'alice' });
-        assert.deepEqual(parents, ['ou=a,dc=test', 'ou=b,dc=test', 'ou=a,dc=test', '']);
+        send({ schema: 'ldap', table: 'connection', action: 'delete' });
+        assert.equal(changed, 2);
     });
 });
 
