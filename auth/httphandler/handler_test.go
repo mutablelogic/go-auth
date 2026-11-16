@@ -26,8 +26,10 @@ import (
 	// Packages
 	httphandler "github.com/mutablelogic/go-auth/auth/httphandler"
 	provider "github.com/mutablelogic/go-auth/auth/provider"
+	file "github.com/mutablelogic/go-auth/auth/provider/file"
 	oidc "github.com/mutablelogic/go-auth/auth/provider/oidc"
 	schema "github.com/mutablelogic/go-auth/auth/schema"
+	store "github.com/mutablelogic/go-auth/auth/store"
 	authtest "github.com/mutablelogic/go-auth/auth/test"
 	httpresponse "github.com/mutablelogic/go-server/pkg/httpresponse"
 	httprouter "github.com/mutablelogic/go-server/pkg/httprouter"
@@ -273,4 +275,35 @@ func Test_BaseURL(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "https://auth.example.com/api/auth/oidc/callback", location.Query().Get("redirect_uri"))
 	assert.True(t, signInCookie(resp).Secure)
+}
+
+func Test_Session(t *testing.T) {
+	// Signing in is exchanged for a session, whose token is the store's
+	ctx := context.Background()
+	i := authtest.NewOIDC(t)
+	p, err := oidc.New("oidc", "", i.URL, authtest.NewCredentials().WithClient("oidc", i.Audience, "secret"), "oidc")
+	require.NoError(t, err)
+	sessions, err := file.New(t.TempDir())
+	require.NoError(t, err)
+	exchanger, err := store.NewExchanger(sessions)
+	require.NoError(t, err)
+	s := test.NewServer(t, httphandler.RegisterHandlers([]provider.Provider{p}, httphandler.WithExchange(exchanger.Exchange, store.ResponseSchema())))
+	c := newClient(t, s)
+
+	resp, _ := c.do(http.MethodGet, "auth/oidc/login", nil, "")
+	require.Equal(t, http.StatusFound, resp.StatusCode)
+	location, err := url.Parse(resp.Header.Get("Location"))
+	require.NoError(t, err)
+	code := i.Code(location.Query().Get("code_challenge"), map[string]any{"sub": "u1", "email": "alice@example.com", "name": "Alice"})
+	resp, body := c.do(http.MethodGet, "auth/oidc/callback?"+url.Values{"code": {code}, "state": {location.Query().Get("state")}}.Encode(), nil, "", signInCookie(resp))
+	require.Equal(t, http.StatusOK, resp.StatusCode, body)
+
+	var token schema.SessionToken
+	require.NoError(t, json.Unmarshal([]byte(body), &token))
+	assert.NotEmpty(t, token.Token)
+	assert.Equal(t, "oidc:u1", token.User.ID)
+	session, err := sessions.Session(ctx, token.Token)
+	require.NoError(t, err)
+	assert.Equal(t, token.ID, session.ID)
+	assert.Empty(t, s.Verify())
 }

@@ -65,6 +65,17 @@ func Test_Provider(t *testing.T) {
 		assert.Contains(t, []string{"Alice Smith", "alice"}, identity.Name)
 		assert.Contains(t, identity.Groups, "staff")
 
+		// The directory's user, as a user store, with its group's scopes
+		users, err := ldap.NewUsers(m, map[string][]string{"staff": {"ldap:read"}})
+		require.NoError(t, err)
+		found, err := users.User(ctx, identity)
+		require.NoError(t, err)
+		assert.Equal(t, identity.Subject, found.ID)
+		assert.Equal(t, "alice@example.com", found.Email)
+		scopes, err := users.Scopes(ctx, found)
+		require.NoError(t, err)
+		assert.Equal(t, []string{"ldap:read"}, scopes)
+
 		// The same subject, once it's renamed, which Samba doesn't, and
 		// another, when it's deleted, and another is made with the name
 		if !server.ActiveDirectory {
@@ -86,7 +97,7 @@ func Test_Provider(t *testing.T) {
 		require.NoError(t, err)
 		assert.NotEqual(t, identity.Subject, another.Subject, "another user, with the same DN")
 
-				// A wrong password, and a user who isn't, are the same error
+		// A wrong password, and a user who isn't, are the same error
 		_, err = p.Exchange(ctx, schema.Credential{Username: "alice", Password: "wrong"})
 		assert.ErrorIs(t, err, httpresponse.ErrNotAuthorized)
 		_, err = p.Exchange(ctx, schema.Credential{Username: "nobody", Password: "wrong"})

@@ -17,13 +17,19 @@
 package main
 
 import (
+	"os"
+	"path/filepath"
+	"time"
+
 	// Packages
 	authhandler "github.com/mutablelogic/go-auth/auth/httphandler"
 	provider "github.com/mutablelogic/go-auth/auth/provider"
+	file "github.com/mutablelogic/go-auth/auth/provider/file"
 	github "github.com/mutablelogic/go-auth/auth/provider/github"
 	ldapprovider "github.com/mutablelogic/go-auth/auth/provider/ldap"
 	oidc "github.com/mutablelogic/go-auth/auth/provider/oidc"
 	schema "github.com/mutablelogic/go-auth/auth/schema"
+	store "github.com/mutablelogic/go-auth/auth/store"
 	credential "github.com/mutablelogic/go-auth/credential"
 	client "github.com/mutablelogic/go-client"
 	server "github.com/mutablelogic/go-server"
@@ -43,7 +49,13 @@ type AuthFlags struct {
 	Google GoogleFlags       `embed:"" prefix:"google."`
 	GitHub GitHubFlags       `embed:"" prefix:"github."`
 	OIDC   OIDCProviderFlags `embed:"" prefix:"oidc."`
-	LDAP   bool              `name:"ldap" env:"${ENV_NAME}_AUTH_LDAP" help:"Sign in with the LDAP directory, with a username and password, when LDAP is built in"`
+	LDAP   bool              `name:"ldap" env:"${ENV_NAME}_AUTH_LDAP" help:"Sign in with the LDAP directory, with a username and password, when LDAP is built in, whose users are who signs in, with any provider"`
+
+	// What signing in is exchanged for
+	LDAPScopes []string      `name:"ldap.scope" sep:"none" help:"Scopes of an LDAP group's members, as group=scope,scope, such as admins=ldap:read,ldap:write. Can be specified more than once."`
+	Allow      []string      `name:"allow" help:"Only those with a verified email address at the domain, such as example.com, can sign in. Can be specified more than once."`
+	Sessions   string        `name:"sessions" help:"Directory of the sessions. Without it, it's in the user's configuration directory."`
+	TTL        time.Duration `name:"ttl" default:"24h" help:"How long a session lasts"`
 }
 
 // GoogleFlags configure signing in with Google
@@ -81,7 +93,11 @@ func (flags AuthFlags) withHandlers(ctx server.Cmd, credentials credential.Crede
 	} else if len(providers) == 0 {
 		return fn(nil)
 	}
-	var opts []authhandler.Opt
+	exchanger, err := flags.exchanger(ctx, directory)
+	if err != nil {
+		return err
+	}
+	opts := []authhandler.Opt{authhandler.WithExchange(exchanger.Exchange, store.ResponseSchema())}
 	if flags.URL != "" {
 		opts = append(opts, authhandler.WithBaseURL(flags.URL))
 	}
@@ -150,4 +166,41 @@ func (flags AuthFlags) providers(ctx server.Cmd, credentials credential.Credenti
 		result = append(result, p)
 	}
 	return result, nil
+}
+
+// exchanger returns what signing in is exchanged for: a session, in files,
+// of the LDAP directory's user, with their groups' scopes, when LDAP is
+// signed in with, or else the identity, when the hook allows it
+func (flags AuthFlags) exchanger(ctx server.Cmd, directory ldapprovider.Manager) (*store.Exchanger, error) {
+	path := flags.Sessions
+	if path == "" {
+		config, err := os.UserConfigDir()
+		if err != nil {
+			return nil, err
+		}
+		path = filepath.Join(config, ctx.Name(), "sessions")
+	}
+	sessions, err := file.New(path)
+	if err != nil {
+		return nil, err
+	}
+	opts := []store.Opt{store.WithTTL(flags.TTL)}
+	if len(flags.Allow) > 0 {
+		opts = append(opts, store.WithHook(store.AllowDomains(flags.Allow...)))
+	}
+	if flags.LDAP && directory != nil {
+		scopes, err := ldapprovider.ParseGroupScopes(flags.LDAPScopes...)
+		if err != nil {
+			return nil, err
+		}
+		users, err := ldapprovider.NewUsers(directory, scopes)
+		if err != nil {
+			return nil, err
+		}
+		opts = append(opts, store.WithUsers(users))
+	} else if len(flags.LDAPScopes) > 0 {
+		return nil, httpresponse.ErrBadRequest.With("LDAP groups' scopes need --auth.ldap")
+	}
+	ctx.Logger().InfoContext(ctx.Context(), "Sessions", "path", path, "ttl", flags.TTL)
+	return store.NewExchanger(sessions, opts...)
 }

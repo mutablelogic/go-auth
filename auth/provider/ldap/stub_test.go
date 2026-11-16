@@ -17,12 +17,14 @@ package ldap_test
 import (
 	"context"
 	"fmt"
+	"strings"
 	"testing"
 
 	// Packages
 	ldap "github.com/mutablelogic/go-auth/auth/provider/ldap"
 	schema "github.com/mutablelogic/go-auth/auth/schema"
 	ldapschema "github.com/mutablelogic/go-auth/ldap/schema"
+	httpresponse "github.com/mutablelogic/go-server/pkg/httpresponse"
 	assert "github.com/stretchr/testify/assert"
 	require "github.com/stretchr/testify/require"
 )
@@ -44,11 +46,29 @@ func (s *stub) GetUser(_ context.Context, name string) (*ldapschema.Object, erro
 	return &ldapschema.Object{DN: aliceDN, Values: ldapschema.Attrs{"uid": {name}, "cn": {"Alice"}}}, nil
 }
 
+// alice is the stub's user, with an email address
+func alice() *ldapschema.Object {
+	return &ldapschema.Object{DN: aliceDN, Values: ldapschema.Attrs{"uid": {"alice"}, "cn": {"Alice"}, "mail": {"alice@example.test"}}}
+}
+
+func (s *stub) ListUsers(_ context.Context, req ldapschema.UserListRequest) (*ldapschema.ObjectList, error) {
+	if req.Filter != nil && strings.Contains(strings.ToLower(*req.Filter), "alice@example.test") {
+		return &ldapschema.ObjectList{Count: 1, Body: []*ldapschema.Object{alice()}}, nil
+	}
+	return &ldapschema.ObjectList{}, nil
+}
+
 func (s *stub) Bind(_ context.Context, dn, _ string) (*ldapschema.Object, error) {
 	return &ldapschema.Object{DN: dn}, nil
 }
 
 func (s *stub) Get(_ context.Context, dn string, attrs ...string) (*ldapschema.Object, error) {
+	if len(attrs) == 0 {
+		if dn != aliceDN {
+			return nil, httpresponse.ErrNotFound.With(dn)
+		}
+		return alice(), nil
+	}
 	values := ldapschema.Attrs{}
 	for _, attr := range attrs {
 		if v, ok := s.ids[attr]; ok {
@@ -112,4 +132,57 @@ func Test_Groups(t *testing.T) {
 	identity := signIn(t, s)
 	assert.Equal(t, s.groups, identity.Groups)
 	assert.Equal(t, "Alice", identity.Name)
+}
+
+func Test_Users(t *testing.T) {
+	ctx := context.Background()
+	s := &stub{ids: ldapschema.Attrs{"entryUUID": {"alice-uuid"}}, groups: []string{"Admins", "staff", "other"}}
+	users, err := ldap.NewUsers(s, map[string][]string{"admins": {"ldap:write", "ldap:read"}, "STAFF": {"ldap:read", "cert:read"}})
+	require.NoError(t, err)
+
+	t.Run("SignedInWithTheDirectory", func(t *testing.T) {
+		identity := signIn(t, s)
+		user, err := users.User(ctx, identity)
+		require.NoError(t, err)
+		assert.Equal(t, &schema.User{ID: "alice-uuid", Name: "Alice", Email: "alice@example.test", Groups: []string{"Admins", "staff", "other"}}, user)
+
+		// The scopes of the groups, in any case, once each, in order
+		scopes, err := users.Scopes(ctx, user)
+		require.NoError(t, err)
+		assert.Equal(t, []string{"cert:read", "ldap:read", "ldap:write"}, scopes)
+
+		// Another user, with the DN, isn't the identity's
+		s.ids = ldapschema.Attrs{"entryUUID": {"another-uuid"}}
+		_, err = users.User(ctx, identity)
+		assert.ErrorIs(t, err, httpresponse.ErrNotFound)
+		s.ids = ldapschema.Attrs{"entryUUID": {"alice-uuid"}}
+	})
+
+	t.Run("AnotherProvider", func(t *testing.T) {
+		// By its verified email address
+		user, err := users.User(ctx, &schema.Identity{Provider: "google", Issuer: "https://accounts.google.com", Subject: "g1", Email: "ALICE@example.test", EmailVerified: true})
+		require.NoError(t, err)
+		assert.Equal(t, "alice-uuid", user.ID)
+
+		// Not when it isn't verified, or isn't a user's
+		_, err = users.User(ctx, &schema.Identity{Provider: "google", Subject: "g1", Email: "alice@example.test"})
+		assert.ErrorIs(t, err, httpresponse.ErrNotFound)
+		_, err = users.User(ctx, &schema.Identity{Provider: "google", Subject: "g2", Email: "bob@example.test", EmailVerified: true})
+		assert.ErrorIs(t, err, httpresponse.ErrNotFound)
+	})
+
+	t.Run("Needs", func(t *testing.T) {
+		_, err := ldap.NewUsers(nil, nil)
+		assert.ErrorIs(t, err, httpresponse.ErrBadRequest)
+	})
+}
+
+func Test_ParseGroupScopes(t *testing.T) {
+	scopes, err := ldap.ParseGroupScopes("admins=ldap:read, ldap:write", "staff=cert:read", " admins =cert:write")
+	require.NoError(t, err)
+	assert.Equal(t, map[string][]string{"admins": {"ldap:read", "ldap:write", "cert:write"}, "staff": {"cert:read"}}, scopes)
+	_, err = ldap.ParseGroupScopes("no-equals")
+	assert.ErrorIs(t, err, httpresponse.ErrBadRequest)
+	_, err = ldap.ParseGroupScopes("=scope")
+	assert.ErrorIs(t, err, httpresponse.ErrBadRequest)
 }
