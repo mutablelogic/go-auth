@@ -15,12 +15,13 @@
 package schema
 
 import (
-	"net/url"
+	"encoding/json"
 	"testing"
 
 	// Packages
 	ldap "github.com/go-ldap/ldap/v3"
 	auth "github.com/mutablelogic/go-auth"
+	types "github.com/mutablelogic/go-server/pkg/types"
 	assert "github.com/stretchr/testify/assert"
 	require "github.com/stretchr/testify/require"
 )
@@ -31,7 +32,7 @@ func Test_object_001(t *testing.T) {
 
 		object := &Object{
 			DN: "uid=jdoe,ou=people,dc=example,dc=com",
-			Values: url.Values{
+			Values: Attrs{
 				"mail":        {"jdoe@example.com"},
 				"cn":          {"John Doe"},
 				"objectClass": {"inetOrgPerson", "top"},
@@ -53,7 +54,7 @@ func Test_object_001(t *testing.T) {
 
 		object := &Object{
 			DN: "uid=jdoe,ou=people,dc=example,dc=com",
-			Values: url.Values{
+			Values: Attrs{
 				"cn": {" John Doe"},
 			},
 		}
@@ -70,7 +71,7 @@ func Test_object_001(t *testing.T) {
 
 		object := &Object{
 			DN: "uid=jdoe,ou=people,dc=example,dc=com",
-			Values: url.Values{
+			Values: Attrs{
 				"description": {},
 			},
 		}
@@ -88,7 +89,7 @@ func Test_object_001(t *testing.T) {
 		response := PasswordResponse{
 			Object: Object{
 				DN: "uid=jdoe,ou=people,dc=example,dc=com",
-				Values: url.Values{
+				Values: Attrs{
 					"cn": {"John Doe"},
 				},
 			},
@@ -124,14 +125,14 @@ func Test_object_001(t *testing.T) {
 		list := &ObjectList{Body: []*Object{
 			{
 				DN: "uid=jdoe,ou=people,dc=example,dc=com",
-				Values: url.Values{
+				Values: Attrs{
 					"cn": {"John Doe"},
 				},
 			},
 			nil,
 			{
 				DN: "uid=asmith,ou=people,dc=example,dc=com",
-				Values: url.Values{
+				Values: Attrs{
 					"cn": {"Alice Smith"},
 				},
 			},
@@ -160,7 +161,7 @@ func Test_object_001(t *testing.T) {
 
 		response := (&Object{
 			DN:     "uid=jdoe,ou=people,dc=example,dc=com",
-			Values: url.Values{"cn": {"John Doe"}},
+			Values: Attrs{"cn": {"John Doe"}},
 		}).WithPassword(&password)
 
 		if assert.NotNil(response) {
@@ -174,7 +175,7 @@ func Test_object_001(t *testing.T) {
 		assert := assert.New(t)
 		empty := "   "
 
-		response := (&Object{DN: "uid=jdoe,ou=people,dc=example,dc=com", Values: url.Values{}}).WithPassword(&empty)
+		response := (&Object{DN: "uid=jdoe,ou=people,dc=example,dc=com", Values: Attrs{}}).WithPassword(&empty)
 
 		if assert.NotNil(response) {
 			assert.Empty(response.GeneratedPassword)
@@ -227,7 +228,7 @@ func Test_object_001(t *testing.T) {
 	t.Run("ObjectGetAndGetAll", func(t *testing.T) {
 		assert := assert.New(t)
 
-		object := &Object{Values: url.Values{
+		object := &Object{Values: Attrs{
 			"cn":          {"John Doe", "Johnny"},
 			"description": {},
 		}}
@@ -267,7 +268,7 @@ func Test_object_001(t *testing.T) {
 
 		assert.NotEmpty((&Object{DN: "uid=jdoe"}).String())
 		assert.NotEmpty((&PasswordResponse{}).String())
-		assert.NotEmpty((ObjectPutRequest{Attrs: url.Values{"cn": {"John Doe"}}}).String())
+		assert.NotEmpty((ObjectPutRequest{Attrs: Attrs{"cn": {"John Doe"}}}).String())
 		assert.NotEmpty((ObjectPasswordRequest{Old: "old-password"}).String())
 		assert.NotEmpty((ObjectList{Count: 1}).String())
 		assert.NotEmpty((ObjectListRequest{}).String())
@@ -298,7 +299,7 @@ func Test_object_001(t *testing.T) {
 	t.Run("ObjectPutRequestValidateRejectsBlankAttributeName", func(t *testing.T) {
 		assert := assert.New(t)
 
-		_, err := (ObjectPutRequest{Attrs: url.Values{
+		_, err := (ObjectPutRequest{Attrs: Attrs{
 			"   ":         {"value"},
 			"objectClass": {"inetOrgPerson"},
 		}}).ValidateCreate()
@@ -310,7 +311,7 @@ func Test_object_001(t *testing.T) {
 	t.Run("ObjectPutRequestValidateRejectsInvalidAttributeOption", func(t *testing.T) {
 		assert := assert.New(t)
 
-		_, err := (ObjectPutRequest{Attrs: url.Values{
+		_, err := (ObjectPutRequest{Attrs: Attrs{
 			"objectClass":             {"inetOrgPerson"},
 			"userCertificate;bad opt": {"certificate-data"},
 		}}).ValidateCreate()
@@ -323,22 +324,24 @@ func Test_object_001(t *testing.T) {
 		assert := assert.New(t)
 		require := require.New(t)
 
-		attrs, err := (ObjectPutRequest{Attrs: url.Values{
-			" objectClass ": {" inetOrgPerson ", " top "},
-			" cn ":          {" Test User "},
-			" sn":           {" User "},
+		attrs, err := (ObjectPutRequest{Attrs: Attrs{
+			" objectClass ": {"inetOrgPerson", "top"},
+			" cn ":          {"Test User"},
+			" sn":           {"User"},
+			"userPassword":  {" secret "},
 		}}).ValidateCreate()
 
 		require.NoError(err)
-		assert.Equal([]string{"inetOrgPerson", "top"}, attrs["objectClass"])
+		assert.Equal([]string{"inetOrgPerson", "top"}, attrs["objectClass"], "names are trimmed")
 		assert.Equal([]string{"Test User"}, attrs["cn"])
 		assert.Equal([]string{"User"}, attrs["sn"])
+		assert.Equal([]string{" secret "}, attrs["userPassword"], "values are kept as they are")
 	})
 
 	t.Run("ObjectPutRequestValidateCreateRejectsMissingObjectClass", func(t *testing.T) {
 		assert := assert.New(t)
 
-		_, err := (ObjectPutRequest{Attrs: url.Values{"cn": {"Test User"}}}).ValidateCreate()
+		_, err := (ObjectPutRequest{Attrs: Attrs{"cn": {"Test User"}}}).ValidateCreate()
 
 		assert.ErrorIs(err, auth.ErrBadParameter)
 		assert.Contains(err.Error(), "attrs.objectClass is required")
@@ -347,7 +350,7 @@ func Test_object_001(t *testing.T) {
 	t.Run("ObjectPutRequestValidateCreateRejectsDNInBody", func(t *testing.T) {
 		assert := assert.New(t)
 
-		_, err := (ObjectPutRequest{Attrs: url.Values{"dn": {"uid=testuser,ou=users,dc=example,dc=com"}, "objectClass": {"inetOrgPerson"}}}).ValidateCreate()
+		_, err := (ObjectPutRequest{Attrs: Attrs{"dn": {"uid=testuser,ou=users,dc=example,dc=com"}, "objectClass": {"inetOrgPerson"}}}).ValidateCreate()
 
 		assert.ErrorIs(err, auth.ErrBadParameter)
 		assert.Contains(err.Error(), "dn must be provided in the path")
@@ -356,7 +359,7 @@ func Test_object_001(t *testing.T) {
 	t.Run("ObjectPutRequestValidateCreateRejectsNullAttribute", func(t *testing.T) {
 		assert := assert.New(t)
 
-		_, err := (ObjectPutRequest{Attrs: url.Values{
+		_, err := (ObjectPutRequest{Attrs: Attrs{
 			"objectClass": nil,
 			"cn":          {"Test User"},
 		}}).ValidateCreate()
@@ -369,21 +372,23 @@ func Test_object_001(t *testing.T) {
 		assert := assert.New(t)
 		require := require.New(t)
 
-		attrs, err := (ObjectPutRequest{Attrs: url.Values{
-			"description": {"   "},
-			"mail":        {" user@example.com ", " "},
+		attrs, err := (ObjectPutRequest{Attrs: Attrs{
+			"description": {""},
+			"mail":        {"user@example.com", ""},
+			"title":       {"   "},
 		}}).ValidateUpdate()
 
 		require.NoError(err)
-		assert.Empty(attrs["description"])
+		assert.Empty(attrs["description"], "an empty value deletes")
 		assert.Equal([]string{"user@example.com"}, attrs["mail"])
+		assert.Equal([]string{"   "}, attrs["title"], "spaces are a value")
 	})
 
 	t.Run("ObjectPutRequestValidateUpdateAllowsNullAttributeDelete", func(t *testing.T) {
 		assert := assert.New(t)
 		require := require.New(t)
 
-		attrs, err := (ObjectPutRequest{Attrs: url.Values{
+		attrs, err := (ObjectPutRequest{Attrs: Attrs{
 			"description": nil,
 			"mail":        {"user@example.com"},
 		}}).ValidateUpdate()
@@ -397,7 +402,7 @@ func Test_object_001(t *testing.T) {
 		assert := assert.New(t)
 		require := require.New(t)
 
-		attrs, err := (ObjectPutRequest{Attrs: url.Values{
+		attrs, err := (ObjectPutRequest{Attrs: Attrs{
 			"objectClass":            {"inetOrgPerson"},
 			"given-name":             {"Test"},
 			"2.5.4.3":                {"Test User"},
@@ -414,7 +419,7 @@ func Test_object_001(t *testing.T) {
 	t.Run("ObjectPutRequestValidateRejectsInvalidAttributeDescriptions", func(t *testing.T) {
 		assert := assert.New(t)
 
-		_, err := (ObjectPutRequest{Attrs: url.Values{
+		_, err := (ObjectPutRequest{Attrs: Attrs{
 			"objectClass": {"inetOrgPerson"},
 			"cn value":    {"Test User"},
 		}}).ValidateCreate()
@@ -428,17 +433,47 @@ func Test_ObjectAttrsCase(t *testing.T) {
 	assert := assert.New(t)
 
 	// Attribute names aren't case-sensitive
-	attrs, err := ObjectPutRequest{Attrs: url.Values{"OBJECTCLASS": {"top"}, "cn": {"x"}}}.ValidateCreate()
+	attrs, err := ObjectPutRequest{Attrs: Attrs{"OBJECTCLASS": {"top"}, "cn": {"x"}}}.ValidateCreate()
 	assert.NoError(err)
 	assert.Equal([]string{"top"}, attrs["OBJECTCLASS"])
 
-	_, err = ObjectPutRequest{Attrs: url.Values{"cn": {"x"}, "CN": {"y"}, "objectClass": {"top"}}}.ValidateCreate()
+	_, err = ObjectPutRequest{Attrs: Attrs{"cn": {"x"}, "CN": {"y"}, "objectClass": {"top"}}}.ValidateCreate()
 	assert.ErrorIs(err, auth.ErrBadParameter)
-	_, err = ObjectPutRequest{Attrs: url.Values{"cn": {"x"}}}.ValidateCreate()
+	_, err = ObjectPutRequest{Attrs: Attrs{"cn": {"x"}}}.ValidateCreate()
 	assert.ErrorIs(err, auth.ErrBadParameter)
 
 	// A nil object has no attributes
 	var object *Object
 	assert.Nil(object.Get("cn"))
 	assert.Nil(object.GetAll("cn"))
+}
+
+func Test_AttrsJSON(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+
+	binary := string([]byte{0x30, 0x82, 0xff, 0x00, 0x20})
+	object := Object{DN: "cn=test,dc=example,dc=test", Values: Attrs{
+		"cn":                     {"Test"},
+		"userCertificate;binary": {binary},
+	}}
+	data, err := json.Marshal(object)
+	require.NoError(err)
+	assert.JSONEq(`{"dn":"cn=test,dc=example,dc=test","attrs":{"cn":["Test"],"userCertificate;binary":[{"base64":"MIL/ACA="}]}}`, string(data))
+
+	// It reads back, and a request takes the same values
+	var decoded Object
+	require.NoError(json.Unmarshal(data, &decoded))
+	assert.Equal(object, decoded)
+
+	var req ObjectPutRequest
+	require.NoError(json.Unmarshal([]byte(`{"attrs":{"jpegPhoto":[{"base64":"/9j/"}],"cn":["a"]}}`), &req))
+	assert.Equal([]string{"\xff\xd8\xff"}, req.Attrs["jpegPhoto"])
+	assert.Error(json.Unmarshal([]byte(`{"attrs":{"cn":[{"base64":"!"}]}}`), &req))
+	assert.Error(json.Unmarshal([]byte(`{"attrs":{"cn":[1]}}`), &req))
+
+	// A password response keeps its own fields
+	data, err = json.Marshal(object.WithPassword(types.Ptr("generated")))
+	require.NoError(err)
+	assert.Contains(string(data), `"generated-password":"generated"`)
 }
