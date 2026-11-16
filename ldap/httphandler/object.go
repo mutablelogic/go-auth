@@ -51,7 +51,7 @@ const maxPassword = 1024
 // deleting one, binding as one, and changing its password
 func registerObject(router *httprouter.Router, mgr *manager.Manager, auth bool, doc *opts.MarkdownDoc) error {
 	return errors.Join(
-		router.Register("object", nil, func(path httprequest.PathItem) {
+		router.Register("ldap/object", nil, func(path httprequest.PathItem) {
 			path.Tag(tagObject)
 			path.Get(func(w http.ResponseWriter, r *http.Request) {
 				var req schema.ObjectListRequest
@@ -67,7 +67,7 @@ func registerObject(router *httprouter.Router, mgr *manager.Manager, auth bool, 
 				httpresponse.JSON(w, http.StatusOK, httprequest.Indent(r), list)
 			}, func(op httprequest.PathOperation) {
 				op.Summary("List objects")
-				op.Description(doc.Section(3, "GET /object").Body)
+				op.Description(doc.Section(3, "GET /ldap/object").Body)
 				op.Query(jsonschema.MustFor[schema.ObjectListRequest]())
 				op.JSONResponse(http.StatusOK, listSchema, "Objects")
 				op.ErrorResponse(http.StatusBadRequest, "Invalid filter, prefix or pagination parameters")
@@ -75,7 +75,7 @@ func registerObject(router *httprouter.Router, mgr *manager.Manager, auth bool, 
 				security(op, auth, schema.ScopeLDAPRead)
 			})
 		}),
-		router.Register("object/{dn}", jsonschema.MustFor[dnParams](), func(path httprequest.PathItem) {
+		router.Register("ldap/object/{dn}", jsonschema.MustFor[dnParams](), func(path httprequest.PathItem) {
 			path.Tag(tagObject)
 			path.Get(func(w http.ResponseWriter, r *http.Request) {
 				object, err := mgr.Get(r.Context(), r.PathValue("dn"))
@@ -86,7 +86,7 @@ func registerObject(router *httprouter.Router, mgr *manager.Manager, auth bool, 
 				httpresponse.JSON(w, http.StatusOK, httprequest.Indent(r), object)
 			}, func(op httprequest.PathOperation) {
 				op.Summary("Get an object")
-				op.Description(doc.Section(3, "GET /object/{dn}").Body)
+				op.Description(doc.Section(3, "GET /ldap/object/{dn}").Body)
 				op.JSONResponse(http.StatusOK, objectSchema, "The object")
 				op.ErrorResponse(http.StatusBadRequest, "Invalid DN")
 				op.ErrorResponse(http.StatusNotFound, "Object not found")
@@ -106,7 +106,7 @@ func registerObject(router *httprouter.Router, mgr *manager.Manager, auth bool, 
 				httpresponse.JSON(w, http.StatusCreated, httprequest.Indent(r), object)
 			}, func(op httprequest.PathOperation) {
 				op.Summary("Create an object")
-				op.Description(doc.Section(3, "PUT /object/{dn}").Body)
+				op.Description(doc.Section(3, "PUT /ldap/object/{dn}").Body)
 				op.RequestBody(putSchema)
 				op.JSONResponse(http.StatusCreated, objectSchema, "The object")
 				op.ErrorResponse(http.StatusBadRequest, "Invalid DN or attributes")
@@ -128,7 +128,7 @@ func registerObject(router *httprouter.Router, mgr *manager.Manager, auth bool, 
 				httpresponse.JSON(w, http.StatusOK, httprequest.Indent(r), object)
 			}, func(op httprequest.PathOperation) {
 				op.Summary("Update an object")
-				op.Description(doc.Section(3, "PATCH /object/{dn}").Body)
+				op.Description(doc.Section(3, "PATCH /ldap/object/{dn}").Body)
 				op.RequestBody(putSchema)
 				op.JSONResponse(http.StatusOK, objectSchema, "The object")
 				op.ErrorResponse(http.StatusBadRequest, "Invalid DN or attributes")
@@ -144,7 +144,7 @@ func registerObject(router *httprouter.Router, mgr *manager.Manager, auth bool, 
 				httpresponse.JSON(w, http.StatusOK, httprequest.Indent(r), object)
 			}, func(op httprequest.PathOperation) {
 				op.Summary("Delete an object")
-				op.Description(doc.Section(3, "DELETE /object/{dn}").Body)
+				op.Description(doc.Section(3, "DELETE /ldap/object/{dn}").Body)
 				op.JSONResponse(http.StatusOK, objectSchema, "The object, as it was")
 				op.ErrorResponse(http.StatusBadRequest, "Invalid DN")
 				op.ErrorResponse(http.StatusNotFound, "Object not found")
@@ -152,7 +152,7 @@ func registerObject(router *httprouter.Router, mgr *manager.Manager, auth bool, 
 				security(op, auth, schema.ScopeLDAPWrite)
 			})
 		}),
-		router.Register("object/{dn}/bind", jsonschema.MustFor[dnParams](), func(path httprequest.PathItem) {
+		router.Register("ldap/object/{dn}/bind", jsonschema.MustFor[dnParams](), func(path httprequest.PathItem) {
 			path.Tag(tagObject)
 			path.Post(func(w http.ResponseWriter, r *http.Request) {
 				password, err := io.ReadAll(io.LimitReader(r.Body, maxPassword+1))
@@ -171,7 +171,7 @@ func registerObject(router *httprouter.Router, mgr *manager.Manager, auth bool, 
 				httpresponse.JSON(w, http.StatusOK, httprequest.Indent(r), object)
 			}, func(op httprequest.PathOperation) {
 				op.Summary("Bind as an object")
-				op.Description(doc.Section(3, "POST /object/{dn}/bind").Body)
+				op.Description(doc.Section(3, "POST /ldap/object/{dn}/bind").Body)
 				op.RequestBody(jsonschema.MustFor[string](), types.ContentTypeTextPlain)
 				op.JSONResponse(http.StatusOK, objectSchema, "The object")
 				op.ErrorResponse(http.StatusBadRequest, "Invalid DN, or a password which is too long")
@@ -179,7 +179,7 @@ func registerObject(router *httprouter.Router, mgr *manager.Manager, auth bool, 
 				security(op, auth, schema.ScopeLDAPWrite)
 			})
 		}),
-		router.Register("object/{dn}/password", jsonschema.MustFor[dnParams](), func(path httprequest.PathItem) {
+		router.Register("ldap/object/{dn}/password", jsonschema.MustFor[dnParams](), func(path httprequest.PathItem) {
 			path.Tag(tagObject)
 			path.Post(func(w http.ResponseWriter, r *http.Request) {
 				var req schema.ObjectPasswordRequest
@@ -195,7 +195,7 @@ func registerObject(router *httprouter.Router, mgr *manager.Manager, auth bool, 
 				httpresponse.JSON(w, http.StatusOK, httprequest.Indent(r), response)
 			}, func(op httprequest.PathOperation) {
 				op.Summary("Change an object's password")
-				op.Description(doc.Section(3, "POST /object/{dn}/password").Body)
+				op.Description(doc.Section(3, "POST /ldap/object/{dn}/password").Body)
 				op.RequestBody(jsonschema.MustFor[schema.ObjectPasswordRequest]())
 				op.JSONResponse(http.StatusOK, passwordSchema, "The object, with the password, when it was generated")
 				op.ErrorResponse(http.StatusBadRequest, "Invalid DN or request body")

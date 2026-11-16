@@ -36,7 +36,7 @@ import (
 // deleting one, and adding and removing its members
 func registerGroup(router *httprouter.Router, mgr *manager.Manager, auth bool, doc *opts.MarkdownDoc) error {
 	return errors.Join(
-		router.Register("group", nil, func(path httprequest.PathItem) {
+		router.Register("ldap/group", nil, func(path httprequest.PathItem) {
 			path.Tag(tagGroup)
 			path.Get(func(w http.ResponseWriter, r *http.Request) {
 				var req schema.GroupListRequest
@@ -52,7 +52,7 @@ func registerGroup(router *httprouter.Router, mgr *manager.Manager, auth bool, d
 				httpresponse.JSON(w, http.StatusOK, httprequest.Indent(r), list)
 			}, func(op httprequest.PathOperation) {
 				op.Summary("List groups")
-				op.Description(doc.Section(3, "GET /group").Body)
+				op.Description(doc.Section(3, "GET /ldap/group").Body)
 				op.Query(jsonschema.MustFor[schema.GroupListRequest]())
 				op.JSONResponse(http.StatusOK, listSchema, "Groups")
 				op.ErrorResponse(http.StatusBadRequest, "Invalid filter or pagination parameters")
@@ -60,7 +60,7 @@ func registerGroup(router *httprouter.Router, mgr *manager.Manager, auth bool, d
 				security(op, auth, schema.ScopeLDAPRead)
 			})
 		}),
-		router.Register("group/{name}", jsonschema.MustFor[nameParams](), func(path httprequest.PathItem) {
+		router.Register("ldap/group/{name}", jsonschema.MustFor[nameParams](), func(path httprequest.PathItem) {
 			path.Tag(tagGroup)
 			path.Get(func(w http.ResponseWriter, r *http.Request) {
 				group, err := mgr.GetGroup(r.Context(), r.PathValue("name"))
@@ -71,7 +71,7 @@ func registerGroup(router *httprouter.Router, mgr *manager.Manager, auth bool, d
 				httpresponse.JSON(w, http.StatusOK, httprequest.Indent(r), group)
 			}, func(op httprequest.PathOperation) {
 				op.Summary("Get a group")
-				op.Description(doc.Section(3, "GET /group/{name}").Body)
+				op.Description(doc.Section(3, "GET /ldap/group/{name}").Body)
 				op.JSONResponse(http.StatusOK, objectSchema, "The group")
 				op.ErrorResponse(http.StatusNotFound, "Group not found")
 				security(op, auth, schema.ScopeLDAPRead)
@@ -90,7 +90,7 @@ func registerGroup(router *httprouter.Router, mgr *manager.Manager, auth bool, d
 				httpresponse.JSON(w, http.StatusCreated, httprequest.Indent(r), group)
 			}, func(op httprequest.PathOperation) {
 				op.Summary("Create a group")
-				op.Description(doc.Section(3, "PUT /group/{name}").Body)
+				op.Description(doc.Section(3, "PUT /ldap/group/{name}").Body)
 				op.RequestBody(putSchema)
 				op.JSONResponse(http.StatusCreated, objectSchema, "The group")
 				op.ErrorResponse(http.StatusBadRequest, "Invalid name or attributes")
@@ -111,7 +111,7 @@ func registerGroup(router *httprouter.Router, mgr *manager.Manager, auth bool, d
 				httpresponse.JSON(w, http.StatusOK, httprequest.Indent(r), group)
 			}, func(op httprequest.PathOperation) {
 				op.Summary("Update a group")
-				op.Description(doc.Section(3, "PATCH /group/{name}").Body)
+				op.Description(doc.Section(3, "PATCH /ldap/group/{name}").Body)
 				op.RequestBody(putSchema)
 				op.JSONResponse(http.StatusOK, objectSchema, "The group")
 				op.ErrorResponse(http.StatusBadRequest, "Invalid attributes")
@@ -127,19 +127,19 @@ func registerGroup(router *httprouter.Router, mgr *manager.Manager, auth bool, d
 				httpresponse.JSON(w, http.StatusOK, httprequest.Indent(r), group)
 			}, func(op httprequest.PathOperation) {
 				op.Summary("Delete a group")
-				op.Description(doc.Section(3, "DELETE /group/{name}").Body)
+				op.Description(doc.Section(3, "DELETE /ldap/group/{name}").Body)
 				op.JSONResponse(http.StatusOK, objectSchema, "The group, as it was")
 				op.ErrorResponse(http.StatusNotFound, "Group not found")
 				security(op, auth, schema.ScopeLDAPWrite)
 			})
 		}),
-		router.Register("group/{name}/user", jsonschema.MustFor[nameParams](), func(path httprequest.PathItem) {
+		router.Register("ldap/group/{name}/user", jsonschema.MustFor[nameParams](), func(path httprequest.PathItem) {
 			path.Tag(tagGroup)
 			path.Post(func(w http.ResponseWriter, r *http.Request) {
 				changeMembers(w, r, mgr.AddGroupUsers)
 			}, func(op httprequest.PathOperation) {
 				op.Summary("Add users to a group")
-				op.Description(doc.Section(3, "POST /group/{name}/user").Body)
+				op.Description(doc.Section(3, "POST /ldap/group/{name}/user").Body)
 				op.RequestBody(jsonschema.MustFor[[]string]())
 				op.JSONResponse(http.StatusOK, objectSchema, "The group")
 				op.ErrorResponse(http.StatusBadRequest, "No users")
@@ -150,7 +150,7 @@ func registerGroup(router *httprouter.Router, mgr *manager.Manager, auth bool, d
 				changeMembers(w, r, mgr.RemoveGroupUsers)
 			}, func(op httprequest.PathOperation) {
 				op.Summary("Remove users from a group")
-				op.Description(doc.Section(3, "DELETE /group/{name}/user").Body)
+				op.Description(doc.Section(3, "DELETE /ldap/group/{name}/user").Body)
 				op.RequestBody(jsonschema.MustFor[[]string]())
 				op.JSONResponse(http.StatusOK, objectSchema, "The group")
 				op.ErrorResponse(http.StatusBadRequest, "No users")

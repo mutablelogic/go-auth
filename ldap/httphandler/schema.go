@@ -35,7 +35,7 @@ import (
 // attribute types
 func registerSchema(router *httprouter.Router, mgr *manager.Manager, auth bool, doc *opts.MarkdownDoc) error {
 	return errors.Join(
-		router.Register("class", nil, func(path httprequest.PathItem) {
+		router.Register("ldap/class", nil, func(path httprequest.PathItem) {
 			path.Tag(tagSchema)
 			path.Get(func(w http.ResponseWriter, r *http.Request) {
 				var req schema.ObjectClassListRequest
@@ -51,14 +51,14 @@ func registerSchema(router *httprouter.Router, mgr *manager.Manager, auth bool, 
 				httpresponse.JSON(w, http.StatusOK, httprequest.Indent(r), classes)
 			}, func(op httprequest.PathOperation) {
 				op.Summary("List object classes")
-				op.Description(doc.Section(3, "GET /class").Body)
+				op.Description(doc.Section(3, "GET /ldap/class").Body)
 				op.Query(jsonschema.MustFor[schema.ObjectClassListRequest]())
 				op.JSONResponse(http.StatusOK, jsonschema.MustFor[schema.ObjectClassListResponse](), "Object classes, by name")
 				op.ErrorResponse(http.StatusBadRequest, "Invalid filter or pagination parameters")
 				security(op, auth, schema.ScopeLDAPRead)
 			})
 		}),
-		router.Register("attr", nil, func(path httprequest.PathItem) {
+		router.Register("ldap/attr", nil, func(path httprequest.PathItem) {
 			path.Tag(tagSchema)
 			path.Get(func(w http.ResponseWriter, r *http.Request) {
 				var req schema.AttributeTypeListRequest
@@ -74,7 +74,7 @@ func registerSchema(router *httprouter.Router, mgr *manager.Manager, auth bool, 
 				httpresponse.JSON(w, http.StatusOK, httprequest.Indent(r), attrs)
 			}, func(op httprequest.PathOperation) {
 				op.Summary("List attribute types")
-				op.Description(doc.Section(3, "GET /attr").Body)
+				op.Description(doc.Section(3, "GET /ldap/attr").Body)
 				op.Query(jsonschema.MustFor[schema.AttributeTypeListRequest]())
 				op.JSONResponse(http.StatusOK, jsonschema.MustFor[schema.AttributeTypeListResponse](), "Attribute types, by name")
 				op.ErrorResponse(http.StatusBadRequest, "Invalid filter or pagination parameters")

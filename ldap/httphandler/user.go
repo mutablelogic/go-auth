@@ -48,7 +48,7 @@ type userCreateQuery struct {
 // and deleting one
 func registerUser(router *httprouter.Router, mgr *manager.Manager, auth bool, doc *opts.MarkdownDoc) error {
 	return errors.Join(
-		router.Register("user", nil, func(path httprequest.PathItem) {
+		router.Register("ldap/user", nil, func(path httprequest.PathItem) {
 			path.Tag(tagUser)
 			path.Get(func(w http.ResponseWriter, r *http.Request) {
 				var req schema.UserListRequest
@@ -64,7 +64,7 @@ func registerUser(router *httprouter.Router, mgr *manager.Manager, auth bool, do
 				httpresponse.JSON(w, http.StatusOK, httprequest.Indent(r), list)
 			}, func(op httprequest.PathOperation) {
 				op.Summary("List users")
-				op.Description(doc.Section(3, "GET /user").Body)
+				op.Description(doc.Section(3, "GET /ldap/user").Body)
 				op.Query(jsonschema.MustFor[schema.UserListRequest]())
 				op.JSONResponse(http.StatusOK, listSchema, "Users")
 				op.ErrorResponse(http.StatusBadRequest, "Invalid filter or pagination parameters")
@@ -72,7 +72,7 @@ func registerUser(router *httprouter.Router, mgr *manager.Manager, auth bool, do
 				security(op, auth, schema.ScopeLDAPRead)
 			})
 		}),
-		router.Register("user/{name}", jsonschema.MustFor[nameParams](), func(path httprequest.PathItem) {
+		router.Register("ldap/user/{name}", jsonschema.MustFor[nameParams](), func(path httprequest.PathItem) {
 			path.Tag(tagUser)
 			path.Get(func(w http.ResponseWriter, r *http.Request) {
 				user, err := mgr.GetUser(r.Context(), r.PathValue("name"))
@@ -83,7 +83,7 @@ func registerUser(router *httprouter.Router, mgr *manager.Manager, auth bool, do
 				httpresponse.JSON(w, http.StatusOK, httprequest.Indent(r), user)
 			}, func(op httprequest.PathOperation) {
 				op.Summary("Get a user")
-				op.Description(doc.Section(3, "GET /user/{name}").Body)
+				op.Description(doc.Section(3, "GET /ldap/user/{name}").Body)
 				op.JSONResponse(http.StatusOK, objectSchema, "The user")
 				op.ErrorResponse(http.StatusNotFound, "User not found")
 				security(op, auth, schema.ScopeLDAPRead)
@@ -107,7 +107,7 @@ func registerUser(router *httprouter.Router, mgr *manager.Manager, auth bool, do
 				httpresponse.JSON(w, http.StatusCreated, httprequest.Indent(r), user)
 			}, func(op httprequest.PathOperation) {
 				op.Summary("Create a user")
-				op.Description(doc.Section(3, "PUT /user/{name}").Body)
+				op.Description(doc.Section(3, "PUT /ldap/user/{name}").Body)
 				op.Query(jsonschema.MustFor[userCreateQuery]())
 				op.RequestBody(putSchema)
 				op.JSONResponse(http.StatusCreated, objectSchema, "The user")
@@ -129,7 +129,7 @@ func registerUser(router *httprouter.Router, mgr *manager.Manager, auth bool, do
 				httpresponse.JSON(w, http.StatusOK, httprequest.Indent(r), user)
 			}, func(op httprequest.PathOperation) {
 				op.Summary("Update a user")
-				op.Description(doc.Section(3, "PATCH /user/{name}").Body)
+				op.Description(doc.Section(3, "PATCH /ldap/user/{name}").Body)
 				op.RequestBody(putSchema)
 				op.JSONResponse(http.StatusOK, objectSchema, "The user")
 				op.ErrorResponse(http.StatusBadRequest, "Invalid attributes")
@@ -145,7 +145,7 @@ func registerUser(router *httprouter.Router, mgr *manager.Manager, auth bool, do
 				httpresponse.JSON(w, http.StatusOK, httprequest.Indent(r), user)
 			}, func(op httprequest.PathOperation) {
 				op.Summary("Delete a user")
-				op.Description(doc.Section(3, "DELETE /user/{name}").Body)
+				op.Description(doc.Section(3, "DELETE /ldap/user/{name}").Body)
 				op.JSONResponse(http.StatusOK, objectSchema, "The user, as it was")
 				op.ErrorResponse(http.StatusNotFound, "User not found")
 				security(op, auth, schema.ScopeLDAPWrite)
