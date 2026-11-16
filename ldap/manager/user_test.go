@@ -82,7 +82,7 @@ func Test_User(t *testing.T) {
 		got, err := users.GetUser(ctx, "alice")
 		require.NoError(t, err)
 		assert.Equal(t, user.DN, got.DN)
-		list, err := users.ListUsers(ctx, schema.ObjectListRequest{})
+		list, err := users.ListUsers(ctx, schema.UserListRequest{})
 		require.NoError(t, err)
 		assert.Equal(t, uint64(1), list.Count)
 
@@ -143,7 +143,7 @@ func Test_UserErrors(t *testing.T) {
 		require.NoError(t, err)
 		require.NoError(t, none.Connect(ctx))
 		defer none.Disconnect(ctx)
-		_, err = none.ListUsers(ctx, schema.ObjectListRequest{})
+		_, err = none.ListUsers(ctx, schema.UserListRequest{})
 		assert.ErrorIs(t, err, httpresponse.ErrNotImplemented)
 	})
 }

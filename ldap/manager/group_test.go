@@ -76,7 +76,7 @@ func Test_Group(t *testing.T) {
 		got, err := groups.GetGroup(ctx, "eng")
 		require.NoError(t, err)
 		assert.Equal(t, group.DN, got.DN)
-		list, err := groups.ListGroups(ctx, schema.ObjectListRequest{})
+		list, err := groups.ListGroups(ctx, schema.GroupListRequest{})
 		require.NoError(t, err)
 		assert.Equal(t, uint64(1), list.Count)
 
@@ -195,5 +195,72 @@ func Test_GroupLastMember(t *testing.T) {
 				assert.True(t, a.EqualFold(b), "itself")
 			})
 		}
+	})
+}
+
+func Test_GroupMemberLists(t *testing.T) {
+	test.ForEach(t, func(t *testing.T, ctx context.Context, server test.Server, m *manager.Manager) {
+		groups := groupsIn(t, ctx, server, m)
+		users := map[string]*schema.Object{}
+		for _, name := range []string{"alice", "bob", "carol"} {
+			user, err := groups.CreateUser(ctx, name, userAttrs(name, "first Passw0rd!"), true)
+			require.NoError(t, err)
+			users[user.DN] = user
+		}
+		for name, members := range map[string][]string{"eng": {"alice", "bob"}, "ops": {"bob"}, "empty": nil} {
+			_, err := groups.CreateGroup(ctx, name, nil)
+			require.NoError(t, err)
+			if len(members) > 0 {
+				_, err = groups.AddGroupUsers(ctx, name, members...)
+				require.NoError(t, err)
+			}
+		}
+
+		// The users which are members of a group, by name
+		names := func(list *schema.ObjectList) []string {
+			var result []string
+			for _, object := range list.Body {
+				if _, ok := users[object.DN]; ok {
+					dn, err := ldapv3.ParseDN(object.DN)
+					require.NoError(t, err)
+					result = append(result, dn.RDNs[0].Attributes[0].Value)
+				} else {
+					result = append(result, *object.Get("cn"))
+				}
+			}
+			slices.Sort(result)
+			return result
+		}
+		for group, want := range map[string][]string{"eng": {"alice", "bob"}, "ops": {"bob"}, "empty": nil} {
+			list, err := groups.ListUsers(ctx, schema.UserListRequest{Group: types.Ptr(group)})
+			require.NoError(t, err, group)
+			assert.Equal(t, uint64(len(want)), list.Count, group)
+			assert.Equal(t, want, names(list), group)
+		}
+
+		// With a filter as well
+		list, err := groups.ListUsers(ctx, schema.UserListRequest{ObjectListRequest: schema.ObjectListRequest{Filter: types.Ptr("(!(objectClass=*))")}, Group: types.Ptr("eng")})
+		require.NoError(t, err)
+		assert.Zero(t, list.Count)
+
+		// The groups a user is a member of
+		for user, want := range map[string][]string{"alice": {"eng"}, "bob": {"eng", "ops"}, "carol": nil} {
+			list, err := groups.ListGroups(ctx, schema.GroupListRequest{User: types.Ptr(user)})
+			require.NoError(t, err, user)
+			assert.Equal(t, want, names(list), user)
+		}
+
+		// After removing one
+		_, err = groups.RemoveGroupUsers(ctx, "eng", "bob")
+		require.NoError(t, err)
+		list, err = groups.ListGroups(ctx, schema.GroupListRequest{User: types.Ptr("bob")})
+		require.NoError(t, err)
+		assert.Equal(t, []string{"ops"}, names(list))
+
+		// Errors
+		_, err = groups.ListUsers(ctx, schema.UserListRequest{Group: types.Ptr("missing")})
+		assert.ErrorIs(t, err, httpresponse.ErrNotFound)
+		_, err = groups.ListGroups(ctx, schema.GroupListRequest{User: types.Ptr("missing")})
+		assert.ErrorIs(t, err, httpresponse.ErrNotFound)
 	})
 }

@@ -14,6 +14,13 @@
 
 package schema
 
+import (
+	"net/url"
+
+	// Packages
+	types "github.com/mutablelogic/go-server/pkg/types"
+)
+
 ////////////////////////////////////////////////////////////////////////////////
 // GLOBALS
 
@@ -25,3 +32,25 @@ var WellKnownUserClasses = []string{"user", "inetOrgPerson", "organizationalPers
 
 // WellKnownUserAuxiliaryClasses is the list of auxiliary user classes checked during auto-discovery.
 var WellKnownUserAuxiliaryClasses = []string{"posixAccount"}
+
+////////////////////////////////////////////////////////////////////////////////
+// REQUESTS
+
+// UserListRequest is a list request, which has only the members of the group, when it's set
+type UserListRequest struct {
+	ObjectListRequest
+	Group *string `json:"group,omitempty" help:"The name of a group whose members are listed"`
+}
+
+// Query returns the request as query parameters
+func (req UserListRequest) Query() url.Values {
+	values := req.ObjectListRequest.Query()
+	if req.Group != nil {
+		values.Set("group", *req.Group)
+	}
+	return values
+}
+
+func (req UserListRequest) String() string {
+	return types.Stringify(req)
+}

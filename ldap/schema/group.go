@@ -14,6 +14,13 @@
 
 package schema
 
+import (
+	"net/url"
+
+	// Packages
+	types "github.com/mutablelogic/go-server/pkg/types"
+)
+
 ////////////////////////////////////////////////////////////////////////////////
 // TYPES
 
@@ -30,3 +37,25 @@ var DefaultGroupObjectClasses = []string{"groupOfNames"}
 
 // WellKnownGroupClasses is the list of object classes checked during auto-discovery.
 var WellKnownGroupClasses = []string{"group", "posixGroup", "groupOfNames", "groupOfUniqueNames", "groupOfMembers"}
+
+////////////////////////////////////////////////////////////////////////////////
+// REQUESTS
+
+// GroupListRequest is a list request, which has only the groups of the user, when it's set
+type GroupListRequest struct {
+	ObjectListRequest
+	User *string `json:"user,omitempty" help:"The name of a user whose groups are listed"`
+}
+
+// Query returns the request as query parameters
+func (req GroupListRequest) Query() url.Values {
+	values := req.ObjectListRequest.Query()
+	if req.User != nil {
+		values.Set("user", *req.User)
+	}
+	return values
+}
+
+func (req GroupListRequest) String() string {
+	return types.Stringify(req)
+}

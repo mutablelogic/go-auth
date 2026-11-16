@@ -57,8 +57,9 @@ const (
 // PUBLIC METHODS
 
 // ListUsers returns the users, which are the entries directly under the
-// users' DN, which match the request's filter
-func (manager *Manager) ListUsers(ctx context.Context, req schema.ObjectListRequest) (_ *schema.ObjectList, err error) {
+// users' DN, which match the request's filter, and, when it has a group,
+// are its members
+func (manager *Manager) ListUsers(ctx context.Context, req schema.UserListRequest) (_ *schema.ObjectList, err error) {
 	ctx, endSpan := otel.StartSpan(manager.tracer, ctx, "ldapmanager.ListUsers", manager.spanAttrs(attribute.String("arg.req", types.Stringify(req)))...)
 	defer func() { endSpan(err) }()
 
@@ -68,7 +69,17 @@ func (manager *Manager) ListUsers(ctx context.Context, req schema.ObjectListRequ
 	if err != nil {
 		return nil, err
 	}
-	return manager.list(ctx, ldap.ScopeSingleLevel, base.String(), req)
+	list := req.ObjectListRequest
+	if req.Group != nil {
+		members, err := manager.membersFilter(ctx, base, *req.Group)
+		if err != nil {
+			return nil, err
+		} else if members == "" {
+			return &schema.ObjectList{}, nil
+		}
+		list.Filter = types.Ptr(andFilter(req.Filter, members))
+	}
+	return manager.list(ctx, ldap.ScopeSingleLevel, base.String(), list)
 }
 
 // GetUser returns the user with the name
