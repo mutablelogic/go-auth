@@ -165,7 +165,12 @@ func Test_ChangesConnectionLost(t *testing.T) {
 	defer cancel()
 	_, err = m.Create(ctx, "ou=a", schema.Attrs{"objectClass": {"organizationalUnit"}, "ou": {"a"}})
 	assert.ErrorIs(t, err, context.DeadlineExceeded)
-	assert.Eventually(t, func() bool { return d.Connections() == 2 }, 5*time.Second, 10*time.Millisecond)
+	// Run reconnects, which is published once its bind is answered
+	assert.Eventually(t, func() bool {
+		r.Lock()
+		defer r.Unlock()
+		return len(r.changes) == 3
+	}, 5*time.Second, 10*time.Millisecond)
 	stop()
 	require.NoError(t, <-done)
 
@@ -184,4 +189,39 @@ func normalize(lines []string) []string {
 		lines[i] = strings.ReplaceAll(line, ", ", ",")
 	}
 	return lines
+}
+
+func Test_ChangesNotOnFailure(t *testing.T) {
+	// A membership change which succeeds, but whose group can't be read
+	// after it, fails, and publishes nothing
+	d := test.NewFake(t, false)
+	group := "cn=eng,ou=groups,dc=example,dc=test"
+	user := "uid=alice,ou=users,dc=example,dc=test"
+	d.Set(group, map[string][]string{"objectClass": {"top", "groupOfNames"}, "cn": {"eng"}, "member": {group}})
+	d.Set(user, map[string][]string{"objectClass": {"top", "inetOrgPerson"}, "uid": {"alice"}})
+	var mu sync.Mutex
+	reads := 0
+	d.Stall = func(op uint8, dn string) bool {
+		if op != ldapv3.ApplicationSearchRequest || !strings.EqualFold(dn, group) {
+			return false
+		}
+		mu.Lock()
+		defer mu.Unlock()
+		reads++
+		return reads > 1
+	}
+	r := new(recorder)
+	m, err := manager.New(manager.WithUrl(d.URL("ldap")), manager.WithBaseDN("dc=example,dc=test"),
+		manager.WithUserDN("ou=users", "inetOrgPerson"), manager.WithGroupDN("ou=groups", "groupOfNames"), manager.WithBroadcaster(r))
+	require.NoError(t, err)
+	require.NoError(t, m.Connect(context.Background()))
+	defer m.Disconnect(context.Background())
+	r.take(t)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
+	defer cancel()
+	_, err = m.AddGroupUsers(ctx, "eng", "alice")
+	assert.ErrorIs(t, err, context.DeadlineExceeded)
+	assert.Contains(t, d.Entry(group)["member"], user, "the change was made")
+	assert.Empty(t, r.take(t), "and isn't published")
 }
