@@ -34,3 +34,32 @@ Returns the session of the request's token: who signed in, with which provider, 
 ### POST /auth/logout
 
 Signs out: ends the session of the request's token, and clears its cookie.
+
+## OAuth
+
+With OAuth, the server is an OAuth authorization server for its API, as MCP clients expect: they discover it, register, and are authorized by whoever's signed in, for a session of their own.
+
+- **Discovery:** the API's protected resource metadata (RFC 9728) names this server, whose metadata (RFC 8414) has its endpoints. A `401` says where the metadata is.
+- **Clients:** are public, with PKCE (S256), and aren't kept: a client's ID is its registration, encrypted. They redirect to loopback URIs, on any port, or to ones the server allows.
+- **Authorizing:** whoever's signed in authorizes a client, without being asked, or else signs in first, and returns. The code lasts a minute, and is exchanged once.
+- **Tokens:** a code is exchanged for a session of its own, with the scopes asked for which the person has, which ends with theirs, and can be revoked. There are no refresh tokens.
+
+### GET /.well-known/oauth-protected-resource
+
+Returns the API's protected resource metadata: the resource, which is the API's URL, and its authorization server, which is this one. It's also at the path with the API's prefix after it, such as `/.well-known/oauth-protected-resource/api`.
+
+### GET /.well-known/oauth-authorization-server
+
+Returns the authorization server's metadata: its issuer, which is the server's URL, its endpoints, and what they support.
+
+### POST /auth/register
+
+Registers a client (RFC 7591), with its `redirect_uris`, and returns its `client_id`. A redirect URI is a loopback one, such as `http://127.0.0.1:8080/callback`, or one the server allows.
+
+### GET /auth/authorize
+
+Authorizes a client, with PKCE: redirects to its redirect URI, with a `code`, the `state` and the issuer, as `iss`, or an `error`. When no one's signed in, it redirects to sign in, which returns here. Without a valid client, or redirect URI, it's `400`.
+
+### POST /auth/token
+
+Exchanges a `code`, once, with its `client_id`, `redirect_uri` and `code_verifier`, as a form, for a session's token, as `access_token`, which is a bearer token.

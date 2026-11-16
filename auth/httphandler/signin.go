@@ -45,6 +45,7 @@ type handlers struct {
 	sealer    *sealer
 	options
 	prefix string
+	used   *used
 }
 
 // providerParams is the path parameter of a provider
@@ -323,14 +324,7 @@ func (h *handlers) logout(w http.ResponseWriter, r *http.Request) {
 // callbackURL is the absolute URL a provider redirects back to: the base
 // URL, or else the request's scheme and host, with the provider's path
 func (h *handlers) callbackURL(r *http.Request, name string) string {
-	scheme, host := "http", r.Host
-	if r.TLS != nil {
-		scheme = "https"
-	}
-	if h.base != nil {
-		scheme, host = h.base.Scheme, h.base.Host
-	}
-	return scheme + "://" + host + types.JoinPath(h.prefix, "auth/"+url.PathEscape(name)+"/callback")
+	return h.origin(r) + types.JoinPath(h.prefix, "auth/"+url.PathEscape(name)+"/callback")
 }
 
 // sessionCookie returns the cookie of a session's token, for the API's

@@ -63,6 +63,7 @@ type ServerMetadata struct {
 	GrantTypesSupported               []string `json:"grant_types_supported,omitempty"`
 	CodeChallengeMethodsSupported     []string `json:"code_challenge_methods_supported,omitempty"`
 	TokenEndpointAuthMethodsSupported []string `json:"token_endpoint_auth_methods_supported,omitempty"`
+	IssParameterSupported             bool     `json:"authorization_response_iss_parameter_supported,omitempty"`
 }
 
 ///////////////////////////////////////////////////////////////////////////////

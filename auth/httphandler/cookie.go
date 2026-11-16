@@ -48,6 +48,13 @@ type sealer struct {
 
 var errCookie = errors.New("the sign-in's cookie isn't valid, or has expired")
 
+// What a value is sealed for
+const (
+	purposeSignIn = "signin"
+	purposeClient = "client"
+	purposeCode   = "code"
+)
+
 ///////////////////////////////////////////////////////////////////////////////
 // LIFECYCLE
 
@@ -69,7 +76,24 @@ func newSealer(key []byte) (*sealer, error) {
 
 // seal returns the sign-in, sealed, as a cookie's value
 func (s *sealer) seal(in signin) (string, error) {
-	data, err := json.Marshal(in)
+	return s.sealValue(purposeSignIn, in)
+}
+
+// open returns the sign-in a cookie's value is, when it's for the
+// provider, and hasn't expired
+func (s *sealer) open(value, provider string, now time.Time) (*signin, error) {
+	var out signin
+	if err := s.openValue(purposeSignIn, value, &out); err != nil || out.Provider != provider || now.Unix() > out.Expires {
+		return nil, errCookie
+	}
+	return &out, nil
+}
+
+// sealValue returns the value, as JSON, sealed for the purpose, which it
+// can only be opened for, so one of another purpose, such as a client's
+// ID, isn't taken for a code
+func (s *sealer) sealValue(purpose string, v any) (string, error) {
+	data, err := json.Marshal(v)
 	if err != nil {
 		return "", err
 	}
@@ -77,23 +101,21 @@ func (s *sealer) seal(in signin) (string, error) {
 	if _, err := rand.Read(nonce); err != nil {
 		return "", err
 	}
-	return base64.RawURLEncoding.EncodeToString(s.aead.Seal(nonce, nonce, data, nil)), nil
+	return base64.RawURLEncoding.EncodeToString(s.aead.Seal(nonce, nonce, data, []byte(purpose))), nil
 }
 
-// open returns the sign-in a cookie's value is, when it's for the
-// provider, and hasn't expired
-func (s *sealer) open(value, provider string, now time.Time) (*signin, error) {
+// openValue opens a value sealed for the purpose into v
+func (s *sealer) openValue(purpose, value string, v any) error {
 	data, err := base64.RawURLEncoding.DecodeString(value)
 	if err != nil || len(data) < s.aead.NonceSize() {
-		return nil, errCookie
+		return errCookie
 	}
-	plain, err := s.aead.Open(nil, data[:s.aead.NonceSize()], data[s.aead.NonceSize():], nil)
+	plain, err := s.aead.Open(nil, data[:s.aead.NonceSize()], data[s.aead.NonceSize():], []byte(purpose))
 	if err != nil {
-		return nil, errCookie
+		return errCookie
 	}
-	var out signin
-	if err := json.Unmarshal(plain, &out); err != nil || out.Provider != provider || now.Unix() > out.Expires {
-		return nil, errCookie
+	if err := json.Unmarshal(plain, v); err != nil {
+		return errCookie
 	}
-	return &out, nil
+	return nil
 }
