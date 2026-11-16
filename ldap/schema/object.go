@@ -33,8 +33,8 @@ import (
 // TYPES
 
 type Object struct {
-	DN         string `json:"dn"`
-	url.Values `json:"attrs,omitempty"`
+	DN     string `json:"dn"`
+	Values Attrs  `json:"attrs,omitempty"`
 }
 
 type PasswordResponse struct {
@@ -43,7 +43,7 @@ type PasswordResponse struct {
 }
 
 type ObjectPutRequest struct {
-	Attrs url.Values `json:"attrs"`
+	Attrs Attrs `json:"attrs"`
 }
 
 type ObjectPasswordRequest struct {
@@ -74,7 +74,7 @@ var (
 func NewObject(v ...string) *Object {
 	o := new(Object)
 	o.DN = strings.Join(v, ",")
-	o.Values = url.Values{}
+	o.Values = Attrs{}
 	return o
 }
 
@@ -294,7 +294,7 @@ func (o *Object) GetAll(attr string) []string {
 	return nil
 }
 
-func normalizeObjectAttrs(attrs url.Values, requireObjectClass bool) (url.Values, error) {
+func normalizeObjectAttrs(attrs Attrs, requireObjectClass bool) (url.Values, error) {
 	if len(attrs) == 0 {
 		return nil, auth.ErrBadParameter.With("attrs is required")
 	}
@@ -318,9 +318,11 @@ func normalizeObjectAttrs(attrs url.Values, requireObjectClass bool) (url.Values
 		}
 		seen[strings.ToLower(key)] = key
 
+		// Values are kept as they are, since a password can start or end
+		// with a space, and a binary value with any byte. An empty value is
+		// dropped, so no values, or only empty ones, deletes the attribute
 		normalized := make([]string, 0, len(values))
 		for _, value := range values {
-			value = strings.TrimSpace(value)
 			if value != "" {
 				normalized = append(normalized, value)
 			}
