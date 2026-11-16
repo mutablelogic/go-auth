@@ -3,12 +3,12 @@ import assert from 'node:assert/strict';
 import type { Client } from '@mutablelogic/go-server/api';
 import type { Change, ChangeFilter, ChangesController } from '@mutablelogic/go-server/broadcaster';
 import * as api from '../src/ldap/httpclient.ts';
-import { addable, classClosure, entryAttrs, entryForm, entryFormErrors, entrySchema, formFields, isPosix, namingAttr, passwordForm, passwordFormErrors, passwordRequest } from '../src/ldap/form.ts';
+import { addable, carryForm, classClosure, entryAttrs, entryForm, entryFormErrors, entrySchema, formFields, isPosix, namingAttr, namingChoices, newEntry, passwordForm, passwordFormErrors, passwordRequest } from '../src/ldap/form.ts';
 import type { AttributeType, ObjectClass } from '../src/ldap/schema.ts';
 import { listAll, schemaMatches } from '../src/ldap/controller.ts';
 import { GroupController, LdapStatusController, ObjectController, UserController } from '../src/ldap/controller.ts';
 import {
-    binarySize, dnKey, entryKind, escapeFilter, syntaxName, first, hasChildren, hasClass, isBranch, isCounter, memberCount, isBinary, parentDN, rdn, rdnValue, sameDN, searchFilter, splitDN, valueText, values,
+    binarySize, dnKey, entryKind, escapeDN, escapeFilter, syntaxName, first, hasChildren, hasClass, isBranch, isCounter, memberCount, isBinary, parentDN, rdn, rdnValue, sameDN, searchFilter, splitDN, valueText, values,
     type LdapObject,
 } from '../src/ldap/schema.ts';
 
@@ -420,4 +420,80 @@ test('schema page', async () => {
     assert.ok(schemaMatches(mail, '19200300'), 'its OID');
     assert.ok(schemaMatches(mail, 'mailbox'), 'its description');
     assert.ok(!schemaMatches(mail, 'phone'));
+});
+
+test('entries', async (t) => {
+    const all: ObjectClass[] = [
+        ...classes,
+        { numericOid: 'ou', name: ['organizationalUnit'], superClasses: ['top'], classKind: 'STRUCTURAL', must: ['ou'], may: ['description', 'l'] },
+    ];
+    const types2 = [...types, ...['ou', 'l'].map((n) => ({ numericOid: n, name: [n], syntax: '1.3.6.1.4.1.1466.115.121.1.15' }))];
+
+    await t.test('a DN value is escaped', () => {
+        assert.equal(escapeDN('Smith, Alice'), 'Smith\\, Alice');
+        assert.equal(escapeDN(' #a+b=c '), '\\ #a\\+b\\=c\\ ');
+        assert.equal(escapeDN('#x'), '\\#x');
+        assert.equal(escapeDN('a\\ '), 'a\\\\\\ ', 'a backslash, then a space last');
+    });
+
+    await t.test("an entry is named by what its class must have, best first", () => {
+        assert.deepEqual(namingChoices(entrySchema('entry', classClosure(all, ['organizationalUnit']), types2)), ['ou', 'description', 'l']);
+        assert.equal(namingChoices(entrySchema('entry', classClosure(all, ['inetOrgPerson']), types2))[0], 'cn');
+    });
+
+    await t.test('a new entry has its classes, and its name, in its DN', () => {
+        const form = entryForm(entrySchema('entry', classClosure(all, ['organizationalUnit']), types2, 'ou'));
+        assert.equal(namingAttr(form.schema), 'ou');
+        assert.deepEqual(formFields(form), ['description'], 'not its name');
+        form.name = 'Sales, EMEA';
+        form.values.description = 'Sellers';
+        assert.deepEqual(entryFormErrors(form), {});
+        assert.deepEqual(newEntry(form, 'dc=test'), {
+            dn: 'ou=Sales\\, EMEA,dc=test',
+            attrs: { description: ['Sellers'], objectClass: ['top', 'organizationalUnit'], ou: ['Sales, EMEA'] },
+        });
+    });
+
+    await t.test("what's typed is kept by attribute, when the class, or the attribute which names it, changes", () => {
+        const typed: Record<string, string> = {};
+        const added: string[] = [];
+        const person = (naming: string) => entrySchema('entry', classClosure(all, ['inetOrgPerson']), types2, naming);
+        let form = carryForm(person('cn'), undefined, typed, added);
+        form.name = 'Alice Smith';
+        form.values.uid = 'alice';
+        form.values.sn = 'Smith';
+        form.added.push('mail');
+        form.values.mail = 'alice@example.com';
+
+        // Named by uid: the name is alice, and Alice Smith is the cn, which
+        // it must have
+        form = carryForm(person('uid'), form, typed, added);
+        assert.equal(form.name, 'alice');
+        assert.equal(form.values.cn, 'Alice Smith');
+        assert.deepEqual(entryFormErrors(form), {});
+        assert.deepEqual(newEntry(form, 'dc=test').attrs.cn, ['Alice Smith']);
+
+        // An organizational unit can't have a mail address, which isn't
+        // added, or sent, but is kept, for a change back
+        form = carryForm(entrySchema('entry', classClosure(all, ['organizationalUnit']), types2, 'ou'), form, typed, added);
+        assert.equal(form.name, '', 'no ou was typed');
+        assert.deepEqual(form.added, []);
+        form.name = 'sales';
+        assert.equal(newEntry(form, 'dc=test').attrs.mail, undefined);
+        form = carryForm(person('uid'), form, typed, added);
+        assert.equal(form.name, 'alice');
+        assert.equal(form.values.mail, 'alice@example.com');
+        assert.deepEqual(form.added, ['mail'], 'shown again');
+        assert.deepEqual(newEntry(form, 'dc=test').attrs.mail, ['alice@example.com']);
+    });
+
+    await t.test("an existing entry is named by its RDN's attribute", () => {
+        const person: LdapObject = { dn: 'cn=Bob Jones,ou=x,dc=test', attrs: { objectClass: ['inetOrgPerson'], cn: ['Bob Jones'], sn: ['Jones'], uid: ['bob'] } };
+        const form = entryForm(entrySchema('entry', classClosure(all, ['inetOrgPerson']), types2, 'cn'), person);
+        assert.equal(form.name, 'Bob Jones');
+        assert.ok(formFields(form).includes('uid'), 'its uid, which is not its name');
+        assert.ok(!formFields(form).includes('cn'));
+        form.name = 'Robert Jones';
+        assert.deepEqual(entryAttrs(form), { cn: ['Robert Jones'] });
+    });
 });

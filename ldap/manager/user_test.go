@@ -353,7 +353,7 @@ func Test_FindUserByName(t *testing.T) {
 }
 
 func Test_CountersNotDeleted(t *testing.T) {
-	// The entries with the next IDs can't be deleted, by a relative or
+	// The entries with the next IDs can't be deleted, or changed, by a relative or
 	// absolute DN, in any case, as the IDs would start again
 	d := test.NewFake(t, false)
 	d.Set("cn=lastuid,dc=example,dc=test", map[string][]string{"objectClass": {"top", "device"}, "cn": {"lastuid"}, "serialNumber": {"1005"}})
@@ -371,6 +371,13 @@ func Test_CountersNotDeleted(t *testing.T) {
 	}
 	assert.NotNil(t, d.Entry("cn=lastuid,dc=example,dc=test"))
 	assert.NotNil(t, d.Entry("cn=lastgid,dc=example,dc=test"))
+
+	// Nor changed, or renamed, which the next IDs depend on
+	_, err = m.Update(ctx, "cn=lastuid", schema.Attrs{"serialNumber": nil})
+	assert.ErrorIs(t, err, httpresponse.ErrForbidden)
+	_, err = m.Update(ctx, "cn=lastgid", schema.Attrs{"cn": {"other"}})
+	assert.ErrorIs(t, err, httpresponse.ErrForbidden)
+	assert.Equal(t, []string{"1005"}, d.Entry("cn=lastuid,dc=example,dc=test")["serialNumber"])
 	_, err = m.Delete(ctx, "cn=other")
 	assert.NoError(t, err, "other entries can")
 }

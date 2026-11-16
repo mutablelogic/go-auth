@@ -285,6 +285,14 @@ export function rdn(dn: string): string {
     return splitDN(dn)[0] ?? '';
 }
 
+// rdnLabel returns the DN's first RDN, with its value unescaped, such as
+// ou=Sales, EMEA, to show it, rather than ou=Sales\2C EMEA
+export function rdnLabel(dn: string): string {
+    const first = rdn(dn);
+    const equals = first.indexOf('=');
+    return equals < 0 ? first : `${first.slice(0, equals)}=${rdnValue(dn)}`;
+}
+
 // rdnValue returns the value of the DN's first RDN, unescaped, such as alice
 export function rdnValue(dn: string): string {
     const first = rdn(dn);
@@ -308,6 +316,20 @@ export function sameDN(a: string, b: string): boolean {
 // is the same for DNs which are the same, such as for a set of them
 export function dnKey(dn: string): string {
     return splitDN(dn).map((part) => part.toLowerCase()).join(',');
+}
+
+// escapeDN escapes a value for an RDN (RFC 4514): a comma, plus, quote,
+// backslash, angle brackets, semicolon and equals, a space or # first, and
+// a space last, so it's one value
+export function escapeDN(value: string): string {
+    let escaped = '';
+    for (let i = 0; i < value.length; i++) {
+        const c = value[i];
+        const first = i === 0 && (c === ' ' || c === '#');
+        const last = i === value.length - 1 && c === ' ';
+        escaped += ',+"\\<>;='.includes(c) || first || last ? `\\${c}` : c;
+    }
+    return escaped;
 }
 
 // splitDN returns the RDNs of the DN, at commas which aren't escaped,
