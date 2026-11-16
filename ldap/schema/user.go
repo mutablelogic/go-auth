@@ -38,13 +38,13 @@ var WellKnownUserAuxiliaryClasses = []string{"posixAccount"}
 
 // UserListRequest is a list request, which has only the members of the group, when it's set
 type UserListRequest struct {
-	ObjectListRequest
+	ListRequest
 	Group *string `json:"group,omitempty" help:"The name of a group whose members are listed"`
 }
 
 // Query returns the request as query parameters
 func (req UserListRequest) Query() url.Values {
-	values := req.ObjectListRequest.Query()
+	values := req.ListRequest.Query()
 	if req.Group != nil {
 		values.Set("group", *req.Group)
 	}

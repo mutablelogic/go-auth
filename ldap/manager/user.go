@@ -69,7 +69,7 @@ func (manager *Manager) ListUsers(ctx context.Context, req schema.UserListReques
 	if err != nil {
 		return nil, err
 	}
-	list := req.ObjectListRequest
+	list := req.ListRequest
 	if req.Group != nil {
 		members, err := manager.membersFilter(ctx, base, *req.Group)
 		if err != nil {

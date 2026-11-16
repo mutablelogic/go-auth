@@ -41,17 +41,30 @@ const filterAll = "(objectClass=*)"
 ///////////////////////////////////////////////////////////////////////////////
 // PUBLIC METHODS
 
-// List returns the entries under the base DN which match the request's
-// filter, or all of them, with its attributes, or all of them. Count is the
-// number which match, and Body those from the offset, up to the limit, or
-// schema.MaxListEntries.
+// List returns the entries under the base DN, or, with a prefix, in the
+// subtree of its DN, relative to the base DN, or under it, which match the
+// request's filter, or all of them, with its attributes, or all of them.
+// Count is the number which match, and Body those from the offset, up to
+// the limit, or schema.MaxListEntries.
 func (manager *Manager) List(ctx context.Context, req schema.ObjectListRequest) (_ *schema.ObjectList, err error) {
 	ctx, endSpan := otel.StartSpan(manager.tracer, ctx, "ldapmanager.List", manager.spanAttrs(attribute.String("arg.req", types.Stringify(req)))...)
 	defer func() { endSpan(err) }()
 
 	manager.mu.Lock()
 	defer manager.mu.Unlock()
-	return manager.list(ctx, ldap.ScopeWholeSubtree, manager.dn.String(), req)
+	base := manager.dn
+	if req.Prefix != nil && *req.Prefix != "" {
+		if base, err = manager.absdn(*req.Prefix); err != nil {
+			return nil, err
+		}
+
+		// It's there, since 389 DS lists nothing, rather than not found, in
+		// pages from a DN which isn't
+		if _, err := manager.get(ctx, base.String(), "1.1"); err != nil {
+			return nil, err
+		}
+	}
+	return manager.list(ctx, ldap.ScopeWholeSubtree, base.String(), req.ListRequest)
 }
 
 // Get returns the entry, whose DN is under the base DN, or relative to it
@@ -164,7 +177,7 @@ func (manager *Manager) update(ctx context.Context, absdn *schema.DN, attrs sche
 
 // list returns the entries in the scope of the absolute DN which match the
 // request's filter, as List does
-func (manager *Manager) list(ctx context.Context, scope int, dn string, req schema.ObjectListRequest) (*schema.ObjectList, error) {
+func (manager *Manager) list(ctx context.Context, scope int, dn string, req schema.ListRequest) (*schema.ObjectList, error) {
 	limit := listLimit(req.Limit)
 	filter := filterAll
 	if req.Filter != nil {

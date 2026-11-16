@@ -16,6 +16,7 @@ package manager_test
 
 import (
 	"context"
+	"slices"
 	"strings"
 	"testing"
 
@@ -60,7 +61,7 @@ func Test_Object(t *testing.T) {
 		assert.Equal(t, created.DN, got.DN)
 
 		// List, with a filter
-		list, err := m.List(ctx, schema.ObjectListRequest{Filter: types.Ptr("(ou=projects)")})
+		list, err := m.List(ctx, schema.ObjectListRequest{ListRequest: schema.ListRequest{Filter: types.Ptr("(ou=projects)")}})
 		require.NoError(t, err)
 		assert.NotZero(t, list.Count)
 		found := false
@@ -148,7 +149,7 @@ func Test_ObjectErrors(t *testing.T) {
 		_, err = m.Delete(ctx, "ou=a,"+ou)
 		assert.ErrorIs(t, err, httpresponse.ErrConflict, "has children")
 
-		_, err = m.List(ctx, schema.ObjectListRequest{Filter: types.Ptr("ou=a")})
+		_, err = m.List(ctx, schema.ObjectListRequest{ListRequest: schema.ListRequest{Filter: types.Ptr("ou=a")}})
 		assert.ErrorIs(t, err, httpresponse.ErrBadRequest, "a filter without parentheses")
 	})
 }
@@ -164,18 +165,18 @@ func Test_ObjectList(t *testing.T) {
 		filter := types.Ptr("(description=" + tag + ")")
 
 		// Count is all which match, and the body is from the offset, up to the limit
-		list, err := m.List(ctx, schema.ObjectListRequest{Filter: filter})
+		list, err := m.List(ctx, schema.ObjectListRequest{ListRequest: schema.ListRequest{Filter: filter}})
 		require.NoError(t, err)
 		assert.Equal(t, uint64(3), list.Count)
 		assert.Len(t, list.Body, 3)
 
-		list, err = m.List(ctx, schema.ObjectListRequest{OffsetLimit: schema.OffsetLimit{Offset: 1, Limit: types.Ptr(uint64(1))}, Filter: filter})
+		list, err = m.List(ctx, schema.ObjectListRequest{ListRequest: schema.ListRequest{OffsetLimit: schema.OffsetLimit{Offset: 1, Limit: types.Ptr(uint64(1))}, Filter: filter}})
 		require.NoError(t, err)
 		assert.Equal(t, uint64(3), list.Count)
 		assert.Len(t, list.Body, 1)
 
 		// Only the attributes asked for
-		list, err = m.List(ctx, schema.ObjectListRequest{Filter: filter, Attr: []string{"ou"}})
+		list, err = m.List(ctx, schema.ObjectListRequest{ListRequest: schema.ListRequest{Filter: filter, Attr: []string{"ou"}}})
 		require.NoError(t, err)
 		require.NotEmpty(t, list.Body)
 		assert.NotNil(t, list.Body[0].Get("ou"))
@@ -206,4 +207,47 @@ func Test_ObjectTrace(t *testing.T) {
 			assert.NotContains(t, value, "secret", key)
 		}
 	}, manager.WithTracer(tracer))
+}
+
+func Test_ObjectListPrefix(t *testing.T) {
+	// A prefix lists the subtree of its DN, which is relative to the base
+	// DN, or under it
+	test.ForEach(t, func(t *testing.T, ctx context.Context, server test.Server, m *manager.Manager) {
+		ou := test.OU(t, ctx, m)
+		for _, dn := range []string{"ou=a," + ou, "ou=b,ou=a," + ou, "ou=c," + ou} {
+			name := strings.TrimPrefix(strings.SplitN(dn, ",", 2)[0], "ou=")
+			_, err := m.Create(ctx, dn, unit(name))
+			require.NoError(t, err)
+		}
+		dns := func(list *schema.ObjectList) []string {
+			var result []string
+			for _, object := range list.Body {
+				result = append(result, strings.ToLower(strings.SplitN(object.DN, ",", 2)[0]))
+			}
+			slices.Sort(result)
+			return result
+		}
+
+		// The OU, and those under it
+		list, err := m.List(ctx, schema.ObjectListRequest{Prefix: types.Ptr(ou)})
+		require.NoError(t, err)
+		assert.Equal(t, uint64(4), list.Count)
+
+		// A subtree, relative to the base DN, which has the entry itself
+		rel := strings.TrimSuffix("ou=a,"+ou, ","+server.BaseDN)
+		list, err = m.List(ctx, schema.ObjectListRequest{Prefix: types.Ptr(rel)})
+		require.NoError(t, err)
+		assert.Equal(t, []string{"ou=a", "ou=b"}, dns(list))
+
+		// With a filter
+		list, err = m.List(ctx, schema.ObjectListRequest{ListRequest: schema.ListRequest{Filter: types.Ptr("(ou=b)")}, Prefix: types.Ptr(ou)})
+		require.NoError(t, err)
+		assert.Equal(t, []string{"ou=b"}, dns(list))
+
+		// A prefix which isn't there, or isn't a DN
+		_, err = m.List(ctx, schema.ObjectListRequest{Prefix: types.Ptr("ou=missing," + ou)})
+		assert.ErrorIs(t, err, httpresponse.ErrNotFound)
+		_, err = m.List(ctx, schema.ObjectListRequest{Prefix: types.Ptr("not a dn")})
+		assert.ErrorIs(t, err, httpresponse.ErrBadRequest)
+	})
 }

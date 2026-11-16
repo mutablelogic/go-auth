@@ -51,10 +51,18 @@ type ObjectPasswordRequest struct {
 	New *string `json:"new,omitempty"`
 }
 
-type ObjectListRequest struct {
+// ListRequest is the paging, filter and attributes of a list of entries
+type ListRequest struct {
 	OffsetLimit
 	Filter *string  `json:"filter,omitempty" help:"Filter"`
 	Attr   []string `json:"attr,omitempty" help:"Attributes to return"`
+}
+
+// ObjectListRequest is a list request, of the entries under the base DN,
+// or, with a prefix, the subtree of the DN under it
+type ObjectListRequest struct {
+	ListRequest
+	Prefix *string `json:"prefix,omitempty" help:"DN of the subtree, relative to the base DN"`
 }
 
 type ObjectList struct {
@@ -106,6 +114,10 @@ func (o ObjectPasswordRequest) String() string {
 }
 
 func (o ObjectList) String() string {
+	return types.Stringify(o)
+}
+
+func (o ListRequest) String() string {
 	return types.Stringify(o)
 }
 
@@ -228,7 +240,17 @@ func (req ObjectPutRequest) ValidateUpdate() (url.Values, error) {
 	return normalizeObjectAttrs(req.Attrs, false)
 }
 
+// Query returns the request as query parameters
 func (req ObjectListRequest) Query() url.Values {
+	values := req.ListRequest.Query()
+	if req.Prefix != nil {
+		values.Set("prefix", *req.Prefix)
+	}
+	return values
+}
+
+// Query returns the request as query parameters
+func (req ListRequest) Query() url.Values {
 	values := url.Values{}
 	if req.Offset > 0 {
 		values.Set("offset", strconv.FormatUint(req.Offset, 10))
