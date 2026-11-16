@@ -8,7 +8,7 @@ import type { AttributeType, ObjectClass } from '../src/ldap/schema.ts';
 import { listAll } from '../src/ldap/controller.ts';
 import { GroupController, LdapStatusController, ObjectController, UserController } from '../src/ldap/controller.ts';
 import {
-    binarySize, dnKey, entryKind, escapeFilter, first, hasChildren, hasClass, memberCount, isBinary, parentDN, rdn, rdnValue, sameDN, searchFilter, splitDN, valueText, values,
+    binarySize, dnKey, entryKind, escapeFilter, first, hasChildren, hasClass, isBranch, memberCount, isBinary, parentDN, rdn, rdnValue, sameDN, searchFilter, splitDN, valueText, values,
     type LdapObject,
 } from '../src/ldap/schema.ts';
 
@@ -394,4 +394,10 @@ test('objects', async () => {
     assert.equal(entryKind({ dn: 'uid=a', attrs: { objectClass: ['inetOrgPerson', 'posixAccount'] } }), 'person');
     assert.equal(entryKind({ dn: 'cn=a', attrs: { objectClass: ['groupOfUniqueNames'] } }), 'group');
     assert.equal(entryKind({ dn: 'cn=a', attrs: { objectClass: ['device'] } }), 'entry');
+
+    // Branches are in the tree, and leaves in the table
+    assert.ok(isBranch({ dn: 'ou=a', attrs: { objectClass: ['organizationalUnit'], hasSubordinates: ['FALSE'] } }), 'an empty container');
+    assert.ok(isBranch({ dn: 'cn=a', attrs: { objectClass: ['device'], hasSubordinates: ['TRUE'] } }), 'an entry with entries under it');
+    assert.ok(!isBranch({ dn: 'uid=a', attrs: { objectClass: ['inetOrgPerson'], hasSubordinates: ['FALSE'] } }));
+    assert.ok(!isBranch({ dn: 'uid=a', attrs: { objectClass: ['inetOrgPerson'] } }), "a person, when the directory doesn't say");
 });

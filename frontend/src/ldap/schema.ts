@@ -237,6 +237,13 @@ export function entryKind(object: LdapObject): 'container' | 'person' | 'group' 
     return 'entry';
 }
 
+// isBranch returns whether an entry is a branch, shown in a tree: one which
+// has entries under it, or is a container, such as an organizational unit,
+// which can have them, rather than a leaf, such as a person
+export function isBranch(object: LdapObject): boolean {
+    return hasChildren(object) === true || entryKind(object) === 'container';
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 // DNS
 
