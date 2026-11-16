@@ -58,6 +58,24 @@ export function entrySchema(kind: EntryKind, classes: readonly ObjectClass[], ty
     return { kind, classes: classes.flatMap((c) => c.name?.slice(0, 1) ?? []), must, may, types: byName };
 }
 
+// classClosure returns the classes, by any of their names, or OIDs, and
+// those they inherit from, in the directory's order
+export function classClosure(all: readonly ObjectClass[], names: readonly string[]): ObjectClass[] {
+    const found = new Set<ObjectClass>();
+    const matches = (c: ObjectClass, name: string) =>
+        c.numericOid.toLowerCase() === name.toLowerCase() || (c.name ?? []).some((n) => n.toLowerCase() === name.toLowerCase());
+    const walk = (name: string) => {
+        for (const c of all) {
+            if (!found.has(c) && matches(c, name)) {
+                found.add(c);
+                (c.superClasses ?? []).forEach(walk);
+            }
+        }
+    };
+    names.forEach(walk);
+    return all.filter((c) => found.has(c));
+}
+
 // hasClass returns whether the schema's entries have the object class
 export function schemaHasClass(schema: EntrySchema, name: string): boolean {
     return schema.classes.some((c) => c.toLowerCase() === name.toLowerCase());
@@ -287,12 +305,19 @@ export function entryFormErrors(form: EntryForm): EntryFormErrors {
 export function entryAttrs(form: EntryForm): Attrs {
     const attrs: Attrs = {};
     for (const name of formFields(form)) {
-        const value = (form.values[name] ?? '').trim() || (defaultValue(form, name) ?? '');
+        const raw = form.values[name] ?? '';
+        const value = raw.trim() || (defaultValue(form, name) ?? '');
         if (!form.original) {
             if (value) {
                 attrs[name] = [value];
             }
-        } else if (value !== (first(form.original, name) ?? '')) {
+            continue;
+        }
+
+        // An attribute which wasn't changed isn't sent, even when it has
+        // spaces around it, which the directory keeps
+        const original = first(form.original, name) ?? '';
+        if (raw !== original && value !== original) {
             attrs[name] = value ? [value] : null;
         }
     }
@@ -301,9 +326,13 @@ export function entryAttrs(form: EntryForm): Attrs {
             attrs.userPassword = [form.password];
         }
     } else {
+        // A rename replaces the name's value, first, as the server renames
+        // with it, and keeps the attribute's others
         const name = form.name.trim();
-        if (name !== rdnValue(form.original.dn)) {
-            attrs[rdnAttr(form.original.dn)] = [name];
+        const old = rdnValue(form.original.dn);
+        if (name !== old) {
+            const attr = rdnAttr(form.original.dn);
+            attrs[attr] = [name, ...values(form.original, attr).filter((v) => v !== old && v !== name)];
         }
     }
     return attrs;

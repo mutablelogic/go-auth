@@ -3,8 +3,9 @@ import assert from 'node:assert/strict';
 import type { Client } from '@mutablelogic/go-server/api';
 import type { Change, ChangeFilter, ChangesController } from '@mutablelogic/go-server/broadcaster';
 import * as api from '../src/ldap/httpclient.ts';
-import { addable, entryAttrs, entryForm, entryFormErrors, entrySchema, formFields, isPosix, namingAttr, passwordForm, passwordFormErrors, passwordRequest } from '../src/ldap/form.ts';
+import { addable, classClosure, entryAttrs, entryForm, entryFormErrors, entrySchema, formFields, isPosix, namingAttr, passwordForm, passwordFormErrors, passwordRequest } from '../src/ldap/form.ts';
 import type { AttributeType, ObjectClass } from '../src/ldap/schema.ts';
+import { listAll } from '../src/ldap/controller.ts';
 import { GroupController, LdapStatusController, ObjectController, UserController } from '../src/ldap/controller.ts';
 import {
     binarySize, escapeFilter, first, hasClass, isBinary, parentDN, rdn, rdnValue, sameDN, searchFilter, splitDN, valueText, values,
@@ -312,6 +313,26 @@ test('forms', async (t) => {
         assert.deepEqual(entryAttrs(form).uid, ['alicia']);
     });
 
+    await t.test("an existing user's schema is of its own classes, by name or OID, and their superiors", () => {
+        assert.deepEqual(classClosure(classes, ['inetOrgPerson']).map((c) => c.name?.[0]), ['inetOrgPerson', 'organizationalPerson', 'person', 'top']);
+        assert.deepEqual(classClosure(classes, ['4']).map((c) => c.name?.[0]), ['posixAccount', 'top'], 'by OID');
+        const own = entrySchema('user', classClosure(classes, ['top', 'inetOrgPerson']), types);
+        const form = entryForm(own, alice);
+        assert.ok(!formFields(form).includes('homeDirectory'), 'not a posixAccount');
+        assert.deepEqual(entryFormErrors(form), {});
+    });
+
+    await t.test("what wasn't changed isn't sent, even with spaces, and a rename keeps the name's other values", () => {
+        const spaced: LdapObject = { ...alice, attrs: { ...alice.attrs, description: [' Spaced '], uid: ['alice', 'login-alias'] } };
+        const form = entryForm(schema, spaced);
+        assert.deepEqual(entryAttrs(form), {});
+        form.values.description = 'Spaced';
+        assert.deepEqual(entryAttrs(form), { description: ['Spaced'] });
+        form.values.description = ' Spaced ';
+        form.name = 'alicia';
+        assert.deepEqual(entryAttrs(form), { uid: ['alicia', 'login-alias'] });
+    });
+
     await t.test('a password is generated, or typed twice', () => {
         const form = passwordForm();
         assert.deepEqual(passwordFormErrors(form), {});
@@ -324,4 +345,15 @@ test('forms', async (t) => {
         assert.deepEqual(passwordFormErrors(form), {});
         assert.deepEqual(passwordRequest(form), { new: 'x' });
     });
+});
+
+test('listAll', async () => {
+    const pages: [number, number][] = [];
+    const items = await listAll(async (offset, limit) => {
+        pages.push([offset, limit]);
+        return { count: 2500, body: Array.from({ length: Math.min(limit, 2500 - offset) }, (_, i) => offset + i) };
+    });
+    assert.equal(items.length, 2500);
+    assert.deepEqual(pages, [[0, 1000], [1000, 1000], [2000, 1000]]);
+    assert.deepEqual(await listAll(async () => ({ count: 5 })), [], 'an empty page');
 });

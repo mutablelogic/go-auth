@@ -13,7 +13,7 @@ go-auth's web UI modules, which any app can include, and the auth server's app, 
 | `@mutablelogic/go-auth/credential/view` | `ga-credentials`, a Credentials page; `credentialModule`, which adds it to an app; and its parts, `credentialColumns`, `credentialFormView`, `passphraseFormView` and `valueView` |
 | `@mutablelogic/go-auth/cert` | The certificate API's types and client, the forms which create and renew certificates, PEM encoding, and `CertController` and `SubjectController`, which keep the certificates and subjects in a go-server `ListController` |
 | `@mutablelogic/go-auth/cert/view` | `ga-certificates`, a page of certificate authorities or leaf certificates; `ga-subjects`, a page of subjects; `certModule`, which adds both pages to an app; and its parts, `authorityColumns`, `certificateColumns`, `certDetailsView`, `certFormView` and `renewFormView` |
-| `@mutablelogic/go-auth/ldap` | The LDAP API's types and client, DN, attribute and filter helpers, the entry and password forms, `loadEntrySchema`, and `LdapStatusController`, `UserController`, `GroupController`, `ObjectController` and `SchemaController` |
+| `@mutablelogic/go-auth/ldap` | The LDAP API's types and client, DN, attribute and filter helpers, the entry and password forms, `loadEntrySchemas`, `listAll` and `listAllGroups`, and `LdapStatusController`, `UserController`, `GroupController`, `ObjectController` and `SchemaController` |
 | `@mutablelogic/go-auth/ldap/view` | `ga-ldap-users`, the Users page; `LdapPage`, the pages' base, with the connection's status in their header; `ldapModule`, which adds the LDAP pages to an app; and its parts, `userColumns`, `entryFormView`, `passwordFormView`, `attrsView` and `secretView` |
 
 Including Credentials in another app:
@@ -38,7 +38,7 @@ credentialModule({ nav, router, client, root: document.querySelector('main')!, n
 - **Configuration:** the auth server's app includes Certificates only when `/config.json` has a `cert` section, which a server built with certificates registers. Its `root` says whether a root is stored, without which certificate authorities can't be created.
 - **LDAP:** `ldapModule` adds an LDAP section, with Users and Groups, when the server has their DNs, Objects and Schema. Each page's header shows Connected or Disconnected, with the host and user, from the `ldap` section of `/config.json`, and then the connection's changes. The app includes it only when `/config.json` has that section.
 - **Users:** a table of users, searched by name, full name, mail and surname. A user's panel shows its groups and attributes. It adds the user to a group, or removes it from one, sets its password, or generates one, which is shown once, edits it, and deletes it.
-- **Entry forms:** a user's form is made from the classes users are created with (`ldap/class?for=user`): what they must have is required, what's common is offered, and Add an attribute adds any other they may have. Attributes the server sets, such as the name, `uidNumber`, and a POSIX group ID which is the user ID, aren't shown. An empty home directory is `/home/` and the name.
+- **Entry forms:** a new user's form is made from the classes users are created with (`ldap/class?for=user`), and an existing user's from its own classes, with those they inherit from: what they must have is required, what's common is offered, and Add an attribute adds any other they may have. Attributes the server sets, such as the name, `uidNumber`, and a POSIX group ID which is the user ID, aren't shown. An empty home directory is `/home/` and the name.
 
 ## Layout
 

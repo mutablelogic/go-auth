@@ -9,8 +9,8 @@ import { until } from 'lit/directives/until.js';
 import type { Column, TableActionError, TableSearch, TableToolbarAction } from '@mutablelogic/go-server/list/view';
 import { PanelController, type PanelAction } from '@mutablelogic/go-server/panel';
 import { UserController } from './controller.ts';
-import { loadEntrySchema } from './controller.ts';
-import { entryAttrs, entryForm, entryFormErrors, passwordForm, passwordFormErrors, passwordRequest, type EntryFormErrors, type EntrySchema, type PasswordForm, type PasswordFormErrors } from './form.ts';
+import { listAllGroups, loadEntrySchemas, type EntrySchemas } from './controller.ts';
+import { entryAttrs, entryForm, entryFormErrors, passwordForm, passwordFormErrors, passwordRequest, type EntryFormErrors, type PasswordForm, type PasswordFormErrors } from './form.ts';
 import * as api from './httpclient.ts';
 import { LdapPage, attrsView, entryFormView, secretView } from './parts.ts';
 import { first, rdnValue, sameDN, type LdapObject } from './schema.ts';
@@ -99,7 +99,7 @@ export class LdapUsersElement extends LdapPage {
 
     // schema is the users' object classes and attributes, which the form is
     // made from, loaded when it's first shown
-    private schema?: Promise<EntrySchema>;
+    private schemas?: Promise<EntrySchemas>;
 
     // opened counts what's opened in the panel, so a response which arrives
     // after what it was for was closed, or another opened, is ignored
@@ -108,7 +108,11 @@ export class LdapUsersElement extends LdapPage {
     constructor() {
         super();
         this.heading = 'Users';
-        this.panel.onClose(() => this.controller?.list.close());
+        // Closing the panel discards what's still opening in it
+        this.panel.onClose(() => {
+            this.opened++;
+            this.controller?.list.close();
+        });
         this.panel.onError((error, action) => this.notifications?.error(`${action.label} didn't work`, error));
     }
 
@@ -189,12 +193,13 @@ export class LdapUsersElement extends LdapPage {
     // groupsView is the groups the user is in, each of which it's removed
     // from when its tag is closed
     private groupsView(user: LdapObject): unknown {
+        // Without groups, which the manager can be without, there are none
         const client = this.client;
-        if (!client) {
+        if (!client || !this.current?.group_dn) {
             return nothing;
         }
         const name = rdnValue(user.dn);
-        const groups = api.listGroups(client, { user: name, attr: ['cn'], limit: 1000 }).then((page) => page.body ?? []);
+        const groups = listAllGroups(client, { user: name, attr: ['cn'] });
         return until(groups.then((found) => html`
             <p class="helper">${found.length ? 'Groups' : 'It isn\'t in any groups'}</p>
             <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 0.25rem; margin-bottom: 1rem">
@@ -220,21 +225,30 @@ export class LdapUsersElement extends LdapPage {
         if (!this.client) {
             return;
         }
+
+        // A new user isn't the one selected, which the list would show again
+        // in place of the form, when it's loaded again
+        if (!user) {
+            this.controller?.list.close();
+        }
+
+        // A new user's form is of the classes users are created with, and an
+        // existing one's of its own classes
         const opened = this.opened;
-        this.schema ??= loadEntrySchema(this.client, 'user');
-        let schema: EntrySchema;
+        this.schemas ??= loadEntrySchemas(this.client, 'user');
+        let schemas: EntrySchemas;
         try {
-            schema = await this.schema;
+            schemas = await this.schemas;
         } catch (error) {
-            // It's loaded again next time
-            this.schema = undefined;
+            // They're loaded again next time
+            this.schemas = undefined;
             throw error;
         }
         if (this.opened !== opened) {
             return;
         }
 
-        const form = entryForm(schema, user);
+        const form = entryForm(user ? schemas.of(user) : schemas.created, user);
         let errors: EntryFormErrors = {};
         const rerender = () => {
             this.body = { kind: 'form', dn: user?.dn, content: entryFormView(form, rerender, errors) };
@@ -260,17 +274,27 @@ export class LdapUsersElement extends LdapPage {
                 if (!user) {
                     const created = await api.createUser(this.client, form.name.trim(), attrs, form.allocateGID);
                     this.notifications?.push({ kind: 'success', title: `${rdnValue(created.dn)} was created` });
-                    this.show(created);
+                    this.select(created);
                 } else if (Object.keys(attrs).length) {
                     const updated = await api.updateUser(this.client, rdnValue(user.dn), attrs);
                     this.notifications?.push({ kind: 'success', title: `${rdnValue(updated.dn)} was changed` });
-                    this.show(updated);
+                    this.select(updated);
                 } else {
                     this.notifications?.push({ kind: 'info', title: 'Nothing was changed' });
                     this.show(user);
                 }
             },
         }]);
+    }
+
+    // select opens the user in the list, which shows it, so the list's
+    // selection is the user the panel shows, such as a new, or renamed, one
+    private select(user: LdapObject) {
+        this.controller?.list.open(user);
+        // The list shows it, unless it was already selected
+        if (this.body?.kind !== 'user' || !this.body.dn || !sameDN(this.body.dn, user.dn)) {
+            this.show(user);
+        }
     }
 
     // addToGroup shows the groups the user can be added to, and adds it to
@@ -283,11 +307,11 @@ export class LdapUsersElement extends LdapPage {
         const name = rdnValue(user.dn);
         const state = { group: '' };
         const choices = Promise.all([
-            api.listGroups(client, { attr: ['cn'], limit: 1000 }),
-            api.listGroups(client, { user: name, attr: ['cn'], limit: 1000 }),
+            listAllGroups(client, { attr: ['cn'] }),
+            listAllGroups(client, { user: name, attr: ['cn'] }),
         ]).then(([all, member]) => {
-            const names = (member.body ?? []).map((group) => group.dn);
-            return (all.body ?? []).filter((group) => !names.some((dn) => sameDN(dn, group.dn))).map((group) => rdnValue(group.dn));
+            const names = member.map((group) => group.dn);
+            return all.filter((group) => !names.some((dn) => sameDN(dn, group.dn))).map((group) => rdnValue(group.dn));
         });
         const view = (error?: string) => html`
             <div class="form">
