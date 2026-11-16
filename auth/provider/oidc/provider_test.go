@@ -23,10 +23,10 @@ import (
 
 	// Packages
 	provider "github.com/mutablelogic/go-auth/auth/provider"
-	client "github.com/mutablelogic/go-client"
 	oidc "github.com/mutablelogic/go-auth/auth/provider/oidc"
 	schema "github.com/mutablelogic/go-auth/auth/schema"
 	test "github.com/mutablelogic/go-auth/auth/test"
+	client "github.com/mutablelogic/go-client"
 	httpresponse "github.com/mutablelogic/go-server/pkg/httpresponse"
 	assert "github.com/stretchr/testify/assert"
 	require "github.com/stretchr/testify/require"
@@ -50,7 +50,8 @@ func signIn(t *testing.T, ctx context.Context, i *test.OIDC, p *oidc.Provider, c
 func Test_Provider(t *testing.T) {
 	ctx := context.Background()
 	i := test.NewOIDC(t)
-	p, err := oidc.New("keycloak", "Keycloak", i.URL, "client", "secret", oidc.WithScopes("groups"), oidc.WithGroupsClaim("groups"))
+	credentials := test.NewCredentials().WithClient("keycloak", i.Audience, "secret")
+	p, err := oidc.New("keycloak", "Keycloak", i.URL, credentials, "keycloak", oidc.WithScopes("groups"), oidc.WithGroupsClaim("groups"))
 	require.NoError(t, err)
 	assert.Equal(t, schema.ProviderMeta{Name: "keycloak", Label: "Keycloak", Kind: schema.ProviderKindRedirect}, p.Meta())
 
@@ -103,22 +104,25 @@ func Test_Discovery(t *testing.T) {
 	// when it's next used
 	i := test.NewOIDC(t)
 	i.Close()
-	p, err := oidc.New("down", "", i.URL, "client", "")
+	credentials := test.NewCredentials().WithClient("down", i.Audience, "")
+	p, err := oidc.New("down", "", i.URL, credentials, "down")
 	require.NoError(t, err)
 	assert.Equal(t, "down", p.Meta().Label, "the name, without a label")
 	_, err = p.AuthCodeURL(ctx, "http://127.0.0.1/callback", "state", provider.NewVerifier())
 	assert.ErrorIs(t, err, httpresponse.ErrGatewayError)
 
 	// What's needed
-	_, err = oidc.New("", "", i.URL, "client", "")
+	_, err = oidc.New("", "", i.URL, credentials, "down")
 	assert.ErrorIs(t, err, httpresponse.ErrBadRequest)
-	_, err = oidc.New("x", "", "", "client", "")
+	_, err = oidc.New("x", "", "", credentials, "down")
 	assert.ErrorIs(t, err, httpresponse.ErrBadRequest)
-	_, err = oidc.New("x", "", i.URL, "", "")
+	_, err = oidc.New("x", "", i.URL, nil, "down")
+	assert.ErrorIs(t, err, httpresponse.ErrBadRequest)
+	_, err = oidc.New("x", "", i.URL, credentials, "")
 	assert.ErrorIs(t, err, httpresponse.ErrBadRequest)
 
 	// Google, by its issuer
-	google, err := oidc.NewGoogle("client", "secret")
+	google, err := oidc.NewGoogle(credentials, "google")
 	require.NoError(t, err)
 	assert.Equal(t, schema.ProviderMeta{Name: "google", Label: "Google", Kind: schema.ProviderKindRedirect}, google.Meta())
 }
@@ -129,12 +133,37 @@ func Test_ClientOptions(t *testing.T) {
 	ctx := context.Background()
 	i := test.NewOIDC(t)
 	var trace bytes.Buffer
-	p, err := oidc.New("traced", "", i.URL, "client", "secret", oidc.WithClient(client.OptTrace(&trace, false)))
+	p, err := oidc.New("traced", "", i.URL, test.NewCredentials().WithClient("traced", i.Audience, "secret"), "traced", oidc.WithClient(client.OptTrace(&trace, false)))
 	require.NoError(t, err)
 	credential := test.SignIn(t, ctx, p, func(challenge string) string { return i.Code(challenge, map[string]any{"sub": "u1"}) })
 	_, err = p.Exchange(ctx, credential)
 	require.NoError(t, err)
 	for _, path := range []string{"/.well-known/openid-configuration", "/keys", "/token"} {
 		assert.Contains(t, trace.String(), path)
+	}
+}
+
+func Test_Credential(t *testing.T) {
+	// The client is the credential, which is read when it's needed, so a
+	// changed one is used, and one which isn't there, or isn't a client,
+	// is an error
+	ctx := context.Background()
+	i := test.NewOIDC(t)
+	credentials := test.NewCredentials()
+	p, err := oidc.New("keycloak", "", i.URL, credentials, "keycloak")
+	require.NoError(t, err)
+	_, err = p.AuthCodeURL(ctx, "http://127.0.0.1/callback", "state", provider.NewVerifier())
+	assert.ErrorIs(t, err, httpresponse.ErrInternalError, "not there")
+	require.NoError(t, credentials.Set(ctx, "keycloak", []byte(`"a secret"`)))
+	_, err = p.AuthCodeURL(ctx, "http://127.0.0.1/callback", "state", provider.NewVerifier())
+	assert.ErrorIs(t, err, httpresponse.ErrInternalError, "not a client")
+
+	for _, id := range []string{"first", "second"} {
+		credentials.WithClient("keycloak", id, "secret")
+		authURL, err := p.AuthCodeURL(ctx, "http://127.0.0.1/callback", "state", provider.NewVerifier())
+		require.NoError(t, err)
+		u, err := url.Parse(authURL)
+		require.NoError(t, err)
+		assert.Equal(t, id, u.Query().Get("client_id"))
 	}
 }

@@ -49,6 +49,13 @@ type Credential struct {
 	Password     string `json:"password,omitempty" help:"Password, for a password provider"`
 }
 
+// OAuthClient is a client's registration at a provider, such as Google or
+// GitHub, which is a credential's value, so its secret is stored encrypted
+type OAuthClient struct {
+	ClientID     string `json:"client_id" help:"Client ID, at the provider"`
+	ClientSecret string `json:"client_secret,omitempty" help:"Client secret, at the provider"`
+}
+
 // ProviderKind is how a provider is signed in with: by a redirect to the
 // provider, such as Google or GitHub, or a username and password, such as
 // LDAP
@@ -79,6 +86,15 @@ func (i Identity) String() string {
 
 func (m ProviderMeta) String() string {
 	return types.Stringify(m)
+}
+
+// String doesn't include the secret
+func (c OAuthClient) String() string {
+	safe := c
+	if safe.ClientSecret != "" {
+		safe.ClientSecret = "***"
+	}
+	return types.Stringify(safe)
 }
 
 // String doesn't include the password, or the code

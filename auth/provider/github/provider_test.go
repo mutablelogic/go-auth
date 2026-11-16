@@ -22,10 +22,10 @@ import (
 
 	// Packages
 	provider "github.com/mutablelogic/go-auth/auth/provider"
-	client "github.com/mutablelogic/go-client"
 	github "github.com/mutablelogic/go-auth/auth/provider/github"
 	schema "github.com/mutablelogic/go-auth/auth/schema"
 	test "github.com/mutablelogic/go-auth/auth/test"
+	client "github.com/mutablelogic/go-client"
 	httpresponse "github.com/mutablelogic/go-server/pkg/httpresponse"
 	assert "github.com/stretchr/testify/assert"
 	require "github.com/stretchr/testify/require"
@@ -40,7 +40,7 @@ var octocat = test.GitHubUser{
 func Test_Provider(t *testing.T) {
 	ctx := context.Background()
 	g := test.NewGitHub(t)
-	p, err := github.New("client", "secret", github.WithURL(g.URL, g.APIURL()), github.WithOrganizations())
+	p, err := github.New(test.NewCredentials().WithClient("github", "client", "secret"), "github", github.WithURL(g.URL, g.APIURL()), github.WithOrganizations())
 	require.NoError(t, err)
 	assert.Equal(t, schema.ProviderMeta{Name: "github", Label: "GitHub", Kind: schema.ProviderKindRedirect}, p.Meta())
 
@@ -72,7 +72,7 @@ func Test_Provider(t *testing.T) {
 	t.Run("WithoutName", func(t *testing.T) {
 		// The login, without a name, and no organisations, unless they're
 		// asked for
-		plain, err := github.New("client", "secret", github.WithURL(g.URL, g.APIURL()))
+		plain, err := github.New(test.NewCredentials().WithClient("github", "client", "secret"), "github", github.WithURL(g.URL, g.APIURL()))
 		require.NoError(t, err)
 		credential := test.SignIn(t, ctx, plain, func(challenge string) string {
 			return g.Code(challenge, test.GitHubUser{ID: 1, Login: "anon", Orgs: []string{"acme"}})
@@ -92,9 +92,9 @@ func Test_Provider(t *testing.T) {
 	})
 
 	t.Run("Needs", func(t *testing.T) {
-		_, err := github.New("", "secret")
+		_, err := github.New(nil, "github")
 		assert.ErrorIs(t, err, httpresponse.ErrBadRequest)
-		_, err = github.New("client", "")
+		_, err = github.New(test.NewCredentials(), "")
 		assert.ErrorIs(t, err, httpresponse.ErrBadRequest)
 		_, err = p.Exchange(ctx, schema.Credential{Code: "x"})
 		assert.ErrorIs(t, err, httpresponse.ErrBadRequest)
@@ -107,7 +107,7 @@ func Test_ClientOptions(t *testing.T) {
 	ctx := context.Background()
 	g := test.NewGitHub(t)
 	var trace bytes.Buffer
-	p, err := github.New("client", "secret", github.WithURL(g.URL, g.APIURL()), github.WithClient(client.OptTrace(&trace, false)))
+	p, err := github.New(test.NewCredentials().WithClient("github", "client", "secret"), "github", github.WithURL(g.URL, g.APIURL()), github.WithClient(client.OptTrace(&trace, false)))
 	require.NoError(t, err)
 	credential := test.SignIn(t, ctx, p, func(challenge string) string { return g.Code(challenge, octocat) })
 	_, err = p.Exchange(ctx, credential)

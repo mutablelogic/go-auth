@@ -34,3 +34,9 @@ func Test_CredentialString(t *testing.T) {
 	assert.Contains(t, s, "http://127.0.0.1/callback")
 	assert.Equal(t, "the-password", credential.Password, "the credential itself isn't changed")
 }
+
+func Test_OAuthClientString(t *testing.T) {
+	client := schema.OAuthClient{ClientID: "the-id", ClientSecret: "the-secret"}
+	assert.NotContains(t, client.String(), "the-secret")
+	assert.Contains(t, client.String(), "the-id")
+}

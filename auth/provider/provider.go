@@ -19,9 +19,12 @@ package provider
 
 import (
 	"context"
+	"encoding/json"
 
 	// Packages
 	schema "github.com/mutablelogic/go-auth/auth/schema"
+	credential "github.com/mutablelogic/go-auth/credential"
+	httpresponse "github.com/mutablelogic/go-server/pkg/httpresponse"
 	oauth2 "golang.org/x/oauth2"
 )
 
@@ -57,4 +60,22 @@ type RedirectProvider interface {
 // NewVerifier returns a new PKCE verifier, or state, which is random
 func NewVerifier() string {
 	return oauth2.GenerateVerifier()
+}
+
+// Client returns the OAuth client which is the credential's value, at the
+// key, which needs a client ID. It's read each time it's needed, so a
+// changed secret is used without a restart.
+func Client(ctx context.Context, credentials credential.CredentialProvider, key string) (*schema.OAuthClient, error) {
+	if credentials == nil || key == "" {
+		return nil, httpresponse.ErrInternalError.With("No credential of the OAuth client")
+	}
+	value, err := credentials.Get(ctx, key)
+	if err != nil {
+		return nil, httpresponse.ErrInternalError.Withf("The OAuth client's credential %q: %v", key, err)
+	}
+	var client schema.OAuthClient
+	if err := json.Unmarshal(value, &client); err != nil || client.ClientID == "" {
+		return nil, httpresponse.ErrInternalError.Withf("The credential %q isn't an OAuth client, with a client_id and client_secret", key)
+	}
+	return &client, nil
 }
