@@ -42,8 +42,9 @@ const filterAll = "(objectClass=*)"
 // PUBLIC METHODS
 
 // List returns the entries under the base DN, or, with a prefix, in the
-// subtree of its DN, relative to the base DN, or under it, which match the
-// request's filter, or all of them, with its attributes, or all of them.
+// subtree of its DN, relative to the base DN, or under it, or, with
+// children, only those directly under it, which match the request's
+// filter, or all of them, with its attributes, or all of them.
 // Count is the number which match, and Body those from the offset, up to
 // the limit, or schema.MaxListEntries.
 func (manager *Manager) List(ctx context.Context, req schema.ObjectListRequest) (_ *schema.ObjectList, err error) {
@@ -64,7 +65,11 @@ func (manager *Manager) List(ctx context.Context, req schema.ObjectListRequest) 
 			return nil, err
 		}
 	}
-	return manager.list(ctx, ldap.ScopeWholeSubtree, base.String(), req.ListRequest, nil)
+	scope := ldap.ScopeWholeSubtree
+	if req.Children {
+		scope = ldap.ScopeSingleLevel
+	}
+	return manager.list(ctx, scope, base.String(), req.ListRequest, nil)
 }
 
 // Get returns the entry, whose DN is under the base DN, or relative to it

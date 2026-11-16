@@ -62,7 +62,8 @@ type ListRequest struct {
 // or, with a prefix, the subtree of the DN under it
 type ObjectListRequest struct {
 	ListRequest
-	Prefix *string `json:"prefix,omitempty" help:"DN of the subtree, relative to the base DN"`
+	Prefix   *string `json:"prefix,omitempty" help:"DN of the subtree, relative to the base DN"`
+	Children bool    `json:"children,omitempty" help:"Only the children of the prefix, or of the base DN, rather than the subtree"`
 }
 
 type ObjectList struct {
@@ -245,6 +246,9 @@ func (req ObjectListRequest) Query() url.Values {
 	values := req.ListRequest.Query()
 	if req.Prefix != nil {
 		values.Set("prefix", *req.Prefix)
+	}
+	if req.Children {
+		values.Set("children", "true")
 	}
 	return values
 }

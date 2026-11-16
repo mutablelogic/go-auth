@@ -107,6 +107,7 @@ Any entry, by DN, which is escaped as a path segment, such as `ou=users,dc=examp
 Lists the entries under the base DN.
 
 - **`prefix`:** lists the subtree of a DN, with the entry itself.
+- **`children`:** lists only the entries directly under the prefix, or the base DN, such as for a tree.
 
 ### GET /ldap/object/{dn}
 

@@ -25,6 +25,7 @@ import (
 	manager "github.com/mutablelogic/go-auth/cert/manager"
 	pg "github.com/mutablelogic/go-pg"
 	server "github.com/mutablelogic/go-server"
+	config "github.com/mutablelogic/go-server/config"
 )
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -67,8 +68,7 @@ func (flags CertFlags) withHandlers(ctx server.Cmd, pool pg.PoolConn, follow *fo
 		}
 		return fn(&module{
 			register: certhandler.RegisterHandlers(mgr, false),
-			section:  "cert",
-			features: cert.Features{Root: root},
+			section:  config.WithSection("cert", cert.Features{Root: root}),
 		})
 	}, manager.WithChannel(follow.channel))
 }
