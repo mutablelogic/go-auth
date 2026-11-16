@@ -40,11 +40,27 @@ type Flags struct {
 }
 
 ///////////////////////////////////////////////////////////////////////////////
+// GLOBALS
+
+// SignInPath is the path of the web UI's sign-in page, which signs in with
+// the providers, and returns to its return parameter
+const SignInPath = "/login.html"
+
+///////////////////////////////////////////////////////////////////////////////
 // PUBLIC METHODS
 
 // BuiltIn returns whether the web UI is built in, with the "frontend" tag
 func BuiltIn() bool {
 	return builtIn
+}
+
+// SignIn returns the path of the web UI's sign-in page, when it's built in,
+// and served, or else nothing
+func (f *Flags) SignIn() string {
+	if !builtIn || !f.UI {
+		return ""
+	}
+	return SignInPath
 }
 
 // RegisterUI registers the server's configuration, at /config.json, and the

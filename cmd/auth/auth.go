@@ -92,7 +92,7 @@ type OIDCProviderFlags struct {
 // providers which are configured, or without, when there are none. Their
 // OAuth clients are credentials, and the directory is the LDAP manager,
 // when LDAP is built in.
-func (flags AuthFlags) withHandlers(ctx server.Cmd, credentials credential.CredentialProvider, directory ldapprovider.Manager, insecure bool, fn func(*module) error) error {
+func (flags AuthFlags) withHandlers(ctx server.Cmd, credentials credential.CredentialProvider, directory ldapprovider.Manager, insecure bool, signIn string, fn func(*module) error) error {
 	providers, err := flags.providers(ctx, credentials, directory)
 	if err != nil {
 		return err
@@ -119,6 +119,10 @@ func (flags AuthFlags) withHandlers(ctx server.Cmd, credentials credential.Crede
 	opts = append(opts, authhandler.WithKey(key))
 	if flags.URL != "" {
 		opts = append(opts, authhandler.WithBaseURL(flags.URL))
+	}
+	if signIn != "" {
+		// Authorizing an OAuth client signs in at the web UI's page
+		opts = append(opts, authhandler.WithSignIn(signIn))
 	}
 
 	// As an OAuth server, a 401 says where its metadata is

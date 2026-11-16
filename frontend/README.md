@@ -9,6 +9,8 @@ go-auth's web UI modules, which any app can include, and the auth server's app, 
 
 | Import | What it has |
 |---|---|
+| `@mutablelogic/go-auth/auth` | Signing in: the providers' and session's types, `getSession`, `signIn`, `signOut` and `redirectURL`, and `localPath` and `signInURL`, which keep the path to return to on this server |
+| `@mutablelogic/go-auth/auth/view` | `ga-sign-in`, which signs in with the providers, a button for each redirect provider and a username and password for each password provider; and `ga-session`, who's signed in, with Sign out |
 | `@mutablelogic/go-auth/credential` | The credential API's types and client, the form which stores a credential, and `CredentialController`, which keeps the credentials in a go-server `ListController` |
 | `@mutablelogic/go-auth/credential/view` | `ga-credentials`, a Credentials page; `credentialModule`, which adds it to an app; and its parts, `credentialColumns`, `credentialFormView`, `passphraseFormView` and `valueView` |
 | `@mutablelogic/go-auth/cert` | The certificate API's types and client, the forms which create and renew certificates, PEM encoding, and `CertController` and `SubjectController`, which keep the certificates and subjects in a go-server `ListController` |
@@ -35,6 +37,8 @@ credentialModule({ nav, router, client, root: document.querySelector('main')!, n
 - **Toolbar:** each certificate table has a search, of the certificates' names, and a settings menu, whose Show disabled lists disabled certificates, and their disabled older versions, which are hidden otherwise.
 - **Create:** each table's toolbar ends with its Create button: a certificate, a certificate authority, or a subject. Create a certificate authority is disabled without a root.
 - **Subjects:** the Subjects page lists the subjects, with how many certificates use each. It edits or deletes one which no certificate uses.
+- **Signing in:** when `/config.json` has an `auth` section, the app reads the session at start. Someone who isn't signed in goes to `login.html`, which returns to the app once they are. Who's signed in, with Sign out, is at the bottom of the sidebar.
+- **Sign-in page:** `login.html` lists the providers from the `auth` section. It returns to its `return` parameter, which must be a path on this server. The server sends people there to authorize an OAuth client.
 - **Configuration:** the auth server's app includes Certificates only when `/config.json` has a `cert` section, which a server built with certificates registers. Its `root` says whether a root is stored, without which certificate authorities can't be created.
 - **LDAP:** `ldapModule` adds an LDAP section, with Users and Groups, when the server has their DNs, Objects and Schema. Each page's header shows Connected or Disconnected, with the host and user, from the `ldap` section of `/config.json`, and then the connection's changes. The app includes it only when `/config.json` has that section.
 - **Users:** a table of users, searched by name, full name, mail and surname. A user's panel shows its groups and attributes. It adds the user to a group, or removes it from one, sets its password, or generates one, which is shown once, edits it, and deletes it.
@@ -48,7 +52,7 @@ credentialModule({ nav, router, client, root: document.querySelector('main')!, n
 | Folder | What it has |
 |---|---|
 | `src/credential` | The Credentials module, which `npm run build` builds into `dist` |
-| `app` | The auth server's app: `index.html`, the shell, and `index.ts`, which adds the modules, which `npm run build-app` builds into `app/dist` |
+| `app` | The auth server's app: `index.html`, the shell, and `index.ts`, which adds the modules, and `login.html` and `login.ts`, the sign-in page, which `npm run build-app` builds into `app/dist` |
 | `embed.go` | Embeds `app/dist`, with the `frontend` tag |
 | `cmd` | Serves the app, and `/config.json`, behind the `frontend` tag |
 
