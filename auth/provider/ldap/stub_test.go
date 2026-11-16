@@ -34,6 +34,7 @@ import (
 type stub struct {
 	ids    ldapschema.Attrs
 	groups []string
+	userDN string // the DN of the user whose groups were last listed
 }
 
 const aliceDN = "uid=alice,ou=users,dc=example,dc=test"
@@ -79,6 +80,9 @@ func (s *stub) Get(_ context.Context, dn string, attrs ...string) (*ldapschema.O
 }
 
 func (s *stub) ListGroups(_ context.Context, req ldapschema.GroupListRequest) (*ldapschema.ObjectList, error) {
+	if req.UserDN != nil {
+		s.userDN = *req.UserDN
+	}
 	limit := len(s.groups)
 	if req.Limit != nil {
 		limit = int(*req.Limit)
@@ -145,6 +149,7 @@ func Test_Users(t *testing.T) {
 		user, err := users.User(ctx, identity)
 		require.NoError(t, err)
 		assert.Equal(t, &schema.User{ID: "alice-uuid", Name: "Alice", Email: "alice@example.test", Groups: []string{"Admins", "staff", "other"}}, user)
+		assert.Equal(t, aliceDN, s.userDN, "the groups of the user's DN, not another's with its name")
 
 		// The scopes of the groups, in any case, once each, in order
 		scopes, err := users.Scopes(ctx, user)

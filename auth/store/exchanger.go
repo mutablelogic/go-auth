@@ -17,6 +17,7 @@ package store
 import (
 	"context"
 	"errors"
+	"net/url"
 	"time"
 
 	// Packages
@@ -124,7 +125,7 @@ func (e *Exchanger) Exchange(ctx context.Context, identity *schema.Identity) (an
 
 	// The user, and their scopes, which the user store says, or else the
 	// identity, without scopes
-	user := &schema.User{ID: identity.Provider + ":" + identity.Subject, Name: identity.Name, Email: identity.Email, Groups: identity.Groups}
+	user := &schema.User{ID: IdentityID(identity), Name: identity.Name, Email: identity.Email, Groups: identity.Groups}
 	var scopes []string
 	if e.users != nil {
 		found, err := e.users.User(ctx, identity)
@@ -147,6 +148,14 @@ func (e *Exchanger) Exchange(ctx context.Context, identity *schema.Identity) (an
 		CreatedAt: now,
 		ExpiresAt: now.Add(e.ttl),
 	})
+}
+
+// IdentityID returns the ID of an identity's user, without a user store:
+// its issuer and subject, which are what identify it, each escaped, so
+// there's one for each, and it doesn't change when the provider, which is
+// configured, is renamed
+func IdentityID(identity *schema.Identity) string {
+	return url.QueryEscape(identity.Issuer) + "#" + url.QueryEscape(identity.Subject)
 }
 
 // ResponseSchema is the schema of what an identity is exchanged for, which
