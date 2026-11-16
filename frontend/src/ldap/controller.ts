@@ -7,6 +7,7 @@ import type { Client } from '@mutablelogic/go-server/api';
 import type { Change, ChangeFilter, ChangesController } from '@mutablelogic/go-server/broadcaster';
 import { ListController } from '@mutablelogic/go-server/list';
 import type { NotificationController } from '@mutablelogic/go-server/notification';
+import { entrySchema, type EntryKind, type EntrySchema } from './form.ts';
 import * as api from './httpclient.ts';
 import {
     ChangeSchema, TableConnection, TableGroup, TableObject, TableUser, parentDN, rdnValue, sameDN, searchFilter,
@@ -262,6 +263,26 @@ export class SchemaController {
         this.attributeQuery = text.trim();
         return this.attributes.reset();
     }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// ENTRY SCHEMA
+
+// loadEntrySchema returns the schema of users, or groups: the object
+// classes they're created with, and those they inherit from, and the
+// directory's attribute types, every page of them
+export async function loadEntrySchema(client: Client, kind: EntryKind, signal?: AbortSignal): Promise<EntrySchema> {
+    const classes = await api.listObjectClasses(client, { for: kind, limit: 1000 }, signal);
+    const types: AttributeType[] = [];
+    for (let offset = 0; ; ) {
+        const page = await api.listAttributeTypes(client, { offset, limit: 1000 }, signal);
+        types.push(...(page.body ?? []));
+        offset += page.body?.length ?? 0;
+        if (!page.body?.length || offset >= page.count) {
+            break;
+        }
+    }
+    return entrySchema(kind, classes.body ?? [], types);
 }
 
 ///////////////////////////////////////////////////////////////////////////////

@@ -4,7 +4,8 @@
 
 export * from './schema.ts';
 export * from './httpclient.ts';
+export * from './form.ts';
 export {
-    GroupController, GroupSearch, LdapStatusController, ObjectController, SchemaController, UserController, UserSearch,
+    GroupController, GroupSearch, LdapStatusController, loadEntrySchema, ObjectController, SchemaController, UserController, UserSearch,
     type LdapOptions,
 } from './controller.ts';

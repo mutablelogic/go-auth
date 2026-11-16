@@ -100,6 +100,9 @@ export interface ObjectClassListRequest {
     must?: string[];
     may?: string[];
     obsolete?: boolean;
+    // for is user or group, for only the classes users, or groups, are
+    // created with, and those they inherit from
+    for?: 'user' | 'group';
 }
 
 export interface AttributeTypeListRequest {
