@@ -134,7 +134,7 @@ type RenewCertRequest struct {
 // reads from the configuration's cert section: Root is true when a root is
 // stored, without which certificate authorities can't be created
 type Features struct {
-	Root bool `json:"root"`
+	Root bool `json:"root" help:"Whether a root certificate is stored, without which certificate authorities can't be created"`
 }
 
 // GetCertRequest is what's returned with a certificate
