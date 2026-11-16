@@ -25,6 +25,7 @@ import (
 	ldap "github.com/go-ldap/ldap/v3"
 	schema "github.com/mutablelogic/go-auth/ldap/schema"
 	otel "github.com/mutablelogic/go-client/pkg/otel"
+	changes "github.com/mutablelogic/go-server/broadcaster/schema"
 	httpresponse "github.com/mutablelogic/go-server/pkg/httpresponse"
 	types "github.com/mutablelogic/go-server/pkg/types"
 	attribute "go.opentelemetry.io/otel/attribute"
@@ -128,7 +129,12 @@ func (manager *Manager) CreateGroup(ctx context.Context, name string, attrs sche
 		attrSet(values, "gidNumber", []string{strconv.Itoa(gid)})
 	}
 
-	return manager.create(ctx, dn.String(), values)
+	group, err := manager.create(ctx, dn.String(), values)
+	if err != nil {
+		return nil, err
+	}
+	manager.publish(changes.ChangeCreate, schema.TableGroup, name, "")
+	return group, nil
 }
 
 // UpdateGroup changes the group with the name, as Update does, and returns
@@ -143,7 +149,12 @@ func (manager *Manager) UpdateGroup(ctx context.Context, name string, attrs sche
 	if err != nil {
 		return nil, err
 	}
-	return manager.update(ctx, dn, attrs)
+	group, err := manager.update(ctx, dn, attrs)
+	if err != nil {
+		return nil, err
+	}
+	manager.publish(changes.ChangeUpdate, schema.TableGroup, rdnValue(group.DN), name)
+	return group, nil
 }
 
 // DeleteGroup removes the group with the name, and returns it
@@ -157,7 +168,12 @@ func (manager *Manager) DeleteGroup(ctx context.Context, name string) (_ *schema
 	if err != nil {
 		return nil, err
 	}
-	return manager.delete(ctx, dn.String())
+	group, err := manager.delete(ctx, dn.String())
+	if err != nil {
+		return nil, err
+	}
+	manager.publish(changes.ChangeDelete, schema.TableGroup, name, "")
+	return group, nil
 }
 
 // AddGroupUsers adds the users, by name, to the group, in one request, and
@@ -282,6 +298,7 @@ func (manager *Manager) changeMembers(ctx context.Context, name string, users []
 	if err := manager.write(ctx, func(conn *ldap.Conn) error { return conn.Modify(modify) }); err != nil {
 		return nil, ldaperr(err)
 	}
+	manager.publish(changes.ChangeUpdate, schema.TableGroup, name, "")
 	return manager.get(ctx, group.DN)
 }
 

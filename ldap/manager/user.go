@@ -28,6 +28,7 @@ import (
 	auth "github.com/mutablelogic/go-auth"
 	schema "github.com/mutablelogic/go-auth/ldap/schema"
 	otel "github.com/mutablelogic/go-client/pkg/otel"
+	changes "github.com/mutablelogic/go-server/broadcaster/schema"
 	httpresponse "github.com/mutablelogic/go-server/pkg/httpresponse"
 	types "github.com/mutablelogic/go-server/pkg/types"
 	attribute "go.opentelemetry.io/otel/attribute"
@@ -198,8 +199,11 @@ func (manager *Manager) CreateUser(ctx context.Context, name string, attrs schem
 			}
 			return nil, err
 		}
-		return manager.get(ctx, user.DN)
+		if user, err = manager.get(ctx, user.DN); err != nil {
+			return nil, err
+		}
 	}
+	manager.publish(changes.ChangeCreate, schema.TableUser, name, "")
 	return user, nil
 }
 
@@ -215,7 +219,12 @@ func (manager *Manager) UpdateUser(ctx context.Context, name string, attrs schem
 	if err != nil {
 		return nil, err
 	}
-	return manager.update(ctx, dn, attrs)
+	user, err := manager.update(ctx, dn, attrs)
+	if err != nil {
+		return nil, err
+	}
+	manager.publish(changes.ChangeUpdate, schema.TableUser, rdnValue(user.DN), name)
+	return user, nil
 }
 
 // DeleteUser removes the user with the name, and returns it
@@ -229,7 +238,12 @@ func (manager *Manager) DeleteUser(ctx context.Context, name string) (_ *schema.
 	if err != nil {
 		return nil, err
 	}
-	return manager.delete(ctx, dn.String())
+	user, err := manager.delete(ctx, dn.String())
+	if err != nil {
+		return nil, err
+	}
+	manager.publish(changes.ChangeDelete, schema.TableUser, name, "")
+	return user, nil
 }
 
 ///////////////////////////////////////////////////////////////////////////////

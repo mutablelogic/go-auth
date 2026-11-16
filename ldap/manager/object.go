@@ -27,6 +27,7 @@ import (
 	auth "github.com/mutablelogic/go-auth"
 	schema "github.com/mutablelogic/go-auth/ldap/schema"
 	otel "github.com/mutablelogic/go-client/pkg/otel"
+	changes "github.com/mutablelogic/go-server/broadcaster/schema"
 	httpresponse "github.com/mutablelogic/go-server/pkg/httpresponse"
 	types "github.com/mutablelogic/go-server/pkg/types"
 	attribute "go.opentelemetry.io/otel/attribute"
@@ -99,7 +100,12 @@ func (manager *Manager) Create(ctx context.Context, dn string, attrs schema.Attr
 	if err != nil {
 		return nil, err
 	}
-	return manager.create(ctx, absdn.String(), url.Values(attrs))
+	object, err := manager.create(ctx, absdn.String(), url.Values(attrs))
+	if err != nil {
+		return nil, err
+	}
+	manager.publish(changes.ChangeCreate, schema.TableObject, object.DN, "")
+	return object, nil
 }
 
 // Update replaces the entry's attributes which have values, and deletes
@@ -120,7 +126,12 @@ func (manager *Manager) Update(ctx context.Context, dn string, attrs schema.Attr
 	if err != nil {
 		return nil, err
 	}
-	return manager.update(ctx, absdn, attrs)
+	object, err := manager.update(ctx, absdn, attrs)
+	if err != nil {
+		return nil, err
+	}
+	manager.publish(changes.ChangeUpdate, schema.TableObject, object.DN, absdn.String())
+	return object, nil
 }
 
 // Delete removes the entry, which has no children, and returns it
@@ -137,7 +148,12 @@ func (manager *Manager) Delete(ctx context.Context, dn string) (_ *schema.Object
 	if err != nil {
 		return nil, err
 	}
-	return manager.delete(ctx, absdn.String())
+	object, err := manager.delete(ctx, absdn.String())
+	if err != nil {
+		return nil, err
+	}
+	manager.publish(changes.ChangeDelete, schema.TableObject, object.DN, "")
+	return object, nil
 }
 
 ///////////////////////////////////////////////////////////////////////////////

@@ -53,6 +53,7 @@ type Manager struct {
 	users      *schema.Group
 	groups     *schema.Group
 	tracer     trace.Tracer
+	publisher  Publisher
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -130,6 +131,7 @@ func New(opt ...Opt) (*Manager, error) {
 	self.users = o.users
 	self.groups = o.groups
 	self.tracer = o.tracer
+	self.publisher = o.publisher
 
 	// Return success
 	return self, nil
@@ -179,13 +181,13 @@ func (manager *Manager) Connect(ctx context.Context) (err error) {
 		if err := whileOpen(ctx, conn, func() error { return ldapBind(conn, manager.User(), manager.pass) }); err != nil {
 			return errors.Join(ldaperr(err), ldapDisconnect(conn))
 		}
-		manager.conn = conn
+		manager.setConn(conn)
 	} else if err = whileOpen(ctx, manager.conn, func() error {
 		_, err := manager.conn.WhoAmI([]ldap.Control{})
 		return err
 	}); err != nil {
-		var conn *ldap.Conn
-		conn, manager.conn = manager.conn, nil
+		conn := manager.conn
+		manager.setConn(nil)
 		return errors.Join(err, ldapDisconnect(conn))
 	}
 
@@ -229,7 +231,7 @@ func (manager *Manager) cleanup(ctx context.Context, fn func(*ldap.Conn) error) 
 // forget forgets the manager's connection, which is closed, and wakes Run,
 // which reconnects
 func (manager *Manager) forget() {
-	manager.conn = nil
+	manager.setConn(nil)
 	select {
 	case manager.lost <- struct{}{}:
 	default:
@@ -246,7 +248,7 @@ func (manager *Manager) Disconnect(ctx context.Context) (err error) {
 
 	if manager.conn != nil {
 		err = ldapDisconnect(manager.conn)
-		manager.conn = nil
+		manager.setConn(nil)
 	}
 	return err
 }

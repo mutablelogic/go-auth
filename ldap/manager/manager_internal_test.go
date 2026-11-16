@@ -312,3 +312,12 @@ func Test_memberFilters(t *testing.T) {
 	assert.Equal(t, "(uid=a)", andFilter(types.Ptr(""), "(uid=a)"))
 	assert.Equal(t, "(&(sn=b)(uid=a))", andFilter(types.Ptr("(sn=b)"), "(uid=a)"))
 }
+
+func Test_sameRow(t *testing.T) {
+	assert.True(t, sameRow("OU=a, DC=Example,DC=org", "ou=a,dc=example,dc=org"))
+	assert.False(t, sameRow("ou=b,dc=example,dc=org", "ou=a,dc=example,dc=org"))
+	assert.True(t, sameRow("Alice", "alice"))
+	assert.False(t, sameRow("alicia", "alice"))
+	assert.Equal(t, "alice", rdnValue("UID=alice,ou=users,dc=example,dc=org"))
+	assert.Empty(t, rdnValue("not a dn"))
+}
