@@ -26,6 +26,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	// Packages
 	ldap "github.com/go-ldap/ldap/v3"
@@ -48,6 +49,7 @@ type Manager struct {
 	user, pass string
 	dn         *schema.DN
 	conn       *ldap.Conn
+	up         atomic.Bool
 	lost       chan struct{}
 	schema     *subschema
 	users      *schema.Group
@@ -140,6 +142,29 @@ func New(opt ...Opt) (*Manager, error) {
 ///////////////////////////////////////////////////////////////////////////////
 // PUBLIC METHODS
 
+// Status returns the directory, and whether the manager is connected to it,
+// without waiting for the requests it's making
+func (manager *Manager) Status() schema.Status {
+	status := schema.Status{
+		Host:      manager.Host(),
+		Port:      manager.Port(),
+		User:      manager.User(),
+		Connected: manager.up.Load(),
+		BaseDN:    manager.dn.String(),
+	}
+	if manager.users != nil {
+		if dn, err := manager.absdn(manager.users.DN.String()); err == nil {
+			status.UserDN = dn.String()
+		}
+	}
+	if manager.groups != nil {
+		if dn, err := manager.absdn(manager.groups.DN.String()); err == nil {
+			status.GroupDN = dn.String()
+		}
+	}
+	return status
+}
+
 // Port returns the port of the directory
 func (manager *Manager) Port() uint {
 	port, err := strconv.ParseUint(manager.url.Port(), 10, 16)
@@ -228,6 +253,19 @@ func (manager *Manager) cleanup(ctx context.Context, fn func(*ldap.Conn) error) 
 	return ldaperr(whileOpen(ctx, conn, func() error { return fn(conn) }))
 }
 
+// forgetClosed forgets the manager's connection, when the request's error
+// is that it's lost, or it's closed, so its status is disconnected, and Run
+// reconnects at once
+func (manager *Manager) forgetClosed(err error) {
+	if manager.conn == nil {
+		return
+	}
+	if ldapErrorCode(err) == ldap.ErrorNetwork || manager.conn.IsClosing() {
+		_ = ldapDisconnect(manager.conn)
+		manager.forget()
+	}
+}
+
 // forget forgets the manager's connection, which is closed, and wakes Run,
 // which reconnects
 func (manager *Manager) forget() {
@@ -266,6 +304,7 @@ func (manager *Manager) WhoAmI(ctx context.Context) (_ string, err error) {
 	}
 	whoami, err := manager.conn.WhoAmI([]ldap.Control{})
 	if err != nil {
+		manager.forgetClosed(err)
 		return "", ldaperr(err)
 	}
 	return whoami.AuthzID, nil

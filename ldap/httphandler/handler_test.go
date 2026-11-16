@@ -173,6 +173,8 @@ func Test_Objects(t *testing.T) {
 		var list schema.ObjectList
 		require.Equal(t, http.StatusOK, s.JSON(t, http.MethodGet, "ldap/object?prefix="+url.QueryEscape(ou), nil, &list))
 		assert.Equal(t, uint64(2), list.Count)
+		require.Equal(t, http.StatusOK, s.JSON(t, http.MethodGet, "ldap/object?children=true&prefix="+url.QueryEscape(ou), nil, &list))
+		assert.Equal(t, uint64(1), list.Count, "its child")
 		status, _ = s.Do(t, http.MethodGet, "ldap/object?prefix="+url.QueryEscape("ou=missing,"+ou), nil)
 		assert.Equal(t, http.StatusNotFound, status)
 

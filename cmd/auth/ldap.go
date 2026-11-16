@@ -24,6 +24,7 @@ import (
 	manager "github.com/mutablelogic/go-auth/ldap/manager"
 	server "github.com/mutablelogic/go-server"
 	broadcaster "github.com/mutablelogic/go-server/broadcaster"
+	config "github.com/mutablelogic/go-server/config"
 )
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -49,6 +50,11 @@ func (flags LDAPFlags) withHandlers(ctx server.Cmd, changes *broadcaster.Broadca
 	}
 	return flags.WithLDAPManager(ctx, changes, func(mgr *manager.Manager) error {
 		ctx.Logger().WarnContext(ctx.Context(), "The LDAP API has no authentication, as --insecure is set")
-		return fn(&module{register: ldaphandler.RegisterHandlers(mgr, false)})
+		// The web UI includes LDAP when the configuration has its section,
+		// which has its status, as it is each time it's served
+		return fn(&module{
+			register: ldaphandler.RegisterHandlers(mgr, false),
+			section:  config.WithSectionFunc("ldap", mgr.Status),
+		})
 	})
 }

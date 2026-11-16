@@ -41,11 +41,12 @@ type ObjectCommands struct {
 }
 
 type ObjectListCmd struct {
-	Prefix string   `name:"prefix" help:"DN of the subtree to list, relative to the base DN"`
-	Filter string   `name:"filter" help:"LDAP filter, such as (cn=a*)"`
-	Attr   []string `name:"attr" help:"Attribute to return. Repeat for more than one."`
-	Offset uint64   `name:"offset" help:"Offset within the list"`
-	Limit  *uint64  `name:"limit" help:"Number of entries to list"`
+	Prefix   string   `name:"prefix" help:"DN of the subtree to list, relative to the base DN"`
+	Children bool     `name:"children" help:"Only the entries directly under the prefix, or the base DN"`
+	Filter   string   `name:"filter" help:"LDAP filter, such as (cn=a*)"`
+	Attr     []string `name:"attr" help:"Attribute to return. Repeat for more than one."`
+	Offset   uint64   `name:"offset" help:"Offset within the list"`
+	Limit    *uint64  `name:"limit" help:"Number of entries to list"`
 }
 
 type ObjectGetCmd struct {
@@ -80,7 +81,7 @@ type ObjectPasswordCmd struct {
 // COMMANDS
 
 func (cmd *ObjectListCmd) Run(ctx server.Cmd) error {
-	req := schema.ObjectListRequest{ListRequest: listRequest(cmd.Filter, cmd.Attr, cmd.Offset, cmd.Limit)}
+	req := schema.ObjectListRequest{ListRequest: listRequest(cmd.Filter, cmd.Attr, cmd.Offset, cmd.Limit), Children: cmd.Children}
 	if cmd.Prefix != "" {
 		req.Prefix = types.Ptr(cmd.Prefix)
 	}

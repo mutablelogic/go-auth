@@ -52,12 +52,11 @@ const openapiTag = "OpenAPI"
 type registerFunc func(*httprouter.Router) error
 
 // module is a module of the server, which isn't always built in, such as
-// certificates: its handlers, and the section of the configuration, which
+// certificates: its handlers, and its section of the configuration, which
 // says what it can do, and that the web UI includes it, when it has one
 type module struct {
 	register registerFunc
-	section  string
-	features any
+	section  config.Opt
 }
 
 // follow follows the changes which PostgreSQL's triggers notify the channel
@@ -132,8 +131,8 @@ func (runner *RunServer) register(ctx server.Cmd, manager credential.CredentialM
 	runner.RunServer.Register(func(router *httprouter.Router) error {
 		sections := []config.Opt{config.WithSection("credential", credential.FeaturesOf(backend, manager))}
 		for _, module := range modules {
-			if module != nil && module.section != "" {
-				sections = append(sections, config.WithSection(module.section, module.features))
+			if module != nil && module.section != nil {
+				sections = append(sections, module.section)
 			}
 		}
 		ui, err := runner.Frontend.RegisterUI(ctx, ctx.Logger(), router, runner.RunServer.OpenAPI, sections...)

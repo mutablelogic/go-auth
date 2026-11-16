@@ -47,6 +47,7 @@ type Fake struct {
 	listener    net.Listener
 	entries     map[string]map[string][]string // by lower case DN
 	connections int
+	conns       []net.Conn
 
 	// When they're set, BeforeAdd and BeforeModify are called before an add
 	// or modify of the DN is answered, and Stall stops a request of the
@@ -89,6 +90,7 @@ func NewFake(t *testing.T, secure bool) *Fake {
 			}
 			d.Lock()
 			d.connections++
+			d.conns = append(d.conns, conn)
 			d.Unlock()
 			go d.serve(conn)
 		}
@@ -116,6 +118,17 @@ func (d *Fake) Entry(dn string) map[string][]string {
 	d.Lock()
 	defer d.Unlock()
 	return d.entries[strings.ToLower(dn)]
+}
+
+// Drop closes the connections the directory has accepted, as a directory
+// which goes away does
+func (d *Fake) Drop() {
+	d.Lock()
+	defer d.Unlock()
+	for _, conn := range d.conns {
+		conn.Close()
+	}
+	d.conns = nil
 }
 
 // Connections returns how many connections the directory has accepted

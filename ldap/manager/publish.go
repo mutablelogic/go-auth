@@ -32,6 +32,7 @@ import (
 func (manager *Manager) setConn(conn *ldap.Conn) {
 	was := manager.conn != nil
 	manager.conn = conn
+	manager.up.Store(conn != nil)
 	switch {
 	case !was && conn != nil:
 		manager.publish(changes.ChangeCreate, schema.TableConnection, manager.url.Host, "")

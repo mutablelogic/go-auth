@@ -261,6 +261,9 @@ func Test_object_001(t *testing.T) {
 		assert.Equal("25", values.Get("limit"))
 		assert.Equal("(objectClass=inetOrgPerson)", values.Get("filter"))
 		assert.Equal("ou=users", values.Get("prefix"))
+		assert.Empty(values.Get("children"))
+		request.Children = true
+		assert.Equal("true", request.Query().Get("children"))
 		assert.Equal([]string{"cn", "mail"}, values["attr"])
 	})
 
