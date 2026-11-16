@@ -127,6 +127,9 @@ func (req ObjectClassListRequest) Query() url.Values {
 	if req.Obsolete != nil {
 		values.Set("obsolete", strconv.FormatBool(*req.Obsolete))
 	}
+	if req.For != nil {
+		values.Set("for", string(*req.For))
+	}
 	return values
 }
 

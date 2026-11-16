@@ -84,7 +84,7 @@ func (manager *Manager) ListObjectClasses(ctx context.Context, req schema.Object
 	var response schema.ObjectClassListResponse
 	limit := listLimit(req.Limit)
 	for _, class := range subschema.classes {
-		if !class.Matches(req) || (only != nil && (len(class.Name) == 0 || !only[strings.ToLower(class.Name[0])])) {
+		if !class.Matches(req) || (only != nil && !only[strings.ToLower(class.Identifier())]) {
 			continue
 		}
 		if response.Count >= req.Offset && response.Count < req.Offset+limit {
@@ -161,17 +161,19 @@ func (manager *Manager) subschema(ctx context.Context) (*subschema, error) {
 }
 
 // superiors returns the classes, and the classes they inherit from, by
-// their first names, in lower case, as the directory has them. Classes it
-// doesn't have are left out.
+// their identifiers, their first names, or OIDs without one, in lower case,
+// as the directory has them. A class is referred to by any of its names, or
+// its OID. Classes it doesn't have are left out.
 func (subschema *subschema) superiors(names []string) map[string]bool {
 	result := make(map[string]bool)
 	var walk func(name string)
 	walk = func(name string) {
 		for _, class := range subschema.classes {
-			if len(class.Name) == 0 || !containsFold(class.Name, name) || result[strings.ToLower(class.Name[0])] {
+			id := strings.ToLower(class.Identifier())
+			if result[id] || !(containsFold(class.Name, name) || strings.EqualFold(class.NumericOID, name)) {
 				continue
 			}
-			result[strings.ToLower(class.Name[0])] = true
+			result[id] = true
 			for _, superior := range class.SuperClasses {
 				walk(superior)
 			}
