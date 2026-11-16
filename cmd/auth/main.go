@@ -17,10 +17,13 @@ package main
 import (
 	"errors"
 	"fmt"
+	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 
 	// Packages
+	authcmd "github.com/mutablelogic/go-auth/auth/cmd"
 	cert "github.com/mutablelogic/go-auth/cert/cmd"
 	credential "github.com/mutablelogic/go-auth/credential/cmd"
 	ldap "github.com/mutablelogic/go-auth/ldap/cmd"
@@ -35,6 +38,7 @@ import (
 // CLI has the credential, certificate and LDAP client commands, and the
 // server commands, unless it's built with the client tag
 type CLI struct {
+	authcmd.AuthCommands
 	credential.CredentialProviderCommands
 	credential.CredentialManagerCommands
 	cert.CertCommands
@@ -62,7 +66,12 @@ func main() {
 func formatError(err error) (string, int) {
 	var response httpresponse.ErrResponse
 	if errors.As(err, &response) {
-		if reason := strings.TrimSpace(response.Reason); reason != "" {
+		reason := strings.TrimSpace(response.Reason)
+		if response.Code == http.StatusUnauthorized {
+			// Signing in is how a request is authorized
+			reason = strings.TrimSuffix(reason, ".") + ": sign in with " + filepath.Base(os.Args[0]) + " login"
+		}
+		if reason != "" {
 			return reason, response.Code
 		}
 	}

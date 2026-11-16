@@ -23,6 +23,7 @@ import (
 
 	// Packages
 	auth "github.com/mutablelogic/go-auth"
+	authcmd "github.com/mutablelogic/go-auth/auth/cmd"
 	httpclient "github.com/mutablelogic/go-auth/ldap/httpclient"
 	schema "github.com/mutablelogic/go-auth/ldap/schema"
 	otel "github.com/mutablelogic/go-client/pkg/otel"
@@ -36,7 +37,7 @@ import (
 // withClient calls fn with a client of the LDAP API, at the endpoint of the
 // command's HTTP flags, in a span
 func withClient(ctx server.Cmd, span string, fn func(context.Context, *httpclient.Client) error) (err error) {
-	endpoint, opts, err := ctx.ClientEndpoint()
+	endpoint, opts, err := authcmd.ClientEndpoint(ctx)
 	if err != nil {
 		return err
 	}

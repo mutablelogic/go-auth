@@ -20,6 +20,7 @@ import (
 	"strings"
 
 	// Packages
+	authcmd "github.com/mutablelogic/go-auth/auth/cmd"
 	cert "github.com/mutablelogic/go-auth/cert/cert"
 	httpclient "github.com/mutablelogic/go-auth/cert/httpclient"
 	client "github.com/mutablelogic/go-client"
@@ -49,7 +50,7 @@ type subjectFlags struct {
 // withClient calls fn with a client of the certificate API, at the endpoint
 // of the command's HTTP flags, in a span
 func withClient(ctx server.Cmd, span string, fn func(context.Context, *httpclient.Client) error) error {
-	endpoint, opts, err := ctx.ClientEndpoint()
+	endpoint, opts, err := authcmd.ClientEndpoint(ctx)
 	if err != nil {
 		return err
 	}
@@ -72,6 +73,7 @@ func withKeyClient(ctx server.Cmd, span string, fn func(context.Context, *httpcl
 	if ctx.IsDebug() {
 		opts = append(opts, client.OptTrace(os.Stderr, false))
 	}
+	opts = append(opts, authcmd.TokenOpts(ctx, endpoint)...)
 	return runClient(ctx, span, endpoint, opts, fn)
 }
 
