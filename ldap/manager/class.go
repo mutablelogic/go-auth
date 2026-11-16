@@ -135,6 +135,21 @@ func (manager *Manager) subschema(ctx context.Context) (*subschema, error) {
 	return result, nil
 }
 
+// hasAttribute returns whether the directory's schema has the attribute
+// type, by any of its names
+func (manager *Manager) hasAttribute(ctx context.Context, name string) (bool, error) {
+	subschema, err := manager.subschema(ctx)
+	if err != nil {
+		return false, err
+	}
+	for _, attr := range subschema.attributes {
+		if containsFold(attr.Name, name) {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
 // choose returns the first of the structural classes which the directory
 // has as structural, and those of the auxiliary classes it has as
 // auxiliary, as the directory names them, or none, when it has none of the

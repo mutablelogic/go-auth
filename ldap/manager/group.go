@@ -19,6 +19,7 @@ import (
 	"errors"
 	"net/url"
 	"strconv"
+	"strings"
 
 	// Packages
 	ldap "github.com/go-ldap/ldap/v3"
@@ -33,8 +34,9 @@ import (
 // PUBLIC METHODS
 
 // ListGroups returns the groups, which are the entries directly under the
-// groups' DN, which match the request's filter
-func (manager *Manager) ListGroups(ctx context.Context, req schema.ObjectListRequest) (_ *schema.ObjectList, err error) {
+// groups' DN, which match the request's filter, and, when it has a user,
+// have it as a member
+func (manager *Manager) ListGroups(ctx context.Context, req schema.GroupListRequest) (_ *schema.ObjectList, err error) {
 	ctx, endSpan := otel.StartSpan(manager.tracer, ctx, "ldapmanager.ListGroups", manager.spanAttrs(attribute.String("arg.req", types.Stringify(req)))...)
 	defer func() { endSpan(err) }()
 
@@ -44,7 +46,17 @@ func (manager *Manager) ListGroups(ctx context.Context, req schema.ObjectListReq
 	if err != nil {
 		return nil, err
 	}
-	return manager.list(ctx, ldap.ScopeSingleLevel, base.String(), req)
+	list := req.ObjectListRequest
+	if req.User != nil {
+		groups, err := manager.groupsFilter(ctx, *req.User)
+		if err != nil {
+			return nil, err
+		} else if groups == "" {
+			return &schema.ObjectList{}, nil
+		}
+		list.Filter = types.Ptr(andFilter(req.Filter, groups))
+	}
+	return manager.list(ctx, ldap.ScopeSingleLevel, base.String(), list, nil)
 }
 
 // GetGroup returns the group with the name
@@ -312,6 +324,127 @@ func memberAttrs(classes []string) []string {
 		attrs = append(attrs, "memberUid")
 	}
 	return attrs
+}
+
+// groupMembers returns the DNs of the group's members which are users
+// directly under the users' DN: those in member or uniqueMember, and those
+// whose uid is in memberUid, or, without a uid, their cn, as memberValues
+// writes them, exactly
+func (manager *Manager) groupMembers(ctx context.Context, users *schema.DN, name string) ([]*ldap.DN, error) {
+	dn, err := manager.groupDN(name)
+	if err != nil {
+		return nil, err
+	}
+	group, err := manager.get(ctx, dn.String())
+	if err != nil {
+		return nil, err
+	}
+
+	// Members by DN, directly under the users' DN
+	var members []*ldap.DN
+	under := func(member *ldap.DN) bool {
+		return len(member.RDNs) == len(users.RDNs)+1 && (*ldap.DN)(users).AncestorOfFold(member)
+	}
+	for _, attr := range []string{"member", "uniqueMember"} {
+		for _, value := range group.GetAll(attr) {
+			if member, err := ldap.ParseDN(value); err == nil && under(member) && !containsDN(members, member) {
+				members = append(members, member)
+			}
+		}
+	}
+
+	// Members by memberUid, which are searched for, and kept when their uid,
+	// or cn, without a uid, is one of them, exactly
+	uids := group.GetAll("memberUid")
+	if len(uids) == 0 {
+		return members, nil
+	}
+	uid, err := manager.hasAttribute(ctx, "uid")
+	if err != nil {
+		return nil, err
+	}
+	var parts []string
+	for _, value := range uids {
+		value = ldap.EscapeFilter(value)
+		if uid {
+			parts = append(parts, "(uid="+value+")(&(!(uid=*))(cn="+value+"))")
+		} else {
+			parts = append(parts, "(cn="+value+")")
+		}
+	}
+	if err := manager.search(ctx, ldap.ScopeSingleLevel, users.String(), "(|"+strings.Join(parts, "")+")", 0, func(user *schema.Object) error {
+		name := memberValues("memberUid", []*schema.Object{user})
+		if len(name) == 0 || findMember("memberUid", uids, name[0]) == "" {
+			return nil
+		}
+		if member, err := ldap.ParseDN(user.DN); err == nil && !containsDN(members, member) {
+			members = append(members, member)
+		}
+		return nil
+	}, "uid", "cn"); err != nil {
+		return nil, err
+	}
+	return members, nil
+}
+
+// containsDN returns whether the DN is one of them, in any case
+func containsDN(dns []*ldap.DN, dn *ldap.DN) bool {
+	for _, other := range dns {
+		if other.EqualFold(dn) {
+			return true
+		}
+	}
+	return false
+}
+
+// groupsFilter returns a filter of the groups which have the user, as a
+// member or uniqueMember, by DN, or memberUid, of those the directory has,
+// or empty when it has none
+func (manager *Manager) groupsFilter(ctx context.Context, name string) (string, error) {
+	dn, _, err := manager.userDN(ctx, name)
+	if err != nil {
+		return "", err
+	}
+	user, err := manager.get(ctx, dn.String())
+	if err != nil {
+		return "", err
+	}
+
+	var parts []string
+	for _, attr := range []string{"member", "uniqueMember", "memberUid"} {
+		if has, err := manager.hasAttribute(ctx, attr); err != nil {
+			return "", err
+		} else if !has {
+			continue
+		}
+		for _, value := range memberValues(attr, []*schema.Object{user}) {
+			parts = append(parts, "("+attr+"="+ldap.EscapeFilter(value)+")")
+		}
+	}
+	if len(parts) == 0 {
+		return "", nil
+	}
+	return "(|" + strings.Join(parts, "") + ")", nil
+}
+
+// rdnFilter returns a filter of the RDN's attributes
+func rdnFilter(rdn *ldap.RelativeDN) string {
+	var parts []string
+	for _, attr := range rdn.Attributes {
+		parts = append(parts, "("+attr.Type+"="+ldap.EscapeFilter(attr.Value)+")")
+	}
+	if len(parts) == 1 {
+		return parts[0]
+	}
+	return "(&" + strings.Join(parts, "") + ")"
+}
+
+// andFilter returns the filter, and another, when it's set
+func andFilter(filter *string, other string) string {
+	if filter == nil || *filter == "" {
+		return other
+	}
+	return "(&" + *filter + other + ")"
 }
 
 // requiredMember returns the attribute which a group of the classes needs

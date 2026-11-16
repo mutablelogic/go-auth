@@ -477,3 +477,15 @@ func Test_AttrsJSON(t *testing.T) {
 	require.NoError(err)
 	assert.Contains(string(data), `"generated-password":"generated"`)
 }
+
+func Test_MemberListRequests(t *testing.T) {
+	assert := assert.New(t)
+	users := UserListRequest{ObjectListRequest: ObjectListRequest{Filter: types.Ptr("(sn=a)")}, Group: types.Ptr("eng")}
+	assert.Equal("filter=%28sn%3Da%29&group=eng", users.Query().Encode())
+	assert.Equal("", UserListRequest{}.Query().Encode())
+	assert.NotEmpty(users.String())
+
+	groups := GroupListRequest{User: types.Ptr("alice")}
+	assert.Equal("user=alice", groups.Query().Encode())
+	assert.NotEmpty(groups.String())
+}

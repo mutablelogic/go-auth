@@ -299,3 +299,16 @@ func Test_findMember(t *testing.T) {
 	assert.Equal(t, "alice", findMember("memberUid", []string{"alice"}, "alice"))
 	assert.Empty(t, findMember("memberUid", []string{"Alice"}, "alice"), "uids are exact")
 }
+
+func Test_memberFilters(t *testing.T) {
+	dn, err := ldapv3.ParseDN("uid=a\\2ab,ou=users,dc=example,dc=test")
+	require.NoError(t, err)
+	assert.Equal(t, `(uid=a\2ab)`, rdnFilter(dn.RDNs[0]), "escaped")
+	dn, err = ldapv3.ParseDN("cn=a+sn=b,ou=users,dc=example,dc=test")
+	require.NoError(t, err)
+	assert.Equal(t, "(&(cn=a)(sn=b))", rdnFilter(dn.RDNs[0]))
+
+	assert.Equal(t, "(uid=a)", andFilter(nil, "(uid=a)"))
+	assert.Equal(t, "(uid=a)", andFilter(types.Ptr(""), "(uid=a)"))
+	assert.Equal(t, "(&(sn=b)(uid=a))", andFilter(types.Ptr("(sn=b)"), "(uid=a)"))
+}
