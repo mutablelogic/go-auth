@@ -6,6 +6,6 @@ export * from './schema.ts';
 export * from './httpclient.ts';
 export * from './form.ts';
 export {
-    GroupController, GroupSearch, LdapStatusController, type EntrySchemas, listAll, listAllGroups, loadEntrySchemas, ObjectController, SchemaController, UserController, UserSearch,
+    GroupController, GroupSearch, LdapStatusController, type EntrySchemas, listAll, listAllGroups, listAllUsers, loadEntrySchemas, ObjectController, SchemaController, UserController, UserSearch,
     type LdapOptions,
 } from './controller.ts';

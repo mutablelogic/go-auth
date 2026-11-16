@@ -200,6 +200,21 @@ export function hasClass(object: LdapObject, name: string): boolean {
     return values(object, 'objectClass').some((value) => !isBinary(value) && value.toLowerCase() === name.toLowerCase());
 }
 
+// memberCount returns how many members a group has: those by DN, other
+// than itself, which a group that needs a member has, or by name, in
+// memberUid, which can be the same users, whichever is more
+export function memberCount(group: LdapObject): number {
+    const dns = new Set<string>();
+    for (const attr of ['member', 'uniqueMember']) {
+        for (const value of values(group, attr)) {
+            if (typeof value === 'string' && !sameDN(value, group.dn)) {
+                dns.add(value.toLowerCase());
+            }
+        }
+    }
+    return Math.max(dns.size, values(group, 'memberUid').length);
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 // DNS
 
@@ -224,8 +239,13 @@ export function parentDN(dn: string): string {
 // sameDN returns whether two DNs are the same, in any case, and spacing
 // around their RDNs
 export function sameDN(a: string, b: string): boolean {
-    const normal = (dn: string) => splitDN(dn).map((part) => part.toLowerCase()).join(',');
-    return normal(a) === normal(b);
+    return dnKey(a) === dnKey(b);
+}
+
+// dnKey returns a DN in lower case, without spacing around its RDNs, which
+// is the same for DNs which are the same, such as for a set of them
+export function dnKey(dn: string): string {
+    return splitDN(dn).map((part) => part.toLowerCase()).join(',');
 }
 
 // splitDN returns the RDNs of the DN, at commas which aren't escaped,

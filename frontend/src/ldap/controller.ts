@@ -11,7 +11,7 @@ import { classClosure, entrySchema, type EntryKind, type EntrySchema } from './f
 import * as api from './httpclient.ts';
 import {
     ChangeSchema, TableConnection, TableGroup, TableObject, TableUser, rdnValue, sameDN, searchFilter,
-    values, type GroupListRequest, type LdapObject, type LdapStatus, type ObjectClass, type AttributeType,
+    values, type GroupListRequest, type UserListRequest, type LdapObject, type LdapStatus, type ObjectClass, type AttributeType,
 } from './schema.ts';
 
 // LdapOptions are the controllers' notifications, which say why entries
@@ -291,6 +291,12 @@ export async function loadEntrySchemas(client: Client, kind: EntryKind, signal?:
 // of them
 export function listAllGroups(client: Client, req: GroupListRequest = {}, signal?: AbortSignal): Promise<LdapObject[]> {
     return listAll((offset, limit) => api.listGroups(client, { ...req, offset, limit }, signal));
+}
+
+// listAllUsers returns every user which matches the request, every page of
+// them
+export function listAllUsers(client: Client, req: UserListRequest = {}, signal?: AbortSignal): Promise<LdapObject[]> {
+    return listAll((offset, limit) => api.listUsers(client, { ...req, offset, limit }, signal));
 }
 
 // listAll returns the items of every page, from the first, until there are
