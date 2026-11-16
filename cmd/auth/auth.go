@@ -17,18 +17,12 @@
 package main
 
 import (
-	"crypto/rand"
-	"encoding/base64"
-	"encoding/json"
-	"errors"
-	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
 
 	// Packages
-	goauth "github.com/mutablelogic/go-auth"
 	authhandler "github.com/mutablelogic/go-auth/auth/httphandler"
 	provider "github.com/mutablelogic/go-auth/auth/provider"
 	file "github.com/mutablelogic/go-auth/auth/provider/file"
@@ -62,9 +56,8 @@ type AuthFlags struct {
 	// What signing in is exchanged for
 	LDAPScopes []string      `name:"ldap.scope" sep:"none" help:"Scopes of an LDAP group's members, as group=scope,scope, such as admins=ldap:read,ldap:write. Can be specified more than once."`
 	Allow      []string      `name:"allow" help:"Only those with a verified email address at the domain, such as example.com, can sign in. Can be specified more than once."`
-	Sessions   string        `name:"sessions" help:"Directory of the sessions. Without it, it's in the user's configuration directory."`
+	Sessions   string        `name:"sessions" help:"Directory of the sessions, and of the key which seals sign-ins, and OAuth clients' IDs and codes, so servers which share it accept each other's. Without it, it's in the user's configuration directory."`
 	TTL        time.Duration `name:"ttl" default:"24h" help:"How long a session lasts"`
-	Key        string        `name:"key" default:"auth_key" help:"Key of the credential with the key which seals sign-ins, OAuth clients' IDs and codes, so they last when the server restarts, and other servers with it accept them. It's made, when it isn't there. Empty for a new key each time the server starts."`
 
 	// The OAuth server, which issues sessions to clients, such as MCP's
 	OAuth          bool     `name:"oauth" help:"Be an OAuth authorization server for the API, which clients, such as MCP clients, register with, and are authorized by whoever's signed in"`
@@ -115,11 +108,15 @@ func (flags AuthFlags) withHandlers(ctx server.Cmd, credentials credential.Crede
 		return err
 	}
 	opts := []authhandler.Opt{authhandler.WithExchange(exchanger.Exchange, store.ResponseSchema()), authhandler.WithSessions(sessions)}
-	if key, err := flags.sealKey(ctx, credentials); err != nil {
+
+	// The key which seals sign-ins, and OAuth clients' IDs and codes, is the
+	// sessions', so they last when the server restarts, and servers which
+	// share them accept each other's
+	key, err := sessions.Key()
+	if err != nil {
 		return err
-	} else if key != nil {
-		opts = append(opts, authhandler.WithKey(key))
 	}
+	opts = append(opts, authhandler.WithKey(key))
 	if flags.URL != "" {
 		opts = append(opts, authhandler.WithBaseURL(flags.URL))
 	}
@@ -210,9 +207,10 @@ func (flags AuthFlags) providers(ctx server.Cmd, credentials credential.Credenti
 }
 
 // exchanger returns what signing in is exchanged for: a session, in files,
+// with their key,
 // of the LDAP directory's user, with their groups' scopes, when LDAP is
 // signed in with, or else the identity, when the hook allows it
-func (flags AuthFlags) exchanger(ctx server.Cmd, directory ldapprovider.Manager) (*store.Exchanger, store.SessionStore, error) {
+func (flags AuthFlags) exchanger(ctx server.Cmd, directory ldapprovider.Manager) (*store.Exchanger, *file.Sessions, error) {
 	path := flags.Sessions
 	if path == "" {
 		config, err := os.UserConfigDir()
@@ -248,42 +246,4 @@ func (flags AuthFlags) exchanger(ctx server.Cmd, directory ldapprovider.Manager)
 		return nil, nil, err
 	}
 	return exchanger, sessions, nil
-}
-
-// sealKey returns the key which seals sign-ins, OAuth clients' IDs and
-// codes, from its credential, which is a new key, made and kept, when it
-// isn't there, or nil, for a new key each time, without a credential
-func (flags AuthFlags) sealKey(ctx server.Cmd, credentials credential.CredentialProvider) ([]byte, error) {
-	if flags.Key == "" {
-		ctx.Logger().WarnContext(ctx.Context(), "Without --auth.key, sign-ins, OAuth clients and codes end when the server restarts")
-		return nil, nil
-	} else if credentials == nil {
-		return nil, httpresponse.ErrBadRequest.Withf("The key %q is a credential, which needs credentials", flags.Key)
-	}
-	value, err := credentials.Get(ctx.Context(), flags.Key)
-	if errors.Is(err, goauth.ErrNotFound) {
-		key := make([]byte, 32)
-		if _, err := rand.Read(key); err != nil {
-			return nil, err
-		}
-		data, err := json.Marshal(base64.RawURLEncoding.EncodeToString(key))
-		if err != nil {
-			return nil, err
-		} else if err := credentials.Set(ctx.Context(), flags.Key, data); err != nil {
-			return nil, fmt.Errorf("the key's credential %q couldn't be made: %w", flags.Key, err)
-		}
-		ctx.Logger().InfoContext(ctx.Context(), "Made the key", "credential", flags.Key)
-		return key, nil
-	} else if err != nil {
-		return nil, fmt.Errorf("the key's credential %q: %w", flags.Key, err)
-	}
-	var encoded string
-	if err := json.Unmarshal(value, &encoded); err != nil {
-		return nil, httpresponse.ErrBadRequest.Withf("The credential %q isn't a key, which is a string", flags.Key)
-	}
-	key, err := base64.RawURLEncoding.DecodeString(strings.TrimRight(encoded, "="))
-	if err != nil || len(key) != 32 {
-		return nil, httpresponse.ErrBadRequest.Withf("The credential %q isn't a key, which is 32 bytes, base64url", flags.Key)
-	}
-	return key, nil
 }

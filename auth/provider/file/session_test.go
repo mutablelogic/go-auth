@@ -19,6 +19,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -153,4 +154,52 @@ func Test_Consume(t *testing.T) {
 	entries, err := os.ReadDir(filepath.Join(dir, "consumed"))
 	require.NoError(t, err)
 	assert.Len(t, entries, 1)
+}
+
+func Test_Key(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "sessions")
+
+	// Servers which make it at once have the same one, which lasts
+	var wg sync.WaitGroup
+	keys := make([][]byte, 8)
+	for i := range keys {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			s, err := file.New(dir)
+			require.NoError(t, err)
+			keys[i], err = s.Key()
+			require.NoError(t, err)
+		}()
+	}
+	wg.Wait()
+	for _, key := range keys {
+		assert.Len(t, key, 32)
+		assert.Equal(t, keys[0], key)
+	}
+	s, err := file.New(dir)
+	require.NoError(t, err)
+	again, err := s.Key()
+	require.NoError(t, err)
+	assert.Equal(t, keys[0], again)
+
+	// Only its owner can read it, and it's a key
+	path := filepath.Join(dir, "key")
+	info, err := os.Stat(path)
+	require.NoError(t, err)
+	assert.Equal(t, os.FileMode(0o600), info.Mode().Perm())
+	require.NoError(t, os.Chmod(path, 0o644))
+	_, err = s.Key()
+	assert.ErrorIs(t, err, httpresponse.ErrBadRequest)
+	require.NoError(t, os.Chmod(path, 0o600))
+	require.NoError(t, os.WriteFile(path, []byte("short"), 0o600))
+	_, err = s.Key()
+	assert.ErrorIs(t, err, httpresponse.ErrBadRequest)
+
+	// No temporary files are left
+	entries, err := os.ReadDir(dir)
+	require.NoError(t, err)
+	for _, entry := range entries {
+		assert.False(t, strings.HasPrefix(entry.Name(), ".key-"), entry.Name())
+	}
 }
