@@ -21,6 +21,7 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
+	"net"
 	"net/url"
 	"strconv"
 	"strings"
@@ -168,15 +169,18 @@ func (manager *Manager) Connect(ctx context.Context) (err error) {
 	defer manager.mu.Unlock()
 
 	if manager.conn == nil {
-		conn, err := ldapConnect(manager.Host(), manager.Port(), manager.tls)
+		conn, err := ldapConnect(ctx, manager.Host(), manager.Port(), manager.tls)
 		if err != nil {
 			return err
 		}
-		if err := ldapBind(conn, manager.User(), manager.pass); err != nil {
+		if err := whileOpen(ctx, conn, func() error { return ldapBind(conn, manager.User(), manager.pass) }); err != nil {
 			return errors.Join(ldaperr(err), ldapDisconnect(conn))
 		}
 		manager.conn = conn
-	} else if _, err = manager.conn.WhoAmI([]ldap.Control{}); err != nil {
+	} else if err = whileOpen(ctx, manager.conn, func() error {
+		_, err := manager.conn.WhoAmI([]ldap.Control{})
+		return err
+	}); err != nil {
 		var conn *ldap.Conn
 		conn, manager.conn = manager.conn, nil
 		return errors.Join(err, ldapDisconnect(conn))
@@ -231,13 +235,38 @@ func (manager *Manager) serverAttrs() []attribute.KeyValue {
 }
 
 // ldapConnect connects to the directory, with TLS when there's a
-// configuration
-func ldapConnect(host string, port uint, tls *tls.Config) (*ldap.Conn, error) {
-	scheme := schema.MethodPlain
-	if tls != nil {
-		scheme = schema.MethodSecure
+// configuration, until the context is cancelled. Its requests time out.
+func ldapConnect(ctx context.Context, host string, port uint, config *tls.Config) (*ldap.Conn, error) {
+	addr := net.JoinHostPort(host, strconv.FormatUint(uint64(port), 10))
+	dialer := &net.Dialer{Timeout: schema.RequestTimeout}
+
+	var conn net.Conn
+	var err error
+	if config != nil {
+		conn, err = (&tls.Dialer{NetDialer: dialer, Config: config}).DialContext(ctx, "tcp", addr)
+	} else {
+		conn, err = dialer.DialContext(ctx, "tcp", addr)
 	}
-	return ldap.DialURL(fmt.Sprintf("%s://%s:%d", scheme, host, port), ldap.DialWithTLSConfig(tls))
+	if err != nil {
+		return nil, ldap.NewError(ldap.ErrorNetwork, err)
+	}
+
+	result := ldap.NewConn(conn, config != nil)
+	result.Start()
+	result.SetTimeout(schema.RequestTimeout)
+	return result, nil
+}
+
+// whileOpen calls the function, and closes the connection if the context is
+// cancelled first, so a directory which doesn't answer can't block a caller
+// which holds the lock. It returns the context's error, when it was.
+func whileOpen(ctx context.Context, conn *ldap.Conn, fn func() error) error {
+	stop := context.AfterFunc(ctx, func() { _ = conn.Close() })
+	err := fn()
+	if !stop() {
+		return errors.Join(ctx.Err(), err)
+	}
+	return err
 }
 
 // ldapDisconnect closes the connection, which may have been closed already
@@ -282,6 +311,10 @@ func isIgnorableLDAPDisconnectError(err error) bool {
 func ldaperr(err error) error {
 	if err == nil {
 		return nil
+	}
+	// A cancelled request is the caller's, not the directory's, error
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return err
 	}
 	code := ldapErrorCode(err)
 	if code == 0 {
