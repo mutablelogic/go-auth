@@ -68,6 +68,10 @@ const (
 
 	// consumed is the directory of the IDs which have been consumed
 	consumed = "consumed"
+
+	// keyFile is the file of the key, and keyBytes its size
+	keyFile  = "key"
+	keyBytes = 32
 )
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -185,8 +189,70 @@ func (s *Sessions) Consume(_ context.Context, id string, expires time.Time) erro
 	return errors.Join(err, f.Close())
 }
 
+// Key returns the key of the sessions, of 32 bytes, such as the one which
+// seals sign-ins, and OAuth clients' IDs and codes, so they last when the
+// server restarts, and servers which share the directory accept each
+// other's. It's in the directory, which only its owner can read, out of
+// reach of anything else, such as credentials, which could replace it.
+// It's made when it isn't there, at once, so when servers make it at the
+// same time, there's one, which they all return.
+func (s *Sessions) Key() ([]byte, error) {
+	path := filepath.Join(s.dir, keyFile)
+	if key, err := readKey(path); !errors.Is(err, fs.ErrNotExist) {
+		return key, err
+	}
+
+	// A new key, written to a file of its own, which is linked as the key,
+	// unless there's one, which is returned
+	key := make([]byte, keyBytes)
+	if _, err := rand.Read(key); err != nil {
+		return nil, err
+	}
+	tmp, err := os.CreateTemp(s.dir, ".key-*")
+	if err != nil {
+		return nil, err
+	}
+	defer os.Remove(tmp.Name())
+	if err := tmp.Chmod(0o600); err != nil {
+		tmp.Close()
+		return nil, err
+	}
+	if _, err := tmp.WriteString(base64.RawURLEncoding.EncodeToString(key)); err != nil {
+		tmp.Close()
+		return nil, err
+	}
+	if err := tmp.Close(); err != nil {
+		return nil, err
+	}
+	if err := os.Link(tmp.Name(), path); errors.Is(err, fs.ErrExist) {
+		return readKey(path)
+	} else if err != nil {
+		return nil, err
+	}
+	return key, nil
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 // PRIVATE METHODS
+
+// readKey returns the key in the file, which only its owner can read
+func readKey(path string) ([]byte, error) {
+	info, err := os.Stat(path)
+	if err != nil {
+		return nil, err
+	} else if info.Mode().Perm()&0o077 != 0 {
+		return nil, httpresponse.ErrBadRequest.Withf("The key %q can be read, or written, by others (%v): only its owner can", path, info.Mode().Perm())
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	key, err := base64.RawURLEncoding.DecodeString(strings.TrimSpace(string(data)))
+	if err != nil || len(key) != keyBytes {
+		return nil, httpresponse.ErrBadRequest.Withf("The key %q isn't %d bytes, base64url", path, keyBytes)
+	}
+	return key, nil
+}
 
 // hash is the ID of a token's session: the hex of its SHA-256
 func hash(token string) string {

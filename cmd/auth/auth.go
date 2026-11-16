@@ -56,7 +56,7 @@ type AuthFlags struct {
 	// What signing in is exchanged for
 	LDAPScopes []string      `name:"ldap.scope" sep:"none" help:"Scopes of an LDAP group's members, as group=scope,scope, such as admins=ldap:read,ldap:write. Can be specified more than once."`
 	Allow      []string      `name:"allow" help:"Only those with a verified email address at the domain, such as example.com, can sign in. Can be specified more than once."`
-	Sessions   string        `name:"sessions" help:"Directory of the sessions. Without it, it's in the user's configuration directory."`
+	Sessions   string        `name:"sessions" help:"Directory of the sessions, and of the key which seals sign-ins, and OAuth clients' IDs and codes, so servers which share it accept each other's. Without it, it's in the user's configuration directory."`
 	TTL        time.Duration `name:"ttl" default:"24h" help:"How long a session lasts"`
 
 	// The OAuth server, which issues sessions to clients, such as MCP's
@@ -108,6 +108,15 @@ func (flags AuthFlags) withHandlers(ctx server.Cmd, credentials credential.Crede
 		return err
 	}
 	opts := []authhandler.Opt{authhandler.WithExchange(exchanger.Exchange, store.ResponseSchema()), authhandler.WithSessions(sessions)}
+
+	// The key which seals sign-ins, and OAuth clients' IDs and codes, is the
+	// sessions', so they last when the server restarts, and servers which
+	// share them accept each other's
+	key, err := sessions.Key()
+	if err != nil {
+		return err
+	}
+	opts = append(opts, authhandler.WithKey(key))
 	if flags.URL != "" {
 		opts = append(opts, authhandler.WithBaseURL(flags.URL))
 	}
@@ -198,9 +207,10 @@ func (flags AuthFlags) providers(ctx server.Cmd, credentials credential.Credenti
 }
 
 // exchanger returns what signing in is exchanged for: a session, in files,
+// with their key,
 // of the LDAP directory's user, with their groups' scopes, when LDAP is
 // signed in with, or else the identity, when the hook allows it
-func (flags AuthFlags) exchanger(ctx server.Cmd, directory ldapprovider.Manager) (*store.Exchanger, store.SessionStore, error) {
+func (flags AuthFlags) exchanger(ctx server.Cmd, directory ldapprovider.Manager) (*store.Exchanger, *file.Sessions, error) {
 	path := flags.Sessions
 	if path == "" {
 		config, err := os.UserConfigDir()
