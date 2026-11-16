@@ -1,15 +1,13 @@
 // The LDAP module's elements, which need lit, and Carbon's web components:
 //
-// - ga-ldap-users, ga-ldap-groups and ga-ldap-objects are the Users, Groups
-//   and Objects pages.
-// - ga-ldap-page is a page of the module which isn't made yet, with a
-//   header of the directory's status: whether it's connected, its host, and
-//   the user it binds as.
+// - ga-ldap-users, ga-ldap-groups, ga-ldap-objects and ga-ldap-schema are
+//   the Users, Groups, Objects and Schema pages, whose headers have the
+//   directory's status: whether it's connected, its host, and the user it
+//   binds as.
 // - ldapModule adds the module to the app: its LDAP item in the app's menu
 //   bar, and its sidebar, of Users, Groups, Objects and Schema, while it's
 //   active. Users and Groups are only when the directory has them.
 
-import { html } from 'lit';
 import type { Client } from '@mutablelogic/go-server/api';
 import type { ChangesController } from '@mutablelogic/go-server/broadcaster';
 import { configSection, getConfig } from '@mutablelogic/go-server/config';
@@ -21,69 +19,29 @@ import { LdapPage } from './parts.ts';
 import type { LdapStatus } from './schema.ts';
 import { LdapGroupsElement, LdapGroupsTag } from './groups.ts';
 import { LdapObjectsElement, LdapObjectsTag } from './objects.ts';
+import { LdapSchemaElement, LdapSchemaTag } from './schemapage.ts';
 import { LdapUsersElement, LdapUsersTag } from './users.ts';
 
 export { LdapPage, attrsView, entryFormView, secretView, statusView } from './parts.ts';
 export { LdapUsersElement, LdapUsersTag, passwordFormView, userColumns } from './users.ts';
 export { LdapGroupsElement, LdapGroupsTag, groupColumns } from './groups.ts';
-export { LdapObjectsElement, LdapObjectsTag } from './objects.ts';
+export { LdapObjectsElement, LdapObjectsTag, entryColumns } from './objects.ts';
+export { LdapSchemaElement, LdapSchemaTag, attributeColumns, classColumns, type SchemaTab } from './schemapage.ts';
 
-// Carbon components
-import '@mutablelogic/go-server/page/view';
-import UsersIcon from '@carbon/icons/es/user--multiple/32.js';
-import GroupsIcon from '@carbon/icons/es/events/32.js';
-import ObjectsIcon from '@carbon/icons/es/tree-view--alt/32.js';
-import SchemaIcon from '@carbon/icons/es/catalog/32.js';
 
 ///////////////////////////////////////////////////////////////////////////////
 // GLOBALS
 
-export const LdapPageTag = 'ga-ldap-page';
-
 // LdapPageKind is which of the module's pages a page is
 export type LdapPageKind = 'users' | 'groups' | 'objects' | 'schema';
 
-// The pages' headings, icons and ids, which they're routed to
-const pages: Record<LdapPageKind, { heading: string; icon: unknown; id: string }> = {
-    users: { heading: 'Users', icon: UsersIcon, id: 'ldap-users' },
-    groups: { heading: 'Groups', icon: GroupsIcon, id: 'ldap-groups' },
-    objects: { heading: 'Objects', icon: ObjectsIcon, id: 'ldap-objects' },
-    schema: { heading: 'Schema', icon: SchemaIcon, id: 'ldap-schema' },
+// The pages' headings, and ids, which they're routed to
+const pages: Record<LdapPageKind, { heading: string; id: string }> = {
+    users: { heading: 'Users', id: 'ldap-users' },
+    groups: { heading: 'Groups', id: 'ldap-groups' },
+    objects: { heading: 'Objects', id: 'ldap-objects' },
+    schema: { heading: 'Schema', id: 'ldap-schema' },
 };
-
-///////////////////////////////////////////////////////////////////////////////
-// PAGE
-
-// LdapPageElement is a page of the module which isn't made yet, with a
-// header of the directory's status, which follows its connection
-export class LdapPageElement extends LdapPage {
-    static override properties = {
-        ...LdapPage.properties,
-        kind: { type: String },
-    };
-
-    declare kind: LdapPageKind;
-
-    constructor() {
-        super();
-        this.kind = 'objects';
-    }
-
-    protected override render() {
-        const page = pages[this.kind];
-        return html`<gs-page-header heading=${page.heading} .icon=${page.icon} .details=${this.details}></gs-page-header>`;
-    }
-}
-
-if (!customElements.get(LdapPageTag)) {
-    customElements.define(LdapPageTag, LdapPageElement);
-}
-
-declare global {
-    interface HTMLElementTagNameMap {
-        [LdapPageTag]: LdapPageElement;
-    }
-}
 
 ///////////////////////////////////////////////////////////////////////////////
 // MODULE
@@ -111,7 +69,7 @@ export interface LdapPages {
     users?: LdapUsersElement;
     groups?: LdapGroupsElement;
     objects: LdapObjectsElement;
-    schema: LdapPageElement;
+    schema: LdapSchemaElement;
 }
 
 // ldapModule adds the LDAP module to the app: its section, which owns the
@@ -136,11 +94,6 @@ export function ldapModule(app: LdapApp, section = 'LDAP'): LdapPages {
         app.router.add(pages[kind].id, page);
         return element;
     };
-    const placeholder = (kind: LdapPageKind) => {
-        const element = document.createElement(LdapPageTag);
-        element.kind = kind;
-        return add(kind, element);
-    };
 
     const kinds: LdapPageKind[] = [];
     if (app.status.user_dn) {
@@ -156,7 +109,7 @@ export function ldapModule(app: LdapApp, section = 'LDAP'): LdapPages {
         users: app.status.user_dn ? add('users', document.createElement(LdapUsersTag)) : undefined,
         groups: app.status.group_dn ? add('groups', document.createElement(LdapGroupsTag)) : undefined,
         objects: add('objects', document.createElement(LdapObjectsTag)),
-        schema: placeholder('schema'),
+        schema: add('schema', document.createElement(LdapSchemaTag)),
     };
     app.nav.setSection(section, kinds.map((kind) => ({ id: pages[kind].id, label: pages[kind].heading, href: `#${pages[kind].id}` })));
     return result;
