@@ -11,7 +11,9 @@ require (
 	github.com/aws/aws-sdk-go-v2/credentials v1.21.0
 	github.com/aws/aws-sdk-go-v2/service/secretsmanager v1.51.0
 	github.com/aws/smithy-go v1.28.9
+	github.com/coreos/go-oidc/v3 v3.21.0
 	github.com/go-asn1-ber/asn1-ber v1.5.8
+	github.com/go-jose/go-jose/v4 v4.1.4
 	github.com/go-ldap/ldap/v3 v3.4.15
 	github.com/mutablelogic/go-client v1.4.13
 	github.com/mutablelogic/go-pg v1.5.1
@@ -24,6 +26,7 @@ require (
 	go.opentelemetry.io/otel/sdk v1.47.0
 	go.opentelemetry.io/otel/trace v1.47.0
 	golang.org/x/crypto v0.59.0
+	golang.org/x/oauth2 v0.38.0
 	golang.org/x/sync v0.25.0
 	golang.org/x/term v0.48.0
 )
