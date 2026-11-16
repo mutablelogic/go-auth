@@ -32,7 +32,6 @@ import (
 // LDAPFlags configure the LDAP manager
 type LDAPFlags struct {
 	ldapcmd.ServerFlags
-	Insecure bool `name:"insecure" env:"${ENV_NAME}_LDAP_INSECURE" help:"Serve the LDAP API, which has no authentication yet, so anyone who can reach the server can change the directory, as the manager's user"`
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -40,15 +39,16 @@ type LDAPFlags struct {
 
 // withHandlers creates the LDAP manager, which publishes its changes, and
 // its connection coming up or going down, to the server's, and calls fn
-// with the registration of its handlers, while it runs
-func (flags LDAPFlags) withHandlers(ctx server.Cmd, changes *broadcaster.Broadcaster, fn func(*module) error) error {
+// with the registration of its handlers, while it runs, when insecure is
+// set
+func (flags LDAPFlags) withHandlers(ctx server.Cmd, changes *broadcaster.Broadcaster, insecure bool, fn func(*module) error) error {
 	// Until the API has authentication, serving it is a choice, as it
 	// changes the directory as the manager's user
-	if !flags.Insecure {
-		return auth.ErrBadParameter.With("the LDAP API has no authentication yet, so anyone who can reach the server could change the directory: set --ldap.insecure to serve it anyway")
+	if !insecure {
+		return auth.ErrBadParameter.With("the LDAP API has no authentication yet, so anyone who can reach the server could change the directory: set --insecure to serve it anyway")
 	}
 	return flags.WithLDAPManager(ctx, changes, func(mgr *manager.Manager) error {
-		ctx.Logger().WarnContext(ctx.Context(), "The LDAP API has no authentication, as --ldap.insecure is set")
+		ctx.Logger().WarnContext(ctx.Context(), "The LDAP API has no authentication, as --insecure is set")
 		return fn(&module{register: ldaphandler.RegisterHandlers(mgr, false)})
 	})
 }
