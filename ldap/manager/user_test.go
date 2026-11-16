@@ -16,10 +16,15 @@ package manager_test
 
 import (
 	"context"
+	"fmt"
 	"strconv"
+	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	// Packages
+	ldapv3 "github.com/go-ldap/ldap/v3"
 	manager "github.com/mutablelogic/go-auth/ldap/manager"
 	schema "github.com/mutablelogic/go-auth/ldap/schema"
 	test "github.com/mutablelogic/go-auth/ldap/test"
@@ -164,4 +169,134 @@ func Test_UserIDs(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, types.Ptr("9999"), c.Get("uidNumber"))
 	})
+}
+
+func Test_UserIDsConcurrent(t *testing.T) {
+	// Two managers, which share the counter, have different IDs for their
+	// users, when they create them at the same time
+	test.ForEach(t, func(t *testing.T, ctx context.Context, server test.Server, m *manager.Manager) {
+		ou := test.OU(t, ctx, m)
+		managers := []*manager.Manager{
+			test.Manager(t, ctx, server, manager.WithUserDN(ou)),
+			test.Manager(t, ctx, server, manager.WithUserDN(ou)),
+		}
+
+		var wg sync.WaitGroup
+		var mu sync.Mutex
+		ids := map[string]string{}
+		start := make(chan struct{})
+		for i, m := range managers {
+			wg.Go(func() {
+				<-start
+				for j := range 5 {
+					name := fmt.Sprintf("user%d%d", i, j)
+					user, err := m.CreateUser(ctx, name, userAttrs(name, "first Passw0rd!"), true)
+					if !assert.NoError(t, err, name) {
+						return
+					}
+					mu.Lock()
+					ids[name] = *user.Get("uidNumber")
+					mu.Unlock()
+				}
+			})
+		}
+		close(start)
+		wg.Wait()
+
+		distinct := map[string]bool{}
+		for _, id := range ids {
+			distinct[id] = true
+		}
+		assert.Len(t, ids, 10)
+		assert.Len(t, distinct, 10, "distinct IDs")
+	})
+}
+
+func Test_CreateUserCancelled(t *testing.T) {
+	// When setting an Active Directory user's password is cancelled, which
+	// loses the manager's connection, the user is deleted on another
+	d := newFakeDirectory(t, true)
+	m, err := manager.New(manager.WithUrl(d.URL("ldaps")), manager.WithBaseDN("dc=example,dc=test"), manager.WithUserDN("ou=users", "user"), manager.WithSkipVerify())
+	require.NoError(t, err)
+	require.NoError(t, m.Connect(context.Background()))
+	defer m.Disconnect(context.Background())
+
+	dn := "cn=alice,ou=users,dc=example,dc=test"
+	d.stall = func(op uint8, target string) bool {
+		return op == ldapv3.ApplicationModifyRequest && strings.EqualFold(target, dn)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
+	defer cancel()
+	_, err = m.CreateUser(ctx, "alice", schema.Attrs{"userPassword": {"first Passw0rd!"}}, false)
+	assert.ErrorIs(t, err, context.DeadlineExceeded)
+	assert.Equal(t, []string{dn}, d.Requests("add"))
+	assert.Equal(t, []string{dn}, d.Requests("delete"))
+	assert.Nil(t, d.Entry(dn), "deleted")
+}
+
+func Test_NextIDRetries(t *testing.T) {
+	// Another manager takes the ID between reading and changing the counter,
+	// so it's read again
+	d := newFakeDirectory(t, false)
+	counter := "cn=lastuid,dc=example,dc=test"
+	d.Set(counter, map[string][]string{"objectClass": {"top", "device"}, "cn": {"lastuid"}, "serialNumber": {"1000"}})
+	var once sync.Once
+	d.beforeModify = func(dn string) {
+		if strings.EqualFold(dn, counter) {
+			once.Do(func() { d.Entry(counter)["serialNumber"] = []string{"1001"} })
+		}
+	}
+	m := fakeManager(t, d)
+
+	user, err := m.CreateUser(context.Background(), "alice", userAttrs("alice", "first Passw0rd!"), true)
+	require.NoError(t, err)
+	assert.Equal(t, types.Ptr("1002"), user.Get("uidNumber"))
+	assert.Equal(t, types.Ptr("1002"), user.Get("gidNumber"))
+	assert.Len(t, d.Requests("modify"), 2, "retried")
+}
+
+func Test_NextIDCreated(t *testing.T) {
+	// Another manager creates the counter first, so it's read, and changed
+	d := newFakeDirectory(t, false)
+	counter := "cn=lastuid,dc=example,dc=test"
+	var once sync.Once
+	d.beforeAdd = func(dn string) {
+		if strings.EqualFold(dn, counter) {
+			once.Do(func() {
+				d.Set(counter, map[string][]string{"objectClass": {"top", "device"}, "cn": {"lastuid"}, "serialNumber": {"1000"}})
+			})
+		}
+	}
+	m := fakeManager(t, d)
+
+	user, err := m.CreateUser(context.Background(), "alice", userAttrs("alice", "first Passw0rd!"), true)
+	require.NoError(t, err)
+	assert.Equal(t, types.Ptr("1001"), user.Get("uidNumber"))
+	assert.Equal(t, []string{counter, "uid=alice,ou=users,dc=example,dc=test"}, d.Requests("add"))
+}
+
+func Test_CreateUserNormalizes(t *testing.T) {
+	// Attribute names are trimmed before they're read, so a uidNumber with
+	// spaces around its name is kept, and no ID is taken
+	d := newFakeDirectory(t, false)
+	m := fakeManager(t, d)
+
+	attrs := userAttrs("alice", "first Passw0rd!")
+	attrs[" uidNumber "] = []string{"5000"}
+	attrs["gidNumber"] = []string{"5000"}
+	user, err := m.CreateUser(context.Background(), "alice", attrs, false)
+	require.NoError(t, err)
+	assert.Equal(t, types.Ptr("5000"), user.Get("uidNumber"))
+	assert.Equal(t, []string{"uid=alice,ou=users,dc=example,dc=test"}, d.Requests("add"), "no counter")
+}
+
+// fakeManager returns a manager connected to the fake directory, whose
+// users are inetOrgPerson and posixAccount
+func fakeManager(t *testing.T, d *fakeDirectory) *manager.Manager {
+	t.Helper()
+	m, err := manager.New(manager.WithUrl(d.URL("ldap")), manager.WithBaseDN("dc=example,dc=test"), manager.WithUserDN("ou=users", "inetOrgPerson", "posixAccount"))
+	require.NoError(t, err)
+	require.NoError(t, m.Connect(context.Background()))
+	t.Cleanup(func() { m.Disconnect(context.Background()) })
+	return m
 }
