@@ -129,6 +129,9 @@ func (manager *Manager) Update(ctx context.Context, dn string, attrs schema.Attr
 	absdn, err := manager.absdn(dn)
 	if err != nil {
 		return nil, err
+	} else if manager.isCounter(absdn) {
+		// Renaming it, or changing its value, would allocate IDs in use
+		return nil, httpresponse.ErrForbidden.Withf("%q has the next user or group ID, so it can't be changed", absdn.String())
 	}
 	object, err := manager.update(ctx, absdn, attrs)
 	if err != nil {

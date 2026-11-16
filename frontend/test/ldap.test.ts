@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import type { Client } from '@mutablelogic/go-server/api';
 import type { Change, ChangeFilter, ChangesController } from '@mutablelogic/go-server/broadcaster';
 import * as api from '../src/ldap/httpclient.ts';
-import { addable, classClosure, entryAttrs, entryForm, entryFormErrors, entrySchema, formFields, isPosix, namingAttr, namingChoices, newEntry, passwordForm, passwordFormErrors, passwordRequest } from '../src/ldap/form.ts';
+import { addable, carryForm, classClosure, entryAttrs, entryForm, entryFormErrors, entrySchema, formFields, isPosix, namingAttr, namingChoices, newEntry, passwordForm, passwordFormErrors, passwordRequest } from '../src/ldap/form.ts';
 import type { AttributeType, ObjectClass } from '../src/ldap/schema.ts';
 import { listAll } from '../src/ldap/controller.ts';
 import { GroupController, LdapStatusController, ObjectController, UserController } from '../src/ldap/controller.ts';
@@ -437,6 +437,39 @@ test('entries', async (t) => {
             dn: 'ou=Sales\\, EMEA,dc=test',
             attrs: { description: ['Sellers'], objectClass: ['top', 'organizationalUnit'], ou: ['Sales, EMEA'] },
         });
+    });
+
+    await t.test("what's typed is kept by attribute, when the class, or the attribute which names it, changes", () => {
+        const typed: Record<string, string> = {};
+        const added: string[] = [];
+        const person = (naming: string) => entrySchema('entry', classClosure(all, ['inetOrgPerson']), types2, naming);
+        let form = carryForm(person('cn'), undefined, typed, added);
+        form.name = 'Alice Smith';
+        form.values.uid = 'alice';
+        form.values.sn = 'Smith';
+        form.added.push('mail');
+        form.values.mail = 'alice@example.com';
+
+        // Named by uid: the name is alice, and Alice Smith is the cn, which
+        // it must have
+        form = carryForm(person('uid'), form, typed, added);
+        assert.equal(form.name, 'alice');
+        assert.equal(form.values.cn, 'Alice Smith');
+        assert.deepEqual(entryFormErrors(form), {});
+        assert.deepEqual(newEntry(form, 'dc=test').attrs.cn, ['Alice Smith']);
+
+        // An organizational unit can't have a mail address, which isn't
+        // added, or sent, but is kept, for a change back
+        form = carryForm(entrySchema('entry', classClosure(all, ['organizationalUnit']), types2, 'ou'), form, typed, added);
+        assert.equal(form.name, '', 'no ou was typed');
+        assert.deepEqual(form.added, []);
+        form.name = 'sales';
+        assert.equal(newEntry(form, 'dc=test').attrs.mail, undefined);
+        form = carryForm(person('uid'), form, typed, added);
+        assert.equal(form.name, 'alice');
+        assert.equal(form.values.mail, 'alice@example.com');
+        assert.deepEqual(form.added, ['mail'], 'shown again');
+        assert.deepEqual(newEntry(form, 'dc=test').attrs.mail, ['alice@example.com']);
     });
 
     await t.test("an existing entry is named by its RDN's attribute", () => {

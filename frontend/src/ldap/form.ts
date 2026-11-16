@@ -358,6 +358,37 @@ export function entryAttrs(form: EntryForm): Attrs {
     return attrs;
 }
 
+// carryForm returns a new entry's form, of the schema, with what was typed
+// in the form it replaces, such as when its class, or the attribute which
+// names it, changes. What's typed is kept by attribute, in typed, with the
+// old form's name under the attribute which named it, so the new form's
+// name is its naming attribute's value, and its other values are kept for
+// another change back, as are the attributes which were added, in added,
+// though only those the schema can have are shown.
+export function carryForm(schema: EntrySchema, old: EntryForm | undefined, typed: Record<string, string>, added: string[] = []): EntryForm {
+    if (old) {
+        Object.assign(typed, old.values);
+        typed[namingAttr(old.schema)] = old.name;
+        for (const name of old.added) {
+            if (!added.includes(name)) {
+                added.push(name);
+            }
+        }
+    }
+    const form = entryForm(schema);
+    const naming = namingAttr(schema).toLowerCase();
+    for (const [name, value] of Object.entries(typed)) {
+        if (name.toLowerCase() === naming) {
+            form.name = value;
+        } else {
+            form.values[name] = value;
+        }
+    }
+    const allowed = new Set([...schema.must, ...schema.may].map((name) => name.toLowerCase()));
+    form.added = added.filter((name) => allowed.has(name.toLowerCase()) && name.toLowerCase() !== naming);
+    return form;
+}
+
 // newEntry returns the DN and attributes of a new entry, under the parent:
 // its name, in the attribute which names it, and its object classes, with
 // the attributes the form sets

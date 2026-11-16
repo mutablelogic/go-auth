@@ -14,7 +14,7 @@ import { ListController } from '@mutablelogic/go-server/list';
 import type { Column, TableActionError, TableSearch, TableToolbarAction } from '@mutablelogic/go-server/list/view';
 import { PanelController, type PanelAction } from '@mutablelogic/go-server/panel';
 import { ObjectController, loadEntrySchemas, type EntrySchemas } from './controller.ts';
-import { entryAttrs, entryForm, entryFormErrors, namingChoices, newEntry, type EntryForm, type EntryFormErrors } from './form.ts';
+import { carryForm, entryAttrs, entryForm, entryFormErrors, namingChoices, newEntry, type EntryForm, type EntryFormErrors } from './form.ts';
 import * as api from './httpclient.ts';
 import { LdapPage, attrsView, entryFormView } from './parts.ts';
 import { dnKey, entryKind, hasChildren, isBranch, isCounter, parentDN, rdnLabel, sameDN, values, type LdapObject } from './schema.ts';
@@ -425,14 +425,14 @@ export class LdapObjectsElement extends LdapPage {
     private show(entry: LdapObject, open: boolean) {
         this.body = { kind: 'entry', dn: entry.dn, content: attrsView(entry) };
         this.panel.setHeader({ title: rdnLabel(entry.dn), subtitle: classesOf(entry).join(', ') || 'Entry' });
-        // The entries with the next user and group IDs aren't deleted, and a
-        // person's password can be checked
+        // The entries with the next user and group IDs aren't deleted, or
+        // changed, and a person's password can be checked
         const base = this.current?.base_dn;
         const actions: PanelAction[] = [];
         if (!base || !isCounter(entry.dn, base)) {
             actions.push({ label: 'Delete', kind: 'danger', close: false, run: () => this.delete(entry) });
+            actions.push({ label: 'Edit', kind: entryKind(entry) === 'person' ? 'secondary' : 'primary', close: false, run: () => this.edit(entry) });
         }
-        actions.push({ label: 'Edit', kind: entryKind(entry) === 'person' ? 'secondary' : 'primary', close: false, run: () => this.edit(entry) });
         if (entryKind(entry) === 'person') {
             actions.push({ label: 'Check password', kind: 'primary', close: false, run: () => this.checkPassword(entry) });
         }
@@ -535,19 +535,14 @@ export class LdapObjectsElement extends LdapPage {
         const structural = schemas.classes
             .filter((c) => (c.classKind ?? 'STRUCTURAL') === 'STRUCTURAL' && !c.obsolete && c.name?.length)
             .map((c) => c.name![0]).sort((a, b) => a.localeCompare(b));
-        const state: { class?: string; naming?: string; form?: EntryForm; errors: EntryFormErrors } = { errors: {} };
+        const state: { class?: string; naming?: string; form?: EntryForm; typed: Record<string, string>; added: string[]; errors: EntryFormErrors } = { typed: {}, added: [], errors: {} };
 
         // choose makes the form of the class, named by the attribute, or the
-        // one it's best named by, keeping what was typed
+        // one it's best named by, with what was typed, by attribute
         const choose = (name: string, naming?: string) => {
             const choices = namingChoices(schemas.create([name]));
             const chosen = naming && choices.includes(naming) ? naming : choices[0];
-            const form = entryForm(schemas.create([name], chosen));
-            if (state.form) {
-                form.name = state.form.name;
-                form.values = { ...state.form.values };
-                form.added = [...state.form.added];
-            }
+            const form = carryForm(schemas.create([name], chosen), state.form, state.typed, state.added);
             Object.assign(state, { class: name, naming: chosen, form, errors: {} });
         };
         const view = (): TemplateResult => {
