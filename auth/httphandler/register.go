@@ -30,6 +30,7 @@ import (
 	schema "github.com/mutablelogic/go-auth/auth/schema"
 	httpresponse "github.com/mutablelogic/go-server/pkg/httpresponse"
 	httprouter "github.com/mutablelogic/go-server/pkg/httprouter"
+	jsonschema "github.com/mutablelogic/go-server/pkg/jsonschema"
 	opts "github.com/mutablelogic/go-server/pkg/openapi"
 )
 
@@ -47,6 +48,7 @@ type options struct {
 	key      []byte
 	base     *url.URL
 	exchange ExchangeFunc
+	response *jsonschema.Schema
 	ttl      time.Duration
 	now      func() time.Time
 }
@@ -96,10 +98,14 @@ func WithBaseURL(base string) Opt {
 }
 
 // WithExchange does fn with an identity, once someone has signed in, and
-// returns its result. Without it, the identity is returned.
-func WithExchange(fn ExchangeFunc) Opt {
+// returns its result, whose schema is the response's, in the OpenAPI
+// specification, such as a session's. Without it, the identity is returned.
+func WithExchange(fn ExchangeFunc, response *jsonschema.Schema) Opt {
 	return func(o *options) error {
-		o.exchange = fn
+		if fn == nil || response == nil {
+			return httpresponse.ErrBadRequest.With("An exchange needs a function, and the schema of its result")
+		}
+		o.exchange, o.response = fn, response
 		return nil
 	}
 }
@@ -112,7 +118,7 @@ func WithExchange(fn ExchangeFunc) Opt {
 // and a password provider's sign-in
 func RegisterHandlers(providers []provider.Provider, opt ...Opt) func(*httprouter.Router) error {
 	return func(router *httprouter.Router) error {
-		o := options{ttl: defaultTTL, now: time.Now, exchange: func(_ context.Context, identity *schema.Identity) (any, error) {
+		o := options{ttl: defaultTTL, now: time.Now, response: jsonschema.MustFor[schema.Identity](), exchange: func(_ context.Context, identity *schema.Identity) (any, error) {
 			return identity, nil
 		}}
 		for _, fn := range opt {

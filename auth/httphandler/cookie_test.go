@@ -48,8 +48,10 @@ func Test_sealer(t *testing.T) {
 	require.NoError(t, err)
 	_, err = other.open(value, "google", now)
 	assert.ErrorIs(t, err, errCookie)
-	_, err = s.open(value[:len(value)-2]+"AA", "google", now)
+	_, err = s.open(flip(value, len(value)-1), "google", now)
 	assert.ErrorIs(t, err, errCookie)
+	_, err = s.open(flip(value, 0), "google", now)
+	assert.ErrorIs(t, err, errCookie, "its nonce")
 	_, err = s.open("not base64!", "google", now)
 	assert.ErrorIs(t, err, errCookie)
 
@@ -57,4 +59,14 @@ func Test_sealer(t *testing.T) {
 	again, err := s.seal(in)
 	require.NoError(t, err)
 	assert.NotEqual(t, value, again)
+}
+
+// flip returns the value, with the character at i another, which is always
+// different, and is base64url
+func flip(value string, i int) string {
+	c := byte('A')
+	if value[i] == 'A' {
+		c = 'B'
+	}
+	return value[:i] + string(c) + value[i+1:]
 }

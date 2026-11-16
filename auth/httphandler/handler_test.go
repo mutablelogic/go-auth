@@ -31,6 +31,7 @@ import (
 	authtest "github.com/mutablelogic/go-auth/auth/test"
 	httpresponse "github.com/mutablelogic/go-server/pkg/httpresponse"
 	httprouter "github.com/mutablelogic/go-server/pkg/httprouter"
+	jsonschema "github.com/mutablelogic/go-server/pkg/jsonschema"
 	test "github.com/mutablelogic/go-server/test"
 	assert "github.com/stretchr/testify/assert"
 	require "github.com/stretchr/testify/require"
@@ -172,7 +173,12 @@ func Test_Redirect(t *testing.T) {
 
 	t.Run("ChangedCookie", func(t *testing.T) {
 		cookie, state, code := signIn()
-		cookie.Value = strings.ToUpper(cookie.Value[:8]) + cookie.Value[8:]
+		// Its first character, which is always another, and base64url
+		first := "A"
+		if cookie.Value[0] == 'A' {
+			first = "B"
+		}
+		cookie.Value = first + cookie.Value[1:]
 		resp, _ := c.do(http.MethodGet, "auth/oidc/callback?"+url.Values{"code": {code}, "state": {state}}.Encode(), nil, "", cookie)
 		assert.Equal(t, http.StatusUnauthorized, resp.StatusCode)
 	})
@@ -234,11 +240,14 @@ func Test_Exchange(t *testing.T) {
 		}
 		return map[string]string{"session": "for " + identity.Subject}, nil
 	}
-	s := test.NewServer(t, httphandler.RegisterHandlers([]provider.Provider{local{}}, httphandler.WithExchange(exchange)))
+	s := test.NewServer(t, httphandler.RegisterHandlers([]provider.Provider{local{}}, httphandler.WithExchange(exchange, jsonschema.MustFor[map[string]string]())))
 	var result map[string]string
 	require.Equal(t, http.StatusOK, s.JSON(t, http.MethodPost, "auth/local/login", map[string]string{"username": "alice", "password": "secret"}, &result))
 	assert.Equal(t, map[string]string{"session": "for alice"}, result)
-	s.Reset()
+
+	// Its schema is the response's, which the exchange is checked against,
+	// rather than an identity's
+	assert.Empty(t, s.Verify())
 }
 
 func Test_Options(t *testing.T) {
