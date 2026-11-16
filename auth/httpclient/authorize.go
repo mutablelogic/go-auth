@@ -1,0 +1,153 @@
+// Copyright 2026 David Thorpe
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+package httpclient
+
+import (
+	"context"
+	"crypto/subtle"
+	"net/url"
+	"sync"
+
+	// Packages
+	goauth "github.com/mutablelogic/go-auth"
+	oauth2 "golang.org/x/oauth2"
+)
+
+///////////////////////////////////////////////////////////////////////////////
+// TYPES
+
+// Grant is what a resource was authorized with: its authorization server,
+// the client, the redirect URI, the resource and scopes, and the token,
+// which is refreshed with them, so it's what's kept
+type Grant struct {
+	Server      ServerMetadata `json:"server"`
+	Client      Registration   `json:"client"`
+	RedirectURI string         `json:"redirect_uri"`
+	Resource    string         `json:"resource,omitempty"`
+	Scopes      []string       `json:"scopes,omitempty"`
+	Token       *oauth2.Token  `json:"token,omitempty"`
+}
+
+// Authorization is an authorization which is waited for: the URL a person
+// authorizes it at, its state, which its callback is matched with, and its
+// PKCE verifier, which its code is exchanged with
+type Authorization struct {
+	Grant
+	URL      string `json:"url"`
+	State    string `json:"-"`
+	Verifier string `json:"-"`
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// PUBLIC METHODS
+
+// Authorize starts the authorization of the resource, whose metadata is
+// discovered, by its first authorization server, which needs to support
+// PKCE's S256, for the client, which is registered, with the redirect URI,
+// and the scopes, or else those the resource says it supports, and returns
+// the URL a person authorizes it at. Returns ErrNotImplemented when the
+// server doesn't support S256, and ErrBadParameter when the redirect URI
+// isn't an http, or https, URL.
+func (c *Client) Authorize(metadata *Metadata, client Registration, redirectURI string, scopes ...string) (*Authorization, error) {
+	if metadata == nil || len(metadata.AuthorizationServers) == 0 {
+		return nil, goauth.ErrBadParameter.With("no authorization server")
+	} else if u, err := url.Parse(redirectURI); err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+		return nil, goauth.ErrBadParameter.Withf("redirect URI %q isn't an http, or https, URL", redirectURI)
+	} else if client.ClientID == "" {
+		return nil, goauth.ErrBadParameter.With("no client")
+	}
+	server := metadata.AuthorizationServers[0]
+	if !server.SupportsS256() {
+		return nil, goauth.ErrNotImplemented.Withf("authorization server %q doesn't support PKCE's S256", server.Issuer)
+	}
+	resource := metadata.Resource.Resource
+	if resource == "" {
+		resource = c.endpoint
+	}
+	if len(scopes) == 0 {
+		scopes = metadata.Resource.ScopesSupported
+	}
+	a := &Authorization{
+		Grant:    Grant{Server: server, Client: client, RedirectURI: redirectURI, Resource: resource, Scopes: scopes},
+		State:    oauth2.GenerateVerifier(),
+		Verifier: oauth2.GenerateVerifier(),
+	}
+	a.URL = server.Config(client, redirectURI, scopes...).AuthCodeURL(a.State, oauth2.S256ChallengeOption(a.Verifier), oauth2.SetAuthURLParam("resource", resource))
+	return a, nil
+}
+
+// Exchange completes the authorization, with its callback's query: the
+// state, which must be the authorization's, and the code, which is
+// exchanged, with the verifier, for a token, or the error the
+// authorization server said. Returns the grant, with the token, or
+// ErrBadParameter, when it wasn't authorized, or the code couldn't be
+// exchanged.
+func (c *Client) Exchange(ctx context.Context, a *Authorization, query url.Values) (*Grant, error) {
+	if a == nil {
+		return nil, goauth.ErrBadParameter.With("no authorization")
+	} else if subtle.ConstantTimeCompare([]byte(query.Get("state")), []byte(a.State)) != 1 {
+		return nil, goauth.ErrBadParameter.With("the state isn't the authorization's")
+	} else if reason := query.Get("error"); reason != "" {
+		if description := query.Get("error_description"); description != "" {
+			reason = description
+		}
+		return nil, goauth.ErrBadParameter.Withf("it wasn't authorized: %s", reason)
+	} else if query.Get("code") == "" {
+		return nil, goauth.ErrBadParameter.With("missing code")
+	}
+	ctx = context.WithValue(ctx, oauth2.HTTPClient, c.metadata.Client)
+	token, err := a.Server.Config(a.Client, a.RedirectURI, a.Scopes...).Exchange(ctx, query.Get("code"), oauth2.VerifierOption(a.Verifier), oauth2.SetAuthURLParam("resource", a.Resource))
+	if err != nil {
+		return nil, goauth.ErrBadParameter.Withf("the code couldn't be exchanged: %v", err)
+	}
+	grant := a.Grant
+	grant.Token = token
+	return &grant, nil
+}
+
+// TokenSource returns a source of the grant's token, which is refreshed,
+// with its refresh token, when it's expired, with the client's options,
+// and fn, when it isn't nil, is called with a new token, so it's kept
+func (c *Client) TokenSource(ctx context.Context, grant *Grant, fn func(*oauth2.Token)) oauth2.TokenSource {
+	ctx = context.WithValue(ctx, oauth2.HTTPClient, c.metadata.Client)
+	source := grant.Server.Config(grant.Client, grant.RedirectURI, grant.Scopes...).TokenSource(ctx, grant.Token)
+	return &notifying{source: source, last: grant.Token, fn: fn}
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// PRIVATE TYPES
+
+// notifying is a token source which calls fn with a token which isn't the
+// last
+type notifying struct {
+	mu     sync.Mutex
+	source oauth2.TokenSource
+	last   *oauth2.Token
+	fn     func(*oauth2.Token)
+}
+
+func (n *notifying) Token() (*oauth2.Token, error) {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	token, err := n.source.Token()
+	if err != nil {
+		return nil, err
+	}
+	if n.fn != nil && (n.last == nil || token.AccessToken != n.last.AccessToken || token.RefreshToken != n.last.RefreshToken) {
+		n.fn(token)
+	}
+	n.last = token
+	return token, nil
+}
