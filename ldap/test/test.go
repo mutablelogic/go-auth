@@ -13,10 +13,11 @@
 // limitations under the License.
 
 // Package test runs tests against LDAP directories, OpenLDAP, 389 DS and
-// SMB LDS, each in a container which starts when a test first needs it, and
-// is shared by the package's tests, until they've all run. They need docker,
-// and are skipped with -short. LDAP_TEST_SERVER chooses some of them,
-// separated by commas, such as "openldap,389ds".
+// SMB LDS, with a manager connected to each. Each directory is in a
+// container which starts when a test first needs it, and is shared by the
+// package's tests, until they've all run. They need docker, and are skipped
+// with -short. LDAP_TEST_SERVER chooses some of them, separated by commas,
+// such as "openldap,389ds".
 package test
 
 import (
@@ -32,6 +33,7 @@ import (
 
 	// Packages
 	ldap "github.com/go-ldap/ldap/v3"
+	manager "github.com/mutablelogic/go-auth/ldap/manager"
 	schema "github.com/mutablelogic/go-auth/ldap/schema"
 	pgtest "github.com/mutablelogic/go-pg/pkg/test"
 	require "github.com/stretchr/testify/require"
@@ -51,6 +53,10 @@ type Server struct {
 	UserDN       string
 	GroupDN      string
 	Env          map[string]string
+
+	// URL is the ldaps URL of the server's container, when it's started.
+	// Its certificate isn't trusted.
+	URL string
 
 	// ConnectTimeout is how long the directory can take to accept a bind,
 	// once its container has started
@@ -106,18 +112,44 @@ func Main(m *testing.M) {
 // PUBLIC METHODS
 
 // ForEach runs the test against each chosen directory, as a subtest, with
-// the ldaps URL of its container, whose certificate isn't trusted. It's
-// skipped with -short.
-func ForEach(t *testing.T, fn func(t *testing.T, server Server, url string)) {
+// a new manager, bound as the server's user, with the options, which is
+// disconnected after it. It's skipped with -short.
+func ForEach(t *testing.T, fn func(t *testing.T, ctx context.Context, server Server, manager *manager.Manager), opts ...manager.Opt) {
 	t.Helper()
 	if testing.Short() {
 		t.Skip("skipping LDAP integration test with -short")
 	}
 	for _, server := range Servers(t) {
 		t.Run(server.Name, func(t *testing.T) {
-			fn(t, server, start(t, server))
+			ctx := context.Background()
+			server.URL = start(t, server)
+			fn(t, ctx, server, Manager(t, ctx, server, opts...))
 		})
 	}
+}
+
+// Manager returns a manager of the started server, bound as its user, with
+// the options, which is disconnected when the test ends
+func Manager(t *testing.T, ctx context.Context, server Server, opts ...manager.Opt) *manager.Manager {
+	t.Helper()
+	m, err := manager.New(append([]manager.Opt{
+		manager.WithUrl(server.URL),
+		manager.WithBaseDN(server.BaseDN),
+		manager.WithUser(server.BindDN),
+		manager.WithPassword(server.BindPassword),
+		manager.WithUserDN(server.UserDN),
+		manager.WithGroupDN(server.GroupDN),
+		manager.WithSkipVerify(),
+	}, opts...)...)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = m.Disconnect(context.WithoutCancel(ctx)) })
+
+	// The directory accepted a bind when it started, so this is quick.
+	// Connect closes its connection when the context ends.
+	connectCtx, cancel := context.WithTimeout(ctx, server.ConnectTimeout)
+	defer cancel()
+	require.NoError(t, m.Connect(connectCtx), "connecting to %s", server.Name)
+	return m
 }
 
 // Servers returns the servers which LDAP_TEST_SERVER names, or all of

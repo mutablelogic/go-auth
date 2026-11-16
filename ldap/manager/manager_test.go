@@ -12,17 +12,19 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package manager
+package manager_test
 
 import (
 	"context"
-	"errors"
+	"io"
+	"log/slog"
 	"net"
 	"testing"
 	"time"
 
 	// Packages
-	ldapv3 "github.com/go-ldap/ldap/v3"
+	manager "github.com/mutablelogic/go-auth/ldap/manager"
+	test "github.com/mutablelogic/go-auth/ldap/test"
 	httpresponse "github.com/mutablelogic/go-server/pkg/httpresponse"
 	assert "github.com/stretchr/testify/assert"
 	require "github.com/stretchr/testify/require"
@@ -30,50 +32,109 @@ import (
 	tracetest "go.opentelemetry.io/otel/sdk/trace/tracetest"
 )
 
-func Test_New(t *testing.T) {
-	t.Run("PlainDefaultsPortAndTakesUserFromURL", func(t *testing.T) {
-		m, err := New(WithUrl("ldap://admin:secret@ldap.example.test"), WithBaseDN("dc=example,dc=test"))
-		require.NoError(t, err)
-		assert.Equal(t, "ldap.example.test", m.Host())
-		assert.Equal(t, uint(389), m.Port())
-		assert.Equal(t, "cn=admin,dc=example,dc=test", m.User())
-		assert.Equal(t, "secret", m.pass)
-		assert.Nil(t, m.url.User, "the URL has no credentials")
-		assert.Nil(t, m.tls)
-	})
+// The tests run against each directory in ldap/test, and are skipped with
+// -short, other than Test_ConnectCancelled, which needs a server which
+// doesn't answer
 
-	t.Run("SecureDefaultsPortAndOptionsOverrideURL", func(t *testing.T) {
-		m, err := New(WithUrl("ldaps://admin:secret@ldap.example.test"), WithBaseDN("dc=example,dc=test"),
-			WithUser("cn=manager,dc=example,dc=test"), WithPassword("other"), WithSkipVerify())
-		require.NoError(t, err)
-		assert.Equal(t, uint(636), m.Port())
-		assert.Equal(t, "cn=manager,dc=example,dc=test", m.User(), "a DN is used as it is")
-		assert.Equal(t, "other", m.pass)
-		require.NotNil(t, m.tls)
-		assert.True(t, m.tls.InsecureSkipVerify)
-	})
+// TestMain runs the tests, then stops the directories' containers
+func TestMain(m *testing.M) {
+	test.Main(m)
+}
 
-	t.Run("Invalid", func(t *testing.T) {
-		for name, opts := range map[string][]Opt{
-			"no url":    {WithBaseDN("dc=example,dc=test")},
-			"scheme":    {WithUrl("http://admin@ldap.example.test"), WithBaseDN("dc=example,dc=test")},
-			"no host":   {WithUrl("ldap://admin@"), WithBaseDN("dc=example,dc=test")},
-			"no user":   {WithUrl("ldap://ldap.example.test"), WithBaseDN("dc=example,dc=test")},
-			"no dn":     {WithUrl("ldap://admin@ldap.example.test")},
-			"bad dn":    {WithUrl("ldap://admin@ldap.example.test"), WithBaseDN("not a dn")},
-			"bad users": {WithUrl("ldap://admin@ldap.example.test"), WithBaseDN("dc=example,dc=test"), WithUserDN("")},
-		} {
-			_, err := New(opts...)
-			assert.ErrorIs(t, err, httpresponse.ErrBadRequest, name)
+func Test_Connect(t *testing.T) {
+	test.ForEach(t, func(t *testing.T, ctx context.Context, server test.Server, m *manager.Manager) {
+		assert.Equal(t, "127.0.0.1", m.Host())
+		assert.NotZero(t, m.Port())
+		assert.Equal(t, server.BindDN, m.User())
+
+		whoami, err := m.WhoAmI(ctx)
+		require.NoError(t, err)
+		assert.NotEmpty(t, whoami)
+
+		// A second Connect checks the connection, rather than connecting
+		require.NoError(t, m.Connect(ctx))
+
+		require.NoError(t, m.Disconnect(ctx))
+		_, err = m.WhoAmI(ctx)
+		assert.ErrorIs(t, err, httpresponse.ErrGatewayError)
+
+		require.NoError(t, m.Connect(ctx))
+		whoami, err = m.WhoAmI(ctx)
+		require.NoError(t, err)
+		assert.NotEmpty(t, whoami)
+	})
+}
+
+func Test_WrongPassword(t *testing.T) {
+	test.ForEach(t, func(t *testing.T, ctx context.Context, server test.Server, _ *manager.Manager) {
+		other, err := manager.New(manager.WithUrl(server.URL), manager.WithBaseDN(server.BaseDN), manager.WithUser(server.BindDN), manager.WithPassword("wrong-password"), manager.WithSkipVerify())
+		require.NoError(t, err)
+		assert.ErrorIs(t, other.Connect(ctx), httpresponse.ErrNotAuthorized)
+
+		// The connection was closed
+		_, err = other.WhoAmI(ctx)
+		assert.ErrorIs(t, err, httpresponse.ErrGatewayError)
+	})
+}
+
+func Test_Run(t *testing.T) {
+	test.ForEach(t, func(t *testing.T, ctx context.Context, server test.Server, m *manager.Manager) {
+		require.NoError(t, m.Disconnect(ctx))
+
+		runCtx, cancel := context.WithCancel(ctx)
+		done := make(chan error, 1)
+		go func() { done <- m.Run(runCtx, slogDiscard()) }()
+
+		// Run connects
+		connected := func() bool {
+			_, err := m.WhoAmI(ctx)
+			return err == nil
 		}
-	})
+		assert.Eventually(t, connected, server.ConnectTimeout, 100*time.Millisecond)
 
-	t.Run("InvalidURLHidesPassword", func(t *testing.T) {
-		_, err := New(WithUrl("ldap://admin:secret@ldap.example.test/%zz"), WithBaseDN("dc=example,dc=test"))
-		require.ErrorIs(t, err, httpresponse.ErrBadRequest)
-		assert.NotContains(t, err.Error(), "secret")
-		assert.Contains(t, err.Error(), "%zz", "the cause is kept")
+		// And disconnects when it's cancelled
+		cancel()
+		select {
+		case err := <-done:
+			require.NoError(t, err)
+		case <-time.After(5 * time.Second):
+			t.Fatal("timed out waiting for Run to return")
+		}
+		assert.False(t, connected())
 	})
+}
+
+func Test_Trace(t *testing.T) {
+	recorder := tracetest.NewSpanRecorder()
+	tracer := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(recorder)).Tracer("test")
+
+	test.ForEach(t, func(t *testing.T, ctx context.Context, server test.Server, m *manager.Manager) {
+		recorder.Reset()
+		_, err := m.WhoAmI(ctx)
+		require.NoError(t, err)
+		require.NoError(t, m.Disconnect(ctx))
+		_, err = m.WhoAmI(ctx)
+		assert.ErrorIs(t, err, httpresponse.ErrGatewayError, "not connected")
+
+		// Each method has a span, with the server, and never the password,
+		// and the error when there is one
+		spans := recorder.Ended()
+		names := []string{}
+		for _, span := range spans {
+			names = append(names, span.Name())
+			attrs := map[string]string{}
+			for _, attr := range span.Attributes() {
+				attrs[string(attr.Key)] = attr.Value.Emit()
+				assert.NotContains(t, attr.Value.Emit(), server.BindPassword, span.Name())
+			}
+			assert.Equal(t, "127.0.0.1", attrs["server.address"], span.Name())
+			assert.NotEmpty(t, attrs["server.port"], span.Name())
+		}
+		assert.Equal(t, []string{"ldapmanager.WhoAmI", "ldapmanager.Disconnect", "ldapmanager.WhoAmI"}, names)
+		require.Len(t, spans, 3)
+		assert.Equal(t, "Unset", spans[0].Status().Code.String())
+		assert.Equal(t, "Error", spans[2].Status().Code.String())
+	}, manager.WithTracer(tracer))
 }
 
 func Test_ConnectCancelled(t *testing.T) {
@@ -91,7 +152,7 @@ func Test_ConnectCancelled(t *testing.T) {
 		}
 	}()
 
-	m, err := New(WithUrl("ldap://admin:secret@"+listener.Addr().String()), WithBaseDN("dc=example,dc=test"))
+	m, err := manager.New(manager.WithUrl("ldap://admin:secret@"+listener.Addr().String()), manager.WithBaseDN("dc=example,dc=test"))
 	require.NoError(t, err)
 
 	// The bind is abandoned when the context is cancelled
@@ -121,105 +182,6 @@ func Test_ConnectCancelled(t *testing.T) {
 	}
 }
 
-func Test_absdn(t *testing.T) {
-	m, err := New(WithUrl("ldap://admin@ldap.example.test"), WithBaseDN("dc=example,dc=test"))
-	require.NoError(t, err)
-
-	for dn, want := range map[string]string{
-		"ou=users":                    "ou=users,dc=example,dc=test",
-		"ou=users,dc=example,dc=test": "ou=users,dc=example,dc=test",
-		"ou=users,DC=Example,DC=Test": "ou=users,dc=Example,dc=Test",
-		"dc=example,dc=test":          "dc=example,dc=test",
-	} {
-		abs, err := m.absdn(dn)
-		require.NoError(t, err, dn)
-		assert.Equal(t, want, abs.String(), dn)
-	}
-	_, err = m.absdn("not a dn")
-	assert.ErrorIs(t, err, httpresponse.ErrBadRequest)
-}
-
-func Test_ldaperr(t *testing.T) {
-	for code, want := range map[uint16]error{
-		ldapv3.LDAPResultInvalidCredentials:     httpresponse.ErrNotAuthorized,
-		ldapv3.ErrorFilterCompile:               httpresponse.ErrBadRequest,
-		ldapv3.LDAPResultInvalidAttributeSyntax: httpresponse.ErrBadRequest,
-		ldapv3.LDAPResultObjectClassViolation:   httpresponse.ErrBadRequest,
-		ldapv3.LDAPResultNamingViolation:        httpresponse.ErrBadRequest,
-		ldapv3.LDAPResultUnwillingToPerform:     httpresponse.ErrBadRequest,
-		ldapv3.LDAPResultNoSuchObject:           httpresponse.ErrNotFound,
-		ldapv3.LDAPResultEntryAlreadyExists:     httpresponse.ErrConflict,
-		ldapv3.LDAPResultConstraintViolation:    httpresponse.ErrConflict,
-		ldapv3.LDAPResultBusy:                   httpresponse.ErrInternalError,
-	} {
-		err := ldaperr(&ldapv3.Error{ResultCode: code, Err: errors.New("reason")})
-		assert.ErrorIs(t, err, want, ldapv3.LDAPResultCodeMap[code])
-	}
-
-	// A wrapped LDAP error is translated, and others are kept
-	err := ldaperr(errors.Join(errors.New("search failed"), &ldapv3.Error{ResultCode: ldapv3.ErrorFilterCompile, Err: errors.New("ldap: filter does not start with an '('")}))
-	assert.ErrorIs(t, err, httpresponse.ErrBadRequest)
-	assert.Contains(t, err.Error(), "filter does not start")
-	other := errors.New("other")
-	assert.Equal(t, other, ldaperr(other))
-	assert.NoError(t, ldaperr(nil))
-
-	// A connection which is closed already isn't an error to close
-	assert.True(t, isIgnorableLDAPDisconnectError(&ldapv3.Error{ResultCode: ldapv3.ErrorNetwork, Err: errors.New("ldap: connection closed")}))
-	assert.True(t, isIgnorableLDAPDisconnectError(errors.New("ldap: connection closed")))
-	assert.False(t, isIgnorableLDAPDisconnectError(errors.New("some other error")))
-}
-
-func Test_Trace(t *testing.T) {
-	ctx := context.Background()
-	recorder := tracetest.NewSpanRecorder()
-	tracer := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(recorder)).Tracer("test")
-
-	// A port which nothing listens on
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	require.NoError(t, err)
-	addr := listener.Addr().String()
-	require.NoError(t, listener.Close())
-
-	m, err := New(WithUrl("ldap://admin:secret@"+addr), WithBaseDN("dc=example,dc=test"), WithTracer(tracer))
-	require.NoError(t, err)
-	assert.Error(t, m.Connect(ctx))
-	_, err = m.WhoAmI(ctx)
-	assert.ErrorIs(t, err, httpresponse.ErrGatewayError, "not connected")
-	assert.NoError(t, m.Disconnect(ctx))
-
-	spans := map[string]sdktrace.ReadOnlySpan{}
-	for _, span := range recorder.Ended() {
-		spans[span.Name()] = span
-		for _, attr := range span.Attributes() {
-			assert.NotContains(t, attr.Value.Emit(), "secret", span.Name())
-		}
-	}
-	require.Contains(t, spans, "ldapmanager.Connect")
-	require.Contains(t, spans, "ldapmanager.WhoAmI")
-	require.Contains(t, spans, "ldapmanager.Disconnect")
-	assert.Equal(t, "Error", spans["ldapmanager.Connect"].Status().Code.String())
-	assert.Equal(t, "Error", spans["ldapmanager.WhoAmI"].Status().Code.String())
-	attrs := map[string]string{}
-	for _, attr := range spans["ldapmanager.Connect"].Attributes() {
-		attrs[string(attr.Key)] = attr.Value.Emit()
-	}
-	assert.Equal(t, "127.0.0.1", attrs["server.address"])
-	assert.NotEmpty(t, attrs["server.port"])
-}
-
-func Test_Run(t *testing.T) {
-	// Run returns when it's cancelled, though it can't connect
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	require.NoError(t, err)
-	addr := listener.Addr().String()
-	require.NoError(t, listener.Close())
-	m, err := New(WithUrl("ldap://admin@"+addr), WithBaseDN("dc=example,dc=test"))
-	require.NoError(t, err)
-
-	ctx, cancel := context.WithCancel(context.Background())
-	done := make(chan error, 1)
-	go func() { done <- m.Run(ctx, slogDiscard()) }()
-	cancel()
-	assert.NoError(t, <-done)
+func slogDiscard() *slog.Logger {
+	return slog.New(slog.NewTextHandler(io.Discard, nil))
 }
