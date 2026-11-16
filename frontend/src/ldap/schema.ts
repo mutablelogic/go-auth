@@ -251,6 +251,32 @@ export function isCounter(dn: string, base: string): boolean {
     return ['lastuid', 'lastgid'].some((name) => sameDN(dn, `cn=${name},${base}`));
 }
 
+// Syntaxes are the names of the well-known attribute syntaxes (RFC 4517),
+// by the last part of their OIDs, under 1.3.6.1.4.1.1466.115.121.1
+const Syntaxes: Record<string, string> = {
+    '3': 'Attribute Type Description', '4': 'Audio', '16': 'DIT Content Rule Description',
+    '17': 'DIT Structure Rule Description', '30': 'Matching Rule Description', '31': 'Matching Rule Use Description',
+    '35': 'Name Form Description', '37': 'Object Class Description',
+    '5': 'Binary', '6': 'Bit String', '7': 'Boolean', '8': 'Certificate', '9': 'Certificate List',
+    '10': 'Certificate Pair', '11': 'Country String', '12': 'DN', '14': 'Delivery Method',
+    '15': 'Directory String', '22': 'Facsimile Telephone Number', '24': 'Generalized Time',
+    '26': 'IA5 String', '27': 'Integer', '28': 'JPEG', '34': 'Name and Optional UID', '36': 'Numeric String',
+    '38': 'OID', '39': 'Other Mailbox', '40': 'Octet String', '41': 'Postal Address', '44': 'Printable String',
+    '49': 'Supported Algorithm', '50': 'Telephone Number', '52': 'Telex Number', '53': 'UTC Time',
+    '54': 'LDAP Syntax Description', '58': 'Substring Assertion',
+};
+
+// syntaxName returns a syntax's name, with its length, such as IA5 String
+// {256}, or else its OID
+export function syntaxName(oid?: string): string {
+    if (!oid) {
+        return '';
+    }
+    const match = /^1\.3\.6\.1\.4\.1\.1466\.115\.121\.1\.(\d+)(\{\d+\})?$/.exec(oid);
+    const name = match ? Syntaxes[match[1]] : undefined;
+    return name ? (match![2] ? `${name} ${match![2]}` : name) : oid;
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 // DNS
 
