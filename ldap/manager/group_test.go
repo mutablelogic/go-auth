@@ -445,3 +445,41 @@ func containsFold(values []string, value string) bool {
 	}
 	return false
 }
+
+func Test_GroupsByUserDN(t *testing.T) {
+	test.ForEach(t, func(t *testing.T, ctx context.Context, server test.Server, m *manager.Manager) {
+		if server.ActiveDirectory {
+			t.Skip("Active Directory names users by cn, so two can't have the name")
+		}
+		// alice, by her uid, in staff, and another entry, named alice by its
+		// cn, which isn't. The groups have members by DN, which tell them
+		// apart, as memberUid, which is by name, can't.
+		users := test.OU(t, ctx, m)
+		both := test.Manager(t, ctx, server, manager.WithUserDN(users), manager.WithGroupDN(test.OU(t, ctx, m), "groupOfNames"))
+		alice, err := both.CreateUser(ctx, "alice", userAttrs("alice", "first Passw0rd!"), true)
+		require.NoError(t, err)
+		_, err = both.CreateGroup(ctx, "staff", nil)
+		require.NoError(t, err)
+		_, err = both.AddGroupUsers(ctx, "staff", "alice")
+		require.NoError(t, err)
+		other, err := m.Create(ctx, "cn=alice,"+users, schema.Attrs{"objectClass": {"top", "person", "organizationalPerson", "inetOrgPerson"}, "cn": {"alice"}, "sn": {"Other"}})
+		require.NoError(t, err)
+
+		names := func(list *schema.ObjectList) []string {
+			var result []string
+			for _, group := range list.Body {
+				result = append(result, types.Value(group.Get("cn")))
+			}
+			return result
+		}
+		byDN, err := both.ListGroups(ctx, schema.GroupListRequest{UserDN: types.Ptr(alice.DN)})
+		require.NoError(t, err)
+		assert.Equal(t, []string{"staff"}, names(byDN))
+		byOther, err := both.ListGroups(ctx, schema.GroupListRequest{UserDN: types.Ptr(other.DN)})
+		require.NoError(t, err)
+		assert.Empty(t, names(byOther), "the other entry's, which aren't alice's")
+
+		_, err = both.ListGroups(ctx, schema.GroupListRequest{User: types.Ptr("alice"), UserDN: types.Ptr(alice.DN)})
+		assert.ErrorIs(t, err, httpresponse.ErrBadRequest)
+	})
+}

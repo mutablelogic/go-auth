@@ -40,6 +40,7 @@ import (
 type Manager interface {
 	Get(ctx context.Context, dn string, attrs ...string) (*ldapschema.Object, error)
 	GetUser(ctx context.Context, name string) (*ldapschema.Object, error)
+	ListUsers(ctx context.Context, req ldapschema.UserListRequest) (*ldapschema.ObjectList, error)
 	Bind(ctx context.Context, dn, password string) (*ldapschema.Object, error)
 	ListGroups(ctx context.Context, req ldapschema.GroupListRequest) (*ldapschema.ObjectList, error)
 	Status() ldapschema.Status
@@ -141,13 +142,13 @@ func (p *Provider) Exchange(ctx context.Context, credential schema.Credential) (
 	// The identity, by the user's identifier, which doesn't change when
 	// it's renamed, and isn't another user's when it's deleted, and its
 	// groups, when the manager has them
-	subject, err := p.subject(ctx, user.DN)
+	subject, err := subjectOf(ctx, p.manager, user.DN)
 	if err != nil {
 		return nil, err
 	}
 	identity := &schema.Identity{
 		Provider: p.meta.Name,
-		Issuer:   p.issuer(),
+		Issuer:   issuerOf(p.manager),
 		Subject:  subject,
 		Email:    types.Value(user.Get("mail")),
 		Name:     types.Value(user.Get("displayName")),
@@ -157,7 +158,7 @@ func (p *Provider) Exchange(ctx context.Context, credential schema.Credential) (
 		identity.Name = types.Value(user.Get("cn"))
 	}
 	if p.manager.Status().GroupDN != "" {
-		groups, err := p.groups(ctx, credential.Username)
+		groups, err := groupsOf(ctx, p.manager, user.DN)
 		if err != nil {
 			return nil, err
 		}
@@ -173,8 +174,8 @@ func (p *Provider) Exchange(ctx context.Context, credential schema.Credential) (
 // entry, and doesn't change: entryUUID, which OpenLDAP has, nsUniqueId,
 // which 389 DS has, or objectGUID, which Active Directory has, or else its
 // DN, when the directory has none of them
-func (p *Provider) subject(ctx context.Context, dn string) (string, error) {
-	entry, err := p.manager.Get(ctx, dn, identifiers...)
+func subjectOf(ctx context.Context, manager Manager, dn string) (string, error) {
+	entry, err := manager.Get(ctx, dn, identifiers...)
 	if err != nil {
 		return "", err
 	}
@@ -189,13 +190,15 @@ func (p *Provider) subject(ctx context.Context, dn string) (string, error) {
 	return dn, nil
 }
 
-// groups returns the names of every group the user is in, a page at a time
-func (p *Provider) groups(ctx context.Context, username string) ([]string, error) {
+// groupsOf returns the names of every group the user, by its DN, is in, a
+// page at a time, so they're its groups, rather than another user's with
+// its name
+func groupsOf(ctx context.Context, manager Manager, dn string) ([]string, error) {
 	var result []string
 	for offset := uint64(0); ; {
-		page, err := p.manager.ListGroups(ctx, ldapschema.GroupListRequest{
+		page, err := manager.ListGroups(ctx, ldapschema.GroupListRequest{
 			ListRequest: ldapschema.ListRequest{OffsetLimit: ldapschema.OffsetLimit{Offset: offset, Limit: types.Ptr(groupsPage)}, Attr: []string{"cn"}},
-			User:        types.Ptr(username),
+			UserDN:      types.Ptr(dn),
 		})
 		if err != nil {
 			return nil, err
@@ -224,8 +227,8 @@ func formatGUID(b []byte) string {
 
 // issuer is the directory's URL, of its base DN, such as
 // ldap://ldap.example.com:389/dc=example,dc=com
-func (p *Provider) issuer() string {
-	status := p.manager.Status()
+func issuerOf(manager Manager) string {
+	status := manager.Status()
 	u := url.URL{Scheme: "ldap", Host: fmt.Sprintf("%s:%d", status.Host, status.Port), Path: "/" + status.BaseDN}
 	return u.String()
 }
