@@ -210,6 +210,26 @@ func OU(t *testing.T, ctx context.Context, m *manager.Manager) string {
 	return ou.DN
 }
 
+// Subschema returns the definitions of the started server's object classes
+// and attribute types, as it has them, read with go-ldap, not the manager
+func Subschema(t *testing.T, server Server) (classes, attrs []string) {
+	t.Helper()
+	conn, err := bind(server, server.URL, server.ConnectTimeout)
+	require.NoError(t, err)
+	defer conn.Close()
+
+	root, err := conn.Search(ldap.NewSearchRequest("", ldap.ScopeBaseObject, ldap.NeverDerefAliases, 1, 0, false, "(objectClass=*)", []string{schema.AttrSubSchemaDN}, nil))
+	require.NoError(t, err)
+	require.Len(t, root.Entries, 1)
+	dn := root.Entries[0].GetAttributeValue(schema.AttrSubSchemaDN)
+	require.NotEmpty(t, dn)
+
+	entry, err := conn.Search(ldap.NewSearchRequest(dn, ldap.ScopeBaseObject, ldap.NeverDerefAliases, 1, 0, false, "(objectClass=*)", []string{schema.AttrObjectClasses, schema.AttrAttributeTypes}, nil))
+	require.NoError(t, err)
+	require.Len(t, entry.Entries, 1)
+	return entry.Entries[0].GetAttributeValues(schema.AttrObjectClasses), entry.Entries[0].GetAttributeValues(schema.AttrAttributeTypes)
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 // PRIVATE METHODS
 

@@ -49,6 +49,7 @@ type Manager struct {
 	dn         *schema.DN
 	conn       *ldap.Conn
 	lost       chan struct{}
+	schema     *subschema
 	users      *schema.Group
 	groups     *schema.Group
 	tracer     trace.Tracer
