@@ -72,6 +72,9 @@ test('schema', async (t) => {
         assert.equal(binarySize(photo as { base64: string }), 4);
         assert.equal(valueText(photo), '4 bytes');
         assert.equal(valueText('text'), 'text');
+        assert.equal(binarySize({ base64: 'AQI=' }), 2);
+        assert.equal(binarySize({ base64: 'AQ==' }), 1);
+        assert.equal(binarySize({ base64: '' }), 0);
     });
 
     await t.test('DNs', () => {

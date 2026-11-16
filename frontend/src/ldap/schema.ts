@@ -183,8 +183,13 @@ export function valueText(value: AttrValue): string {
 
 // binarySize returns how many bytes a value in base64 has
 export function binarySize(value: { base64: string }): number {
-    const base64 = value.base64.replace(/=+$/, '');
-    return Math.floor((base64.length * 3) / 4);
+    // The padding is counted from the end, rather than with a regular
+    // expression, which would be slow on many '='
+    let length = value.base64.length;
+    while (length > 0 && value.base64[length - 1] === '=') {
+        length--;
+    }
+    return Math.floor((length * 3) / 4);
 }
 
 // hasClass returns whether the entry has the object class, in any case
