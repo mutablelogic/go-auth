@@ -24,6 +24,7 @@ import (
 	schemadef "github.com/mutablelogic/go-auth/ldap/parser/schema"
 	jsonschema "github.com/mutablelogic/go-server/pkg/jsonschema"
 	assert "github.com/stretchr/testify/assert"
+	require "github.com/stretchr/testify/require"
 )
 
 func TestObjectClassParseAndHelpers(t *testing.T) {
@@ -217,4 +218,24 @@ func TestObjectClassListRequestAndMatching(t *testing.T) {
 		assert.Nil(objectClass)
 		assert.Empty(strings.TrimSpace(output.String()))
 	})
+}
+
+func Test_ObjectClassClone(t *testing.T) {
+	class, err := ParseObjectClass("( 2.5.6.6 NAME 'person' SUP top STRUCTURAL MUST ( sn $ cn ) MAY description X-ORIGIN 'RFC 4519' )")
+	require.NoError(t, err)
+	clone := class.Clone()
+	assert.Equal(t, class, clone)
+
+	// Nothing is shared
+	clone.Name[0], clone.SuperClasses[0], clone.Must[0], clone.May[0] = "a", "b", "c", "d"
+	clone.Extensions["X-ORIGIN"][0] = "e"
+	clone.ClassKind = "AUXILIARY"
+	assert.Equal(t, "person", class.Name[0])
+	assert.Equal(t, "top", class.SuperClasses[0])
+	assert.Equal(t, "sn", class.Must[0])
+	assert.Equal(t, "description", class.May[0])
+	assert.Equal(t, "RFC 4519", class.Extensions["X-ORIGIN"][0])
+	assert.Equal(t, "STRUCTURAL", string(class.ClassKind))
+
+	assert.Nil(t, (*ObjectClass)(nil).Clone())
 }

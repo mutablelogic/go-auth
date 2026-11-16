@@ -120,3 +120,32 @@ func Test_ListAttributeTypes(t *testing.T) {
 		assert.Equal(t, all.Count, total)
 	})
 }
+
+func Test_SchemaCopies(t *testing.T) {
+	// Changing what's returned doesn't change the schema the manager keeps
+	test.ForEach(t, func(t *testing.T, ctx context.Context, server test.Server, m *manager.Manager) {
+		person, err := m.ListObjectClasses(ctx, schema.ObjectClassListRequest{Filter: types.Ptr("person")})
+		require.NoError(t, err)
+		require.NotEmpty(t, person.Body)
+		person.Body[0].Name[0] = "changed"
+		person.Body[0].ClassKind = "AUXILIARY"
+		person.Body[0].Must = append(person.Body[0].Must[:0], "changed")
+
+		again, err := m.ListObjectClasses(ctx, schema.ObjectClassListRequest{Filter: types.Ptr("person")})
+		require.NoError(t, err)
+		require.NotEmpty(t, again.Body)
+		assert.Equal(t, "person", again.Body[0].Identifier())
+		assert.Equal(t, schema.ObjectClassKindStructural, schema.ObjectClassKind(again.Body[0].ClassKind))
+		assert.NotContains(t, again.Body[0].Must, "changed")
+
+		cn, err := m.ListAttributeTypes(ctx, schema.AttributeTypeListRequest{Filter: types.Ptr("cn")})
+		require.NoError(t, err)
+		require.NotEmpty(t, cn.Body)
+		name := cn.Body[0].Identifier()
+		cn.Body[0].Name[0] = "changed"
+		again2, err := m.ListAttributeTypes(ctx, schema.AttributeTypeListRequest{Filter: types.Ptr("cn")})
+		require.NoError(t, err)
+		require.NotEmpty(t, again2.Body)
+		assert.Equal(t, name, again2.Body[0].Identifier())
+	})
+}
