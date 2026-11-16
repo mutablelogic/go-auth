@@ -44,7 +44,7 @@ type OAuth struct {
 	secrets   map[string]string   // The secrets of the clients which have them
 	codes     map[string]grant    // The codes which are approved, and not exchanged
 	tokens    map[string]bool     // The access tokens which are valid
-	refreshes map[string]bool     // The refresh tokens which are valid
+	refreshes map[string]string   // The refresh tokens which are valid, and their resources
 }
 
 // grant is a code which was approved, for a client, its redirect URI, and
@@ -66,7 +66,7 @@ const ResourcePath = "/resource"
 // closed when the test ends
 func NewOAuth(t testing.TB) *OAuth {
 	t.Helper()
-	o := &OAuth{clients: map[string][]string{}, secrets: map[string]string{}, codes: map[string]grant{}, tokens: map[string]bool{}, refreshes: map[string]bool{}}
+	o := &OAuth{clients: map[string][]string{}, secrets: map[string]string{}, codes: map[string]grant{}, tokens: map[string]bool{}, refreshes: map[string]string{}}
 	o.Server = httptest.NewServer(http.HandlerFunc(o.serve))
 	t.Cleanup(o.Close)
 	return o
@@ -194,6 +194,7 @@ func (o *OAuth) token(w http.ResponseWriter, r *http.Request) {
 	}
 	o.mu.Lock()
 	defer o.mu.Unlock()
+	var resource string
 	switch r.PostForm.Get("grant_type") {
 	case "authorization_code":
 		// The client is authenticated with HTTP Basic, or in the form
@@ -223,18 +224,25 @@ func (o *OAuth) token(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusBadRequest, map[string]any{"error": "invalid_target"})
 			return
 		}
+		resource = g.resource
 	case "refresh_token":
-		if !o.refreshes[r.PostForm.Get("refresh_token")] {
+		// The resource it was granted for is needed
+		granted, ok := o.refreshes[r.PostForm.Get("refresh_token")]
+		if !ok {
 			writeJSON(w, http.StatusBadRequest, map[string]any{"error": "invalid_grant"})
+			return
+		} else if r.PostForm.Get("resource") != granted {
+			writeJSON(w, http.StatusBadRequest, map[string]any{"error": "invalid_target", "error_description": "the resource isn't the grant's"})
 			return
 		}
 		delete(o.refreshes, r.PostForm.Get("refresh_token"))
+		resource = granted
 	default:
 		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "unsupported_grant_type"})
 		return
 	}
 	o.n++
 	access, refresh := fmt.Sprintf("access-%d", o.n), fmt.Sprintf("refresh-%d", o.n)
-	o.tokens[access], o.refreshes[refresh] = true, true
+	o.tokens[access], o.refreshes[refresh] = true, resource
 	writeJSON(w, http.StatusOK, map[string]any{"access_token": access, "token_type": "Bearer", "expires_in": 3600, "refresh_token": refresh})
 }

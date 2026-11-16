@@ -88,7 +88,9 @@ func (c *Client) Discover(ctx context.Context, resource string) (*Metadata, erro
 	if resource = strings.TrimSpace(resource); resource == "" {
 		resource = c.endpoint
 	}
-	result := new(Metadata)
+	// The resource, which is the one asked for, even when it has no
+	// metadata, so a token is asked for it, rather than another
+	result := &Metadata{Resource: ResourceMetadata{Resource: resource}}
 	if metadata, err := c.wellKnownResource(ctx, resource); err == nil {
 		result.Resource = *metadata
 	}
@@ -112,7 +114,7 @@ func (c *Client) DiscoverWithError(ctx context.Context, err error) (*Metadata, e
 	if endpoint == "" {
 		return c.Discover(ctx, "")
 	}
-	resource, err := c.resource(ctx, endpoint)
+	resource, err := c.resource(ctx, endpoint, c.endpoint)
 	if err != nil {
 		return nil, err
 	}
@@ -132,7 +134,7 @@ func (c *Client) DiscoverWithError(ctx context.Context, err error) (*Metadata, e
 func (c *Client) DiscoverResource(ctx context.Context, err error) (*ResourceMetadata, error) {
 	if authErr := AsAuthError(err); authErr != nil {
 		if endpoint := strings.TrimSpace(authErr.Get("resource_metadata")); endpoint != "" {
-			return c.resource(ctx, endpoint)
+			return c.resource(ctx, endpoint, c.endpoint)
 		}
 	}
 	return c.wellKnownResource(ctx, c.endpoint)
@@ -144,12 +146,16 @@ func (c *Client) DiscoverResource(ctx context.Context, err error) (*ResourceMeta
 // resource returns the resource's metadata, at the URL, or
 // ErrServiceUnavailable, when it can't be got, or doesn't say which
 // resource it's of
-func (c *Client) resource(ctx context.Context, endpoint string) (*ResourceMetadata, error) {
+func (c *Client) resource(ctx context.Context, endpoint, expected string) (*ResourceMetadata, error) {
 	var metadata ResourceMetadata
 	if err := c.metadata.DoWithContext(ctx, nil, &metadata, client.OptReqEndpoint(endpoint)); err != nil {
 		return nil, goauth.ErrServiceUnavailable.Withf("resource metadata %q: %v", endpoint, err)
 	} else if metadata.Resource == "" {
 		return nil, goauth.ErrServiceUnavailable.Withf("resource metadata %q has no resource", endpoint)
+	} else if metadata.Resource != strings.TrimSpace(expected) {
+		// Another resource's, whose token isn't this one's, as RFC 9728 has
+		// it
+		return nil, goauth.ErrServiceUnavailable.Withf("resource metadata %q is of the resource %q, not %q", endpoint, metadata.Resource, expected)
 	}
 	return &metadata, nil
 }
@@ -161,7 +167,7 @@ func (c *Client) wellKnownResource(ctx context.Context, resource string) (*Resou
 	for _, endpoint := range wellKnown(resource, ResourceMetadataPath) {
 		// A document which doesn't say which resource it's of, such as {},
 		// isn't its metadata, so the next is tried
-		if metadata, err := c.resource(ctx, endpoint); err == nil {
+		if metadata, err := c.resource(ctx, endpoint, resource); err == nil {
 			return metadata, nil
 		}
 	}
@@ -261,11 +267,11 @@ func wellKnown(raw, path string) []string {
 	return result
 }
 
-// sameIssuer returns true when the metadata's issuer is the issuer, which
-// it must be, apart from a slash at its end, which some servers add, or
-// leave out
+// sameIssuer returns true when the metadata's issuer is the issuer,
+// exactly, as RFC 8414 and OpenID Connect have it, as one with a slash at
+// its end can be another
 func sameIssuer(metadata, issuer string) bool {
-	metadata, issuer = strings.TrimRight(strings.TrimSpace(metadata), "/"), strings.TrimRight(strings.TrimSpace(issuer), "/")
+	metadata, issuer = strings.TrimSpace(metadata), strings.TrimSpace(issuer)
 	return metadata != "" && metadata == issuer
 }
 

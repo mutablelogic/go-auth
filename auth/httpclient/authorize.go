@@ -17,8 +17,13 @@ package httpclient
 import (
 	"context"
 	"crypto/subtle"
+	"encoding/json"
+	"io"
+	"net/http"
 	"net/url"
+	"strings"
 	"sync"
+	"time"
 
 	// Packages
 	goauth "github.com/mutablelogic/go-auth"
@@ -118,36 +123,96 @@ func (c *Client) Exchange(ctx context.Context, a *Authorization, query url.Value
 }
 
 // TokenSource returns a source of the grant's token, which is refreshed,
-// with its refresh token, when it's expired, with the client's options,
-// and fn, when it isn't nil, is called with a new token, so it's kept
+// with its refresh token, client and resource indicator, when it's
+// expired, with the client's options, and fn, when it isn't nil, is called
+// with a new token, so it's kept
 func (c *Client) TokenSource(ctx context.Context, grant *Grant, fn func(*oauth2.Token)) oauth2.TokenSource {
-	ctx = context.WithValue(ctx, oauth2.HTTPClient, c.metadata.Client)
-	source := grant.Server.Config(grant.Client, grant.RedirectURI, grant.Scopes...).TokenSource(ctx, grant.Token)
-	return &notifying{source: source, last: grant.Token, fn: fn}
+	return &refresher{ctx: ctx, http: c.metadata.Client, grant: *grant, token: grant.Token, fn: fn}
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 // PRIVATE TYPES
 
-// notifying is a token source which calls fn with a token which isn't the
-// last
-type notifying struct {
-	mu     sync.Mutex
-	source oauth2.TokenSource
-	last   *oauth2.Token
-	fn     func(*oauth2.Token)
+// refresher is a source of a grant's token, which refreshes it, as oauth2's
+// does, with the resource indicator, which oauth2's doesn't send
+type refresher struct {
+	mu    sync.Mutex
+	ctx   context.Context
+	http  *http.Client
+	grant Grant
+	token *oauth2.Token
+	fn    func(*oauth2.Token)
 }
 
-func (n *notifying) Token() (*oauth2.Token, error) {
-	n.mu.Lock()
-	defer n.mu.Unlock()
-	token, err := n.source.Token()
+// tokenResponse is a token endpoint's response, or its error
+type tokenResponse struct {
+	AccessToken      string `json:"access_token"`
+	TokenType        string `json:"token_type"`
+	RefreshToken     string `json:"refresh_token"`
+	ExpiresIn        int64  `json:"expires_in"`
+	Error            string `json:"error"`
+	ErrorDescription string `json:"error_description"`
+}
+
+// Token returns the token, while it's valid, or else refreshes it
+func (r *refresher) Token() (*oauth2.Token, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.token.Valid() {
+		return r.token, nil
+	} else if r.token == nil || r.token.RefreshToken == "" {
+		return nil, goauth.ErrBadParameter.With("the token has expired, and can't be refreshed")
+	}
+
+	// The refresh, with the client, which is authenticated with HTTP Basic,
+	// with a secret, as RFC 6749 has it, or else by its ID
+	form := url.Values{"grant_type": {"refresh_token"}, "refresh_token": {r.token.RefreshToken}}
+	if r.grant.Resource != "" {
+		form.Set("resource", r.grant.Resource)
+	}
+	if r.grant.Client.ClientSecret == "" {
+		form.Set("client_id", r.grant.Client.ClientID)
+	}
+	req, err := http.NewRequestWithContext(r.ctx, http.MethodPost, r.grant.Server.TokenEndpoint, strings.NewReader(form.Encode()))
 	if err != nil {
 		return nil, err
 	}
-	if n.fn != nil && (n.last == nil || token.AccessToken != n.last.AccessToken || token.RefreshToken != n.last.RefreshToken) {
-		n.fn(token)
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Accept", "application/json")
+	if r.grant.Client.ClientSecret != "" {
+		req.SetBasicAuth(url.QueryEscape(r.grant.Client.ClientID), url.QueryEscape(r.grant.Client.ClientSecret))
 	}
-	n.last = token
+	resp, err := r.http.Do(req)
+	if err != nil {
+		return nil, goauth.ErrServiceUnavailable.Withf("refresh: %v", err)
+	}
+	defer resp.Body.Close()
+	var body tokenResponse
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&body); err != nil && resp.StatusCode == http.StatusOK {
+		return nil, goauth.ErrServiceUnavailable.Withf("refresh: %v", err)
+	}
+	if resp.StatusCode != http.StatusOK || body.Error != "" || body.AccessToken == "" {
+		reason := body.ErrorDescription
+		if reason == "" {
+			reason = body.Error
+		}
+		if reason == "" {
+			reason = resp.Status
+		}
+		return nil, goauth.ErrBadParameter.Withf("the token couldn't be refreshed: %s", reason)
+	}
+
+	// The new token, which keeps the refresh token, when there's no other
+	token := &oauth2.Token{AccessToken: body.AccessToken, TokenType: body.TokenType, RefreshToken: body.RefreshToken}
+	if token.RefreshToken == "" {
+		token.RefreshToken = r.token.RefreshToken
+	}
+	if body.ExpiresIn > 0 {
+		token.Expiry = time.Now().Add(time.Duration(body.ExpiresIn) * time.Second)
+	}
+	r.token = token
+	if r.fn != nil {
+		r.fn(token)
+	}
 	return token, nil
 }

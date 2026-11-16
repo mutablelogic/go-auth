@@ -257,10 +257,11 @@ func Test_Discover(t *testing.T) {
 			http.NotFound(w, r)
 		}))
 		t.Cleanup(as.Close)
-		resource := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var resource *httptest.Server
+		resource = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			sent = append(sent, r.Header.Get("Authorization")+r.Header.Get("X-Secret"))
 			if r.URL.Path == "/.well-known/oauth-protected-resource/mcp" {
-				writeJSON(w, map[string]any{"resource": r.Host, "authorization_servers": []string{as.URL}})
+				writeJSON(w, map[string]any{"resource": resource.URL + "/mcp", "authorization_servers": []string{as.URL}})
 				return
 			}
 			http.NotFound(w, r)

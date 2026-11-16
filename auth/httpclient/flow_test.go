@@ -145,6 +145,12 @@ func Test_Authorize(t *testing.T) {
 		require.NoError(t, err)
 		assert.NotEqual(t, grant.Token.AccessToken, token.AccessToken)
 		assert.Equal(t, token, refreshed)
+		assert.NotEmpty(t, token.RefreshToken)
+
+		// Not for another resource than the grant's
+		token.Expiry = time.Now().Add(-time.Minute)
+		_, err = c.TokenSource(ctx, &httpclient.Grant{Server: grant.Server, Client: grant.Client, RedirectURI: redirect, Resource: "https://other.example.com", Token: token}, nil).Token()
+		assert.ErrorIs(t, err, goauth.ErrBadParameter)
 
 		// Not once they're revoked
 		o.Revoke()
@@ -183,6 +189,12 @@ func Test_Loopback(t *testing.T) {
 	query, err := l.Wait(context.Background())
 	require.NoError(t, err)
 	assert.Equal(t, "c", query.Get("code"))
+
+	// Nor once it's been waited for
+	resp, err = http.Get(l.RedirectURI() + "?code=later")
+	require.NoError(t, err)
+	resp.Body.Close()
+	assert.Equal(t, http.StatusConflict, resp.StatusCode)
 
 	// Until the context is done
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)

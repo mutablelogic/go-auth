@@ -23,6 +23,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	// Packages
@@ -39,6 +40,7 @@ type Loopback struct {
 	listener net.Listener
 	server   *http.Server
 	queries  chan url.Values
+	done     atomic.Bool
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -95,13 +97,13 @@ func (l *Loopback) Wait(ctx context.Context) (url.Values, error) {
 // callback passes the first callback's query on, and says, in the browser,
 // whether it's authorized
 func (l *Loopback) callback(w http.ResponseWriter, r *http.Request) {
+	// Only the first callback, ever, even once it's been waited for
 	query := r.URL.Query()
-	select {
-	case l.queries <- query:
-	default:
+	if !l.done.CompareAndSwap(false, true) {
 		http.Error(w, "The authorization was already completed", http.StatusConflict)
 		return
 	}
+	l.queries <- query
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if reason := query.Get("error"); reason != "" {
 		if description := query.Get("error_description"); description != "" {
