@@ -59,6 +59,9 @@ func NewTokens(path string) (*Tokens, error) {
 func (t *Tokens) Get(endpoint string) (*oauth2.Token, error) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	if err := t.private(); err != nil {
+		return nil, err
+	}
 	tokens, err := t.read()
 	if err != nil {
 		return nil, err
@@ -76,33 +79,26 @@ func (t *Tokens) Set(endpoint string, token *oauth2.Token) error {
 	if token == nil || token.AccessToken == "" {
 		return goauth.ErrBadParameter.With("no token")
 	}
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	tokens, err := t.read()
-	if err != nil {
-		return err
-	}
-	for endpoint, token := range tokens {
-		if !token.Valid() {
-			delete(tokens, endpoint)
+	return t.update(func(tokens map[string]*oauth2.Token) error {
+		for endpoint, token := range tokens {
+			if !token.Valid() {
+				delete(tokens, endpoint)
+			}
 		}
-	}
-	tokens[key(endpoint)] = token
-	return t.write(tokens)
+		tokens[key(endpoint)] = token
+		return nil
+	})
 }
 
 // Delete forgets the token for the endpoint, or returns not found
 func (t *Tokens) Delete(endpoint string) error {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	tokens, err := t.read()
-	if err != nil {
-		return err
-	} else if _, ok := tokens[key(endpoint)]; !ok {
-		return goauth.ErrNotFound.Withf("not signed in to %s", key(endpoint))
-	}
-	delete(tokens, key(endpoint))
-	return t.write(tokens)
+	return t.update(func(tokens map[string]*oauth2.Token) error {
+		if _, ok := tokens[key(endpoint)]; !ok {
+			return goauth.ErrNotFound.Withf("not signed in to %s", key(endpoint))
+		}
+		delete(tokens, key(endpoint))
+		return nil
+	})
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -111,6 +107,56 @@ func (t *Tokens) Delete(endpoint string) error {
 // key is an endpoint, without a trailing slash, which tokens are kept by
 func key(endpoint string) string {
 	return strings.TrimRight(strings.TrimSpace(endpoint), "/")
+}
+
+// update changes the tokens with fn, and writes them, with the lock file
+// locked, so another process doesn't change them at the same time, in a
+// directory which only its owner can read, or write, which is made
+func (t *Tokens) update(fn func(map[string]*oauth2.Token) error) error {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if err := os.MkdirAll(filepath.Dir(t.path), 0o700); err != nil {
+		return err
+	} else if err := t.private(); err != nil {
+		return err
+	}
+	lock, err := os.OpenFile(t.path+".lock", os.O_RDWR|os.O_CREATE, 0o600)
+	if err != nil {
+		return err
+	}
+	defer lock.Close()
+	if err := lockFile(lock); err != nil {
+		return err
+	}
+	defer unlockFile(lock)
+	tokens, err := t.read()
+	if err != nil {
+		return err
+	} else if err := fn(tokens); err != nil {
+		return err
+	}
+	return t.write(tokens)
+}
+
+// private returns an error when the directory of the tokens, when it's
+// there, can be read, or written, by others, who could read, replace or
+// remove them
+func (t *Tokens) private() error {
+	if !privateMode {
+		return nil
+	}
+	dir := filepath.Dir(t.path)
+	info, err := os.Stat(dir)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil
+	} else if err != nil {
+		return err
+	} else if !info.IsDir() {
+		return goauth.ErrBadParameter.Withf("%q isn't a directory", dir)
+	} else if info.Mode().Perm()&0o077 != 0 {
+		return goauth.ErrBadParameter.Withf("the tokens' directory %q can be read, or written, by others (%v): only its owner can", dir, info.Mode().Perm())
+	}
+	return nil
 }
 
 // read returns the tokens, which are none, without the file
@@ -131,9 +177,6 @@ func (t *Tokens) read() (map[string]*oauth2.Token, error) {
 // a directory only they can, all at once, so it's never read half written
 func (t *Tokens) write(tokens map[string]*oauth2.Token) error {
 	dir := filepath.Dir(t.path)
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return err
-	}
 	data, err := json.MarshalIndent(tokens, "", "  ")
 	if err != nil {
 		return err
