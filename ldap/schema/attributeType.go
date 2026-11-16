@@ -16,6 +16,7 @@ package schema
 
 import (
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -180,4 +181,27 @@ func attributeTypeContains(o *AttributeType, value string) bool {
 		}
 	}
 	return false
+}
+
+// Clone returns a copy of the attribute type, which shares nothing with it
+func (o *AttributeType) Clone() *AttributeType {
+	if o == nil || o.AttributeTypeSchema == nil {
+		return o
+	}
+	clone := *o.AttributeTypeSchema
+	clone.Name = slices.Clone(o.Name)
+	clone.Extensions = cloneExtensions(o.Extensions)
+	return &AttributeType{AttributeTypeSchema: &clone}
+}
+
+// cloneExtensions returns a copy of the extensions, and their values
+func cloneExtensions(extensions map[string][]string) map[string][]string {
+	if extensions == nil {
+		return nil
+	}
+	result := make(map[string][]string, len(extensions))
+	for key, values := range extensions {
+		result[key] = slices.Clone(values)
+	}
+	return result
 }

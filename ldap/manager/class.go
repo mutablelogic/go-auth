@@ -42,8 +42,8 @@ type subschema struct {
 ///////////////////////////////////////////////////////////////////////////////
 // PUBLIC METHODS
 
-// ListObjectClasses returns the directory's object classes, by name, which
-// match the request. Count is the number which match, and Body those from
+// ListObjectClasses returns copies of the directory's object classes, by
+// name, which match the request. Count is the number which match, and Body those from
 // the offset, up to the limit, or schema.MaxListEntries.
 func (manager *Manager) ListObjectClasses(ctx context.Context, req schema.ObjectClassListRequest) (_ *schema.ObjectClassListResponse, err error) {
 	ctx, endSpan := otel.StartSpan(manager.tracer, ctx, "ldapmanager.ListObjectClasses", manager.spanAttrs(attribute.String("arg.req", types.Stringify(req)))...)
@@ -63,15 +63,15 @@ func (manager *Manager) ListObjectClasses(ctx context.Context, req schema.Object
 			continue
 		}
 		if response.Count >= req.Offset && response.Count < req.Offset+limit {
-			response.Body = append(response.Body, class)
+			response.Body = append(response.Body, class.Clone())
 		}
 		response.Count++
 	}
 	return &response, nil
 }
 
-// ListAttributeTypes returns the directory's attribute types, by name,
-// which match the request. Count is the number which match, and Body those
+// ListAttributeTypes returns copies of the directory's attribute types, by
+// name, which match the request. Count is the number which match, and Body those
 // from the offset, up to the limit, or schema.MaxListEntries.
 func (manager *Manager) ListAttributeTypes(ctx context.Context, req schema.AttributeTypeListRequest) (_ *schema.AttributeTypeListResponse, err error) {
 	ctx, endSpan := otel.StartSpan(manager.tracer, ctx, "ldapmanager.ListAttributeTypes", manager.spanAttrs(attribute.String("arg.req", types.Stringify(req)))...)
@@ -91,7 +91,7 @@ func (manager *Manager) ListAttributeTypes(ctx context.Context, req schema.Attri
 			continue
 		}
 		if response.Count >= req.Offset && response.Count < req.Offset+limit {
-			response.Body = append(response.Body, attr)
+			response.Body = append(response.Body, attr.Clone())
 		}
 		response.Count++
 	}

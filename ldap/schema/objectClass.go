@@ -16,6 +16,7 @@ package schema
 
 import (
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -192,4 +193,18 @@ func containsAllFold(values, required []string) bool {
 		}
 	}
 	return true
+}
+
+// Clone returns a copy of the object class, which shares nothing with it
+func (o *ObjectClass) Clone() *ObjectClass {
+	if o == nil || o.ObjectClassSchema == nil {
+		return o
+	}
+	clone := *o.ObjectClassSchema
+	clone.Name = slices.Clone(o.Name)
+	clone.SuperClasses = slices.Clone(o.SuperClasses)
+	clone.Must = slices.Clone(o.Must)
+	clone.May = slices.Clone(o.May)
+	clone.Extensions = cloneExtensions(o.Extensions)
+	return &ObjectClass{ObjectClassSchema: &clone}
 }
