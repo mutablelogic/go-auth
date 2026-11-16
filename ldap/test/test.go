@@ -60,6 +60,15 @@ type Server struct {
 	// Its certificate isn't trusted.
 	URL string
 
+	// ActiveDirectory is true when the directory is Active Directory, or
+	// like it, whose users have the "user" class, and unicodePwd passwords
+	ActiveDirectory bool
+
+	// KeepsOldPassword is true when a user's old password still binds for
+	// a while after it's changed, as Samba's "old password allowed period"
+	// does, for an hour
+	KeepsOldPassword bool
+
 	// ConnectTimeout is how long the directory can take to accept a bind,
 	// once its container has started
 	ConnectTimeout time.Duration

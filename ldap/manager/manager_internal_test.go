@@ -96,18 +96,19 @@ func Test_absdn(t *testing.T) {
 
 func Test_ldaperr(t *testing.T) {
 	for code, want := range map[uint16]error{
-		ldapv3.LDAPResultInvalidCredentials:     httpresponse.ErrNotAuthorized,
-		ldapv3.ErrorFilterCompile:               httpresponse.ErrBadRequest,
-		ldapv3.LDAPResultInvalidAttributeSyntax: httpresponse.ErrBadRequest,
-		ldapv3.LDAPResultObjectClassViolation:   httpresponse.ErrBadRequest,
-		ldapv3.LDAPResultNamingViolation:        httpresponse.ErrBadRequest,
-		ldapv3.LDAPResultUnwillingToPerform:     httpresponse.ErrBadRequest,
-		ldapv3.LDAPResultNoSuchObject:           httpresponse.ErrNotFound,
-		ldapv3.LDAPResultEntryAlreadyExists:     httpresponse.ErrConflict,
-		ldapv3.LDAPResultConstraintViolation:    httpresponse.ErrConflict,
-		ldapv3.LDAPResultNotAllowedOnNonLeaf:    httpresponse.ErrConflict,
-		ldapv3.LDAPResultUndefinedAttributeType: httpresponse.ErrBadRequest,
-		ldapv3.LDAPResultBusy:                   httpresponse.ErrInternalError,
+		ldapv3.LDAPResultInvalidCredentials:       httpresponse.ErrNotAuthorized,
+		ldapv3.ErrorFilterCompile:                 httpresponse.ErrBadRequest,
+		ldapv3.LDAPResultInvalidAttributeSyntax:   httpresponse.ErrBadRequest,
+		ldapv3.LDAPResultObjectClassViolation:     httpresponse.ErrBadRequest,
+		ldapv3.LDAPResultNamingViolation:          httpresponse.ErrBadRequest,
+		ldapv3.LDAPResultUnwillingToPerform:       httpresponse.ErrBadRequest,
+		ldapv3.LDAPResultNoSuchObject:             httpresponse.ErrNotFound,
+		ldapv3.LDAPResultInsufficientAccessRights: httpresponse.ErrForbidden,
+		ldapv3.LDAPResultEntryAlreadyExists:       httpresponse.ErrConflict,
+		ldapv3.LDAPResultConstraintViolation:      httpresponse.ErrConflict,
+		ldapv3.LDAPResultNotAllowedOnNonLeaf:      httpresponse.ErrConflict,
+		ldapv3.LDAPResultUndefinedAttributeType:   httpresponse.ErrBadRequest,
+		ldapv3.LDAPResultBusy:                     httpresponse.ErrInternalError,
 	} {
 		err := ldaperr(&ldapv3.Error{ResultCode: code, Err: errors.New("reason")})
 		assert.ErrorIs(t, err, want, ldapv3.LDAPResultCodeMap[code])
@@ -168,4 +169,18 @@ func Test_modifyRequest(t *testing.T) {
 	// Without a rename, it's kept
 	modify = modifyRequest(dn.String(), url.Values{"cn": {"eng"}}, dn, false)
 	assert.Len(t, modify.Changes, 1)
+}
+
+func Test_unicodePwd(t *testing.T) {
+	// Quoted, in UTF-16LE
+	assert.Equal(t, "\"\x00a\x00\xe9\x00\"\x00", unicodePwd("aé"))
+}
+
+func Test_randomPassword(t *testing.T) {
+	a, err := randomPassword()
+	require.NoError(t, err)
+	b, err := randomPassword()
+	require.NoError(t, err)
+	assert.Len(t, a, 24)
+	assert.NotEqual(t, a, b)
 }

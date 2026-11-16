@@ -325,6 +325,8 @@ func ldaperr(err error) error {
 		return httpresponse.ErrNotAuthorized.With("Invalid credentials")
 	case ldap.ErrorFilterCompile, ldap.ErrorFilterDecompile, ldap.LDAPResultFilterError, ldap.LDAPResultParamError, ldap.LDAPResultInvalidAttributeSyntax, ldap.LDAPResultObjectClassViolation, ldap.LDAPResultNamingViolation, ldap.LDAPResultUnwillingToPerform, ldap.LDAPResultUndefinedAttributeType:
 		return httpresponse.ErrBadRequest.With(err.Error())
+	case ldap.LDAPResultInsufficientAccessRights:
+		return httpresponse.ErrForbidden.With(err.Error())
 	case ldap.LDAPResultNoSuchObject:
 		return httpresponse.ErrNotFound.With("No such object")
 	case ldap.LDAPResultEntryAlreadyExists:
