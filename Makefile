@@ -88,6 +88,15 @@ unit-test: go-dep
 	@echo Unit Tests
 	@${GO} test ./...
 
+# The LDAP tests start OpenLDAP, 389 DS and SMB LDS containers, from
+# ldap/test, so need docker, and are skipped with -short. LDAP_TEST_SERVER
+# chooses some of them, such as openldap,389ds. Results aren't cached, since
+# the images and docker can change.
+.PHONY: integration-test
+integration-test: go-dep
+	@echo Integration Tests
+	@${GO} test -count=1 -timeout 20m ./ldap/...
+
 .PHONY: coverage-test
 coverage-test: go-dep mkdir
 	@echo Test Coverage
