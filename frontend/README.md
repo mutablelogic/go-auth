@@ -3,7 +3,7 @@
 go-auth's web UI modules, which any app can include, and the auth server's app, which is built from them.
 
 - It's built on [`@mutablelogic/go-server`](https://github.com/mutablelogic/go-server/tree/main/frontend), from GitHub Packages, with Lit and Carbon's web components.
-- An app is composed of **modules**. Each owns an item in the menu bar, and the sidebar while it's active: Credentials, and Certificates.
+- An app is composed of **modules**. Each owns an item in the menu bar, and the sidebar while it's active: Credentials, Certificates and LDAP.
 
 ## Modules
 
@@ -13,6 +13,8 @@ go-auth's web UI modules, which any app can include, and the auth server's app, 
 | `@mutablelogic/go-auth/credential/view` | `ga-credentials`, a Credentials page; `credentialModule`, which adds it to an app; and its parts, `credentialColumns`, `credentialFormView`, `passphraseFormView` and `valueView` |
 | `@mutablelogic/go-auth/cert` | The certificate API's types and client, the forms which create and renew certificates, PEM encoding, and `CertController` and `SubjectController`, which keep the certificates and subjects in a go-server `ListController` |
 | `@mutablelogic/go-auth/cert/view` | `ga-certificates`, a page of certificate authorities or leaf certificates; `ga-subjects`, a page of subjects; `certModule`, which adds both pages to an app; and its parts, `authorityColumns`, `certificateColumns`, `certDetailsView`, `certFormView` and `renewFormView` |
+| `@mutablelogic/go-auth/ldap` | The LDAP API's types and client, DN, attribute and filter helpers, and `LdapStatusController`, `UserController`, `GroupController`, `ObjectController` and `SchemaController` |
+| `@mutablelogic/go-auth/ldap/view` | `ga-ldap-page`, an LDAP page's header, with the connection's status, and `ldapModule`, which adds the LDAP pages to an app |
 
 Including Credentials in another app:
 
@@ -34,6 +36,7 @@ credentialModule({ nav, router, client, root: document.querySelector('main')!, n
 - **Create:** each table's toolbar ends with its Create button: a certificate, a certificate authority, or a subject. Create a certificate authority is disabled without a root.
 - **Subjects:** the Subjects page lists the subjects, with how many certificates use each. It edits or deletes one which no certificate uses.
 - **Configuration:** the auth server's app includes Certificates only when `/config.json` has a `cert` section, which a server built with certificates registers. Its `root` says whether a root is stored, without which certificate authorities can't be created.
+- **LDAP:** `ldapModule` adds an LDAP section, with Users and Groups, when the server has their DNs, Objects and Schema. Each page's header shows Connected or Disconnected, with the host and user, from the `ldap` section of `/config.json`, and then the connection's changes. The app includes it only when `/config.json` has that section.
 
 ## Layout
 

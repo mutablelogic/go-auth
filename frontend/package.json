@@ -1,7 +1,7 @@
 {
     "name": "@mutablelogic/go-auth",
     "version": "0.0.0",
-    "description": "go-auth's web UI modules, Credentials and Certificates, which an app can include, and the auth server's app",
+    "description": "go-auth's web UI modules, Credentials, Certificates and LDAP, which an app can include, and the auth server's app",
     "license": "Apache-2.0",
     "type": "module",
     "repository": {
@@ -31,6 +31,14 @@
         "./cert/view": {
             "types": "./dist/cert/view.d.ts",
             "import": "./dist/cert/view.js"
+        },
+        "./ldap": {
+            "types": "./dist/ldap/index.d.ts",
+            "import": "./dist/ldap/index.js"
+        },
+        "./ldap/view": {
+            "types": "./dist/ldap/view.d.ts",
+            "import": "./dist/ldap/view.js"
         }
     },
     "scripts": {

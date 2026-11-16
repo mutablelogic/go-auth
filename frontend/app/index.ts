@@ -22,6 +22,8 @@ import type { CertFeatures } from '../src/cert/schema.ts';
 import { certModule } from '../src/cert/view.ts';
 import type { CredentialFeatures } from '../src/credential/schema.ts';
 import { credentialModule } from '../src/credential/view.ts';
+import type { LdapStatus } from '../src/ldap/schema.ts';
+import { ldapModule } from '../src/ldap/view.ts';
 
 // Errors, and the server's status, are shown as toasts
 const notifications = new NotificationController();
@@ -62,6 +64,10 @@ credentialModule({ ...app, features: configSection<CredentialFeatures>(read, 'cr
 const certs = configSection<CertFeatures>(read, 'cert');
 if (certs) {
     certModule({ ...app, features: certs });
+}
+const ldap = configSection<LdapStatus>(read, 'ldap');
+if (ldap) {
+    ldapModule({ ...app, status: ldap });
 }
 
 // Show the page of the location's hash, and follow the server
