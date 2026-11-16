@@ -106,7 +106,7 @@ func (runner *RunServer) Run(ctx server.Cmd) error {
 				ctx.Logger().WarnContext(ctx.Context(), "The credential API has no authentication")
 				return runner.Cert.withHandlers(ctx, pool, follow, runner.Passphrase, runner.Insecure, func(certs *module) error {
 					return runner.LDAP.withHandlers(ctx, changes, runner.Insecure, func(ldap *module, directory ldapprovider.Manager) error {
-						return runner.Auth.withHandlers(ctx, directory, func(signin *module) error {
+						return runner.Auth.withHandlers(ctx, manager, directory, func(signin *module) error {
 							// The API publishes its changes, unless the
 							// backend's trigger notifies of them, as pg's does
 							var publisher httphandler.Publisher

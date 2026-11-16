@@ -24,6 +24,7 @@ import (
 	ldapprovider "github.com/mutablelogic/go-auth/auth/provider/ldap"
 	oidc "github.com/mutablelogic/go-auth/auth/provider/oidc"
 	schema "github.com/mutablelogic/go-auth/auth/schema"
+	credential "github.com/mutablelogic/go-auth/credential"
 	client "github.com/mutablelogic/go-client"
 	server "github.com/mutablelogic/go-server"
 	config "github.com/mutablelogic/go-server/config"
@@ -33,7 +34,10 @@ import (
 ///////////////////////////////////////////////////////////////////////////////
 // TYPES
 
-// AuthFlags configure the providers which people sign in with
+// AuthFlags configure the providers which people sign in with. A
+// provider's OAuth client is a credential, by its key, whose value is
+// {"client_id": "...", "client_secret": "..."}, so its secret is stored
+// encrypted.
 type AuthFlags struct {
 	URL    string            `name:"url" env:"${ENV_NAME}_AUTH_URL" help:"URL the server is reached at, which providers redirect back to, such as https://auth.example.com. Without it, it's the request's."`
 	Google GoogleFlags       `embed:"" prefix:"google."`
@@ -44,36 +48,34 @@ type AuthFlags struct {
 
 // GoogleFlags configure signing in with Google
 type GoogleFlags struct {
-	ClientID     string `name:"client-id" env:"GOOGLE_CLIENT_ID" help:"Google OAuth client ID, from the Google Cloud Console, to sign in with Google"`
-	ClientSecret string `name:"client-secret" env:"GOOGLE_CLIENT_SECRET" help:"Google OAuth client secret"`
+	Credential string `name:"credential" help:"Key of the credential of the Google OAuth client, from the Google Cloud Console, to sign in with Google"`
 }
 
 // GitHubFlags configure signing in with GitHub
 type GitHubFlags struct {
-	ClientID     string `name:"client-id" env:"GITHUB_CLIENT_ID" help:"GitHub OAuth app's client ID, to sign in with GitHub"`
-	ClientSecret string `name:"client-secret" env:"GITHUB_CLIENT_SECRET" help:"GitHub OAuth app's client secret"`
-	Orgs         bool   `name:"orgs" help:"Ask for the user's organisations, which are their groups"`
+	Credential string `name:"credential" help:"Key of the credential of the GitHub OAuth app, to sign in with GitHub"`
+	Orgs       bool   `name:"orgs" help:"Ask for the user's organisations, which are their groups"`
 }
 
 // OIDCProviderFlags configure signing in with another OpenID Connect issuer
 type OIDCProviderFlags struct {
-	Name         string   `name:"name" default:"oidc" help:"Name of the issuer, which is in its paths"`
-	Label        string   `name:"label" help:"Label of the issuer, to show, such as Keycloak"`
-	Issuer       string   `name:"issuer" env:"OIDC_ISSUER" help:"Issuer's URL, such as https://keycloak.example.com/realms/example, to sign in with it"`
-	ClientID     string   `name:"client-id" env:"OIDC_CLIENT_ID" help:"Client ID, at the issuer"`
-	ClientSecret string   `name:"client-secret" env:"OIDC_CLIENT_SECRET" help:"Client secret, at the issuer"`
-	Scopes       []string `name:"scope" help:"Scopes to ask for, other than openid, email and profile. Can be specified more than once."`
-	GroupsClaim  string   `name:"groups-claim" help:"Claim with the person's groups, such as groups"`
+	Name        string   `name:"name" default:"oidc" help:"Name of the issuer, which is in its paths"`
+	Label       string   `name:"label" help:"Label of the issuer, to show, such as Keycloak"`
+	Issuer      string   `name:"issuer" help:"Issuer's URL, such as https://keycloak.example.com/realms/example, to sign in with it"`
+	Credential  string   `name:"credential" help:"Key of the credential of the client, at the issuer"`
+	Scopes      []string `name:"scope" help:"Scopes to ask for, other than openid, email and profile. Can be specified more than once."`
+	GroupsClaim string   `name:"groups-claim" help:"Claim with the person's groups, such as groups"`
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 // PRIVATE METHODS
 
 // withHandlers calls fn with the registration of signing in with the
-// providers which are configured, or without, when there are none. The
-// directory is the LDAP manager, when LDAP is built in.
-func (flags AuthFlags) withHandlers(ctx server.Cmd, directory ldapprovider.Manager, fn func(*module) error) error {
-	providers, err := flags.providers(ctx, directory)
+// providers which are configured, or without, when there are none. Their
+// OAuth clients are credentials, and the directory is the LDAP manager,
+// when LDAP is built in.
+func (flags AuthFlags) withHandlers(ctx server.Cmd, credentials credential.CredentialProvider, directory ldapprovider.Manager, fn func(*module) error) error {
+	providers, err := flags.providers(ctx, credentials, directory)
 	if err != nil {
 		return err
 	} else if len(providers) == 0 {
@@ -96,23 +98,31 @@ func (flags AuthFlags) withHandlers(ctx server.Cmd, directory ldapprovider.Manag
 
 // providers returns the providers which are configured: Google, GitHub,
 // another OIDC issuer, and the LDAP directory, with clients which are
-// traced
-func (flags AuthFlags) providers(ctx server.Cmd, directory ldapprovider.Manager) ([]provider.Provider, error) {
+// traced. The credentials of their OAuth clients are checked, so one which
+// isn't there, or isn't a client, stops the server.
+func (flags AuthFlags) providers(ctx server.Cmd, credentials credential.CredentialProvider, directory ldapprovider.Manager) ([]provider.Provider, error) {
 	var result []provider.Provider
 	clientOpts := []client.ClientOpt{client.OptTracer(ctx.Tracer())}
-	if flags.Google.ClientID != "" {
-		p, err := oidc.NewGoogle(flags.Google.ClientID, flags.Google.ClientSecret, oidc.WithClient(clientOpts...))
+	for _, key := range []string{flags.Google.Credential, flags.GitHub.Credential, flags.OIDC.Credential} {
+		if key == "" {
+			continue
+		} else if _, err := provider.Client(ctx.Context(), credentials, key); err != nil {
+			return nil, err
+		}
+	}
+	if flags.Google.Credential != "" {
+		p, err := oidc.NewGoogle(credentials, flags.Google.Credential, oidc.WithClient(clientOpts...))
 		if err != nil {
 			return nil, err
 		}
 		result = append(result, p)
 	}
-	if flags.GitHub.ClientID != "" {
+	if flags.GitHub.Credential != "" {
 		opts := []github.Opt{github.WithClient(clientOpts...)}
 		if flags.GitHub.Orgs {
 			opts = append(opts, github.WithOrganizations())
 		}
-		p, err := github.New(flags.GitHub.ClientID, flags.GitHub.ClientSecret, opts...)
+		p, err := github.New(credentials, flags.GitHub.Credential, opts...)
 		if err != nil {
 			return nil, err
 		}
@@ -123,7 +133,7 @@ func (flags AuthFlags) providers(ctx server.Cmd, directory ldapprovider.Manager)
 		if flags.OIDC.GroupsClaim != "" {
 			opts = append(opts, oidc.WithGroupsClaim(flags.OIDC.GroupsClaim))
 		}
-		p, err := oidc.New(flags.OIDC.Name, flags.OIDC.Label, flags.OIDC.Issuer, flags.OIDC.ClientID, flags.OIDC.ClientSecret, opts...)
+		p, err := oidc.New(flags.OIDC.Name, flags.OIDC.Label, flags.OIDC.Issuer, credentials, flags.OIDC.Credential, opts...)
 		if err != nil {
 			return nil, err
 		}

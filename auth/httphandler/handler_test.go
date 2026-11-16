@@ -99,7 +99,7 @@ func signInCookie(resp *http.Response) *http.Cookie {
 func newServer(t *testing.T) (*test.Server, *authtest.OIDC) {
 	t.Helper()
 	i := authtest.NewOIDC(t)
-	p, err := oidc.New("oidc", "Fake OIDC", i.URL, i.Audience, "secret")
+	p, err := oidc.New("oidc", "Fake OIDC", i.URL, authtest.NewCredentials().WithClient("oidc", i.Audience, "secret"), "oidc")
 	require.NoError(t, err)
 	return test.NewServer(t, httphandler.RegisterHandlers([]provider.Provider{p, local{}})), i
 }
@@ -255,7 +255,7 @@ func Test_BaseURL(t *testing.T) {
 	// The callback is at the base URL, rather than the request's, and the
 	// cookie is secure, with https
 	i := authtest.NewOIDC(t)
-	p, err := oidc.New("oidc", "", i.URL, i.Audience, "secret")
+	p, err := oidc.New("oidc", "", i.URL, authtest.NewCredentials().WithClient("oidc", i.Audience, "secret"), "oidc")
 	require.NoError(t, err)
 	s := test.NewServer(t, httphandler.RegisterHandlers([]provider.Provider{p}, httphandler.WithBaseURL("https://auth.example.com/")))
 	resp, _ := newClient(t, s).do(http.MethodGet, "auth/oidc/login", nil, "")
