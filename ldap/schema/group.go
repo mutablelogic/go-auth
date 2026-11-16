@@ -44,7 +44,8 @@ var WellKnownGroupClasses = []string{"group", "posixGroup", "groupOfNames", "gro
 // GroupListRequest is a list request, which has only the groups of the user, when it's set
 type GroupListRequest struct {
 	ListRequest
-	User *string `json:"user,omitempty" help:"The name of a user whose groups are listed"`
+	User   *string `json:"user,omitempty" help:"The name of a user whose groups are listed"`
+	UserDN *string `json:"user_dn,omitempty" help:"The DN of a user whose groups are listed, rather than its name"`
 }
 
 // Query returns the request as query parameters
@@ -52,6 +53,9 @@ func (req GroupListRequest) Query() url.Values {
 	values := req.ListRequest.Query()
 	if req.User != nil {
 		values.Set("user", *req.User)
+	}
+	if req.UserDN != nil {
+		values.Set("user_dn", *req.UserDN)
 	}
 	return values
 }

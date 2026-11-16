@@ -75,6 +75,7 @@ Entries directly under the groups' DN, by name, which is the value of their RDN,
 Lists the groups.
 
 - **`user`:** lists only the groups the user is a member of.
+- **`user_dn`:** as `user`, by the user's DN, rather than its name, such as when two entries have the name.
 
 ### GET /ldap/group/{name}
 

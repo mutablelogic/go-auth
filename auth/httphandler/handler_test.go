@@ -20,6 +20,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -283,7 +284,7 @@ func Test_Session(t *testing.T) {
 	i := authtest.NewOIDC(t)
 	p, err := oidc.New("oidc", "", i.URL, authtest.NewCredentials().WithClient("oidc", i.Audience, "secret"), "oidc")
 	require.NoError(t, err)
-	sessions, err := file.New(t.TempDir())
+	sessions, err := file.New(filepath.Join(t.TempDir(), "sessions"))
 	require.NoError(t, err)
 	exchanger, err := store.NewExchanger(sessions)
 	require.NoError(t, err)
@@ -301,7 +302,7 @@ func Test_Session(t *testing.T) {
 	var token schema.SessionToken
 	require.NoError(t, json.Unmarshal([]byte(body), &token))
 	assert.NotEmpty(t, token.Token)
-	assert.Equal(t, "oidc:u1", token.User.ID)
+	assert.Equal(t, store.IdentityID(&schema.Identity{Issuer: i.URL, Subject: "u1"}), token.User.ID)
 	session, err := sessions.Session(ctx, token.Token)
 	require.NoError(t, err)
 	assert.Equal(t, token.ID, session.ID)

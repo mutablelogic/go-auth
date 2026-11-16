@@ -16,7 +16,6 @@ package ldap
 
 import (
 	"context"
-	"errors"
 	"slices"
 	"strings"
 
@@ -107,11 +106,7 @@ func (u *Users) User(ctx context.Context, identity *schema.Identity) (*schema.Us
 		user.Name = types.Value(entry.Get("cn"))
 	}
 	if u.manager.Status().GroupDN != "" {
-		name, err := rdnValue(entry.DN)
-		if err != nil {
-			return nil, err
-		}
-		if user.Groups, err = groupsOf(ctx, u.manager, name); err != nil {
+		if user.Groups, err = groupsOf(ctx, u.manager, entry.DN); err != nil {
 			return nil, err
 		}
 	}
@@ -172,15 +167,4 @@ func (u *Users) byEmail(ctx context.Context, email string) (*ldapschema.Object, 
 	default:
 		return nil, httpresponse.ErrConflict.Withf("More than one user's email address is %q", email)
 	}
-}
-
-// rdnValue returns the value of the DN's first RDN, such as a user's name
-func rdnValue(dn string) (string, error) {
-	parsed, err := goldap.ParseDN(dn)
-	if err != nil {
-		return "", err
-	} else if len(parsed.RDNs) == 0 || len(parsed.RDNs[0].Attributes) == 0 {
-		return "", errors.New("the DN has no RDN")
-	}
-	return parsed.RDNs[0].Attributes[0].Value, nil
 }

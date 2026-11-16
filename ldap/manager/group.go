@@ -51,8 +51,27 @@ func (manager *Manager) ListGroups(ctx context.Context, req schema.GroupListRequ
 	// as users, can be beside them
 	list := req.ListRequest
 	list.Filter = types.Ptr(andFilter(req.Filter, classFilter(manager.groupSelectClasses())))
-	if req.User != nil {
-		groups, err := manager.groupsFilter(ctx, *req.User)
+	var user *schema.Object
+	switch {
+	case req.User != nil && req.UserDN != nil:
+		return nil, httpresponse.ErrBadRequest.With("A user's groups are by its name, or its DN, not both")
+	case req.User != nil:
+		if user, _, err = manager.findUser(ctx, *req.User); err != nil {
+			return nil, err
+		}
+	case req.UserDN != nil:
+		// The user, by its DN, which is the entry's, exactly, rather than
+		// another with its name
+		absdn, err := manager.absdn(*req.UserDN)
+		if err != nil {
+			return nil, err
+		}
+		if user, err = manager.get(ctx, absdn.String()); err != nil {
+			return nil, err
+		}
+	}
+	if user != nil {
+		groups, err := manager.groupsFilter(ctx, user)
 		if err != nil {
 			return nil, err
 		} else if groups == "" {
@@ -416,12 +435,7 @@ func containsDN(dns []*ldap.DN, dn *ldap.DN) bool {
 // groupsFilter returns a filter of the groups which have the user, as a
 // member or uniqueMember, by DN, or memberUid, of those the directory has,
 // or empty when it has none
-func (manager *Manager) groupsFilter(ctx context.Context, name string) (string, error) {
-	user, _, err := manager.findUser(ctx, name)
-	if err != nil {
-		return "", err
-	}
-
+func (manager *Manager) groupsFilter(ctx context.Context, user *schema.Object) (string, error) {
 	var parts []string
 	for _, attr := range []string{"member", "uniqueMember", "memberUid"} {
 		if has, err := manager.hasAttribute(ctx, attr); err != nil {

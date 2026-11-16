@@ -158,7 +158,7 @@ func (p *Provider) Exchange(ctx context.Context, credential schema.Credential) (
 		identity.Name = types.Value(user.Get("cn"))
 	}
 	if p.manager.Status().GroupDN != "" {
-		groups, err := groupsOf(ctx, p.manager, credential.Username)
+		groups, err := groupsOf(ctx, p.manager, user.DN)
 		if err != nil {
 			return nil, err
 		}
@@ -190,13 +190,15 @@ func subjectOf(ctx context.Context, manager Manager, dn string) (string, error) 
 	return dn, nil
 }
 
-// groups returns the names of every group the user is in, a page at a time
-func groupsOf(ctx context.Context, manager Manager, username string) ([]string, error) {
+// groupsOf returns the names of every group the user, by its DN, is in, a
+// page at a time, so they're its groups, rather than another user's with
+// its name
+func groupsOf(ctx context.Context, manager Manager, dn string) ([]string, error) {
 	var result []string
 	for offset := uint64(0); ; {
 		page, err := manager.ListGroups(ctx, ldapschema.GroupListRequest{
 			ListRequest: ldapschema.ListRequest{OffsetLimit: ldapschema.OffsetLimit{Offset: offset, Limit: types.Ptr(groupsPage)}, Attr: []string{"cn"}},
-			User:        types.Ptr(username),
+			UserDN:      types.Ptr(dn),
 		})
 		if err != nil {
 			return nil, err

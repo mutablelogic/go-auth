@@ -16,6 +16,7 @@ package store_test
 
 import (
 	"context"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -48,7 +49,7 @@ var alice = &schema.Identity{Provider: "google", Issuer: "https://accounts.googl
 
 func newSessions(t *testing.T) *file.Sessions {
 	t.Helper()
-	sessions, err := file.New(t.TempDir())
+	sessions, err := file.New(filepath.Join(t.TempDir(), "sessions"))
 	require.NoError(t, err)
 	return sessions
 }
@@ -65,7 +66,7 @@ func Test_Exchange(t *testing.T) {
 		result, err := e.Exchange(ctx, alice)
 		require.NoError(t, err)
 		token := result.(*schema.SessionToken)
-		assert.Equal(t, schema.User{ID: "google:g1", Name: "Alice", Email: "alice@example.com", Groups: []string{"g"}}, token.User)
+		assert.Equal(t, schema.User{ID: "https%3A%2F%2Faccounts.google.com#g1", Name: "Alice", Email: "alice@example.com", Groups: []string{"g"}}, token.User)
 		assert.Empty(t, token.Scopes)
 		assert.Equal(t, "google", token.Provider)
 		assert.Equal(t, now.Add(time.Hour), token.ExpiresAt)
@@ -123,4 +124,14 @@ func Test_AllowDomains(t *testing.T) {
 	assert.ErrorIs(t, hook(ctx, &schema.Identity{Email: "alice@example.com"}), httpresponse.ErrForbidden, "not verified")
 	assert.ErrorIs(t, hook(ctx, &schema.Identity{Email: "mallory@example.com.evil", EmailVerified: true}), httpresponse.ErrForbidden)
 	assert.ErrorIs(t, hook(ctx, &schema.Identity{Name: "no email"}), httpresponse.ErrForbidden)
+}
+
+func Test_IdentityID(t *testing.T) {
+	// By the issuer and subject, not the provider's name, and unambiguous
+	a := store.IdentityID(&schema.Identity{Provider: "oidc", Issuer: "https://one.example", Subject: "1"})
+	assert.Equal(t, a, store.IdentityID(&schema.Identity{Provider: "renamed", Issuer: "https://one.example", Subject: "1"}))
+	assert.NotEqual(t, a, store.IdentityID(&schema.Identity{Provider: "oidc", Issuer: "https://two.example", Subject: "1"}))
+	assert.NotEqual(t,
+		store.IdentityID(&schema.Identity{Issuer: "a#b", Subject: "c"}),
+		store.IdentityID(&schema.Identity{Issuer: "a", Subject: "b#c"}))
 }

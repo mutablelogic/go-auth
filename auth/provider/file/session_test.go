@@ -111,3 +111,22 @@ func Test_Sessions(t *testing.T) {
 	_, err = file.New("")
 	assert.ErrorIs(t, err, httpresponse.ErrBadRequest)
 }
+
+func Test_SessionsDirectory(t *testing.T) {
+	// A directory which others can read, or write, isn't used, so no one
+	// else can add a session, with a token they choose
+	dir := filepath.Join(t.TempDir(), "open")
+	require.NoError(t, os.Mkdir(dir, 0o700))
+	require.NoError(t, os.Chmod(dir, 0o770))
+	_, err := file.New(dir)
+	assert.ErrorIs(t, err, httpresponse.ErrBadRequest)
+	require.NoError(t, os.Chmod(dir, 0o700))
+	_, err = file.New(dir)
+	assert.NoError(t, err)
+
+	// Nor a file
+	path := filepath.Join(t.TempDir(), "file")
+	require.NoError(t, os.WriteFile(path, nil, 0o600))
+	_, err = file.New(path)
+	assert.Error(t, err)
+}

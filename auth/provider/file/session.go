@@ -68,13 +68,22 @@ const (
 ///////////////////////////////////////////////////////////////////////////////
 // LIFECYCLE
 
-// New returns sessions in the directory, which is made, when it isn't
+// New returns sessions in the directory, which is made, when it isn't, and
+// which only its owner can read or write, so no one else can read sessions,
+// or add one, with a token they choose
 func New(dir string, opts ...Opt) (*Sessions, error) {
 	if dir == "" {
 		return nil, httpresponse.ErrBadRequest.With("Sessions need a directory")
 	}
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return nil, err
+	}
+	if info, err := os.Stat(dir); err != nil {
+		return nil, err
+	} else if !info.IsDir() {
+		return nil, httpresponse.ErrBadRequest.Withf("%q isn't a directory", dir)
+	} else if info.Mode().Perm()&0o077 != 0 {
+		return nil, httpresponse.ErrBadRequest.Withf("Sessions' directory %q can be read, or written, by others (%v): only its owner can", dir, info.Mode().Perm())
 	}
 	self := &Sessions{dir: dir, now: time.Now}
 	for _, opt := range opts {
