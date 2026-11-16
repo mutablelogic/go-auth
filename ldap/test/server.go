@@ -84,9 +84,10 @@ var servers = []Server{
 			"INSECURE_LDAP":             "true",
 			"INSECURE_PASSWORDSETTINGS": "true",
 		},
-		ActiveDirectory: true,
-		ConnectTimeout:  90 * time.Second,
-		options:         smbldsTLSOpts,
+		ActiveDirectory:  true,
+		KeepsOldPassword: true,
+		ConnectTimeout:   90 * time.Second,
+		options:          smbldsTLSOpts,
 	},
 }
 
@@ -116,11 +117,22 @@ func bootstrap389DS(ctx context.Context, server Server, c *pgtest.Container, con
 	deadline := time.Now().Add(15 * time.Second)
 	for {
 		_, err := conn.Search(ldap.NewSearchRequest(server.BaseDN, ldap.ScopeBaseObject, ldap.NeverDerefAliases, 1, 0, false, "(objectClass=*)", []string{"dn"}, nil))
-		if err == nil || time.Now().After(deadline) {
+		if err == nil {
+			break
+		} else if time.Now().After(deadline) {
 			return err
 		}
 		time.Sleep(250 * time.Millisecond)
 	}
+
+	// A new suffix has no access controls, which a 389 DS install has, so
+	// users can read entries, and change their own passwords
+	modify := ldap.NewModifyRequest(server.BaseDN, nil)
+	modify.Add("aci", []string{
+		`(targetattr != "userPassword")(version 3.0; acl "Read"; allow (read, search, compare) userdn = "ldap:///all";)`,
+		`(targetattr = "userPassword")(version 3.0; acl "Change own password"; allow (write) userdn = "ldap:///self";)`,
+	})
+	return conn.Modify(modify)
 }
 
 // openldapTLSOpts are OpenLDAP's certificate files

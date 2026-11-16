@@ -48,6 +48,7 @@ type Manager struct {
 	user, pass string
 	dn         *schema.DN
 	conn       *ldap.Conn
+	lost       chan struct{}
 	users      *schema.Group
 	groups     *schema.Group
 	tracer     trace.Tracer
@@ -61,6 +62,7 @@ type Manager struct {
 // DN. It doesn't connect until Connect, or Run, is called.
 func New(opt ...Opt) (*Manager, error) {
 	self := new(Manager)
+	self.lost = make(chan struct{}, 1)
 
 	// Apply options
 	o, err := applyOpts(opt...)
@@ -188,6 +190,31 @@ func (manager *Manager) Connect(ctx context.Context) (err error) {
 
 	// Return success
 	return nil
+}
+
+// write calls the function with the manager's connection, which is closed
+// when the context is cancelled first, so a directory which doesn't answer
+// can't hold the lock. Then it's forgotten, and Run reconnects.
+func (manager *Manager) write(ctx context.Context, fn func(*ldap.Conn) error) error {
+	if err := manager.connected(); err != nil {
+		return err
+	}
+	conn := manager.conn
+	err := whileOpen(ctx, conn, func() error { return fn(conn) })
+	if conn.IsClosing() {
+		manager.forget()
+	}
+	return err
+}
+
+// forget forgets the manager's connection, which is closed, and wakes Run,
+// which reconnects
+func (manager *Manager) forget() {
+	manager.conn = nil
+	select {
+	case manager.lost <- struct{}{}:
+	default:
+	}
 }
 
 // Disconnect closes the connection to the directory, when it's connected
@@ -325,6 +352,8 @@ func ldaperr(err error) error {
 		return httpresponse.ErrNotAuthorized.With("Invalid credentials")
 	case ldap.ErrorFilterCompile, ldap.ErrorFilterDecompile, ldap.LDAPResultFilterError, ldap.LDAPResultParamError, ldap.LDAPResultInvalidAttributeSyntax, ldap.LDAPResultObjectClassViolation, ldap.LDAPResultNamingViolation, ldap.LDAPResultUnwillingToPerform, ldap.LDAPResultUndefinedAttributeType, ldap.LDAPResultNotAllowedOnRDN:
 		return httpresponse.ErrBadRequest.With(err.Error())
+	case ldap.LDAPResultInsufficientAccessRights:
+		return httpresponse.ErrForbidden.With(err.Error())
 	case ldap.LDAPResultNoSuchObject:
 		return httpresponse.ErrNotFound.With("No such object")
 	case ldap.LDAPResultEntryAlreadyExists:

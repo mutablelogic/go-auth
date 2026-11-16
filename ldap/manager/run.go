@@ -28,8 +28,8 @@ import (
 // PUBLIC METHODS
 
 // Run connects to the directory, and checks the connection, reconnecting
-// when it's lost, with a growing delay, until the context is cancelled,
-// when it disconnects
+// when it's lost, with a growing delay, or at once when an operation loses
+// it, until the context is cancelled, when it disconnects
 func (manager *Manager) Run(ctx context.Context, logger *slog.Logger) error {
 	var retries uint
 
@@ -60,6 +60,9 @@ func (manager *Manager) Run(ctx context.Context, logger *slog.Logger) error {
 			}
 			retries = 0
 			ticker.Reset(schema.MinRetryInterval * time.Duration(schema.MaxRetries))
+		case <-manager.lost:
+			// An operation lost the connection, so reconnect now
+			ticker.Reset(0)
 		}
 	}
 }
