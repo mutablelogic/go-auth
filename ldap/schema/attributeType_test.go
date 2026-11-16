@@ -24,6 +24,7 @@ import (
 	schemadef "github.com/mutablelogic/go-auth/ldap/parser/schema"
 	jsonschema "github.com/mutablelogic/go-server/pkg/jsonschema"
 	assert "github.com/stretchr/testify/assert"
+	require "github.com/stretchr/testify/require"
 )
 
 func TestAttributeTypeParseAndHelpers(t *testing.T) {
@@ -226,4 +227,21 @@ func TestAttributeTypeListRequestAndMatching(t *testing.T) {
 		assert.Nil(attributeType)
 		assert.Empty(strings.TrimSpace(output.String()))
 	})
+}
+
+func Test_AttributeTypeClone(t *testing.T) {
+	attr, err := ParseAttributeType("( 2.5.4.3 NAME ( 'cn' 'commonName' ) SUP name X-ORIGIN 'RFC 4519' )")
+	require.NoError(t, err)
+	clone := attr.Clone()
+	assert.Equal(t, attr, clone)
+
+	// Nothing is shared
+	clone.Name[0] = "a"
+	clone.Extensions["X-ORIGIN"][0] = "b"
+	clone.SuperType = "c"
+	assert.Equal(t, "cn", attr.Name[0])
+	assert.Equal(t, "RFC 4519", attr.Extensions["X-ORIGIN"][0])
+	assert.Equal(t, "name", attr.SuperType)
+
+	assert.Nil(t, (*AttributeType)(nil).Clone())
 }

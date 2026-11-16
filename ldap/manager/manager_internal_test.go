@@ -23,6 +23,7 @@ import (
 	ldapv3 "github.com/go-ldap/ldap/v3"
 	schema "github.com/mutablelogic/go-auth/ldap/schema"
 	httpresponse "github.com/mutablelogic/go-server/pkg/httpresponse"
+	types "github.com/mutablelogic/go-server/pkg/types"
 	assert "github.com/stretchr/testify/assert"
 	require "github.com/stretchr/testify/require"
 )
@@ -205,4 +206,31 @@ func Test_passwordClasses(t *testing.T) {
 	} {
 		assert.Equal(t, want, passwordClasses(password), password)
 	}
+}
+
+func Test_parseSchema(t *testing.T) {
+	// Definitions which don't parse are left out, and the rest are by name
+	classes := parseObjectClasses([]string{
+		"( 2.5.6.6 NAME 'person' SUP top STRUCTURAL MUST ( sn $ cn ) )",
+		"not valid",
+		"( 2.5.6.0 NAME 'top' ABSTRACT MUST objectClass )",
+		"( 2.5.6.4 NAME 'Organization' SUP top STRUCTURAL MUST o )",
+	})
+	require.Len(t, classes, 3)
+	assert.Equal(t, []string{"Organization", "person", "top"}, []string{classes[0].Identifier(), classes[1].Identifier(), classes[2].Identifier()})
+
+	attrs := parseAttributeTypes([]string{
+		"( 2.5.4.3 NAME 'cn' SUP name )",
+		"( 2.5.4.41 NAME 'name' SYNTAX 1.3.6.1.4.1.1466.115.121.1.15 )",
+		"( broken",
+	})
+	require.Len(t, attrs, 2)
+	assert.Equal(t, "cn", attrs[0].Identifier())
+	assert.Equal(t, schema.AttributeUsageUserApplications, schema.AttributeUsage(attrs[1].Usage))
+}
+
+func Test_listLimit(t *testing.T) {
+	assert.Equal(t, uint64(schema.MaxListEntries), listLimit(nil))
+	assert.Equal(t, uint64(5), listLimit(types.Ptr(uint64(5))))
+	assert.Equal(t, uint64(schema.MaxListEntries), listLimit(types.Ptr(uint64(schema.MaxListEntries+1))))
 }
