@@ -19,11 +19,14 @@ import (
 	"errors"
 	"net/http"
 	"net/url"
+	"strings"
+	"time"
 
 	// Packages
 	goauth "github.com/mutablelogic/go-auth"
 	provider "github.com/mutablelogic/go-auth/auth/provider"
 	schema "github.com/mutablelogic/go-auth/auth/schema"
+	security "github.com/mutablelogic/go-auth/auth/security"
 	httprequest "github.com/mutablelogic/go-server/pkg/httprequest"
 	httpresponse "github.com/mutablelogic/go-server/pkg/httpresponse"
 	httprouter "github.com/mutablelogic/go-server/pkg/httprouter"
@@ -53,6 +56,12 @@ type providerParams struct {
 type passwordRequest struct {
 	Username string `json:"username" help:"Username" required:""`
 	Password string `json:"password" help:"Password" required:""`
+	Return   string `json:"return,omitempty" help:"Path to return to, once signed in, such as /, which redirects there, rather than returning the session"`
+}
+
+// loginQuery is the query of signing in with a redirect provider
+type loginQuery struct {
+	Return string `json:"return,omitempty" help:"Path to return to, once signed in, such as /, which the callback redirects to, rather than returning the session"`
 }
 
 // callbackQuery is the query a redirect provider returns with
@@ -76,7 +85,32 @@ const cookieName = "goauth_signin"
 // a redirect provider's callback
 func registerSignIn(router *httprouter.Router, h *handlers, doc *opts.MarkdownDoc) error {
 	h.prefix = router.Prefix()
-	return errors.Join(
+	var sessions error
+	if h.sessions != nil {
+		sessions = errors.Join(
+			router.Register("auth/session", nil, func(path httprequest.PathItem) {
+				path.Tag(tagSignIn)
+				path.Get(h.session, func(op httprequest.PathOperation) {
+					op.Summary("Get the session")
+					op.Description(doc.Section(3, "GET /auth/session").Body)
+					op.JSONResponse(http.StatusOK, jsonschema.MustFor[schema.Session](), "The session")
+					op.ErrorResponse(http.StatusUnauthorized, "No session, or it's ended")
+					op.Security(security.Name)
+				})
+			}),
+			router.Register("auth/logout", nil, func(path httprequest.PathItem) {
+				path.Tag(tagSignIn)
+				path.Post(h.logout, func(op httprequest.PathOperation) {
+					op.Summary("Sign out")
+					op.Description(doc.Section(3, "POST /auth/logout").Body)
+					op.EmptyResponse("Signed out")
+					op.ErrorResponse(http.StatusUnauthorized, "No session, or it's ended")
+					op.Security(security.Name)
+				})
+			}),
+		)
+	}
+	return errors.Join(sessions,
 		router.Register("auth/provider", nil, func(path httprequest.PathItem) {
 			path.Tag(tagSignIn)
 			path.Get(func(w http.ResponseWriter, r *http.Request) {
@@ -92,7 +126,9 @@ func registerSignIn(router *httprouter.Router, h *handlers, doc *opts.MarkdownDo
 			path.Get(h.login, func(op httprequest.PathOperation) {
 				op.Summary("Sign in with a redirect provider")
 				op.Description(doc.Section(3, "GET /auth/{provider}/login").Body)
+				op.Query(jsonschema.MustFor[loginQuery]())
 				op.Response(http.StatusFound, "", "To the provider's sign-in page")
+				op.ErrorResponse(http.StatusBadRequest, "The path to return to isn't this server's")
 				op.ErrorResponse(http.StatusNotFound, "No redirect provider with the name")
 				op.ErrorResponse(http.StatusBadGateway, "The provider can't be reached")
 			})
@@ -101,6 +137,7 @@ func registerSignIn(router *httprouter.Router, h *handlers, doc *opts.MarkdownDo
 				op.Description(doc.Section(3, "POST /auth/{provider}/login").Body)
 				op.RequestBody(jsonschema.MustFor[passwordRequest](), types.ContentTypeJSON, types.ContentTypeForm)
 				op.JSONResponse(http.StatusOK, h.response, "What signing in is exchanged for")
+				op.Response(http.StatusSeeOther, "", "To the path to return to, once signed in")
 				op.ErrorResponse(http.StatusBadRequest, "No username or password")
 				op.ErrorResponse(http.StatusUnauthorized, "The username or password isn't right")
 				op.ErrorResponse(http.StatusNotFound, "No password provider with the name")
@@ -113,6 +150,7 @@ func registerSignIn(router *httprouter.Router, h *handlers, doc *opts.MarkdownDo
 				op.Description(doc.Section(3, "GET /auth/{provider}/callback").Body)
 				op.Query(jsonschema.MustFor[callbackQuery]())
 				op.JSONResponse(http.StatusOK, h.response, "What signing in is exchanged for")
+				op.Response(http.StatusSeeOther, "", "To the path to return to, once signed in")
 				op.ErrorResponse(http.StatusBadRequest, "No code")
 				op.ErrorResponse(http.StatusUnauthorized, "The provider refused the sign-in, or its state isn't the sign-in's")
 				op.ErrorResponse(http.StatusNotFound, "No redirect provider with the name")
@@ -134,7 +172,15 @@ func (h *handlers) login(w http.ResponseWriter, r *http.Request) {
 		httpresponse.Error(w, httpresponse.ErrNotFound.Withf("No redirect provider %q", name))
 		return
 	}
-	in := signin{Provider: name, State: provider.NewVerifier(), Verifier: provider.NewVerifier(), Expires: h.now().Add(h.ttl).Unix()}
+	var query loginQuery
+	if err := httprequest.Query(r.URL.Query(), &query); err != nil {
+		httpresponse.Error(w, httpresponse.ErrBadRequest.Withf("%v", err))
+		return
+	} else if query.Return != "" && !localPath(query.Return) {
+		httpresponse.Error(w, httpresponse.ErrBadRequest.With("The path to return to is a path on this server, such as /"))
+		return
+	}
+	in := signin{Provider: name, State: provider.NewVerifier(), Verifier: provider.NewVerifier(), Expires: h.now().Add(h.ttl).Unix(), Return: query.Return}
 	authURL, err := p.AuthCodeURL(r.Context(), h.callbackURL(r, name), in.State, in.Verifier)
 	if err != nil {
 		httpresponse.Error(w, goauth.HTTPError(err))
@@ -193,7 +239,7 @@ func (h *handlers) callback(w http.ResponseWriter, r *http.Request) {
 		httpresponse.Error(w, httpresponse.ErrBadRequest.With("No code"))
 		return
 	}
-	h.exchange(w, r, p, schema.Credential{Code: query.Code, CodeVerifier: in.Verifier, RedirectURL: h.callbackURL(r, name)})
+	h.exchange(w, r, p, schema.Credential{Code: query.Code, CodeVerifier: in.Verifier, RedirectURL: h.callbackURL(r, name)}, in.Return)
 }
 
 // password signs in with a password provider
@@ -209,12 +255,16 @@ func (h *handlers) password(w http.ResponseWriter, r *http.Request) {
 		httpresponse.Error(w, httpresponse.ErrBadRequest.Withf("%v", err))
 		return
 	}
-	h.exchange(w, r, p, schema.Credential{Username: req.Username, Password: req.Password})
+	if req.Return != "" && !localPath(req.Return) {
+		httpresponse.Error(w, httpresponse.ErrBadRequest.With("The path to return to is a path on this server, such as /"))
+		return
+	}
+	h.exchange(w, r, p, schema.Credential{Username: req.Username, Password: req.Password}, req.Return)
 }
 
 // exchange exchanges the credential for an identity, and the identity for
 // the response
-func (h *handlers) exchange(w http.ResponseWriter, r *http.Request, p provider.Provider, credential schema.Credential) {
+func (h *handlers) exchange(w http.ResponseWriter, r *http.Request, p provider.Provider, credential schema.Credential, returnTo string) {
 	identity, err := p.Exchange(r.Context(), credential)
 	if err != nil {
 		httpresponse.Error(w, goauth.HTTPError(err))
@@ -225,8 +275,46 @@ func (h *handlers) exchange(w http.ResponseWriter, r *http.Request, p provider.P
 		httpresponse.Error(w, goauth.HTTPError(err))
 		return
 	}
+
+	// A session's token is its cookie too, for a browser
+	if token, ok := result.(*schema.SessionToken); ok && h.sessions != nil {
+		http.SetCookie(w, h.sessionCookie(r, token.Token, token.ExpiresAt))
+	}
 	w.Header().Set("Cache-Control", "no-store")
+	if returnTo != "" {
+		w.Header().Set("Location", returnTo)
+		w.WriteHeader(http.StatusSeeOther)
+		return
+	}
 	httpresponse.JSON(w, http.StatusOK, httprequest.Indent(r), result)
+}
+
+// session returns the request's session, which the security scheme has
+// authenticated
+func (h *handlers) session(w http.ResponseWriter, r *http.Request) {
+	session := security.Session(r.Context())
+	if session == nil {
+		httpresponse.Error(w, httpresponse.ErrNotAuthorized.With("No session"))
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	httpresponse.JSON(w, http.StatusOK, httprequest.Indent(r), session)
+}
+
+// logout revokes the request's session, which the security scheme has
+// authenticated, and clears its cookie
+func (h *handlers) logout(w http.ResponseWriter, r *http.Request) {
+	session := security.Session(r.Context())
+	if session == nil {
+		httpresponse.Error(w, httpresponse.ErrNotAuthorized.With("No session"))
+		return
+	}
+	if err := h.sessions.Revoke(r.Context(), session.ID); err != nil {
+		httpresponse.Error(w, goauth.HTTPError(err))
+		return
+	}
+	http.SetCookie(w, h.sessionCookie(r, "", time.Time{}))
+	httpresponse.Empty(w, http.StatusNoContent)
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -243,6 +331,45 @@ func (h *handlers) callbackURL(r *http.Request, name string) string {
 		scheme, host = h.base.Scheme, h.base.Host
 	}
 	return scheme + "://" + host + types.JoinPath(h.prefix, "auth/"+url.PathEscape(name)+"/callback")
+}
+
+// sessionCookie returns the cookie of a session's token, for the API's
+// paths, until it expires, or which removes it, without a token
+func (h *handlers) sessionCookie(r *http.Request, token string, expires time.Time) *http.Cookie {
+	cookie := &http.Cookie{
+		Name:     security.CookieName,
+		Value:    token,
+		Path:     cookiePath(h.prefix),
+		HttpOnly: true,
+		Secure:   r.TLS != nil || (h.base != nil && h.base.Scheme == "https"),
+		SameSite: http.SameSiteLaxMode,
+	}
+	if token == "" {
+		cookie.MaxAge = -1
+	} else {
+		cookie.Expires = expires
+	}
+	return cookie
+}
+
+// cookiePath is the path of the session's cookie: the API's prefix, or the
+// root
+func cookiePath(prefix string) string {
+	if prefix == "" {
+		return "/"
+	}
+	return prefix
+}
+
+// localPath returns whether a path to return to is on this server: it
+// starts with one slash, and has no scheme or host, so it isn't another
+// site's
+func localPath(path string) bool {
+	if !strings.HasPrefix(path, "/") || strings.HasPrefix(path, "//") || strings.HasPrefix(path, "/\\") {
+		return false
+	}
+	u, err := url.Parse(path)
+	return err == nil && u.Scheme == "" && u.Host == "" && !strings.ContainsAny(path, "\r\n\\")
 }
 
 // cookie returns the cookie of a sign-in with the provider, for its paths,

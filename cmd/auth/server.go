@@ -21,6 +21,7 @@ import (
 
 	// Packages
 	ldapprovider "github.com/mutablelogic/go-auth/auth/provider/ldap"
+	security "github.com/mutablelogic/go-auth/auth/security"
 	credential "github.com/mutablelogic/go-auth/credential"
 	httphandler "github.com/mutablelogic/go-auth/credential/httphandler"
 	frontend "github.com/mutablelogic/go-auth/frontend/cmd"
@@ -54,10 +55,12 @@ type registerFunc func(*httprouter.Router) error
 
 // module is a module of the server, which isn't always built in, such as
 // certificates: its handlers, and its section of the configuration, which
-// says what it can do, and that the web UI includes it, when it has one
+// says what it can do, and that the web UI includes it, when it has one,
+// and the security scheme, which signing in has, which is registered first
 type module struct {
 	register registerFunc
 	section  config.Opt
+	security httprouter.SecurityScheme
 }
 
 // follow follows the changes which PostgreSQL's triggers notify the channel
@@ -85,7 +88,7 @@ func unnotified(fn func(credential.CredentialManager, bool) error) func(credenti
 type RunServer struct {
 	cmd.RunServer
 	Passphrase  []string             `name:"passphrase" env:"${ENV_NAME}_PASSPHRASE" sep:"none" help:"Passphrase for encrypting credentials and private keys. Can be specified multiple times, for versions 1, 2 and so on, and the last is used for new ones."`
-	Insecure    bool                 `name:"insecure" env:"${ENV_NAME}_INSECURE" help:"Serve the certificate and LDAP APIs, when they're built in, which have no authentication yet, so anyone who can reach the server can create certificates, get their private keys, and change the directory"`
+	Insecure    bool                 `name:"insecure" env:"${ENV_NAME}_INSECURE" help:"Serve the APIs without authentication, so anyone who can reach the server can get credentials, create certificates and get their private keys, and change the directory. Without it, they need a session, from signing in, with their scopes."`
 	Postgres    PostgresFlags        `embed:"" prefix:"pg."`
 	Credential  BackendFlags         `embed:"" prefix:"credential."`
 	Cert        CertFlags            `embed:"" prefix:"cert."`
@@ -103,10 +106,12 @@ func (runner *RunServer) Run(ctx server.Cmd) error {
 		return runner.Postgres.withPool(ctx, changes, func(pool pg.PoolConn, follow *follow) error {
 			return runner.Credential.withManager(ctx, pool, follow, runner.Passphrase, func(manager credential.CredentialManager, notified bool) error {
 				ctx.Logger().InfoContext(ctx.Context(), "Credentials", "backend", backend)
-				ctx.Logger().WarnContext(ctx.Context(), "The credential API has no authentication")
+				if runner.Insecure {
+					ctx.Logger().WarnContext(ctx.Context(), "The APIs have no authentication, as --insecure is set")
+				}
 				return runner.Cert.withHandlers(ctx, pool, follow, runner.Passphrase, runner.Insecure, func(certs *module) error {
 					return runner.LDAP.withHandlers(ctx, changes, runner.Insecure, func(ldap *module, directory ldapprovider.Manager) error {
-						return runner.Auth.withHandlers(ctx, manager, directory, func(signin *module) error {
+						return runner.Auth.withHandlers(ctx, manager, directory, runner.Insecure, func(signin *module) error {
 							// The API publishes its changes, unless the
 							// backend's trigger notifies of them, as pg's does
 							var publisher httphandler.Publisher
@@ -133,6 +138,15 @@ func (runner *RunServer) Run(ctx server.Cmd) error {
 // as certificates' and LDAP's, when they're built in
 func (runner *RunServer) register(ctx server.Cmd, manager credential.CredentialManager, publisher httphandler.Publisher, modules ...*module) {
 	runner.RunServer.Register(func(router *httprouter.Router) error {
+		// The security scheme, which signing in has, is registered first, as
+		// the handlers need it
+		for _, module := range modules {
+			if module != nil && module.security != nil {
+				if err := router.RegisterSecurityScheme(security.Name, module.security); err != nil {
+					return err
+				}
+			}
+		}
 		sections := []config.Opt{config.WithSection("credential", credential.FeaturesOf(backend, manager))}
 		for _, module := range modules {
 			if module != nil && module.section != nil {
@@ -152,7 +166,7 @@ func (runner *RunServer) register(ctx server.Cmd, manager credential.CredentialM
 		if publisher != nil {
 			opts = append(opts, httphandler.WithPublisher(publisher))
 		}
-		if err := httphandler.RegisterManagerHandlers(manager, false, opts...)(router); err != nil {
+		if err := httphandler.RegisterManagerHandlers(manager, !runner.Insecure, opts...)(router); err != nil {
 			return err
 		}
 		for _, module := range modules {

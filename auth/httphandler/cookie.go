@@ -34,6 +34,7 @@ type signin struct {
 	State    string `json:"s"`
 	Verifier string `json:"v"`
 	Expires  int64  `json:"e"`
+	Return   string `json:"r,omitempty"`
 }
 
 // sealer seals a sign-in, with AES-GCM, so it can't be read, or changed,

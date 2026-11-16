@@ -18,7 +18,6 @@ package main
 
 import (
 	// Packages
-	auth "github.com/mutablelogic/go-auth"
 	ldapprovider "github.com/mutablelogic/go-auth/auth/provider/ldap"
 	ldapcmd "github.com/mutablelogic/go-auth/ldap/cmd"
 	ldaphandler "github.com/mutablelogic/go-auth/ldap/httphandler"
@@ -42,19 +41,17 @@ type LDAPFlags struct {
 // withHandlers creates the LDAP manager, which publishes its changes, and
 // its connection coming up or going down, to the server's, and calls fn
 // with the registration of its handlers, and the manager, which can be
-// signed in with, while it runs, when insecure is set
+// signed in with, while it runs. The handlers need sessions with their
+// scopes, unless insecure is set.
 func (flags LDAPFlags) withHandlers(ctx server.Cmd, changes *broadcaster.Broadcaster, insecure bool, fn func(*module, ldapprovider.Manager) error) error {
-	// Until the API has authentication, serving it is a choice, as it
-	// changes the directory as the manager's user
-	if !insecure {
-		return auth.ErrBadParameter.With("the LDAP API has no authentication yet, so anyone who can reach the server could change the directory: set --insecure to serve it anyway")
-	}
 	return flags.WithLDAPManager(ctx, changes, func(mgr *manager.Manager) error {
-		ctx.Logger().WarnContext(ctx.Context(), "The LDAP API has no authentication, as --insecure is set")
+		if insecure {
+			ctx.Logger().WarnContext(ctx.Context(), "The LDAP API has no authentication, as --insecure is set")
+		}
 		// The web UI includes LDAP when the configuration has its section,
 		// which has its status, as it is each time it's served
 		return fn(&module{
-			register: ldaphandler.RegisterHandlers(mgr, false),
+			register: ldaphandler.RegisterHandlers(mgr, !insecure),
 			section:  config.WithSectionFunc("ldap", mgr.Status),
 		}, mgr)
 	})

@@ -29,6 +29,7 @@ import (
 	file "github.com/mutablelogic/go-auth/auth/provider/file"
 	oidc "github.com/mutablelogic/go-auth/auth/provider/oidc"
 	schema "github.com/mutablelogic/go-auth/auth/schema"
+	security "github.com/mutablelogic/go-auth/auth/security"
 	store "github.com/mutablelogic/go-auth/auth/store"
 	authtest "github.com/mutablelogic/go-auth/auth/test"
 	httpresponse "github.com/mutablelogic/go-server/pkg/httpresponse"
@@ -306,4 +307,114 @@ func Test_Session(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, token.ID, session.ID)
 	assert.Empty(t, s.Verify())
+}
+
+// newSessionServer returns a server which signs in with the local provider,
+// for a session, whose cookie it sets, with the security scheme
+func newSessionServer(t *testing.T) *test.Server {
+	t.Helper()
+	sessions, err := file.New(t.TempDir())
+	require.NoError(t, err)
+	exchanger, err := store.NewExchanger(sessions)
+	require.NoError(t, err)
+	scheme, err := security.New(sessions)
+	require.NoError(t, err)
+	register := httphandler.RegisterHandlers([]provider.Provider{local{}}, httphandler.WithExchange(exchanger.Exchange, store.ResponseSchema()), httphandler.WithSessions(sessions))
+	return test.NewServer(t, func(router *httprouter.Router) error {
+		if err := router.RegisterSecurityScheme(security.Name, scheme); err != nil {
+			return err
+		}
+		return register(router)
+	})
+}
+
+// sessionCookie returns the session's cookie a response sets
+func sessionCookie(resp *http.Response) *http.Cookie {
+	for _, cookie := range resp.Cookies() {
+		if cookie.Name == security.CookieName {
+			return cookie
+		}
+	}
+	return nil
+}
+
+func Test_SessionCookie(t *testing.T) {
+	s := newSessionServer(t)
+	c := newClient(t, s)
+
+	// Signing in sets the session's cookie, for the API, until it expires
+	resp, body := c.do(http.MethodPost, "auth/local/login", strings.NewReader(`{"username":"alice","password":"secret"}`), "application/json")
+	require.Equal(t, http.StatusOK, resp.StatusCode, body)
+	cookie := sessionCookie(resp)
+	require.NotNil(t, cookie)
+	assert.Equal(t, "/api", cookie.Path)
+	assert.True(t, cookie.HttpOnly)
+	assert.Equal(t, http.SameSiteLaxMode, cookie.SameSite)
+	assert.False(t, cookie.Expires.IsZero())
+	var token schema.SessionToken
+	require.NoError(t, json.Unmarshal([]byte(body), &token))
+	assert.Equal(t, token.Token, cookie.Value)
+
+	// The session, with the cookie, or the token
+	resp, body = c.do(http.MethodGet, "auth/session", nil, "", cookie)
+	require.Equal(t, http.StatusOK, resp.StatusCode, body)
+	assert.Contains(t, body, `"id": "local:alice"`)
+	status, _, _ := s.Request(t, http.MethodGet, "auth/session", http.Header{"Authorization": {"Bearer " + token.Token}})
+	assert.Equal(t, http.StatusOK, status)
+
+	// Signing out ends it, and clears the cookie
+	resp, _ = c.do(http.MethodPost, "auth/logout", nil, "", cookie)
+	require.Equal(t, http.StatusNoContent, resp.StatusCode)
+	cleared := sessionCookie(resp)
+	require.NotNil(t, cleared)
+	assert.Negative(t, cleared.MaxAge)
+	resp, _ = c.do(http.MethodGet, "auth/session", nil, "", cookie)
+	assert.Equal(t, http.StatusUnauthorized, resp.StatusCode)
+	resp, _ = c.do(http.MethodPost, "auth/logout", nil, "")
+	assert.Equal(t, http.StatusUnauthorized, resp.StatusCode)
+
+	assert.Empty(t, s.Verify())
+}
+
+func Test_Return(t *testing.T) {
+	s := newSessionServer(t)
+	c := newClient(t, s)
+
+	// With a path to return to, signing in redirects there, with the cookie
+	resp, _ := c.do(http.MethodPost, "auth/local/login", strings.NewReader(`{"username":"alice","password":"secret","return":"/#ldap-users"}`), "application/json")
+	require.Equal(t, http.StatusSeeOther, resp.StatusCode)
+	assert.Equal(t, "/#ldap-users", resp.Header.Get("Location"))
+	assert.NotNil(t, sessionCookie(resp))
+
+	// Not to another site
+	for _, path := range []string{"https://evil.test/", "//evil.test/", "/\\evil.test", "evil", "/\r\nX: y"} {
+		body, err := json.Marshal(map[string]string{"username": "alice", "password": "secret", "return": path})
+		require.NoError(t, err)
+		resp, _ = c.do(http.MethodPost, "auth/local/login", strings.NewReader(string(body)), "application/json")
+		assert.Equal(t, http.StatusBadRequest, resp.StatusCode, path)
+	}
+
+	// The callback of a redirect provider returns too
+	i := authtest.NewOIDC(t)
+	p, err := oidc.New("oidc", "", i.URL, authtest.NewCredentials().WithClient("oidc", i.Audience, "secret"), "oidc")
+	require.NoError(t, err)
+	sessions, err := file.New(t.TempDir())
+	require.NoError(t, err)
+	exchanger, err := store.NewExchanger(sessions)
+	require.NoError(t, err)
+	redirect := test.NewServer(t, httphandler.RegisterHandlers([]provider.Provider{p}, httphandler.WithExchange(exchanger.Exchange, store.ResponseSchema())))
+	rc := newClient(t, redirect)
+	resp, _ = rc.do(http.MethodGet, "auth/oidc/login?return=%2Fhome", nil, "")
+	require.Equal(t, http.StatusFound, resp.StatusCode)
+	location, err := url.Parse(resp.Header.Get("Location"))
+	require.NoError(t, err)
+	code := i.Code(location.Query().Get("code_challenge"), map[string]any{"sub": "u1"})
+	resp, _ = rc.do(http.MethodGet, "auth/oidc/callback?"+url.Values{"code": {code}, "state": {location.Query().Get("state")}}.Encode(), nil, "", signInCookie(resp))
+	assert.Equal(t, http.StatusSeeOther, resp.StatusCode)
+	assert.Equal(t, "/home", resp.Header.Get("Location"))
+	resp, _ = rc.do(http.MethodGet, "auth/oidc/login?return=https%3A%2F%2Fevil.test", nil, "")
+	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
+
+	assert.Empty(t, s.Verify())
+	assert.Empty(t, redirect.Verify())
 }
