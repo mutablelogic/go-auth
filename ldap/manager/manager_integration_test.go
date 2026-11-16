@@ -1,5 +1,3 @@
-//go:build integration
-
 // Copyright 2026 David Thorpe
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -22,13 +20,14 @@ import (
 	"time"
 
 	// Packages
+	ldaptest "github.com/mutablelogic/go-auth/ldap/test"
 	httpresponse "github.com/mutablelogic/go-server/pkg/httpresponse"
 	assert "github.com/stretchr/testify/assert"
 	require "github.com/stretchr/testify/require"
 )
 
 func Test_Integration_Connection(t *testing.T) {
-	forEachServer(t, func(t *testing.T, ctx context.Context, server integrationServer, manager *Manager) {
+	forEachServer(t, func(t *testing.T, ctx context.Context, server ldaptest.Server, manager *Manager) {
 		assert.Equal(t, "127.0.0.1", manager.Host())
 		assert.NotZero(t, manager.Port())
 		assert.Equal(t, server.BindDN, manager.User())
@@ -52,7 +51,7 @@ func Test_Integration_Connection(t *testing.T) {
 }
 
 func Test_Integration_WrongPassword(t *testing.T) {
-	forEachServer(t, func(t *testing.T, ctx context.Context, server integrationServer, manager *Manager) {
+	forEachServer(t, func(t *testing.T, ctx context.Context, server ldaptest.Server, manager *Manager) {
 		other, err := New(WithUrl(manager.url.String()), WithBaseDN(server.BaseDN), WithUser(server.BindDN), WithPassword("wrong-password"), WithSkipVerify())
 		require.NoError(t, err)
 		assert.ErrorIs(t, other.Connect(ctx), httpresponse.ErrNotAuthorized)
@@ -61,7 +60,7 @@ func Test_Integration_WrongPassword(t *testing.T) {
 }
 
 func Test_Integration_Run(t *testing.T) {
-	forEachServer(t, func(t *testing.T, ctx context.Context, server integrationServer, manager *Manager) {
+	forEachServer(t, func(t *testing.T, ctx context.Context, server ldaptest.Server, manager *Manager) {
 		require.NoError(t, manager.Disconnect(ctx))
 
 		runCtx, cancel := context.WithCancel(ctx)
@@ -85,5 +84,41 @@ func Test_Integration_Run(t *testing.T) {
 			t.Fatal("timed out waiting for Run to return")
 		}
 		assert.False(t, connected())
+	})
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// HARNESS
+
+// TestMain runs the tests, then stops the directories' containers
+func TestMain(m *testing.M) {
+	ldaptest.Main(m)
+}
+
+// forEachServer runs the test against each directory, with a new manager,
+// connected to its container, which is disconnected after it. It's skipped
+// with -short.
+func forEachServer(t *testing.T, fn func(*testing.T, context.Context, ldaptest.Server, *Manager)) {
+	t.Helper()
+	ldaptest.ForEach(t, func(t *testing.T, server ldaptest.Server, url string) {
+		ctx := context.Background()
+		manager, err := New(
+			WithUrl(url),
+			WithBaseDN(server.BaseDN),
+			WithUser(server.BindDN),
+			WithPassword(server.BindPassword),
+			WithUserDN(server.UserDN),
+			WithGroupDN(server.GroupDN),
+			WithSkipVerify(),
+		)
+		require.NoError(t, err)
+		t.Cleanup(func() { _ = manager.Disconnect(ctx) })
+
+		// Connect, retrying, since a directory can be slow to bind when it's
+		// busy. Connect closes its connection when the context ends.
+		connectCtx, cancel := context.WithTimeout(ctx, server.ConnectTimeout)
+		defer cancel()
+		require.Eventually(t, func() bool { return manager.Connect(connectCtx) == nil }, server.ConnectTimeout, 250*time.Millisecond)
+		fn(t, ctx, server, manager)
 	})
 }
