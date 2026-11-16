@@ -86,7 +86,7 @@ func Test_Provider(t *testing.T) {
 		require.NoError(t, err)
 		assert.NotEqual(t, identity.Subject, another.Subject, "another user, with the same DN")
 
-				// A wrong password, and a user who isn't, are the same error
+		// A wrong password, and a user who isn't, are the same error
 		_, err = p.Exchange(ctx, schema.Credential{Username: "alice", Password: "wrong"})
 		assert.ErrorIs(t, err, httpresponse.ErrNotAuthorized)
 		_, err = p.Exchange(ctx, schema.Credential{Username: "nobody", Password: "wrong"})

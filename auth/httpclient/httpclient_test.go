@@ -18,6 +18,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	// Packages
@@ -237,7 +238,9 @@ func Test_Discover(t *testing.T) {
 		assert.ErrorIs(t, err, goauth.ErrNotFound)
 		assert.Contains(t, err.Error(), "500")
 		assert.Contains(t, err.Error(), `is of the issuer "nothing useful"`)
-		assert.NotContains(t, err.Error(), "404", "what's missing isn't a failure")
+		// What's missing isn't a failure: a 404, which isn't in the server's
+		// address, whose port can have 404 in it
+		assert.NotContains(t, strings.ReplaceAll(err.Error(), server.URL, ""), "404", "what's missing isn't a failure")
 	})
 
 	t.Run("Credentials", func(t *testing.T) {
