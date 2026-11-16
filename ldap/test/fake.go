@@ -23,6 +23,7 @@ import (
 	"crypto/x509/pkix"
 	"math/big"
 	"net"
+	"sort"
 	"strings"
 	"sync"
 	"testing"
@@ -38,7 +39,7 @@ import (
 // TYPES
 
 // Fake is an LDAP directory in memory, which answers binds, searches of
-// one entry, by its DN, adds, modifies, deletes and password modifies, so tests can make a
+// one entry, by its DN, or of the entries directly under it, adds, modifies, deletes and password modifies, so tests can make a
 // request stall, or another manager change something first, every time.
 // It has no schema, filters, paging, renames or extended operations, so
 // the directories in containers are for everything else.
@@ -172,7 +173,8 @@ func (d *Fake) serve(conn net.Conn) {
 			}
 			responses = []*ber.Packet{result(id, ldapv3.ApplicationBindResponse, 0)}
 		case ldapv3.ApplicationSearchRequest:
-			responses = d.search(id, request.Children[0].Data.String())
+			scope, _ := request.Children[1].Value.(int64)
+			responses = d.search(id, request.Children[0].Data.String(), int(scope))
 		case ldapv3.ApplicationAddRequest:
 			responses = d.add(id, request)
 		case ldapv3.ApplicationModifyRequest:
@@ -203,14 +205,39 @@ func (d *Fake) record(op uint8, name, dn string) bool {
 	return stall != nil && stall(op, dn)
 }
 
-func (d *Fake) search(id any, dn string) []*ber.Packet {
+func (d *Fake) search(id any, dn string, scope int) []*ber.Packet {
 	if d.record(ldapv3.ApplicationSearchRequest, "search", dn) {
 		return nil
 	}
+
+	// A search of one level is of the entries directly under the DN, by
+	// their DNs in lower case, without a filter
+	if scope == ldapv3.ScopeSingleLevel {
+		d.Lock()
+		var children []string
+		for key := range d.entries {
+			if parts := strings.SplitN(key, ",", 2); len(parts) == 2 && strings.EqualFold(parts[1], dn) {
+				children = append(children, key)
+			}
+		}
+		d.Unlock()
+		sort.Strings(children)
+		var responses []*ber.Packet
+		for _, child := range children {
+			responses = append(responses, envelope(id, d.entry(child, d.Entry(child))))
+		}
+		return append(responses, result(id, ldapv3.ApplicationSearchResultDone, 0))
+	}
+
 	attrs := d.Entry(dn)
 	if attrs == nil {
 		return []*ber.Packet{result(id, ldapv3.ApplicationSearchResultDone, ldapv3.LDAPResultNoSuchObject)}
 	}
+	return []*ber.Packet{envelope(id, d.entry(dn, attrs)), result(id, ldapv3.ApplicationSearchResultDone, 0)}
+}
+
+// entry returns a search's result entry, of the DN and its attributes
+func (d *Fake) entry(dn string, attrs map[string][]string) *ber.Packet {
 	entry := ber.Encode(ber.ClassApplication, ber.TypeConstructed, ldapv3.ApplicationSearchResultEntry, nil, "Entry")
 	entry.AppendChild(ber.NewString(ber.ClassUniversal, ber.TypePrimitive, ber.TagOctetString, dn, "DN"))
 	list := ber.Encode(ber.ClassUniversal, ber.TypeConstructed, ber.TagSequence, nil, "Attributes")
@@ -225,7 +252,7 @@ func (d *Fake) search(id any, dn string) []*ber.Packet {
 		list.AppendChild(attr)
 	}
 	entry.AppendChild(list)
-	return []*ber.Packet{envelope(id, entry), result(id, ldapv3.ApplicationSearchResultDone, 0)}
+	return entry
 }
 
 func (d *Fake) add(id any, request *ber.Packet) []*ber.Packet {
