@@ -19,6 +19,7 @@ import (
 	"errors"
 	"net"
 	"testing"
+	"time"
 
 	// Packages
 	ldapv3 "github.com/go-ldap/ldap/v3"
@@ -66,6 +67,58 @@ func Test_New(t *testing.T) {
 			assert.ErrorIs(t, err, httpresponse.ErrBadRequest, name)
 		}
 	})
+
+	t.Run("InvalidURLHidesPassword", func(t *testing.T) {
+		_, err := New(WithUrl("ldap://admin:secret@ldap.example.test/%zz"), WithBaseDN("dc=example,dc=test"))
+		require.ErrorIs(t, err, httpresponse.ErrBadRequest)
+		assert.NotContains(t, err.Error(), "secret")
+		assert.Contains(t, err.Error(), "%zz", "the cause is kept")
+	})
+}
+
+func Test_ConnectCancelled(t *testing.T) {
+	// A server which accepts connections, and never answers
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	defer listener.Close()
+	go func() {
+		for {
+			conn, err := listener.Accept()
+			if err != nil {
+				return
+			}
+			defer conn.Close()
+		}
+	}()
+
+	m, err := New(WithUrl("ldap://admin:secret@"+listener.Addr().String()), WithBaseDN("dc=example,dc=test"))
+	require.NoError(t, err)
+
+	// The bind is abandoned when the context is cancelled
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+	start := time.Now()
+	err = m.Connect(ctx)
+	assert.ErrorIs(t, err, context.DeadlineExceeded)
+	assert.Less(t, time.Since(start), 5*time.Second)
+
+	// The lock is free, and the manager isn't connected
+	assert.NoError(t, m.Disconnect(context.Background()))
+	_, err = m.WhoAmI(context.Background())
+	assert.ErrorIs(t, err, httpresponse.ErrGatewayError)
+
+	// Run returns when it's cancelled, though the bind hangs
+	ctx, cancel = context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- m.Run(ctx, slogDiscard()) }()
+	time.Sleep(300 * time.Millisecond)
+	cancel()
+	select {
+	case err := <-done:
+		assert.NoError(t, err)
+	case <-time.After(5 * time.Second):
+		t.Fatal("Run didn't return")
+	}
 }
 
 func Test_absdn(t *testing.T) {

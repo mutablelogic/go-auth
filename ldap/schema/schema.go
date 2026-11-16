@@ -34,6 +34,9 @@ const (
 	PortPlain    = 389
 	PortSecure   = 636
 
+	// Time to wait for the directory to connect, or answer a request
+	RequestTimeout = time.Second * 30
+
 	// Time between connection retries
 	MinRetryInterval = time.Second * 5
 	MaxRetries       = 10

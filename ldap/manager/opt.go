@@ -15,6 +15,7 @@
 package manager
 
 import (
+	"errors"
 	"net/url"
 
 	// Packages
@@ -63,6 +64,12 @@ func WithUrl(v string) Opt {
 	return func(o *opt) error {
 		u, err := url.Parse(v)
 		if err != nil {
+			// A url.Error has the URL, with its password, so only its
+			// cause is returned
+			var urlErr *url.Error
+			if errors.As(err, &urlErr) {
+				err = urlErr.Err
+			}
 			return httpresponse.ErrBadRequest.Withf("url is invalid: %v", err)
 		}
 		o.url = u
