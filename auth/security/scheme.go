@@ -90,7 +90,7 @@ func New(sessions store.SessionStore, opts ...Opt) (*Scheme, error) {
 func WithResourceMetadata(metadata string) Opt {
 	return func(s *Scheme) error {
 		u, err := url.Parse(metadata)
-		if err != nil || (u.Scheme == "" && !strings.HasPrefix(metadata, "/")) || (u.Scheme != "" && u.Scheme != "http" && u.Scheme != "https") || strings.ContainsAny(metadata, `"\`) {
+		if err != nil || (u.Scheme == "" && (!strings.HasPrefix(metadata, "/") || u.Host != "")) || (u.Scheme != "" && ((u.Scheme != "http" && u.Scheme != "https") || u.Host == "")) || strings.ContainsAny(metadata, `"\`) {
 			return httpresponse.ErrBadRequest.Withf("Invalid resource metadata %q", metadata)
 		}
 		s.metadata = metadata

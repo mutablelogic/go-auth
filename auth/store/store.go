@@ -20,6 +20,7 @@ package store
 
 import (
 	"context"
+	"time"
 
 	// Packages
 	schema "github.com/mutablelogic/go-auth/auth/schema"
@@ -56,4 +57,14 @@ type SessionStore interface {
 
 	// Revoke removes the session with the ID, or returns not found
 	Revoke(ctx context.Context, id string) error
+}
+
+// Consumer consumes values which are used once, such as authorization
+// codes, by their IDs, until they expire, so one isn't used again by
+// another server which shares the store, or after a restart. A session
+// store can be one.
+type Consumer interface {
+	// Consume consumes the ID, until it expires, or returns conflict,
+	// when it's been consumed
+	Consume(ctx context.Context, id string, expires time.Time) error
 }

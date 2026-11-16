@@ -42,7 +42,14 @@ import (
 // sign in with a password, and alice's session cookie
 func newOAuthServer(t *testing.T, opt ...httphandler.Opt) (*test.Server, *http.Cookie) {
 	t.Helper()
-	sessions, err := file.New(filepath.Join(t.TempDir(), "sessions"))
+	return newOAuthServerIn(t, filepath.Join(t.TempDir(), "sessions"), opt...)
+}
+
+// newOAuthServerIn returns an OAuth server, whose sessions are in the
+// directory, which another server can share
+func newOAuthServerIn(t *testing.T, dir string, opt ...httphandler.Opt) (*test.Server, *http.Cookie) {
+	t.Helper()
+	sessions, err := file.New(dir)
 	require.NoError(t, err)
 	exchanger, err := store.NewExchanger(sessions)
 	require.NoError(t, err)
@@ -148,10 +155,23 @@ func Test_OAuth(t *testing.T) {
 
 	t.Run("Scopes", func(t *testing.T) {
 		// Alice has no scopes, so none she asks for are given
+		// Alice has no scopes, so none she asks for are given, which the
+		// response says, with an empty scope
 		a, query := authorize(t, "admin")
-		grant, err := oauth.Exchange(ctx, a, query)
+		resp, err := http.PostForm(server.TokenEndpoint, url.Values{
+			"grant_type":    {"authorization_code"},
+			"code":          {query.Get("code")},
+			"redirect_uri":  {redirect},
+			"client_id":     {registration.ClientID},
+			"code_verifier": {a.Verifier},
+		})
 		require.NoError(t, err)
-		assert.Empty(t, grant.Token.Extra("scope"))
+		defer resp.Body.Close()
+		require.Equal(t, http.StatusOK, resp.StatusCode)
+		var token map[string]any
+		require.NoError(t, json.NewDecoder(resp.Body).Decode(&token))
+		assert.Contains(t, token, "scope")
+		assert.Equal(t, "", token["scope"])
 	})
 
 	t.Run("Verifier", func(t *testing.T) {
@@ -172,6 +192,8 @@ func Test_OAuth(t *testing.T) {
 		// Only loopback, and allowed, redirects
 		_, err := oauth.Register(ctx, server, "Allowed", []string{"https://app.example.com/callback", "http://[::1]:8080/cb", "http://localhost/cb"})
 		require.NoError(t, err)
+		_, err = oauth.Register(ctx, server, strings.Repeat("x", 5000), []string{"http://127.0.0.1/callback"})
+		assert.ErrorContains(t, err, "invalid_client_metadata", "too large")
 		for _, redirect := range []string{"https://evil.example.com/callback", "https://app.example.com/callback/x", "http://example.com/callback", "http://127.0.0.1/cb#x"} {
 			_, err := oauth.Register(ctx, server, "Refused", []string{redirect})
 			assert.ErrorContains(t, err, "invalid_redirect_uri", redirect)
@@ -206,6 +228,58 @@ func Test_OAuth(t *testing.T) {
 			assert.Empty(t, to.Query().Get("code"), key)
 			assert.Equal(t, a.State, to.Query().Get("state"), key)
 		}
+	})
+}
+
+func Test_OAuthShared(t *testing.T) {
+	// Two servers, with the same key and sessions, as replicas are
+	ctx := context.Background()
+	key := []byte(strings.Repeat("k", 32))
+	dir := filepath.Join(t.TempDir(), "sessions")
+	allowed := "https://app.example.com/callback"
+	a, cookie := newOAuthServerIn(t, dir, httphandler.WithKey(key), httphandler.WithOAuth(allowed))
+	b, _ := newOAuthServerIn(t, dir, httphandler.WithKey(key), httphandler.WithOAuth())
+	discover := func(s *test.Server) (*httpclient.Client, *httpclient.Metadata) {
+		oauth, err := httpclient.New(s.URL + "/api")
+		require.NoError(t, err)
+		metadata, err := oauth.Discover(ctx, "")
+		require.NoError(t, err)
+		return oauth, metadata
+	}
+	oauthA, metadataA := discover(a)
+	oauthB, metadataB := discover(b)
+	registration, err := oauthA.Register(ctx, metadataA.AuthorizationServers[0], "Test", []string{"http://127.0.0.1/callback", allowed})
+	require.NoError(t, err)
+
+	t.Run("Replay", func(t *testing.T) {
+		// A code exchanged with one isn't exchanged again with the other
+		auth, err := oauthA.Authorize(metadataA, *registration, "http://127.0.0.1/callback")
+		require.NoError(t, err)
+		resp := get(t, newClient(t, a), auth.URL, cookie)
+		require.Equal(t, http.StatusFound, resp.StatusCode)
+		to, err := url.Parse(resp.Header.Get("Location"))
+		require.NoError(t, err)
+		_, err = oauthA.Exchange(ctx, auth, to.Query())
+		require.NoError(t, err)
+		form := url.Values{
+			"grant_type":    {"authorization_code"},
+			"code":          {to.Query().Get("code")},
+			"redirect_uri":  {"http://127.0.0.1/callback"},
+			"client_id":     {registration.ClientID},
+			"code_verifier": {auth.Verifier},
+		}
+		replay, err := http.PostForm(metadataB.AuthorizationServers[0].TokenEndpoint, form)
+		require.NoError(t, err)
+		replay.Body.Close()
+		assert.Equal(t, http.StatusBadRequest, replay.StatusCode)
+	})
+
+	t.Run("Redirect", func(t *testing.T) {
+		// A redirect the other doesn't allow isn't, though the client
+		// registered it
+		auth, err := oauthB.Authorize(metadataB, *registration, allowed)
+		require.NoError(t, err)
+		assert.Equal(t, http.StatusBadRequest, get(t, newClient(t, b), auth.URL, cookie).StatusCode)
 	})
 }
 

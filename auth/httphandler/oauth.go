@@ -15,6 +15,7 @@
 package httphandler
 
 import (
+	"context"
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/base64"
@@ -34,6 +35,7 @@ import (
 	provider "github.com/mutablelogic/go-auth/auth/provider"
 	schema "github.com/mutablelogic/go-auth/auth/schema"
 	security "github.com/mutablelogic/go-auth/auth/security"
+	store "github.com/mutablelogic/go-auth/auth/store"
 	httprequest "github.com/mutablelogic/go-server/pkg/httprequest"
 	httpresponse "github.com/mutablelogic/go-server/pkg/httpresponse"
 	httprouter "github.com/mutablelogic/go-server/pkg/httprouter"
@@ -70,8 +72,9 @@ type oauthCode struct {
 	Expires   int64       `json:"e"`
 }
 
-// used are the codes which have been exchanged, by ID, until they expire
-type used struct {
+// consumed are the codes which have been exchanged, by ID, until they
+// expire, by this server, when the sessions don't consume them
+type consumed struct {
 	sync.Mutex
 	codes map[string]int64
 }
@@ -124,7 +127,7 @@ type tokenResponse struct {
 	AccessToken string `json:"access_token" help:"Token of the session, which is sent as a bearer token"`
 	TokenType   string `json:"token_type" help:"Bearer"`
 	ExpiresIn   int64  `json:"expires_in" help:"Seconds until the session ends"`
-	Scope       string `json:"scope,omitempty" help:"The session's scopes, separated by spaces"`
+	Scope       string `json:"scope" help:"The session's scopes, separated by spaces, which can be fewer than were asked for, or none"`
 }
 
 // oauthError is an OAuth error, as its endpoints return them
@@ -147,8 +150,13 @@ const (
 	// How long a code can be exchanged for
 	codeTTL = time.Minute
 
-	// The most a request's form is read of
-	maxForm = 64 << 10
+	// The most a registration, or a token request, is read of
+	maxRegistration = 16 << 10
+	maxForm         = 64 << 10
+
+	// The longest a client's ID is, sealed, so it fits in a token request,
+	// with a code
+	maxClientID = 4 << 10
 )
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -204,7 +212,14 @@ func ResourceMetadataPath(prefix string) string {
 // registerOAuth registers the metadata, which isn't under the API's prefix,
 // and the endpoints, which are
 func registerOAuth(router *httprouter.Router, h *handlers, doc *opts.MarkdownDoc) error {
-	h.used = &used{codes: map[string]int64{}}
+	// Codes are consumed by the sessions, when they can, so a code isn't
+	// exchanged again by another server, or after a restart, and else by
+	// this server
+	if consumer, ok := h.sessions.(store.Consumer); ok {
+		h.consumer = consumer
+	} else {
+		h.consumer = &consumed{codes: map[string]int64{}}
+	}
 	resource := func(path httprequest.PathItem) {
 		path.Tag(tagOAuth)
 		path.Get(h.resourceMetadata, func(op httprequest.PathOperation) {
@@ -299,7 +314,7 @@ func (h *handlers) serverMetadata(w http.ResponseWriter, r *http.Request) {
 // redirect URIs are allowed
 func (h *handlers) register(w http.ResponseWriter, r *http.Request) {
 	var req registerRequest
-	if err := json.NewDecoder(io.LimitReader(r.Body, maxForm)).Decode(&req); err != nil {
+	if err := json.NewDecoder(io.LimitReader(r.Body, maxRegistration)).Decode(&req); err != nil {
 		oauthFail(w, http.StatusBadRequest, "invalid_client_metadata", "The registration isn't JSON")
 		return
 	}
@@ -327,6 +342,9 @@ func (h *handlers) register(w http.ResponseWriter, r *http.Request) {
 	id, err := h.sealer.sealValue(purposeClient, client)
 	if err != nil {
 		httpresponse.Error(w, httpresponse.ErrInternalError.With(err))
+		return
+	} else if len(id) > maxClientID {
+		oauthFail(w, http.StatusBadRequest, "invalid_client_metadata", "The registration is too large: fewer, or shorter, redirect URIs, or a shorter name")
 		return
 	}
 	w.Header().Set("Cache-Control", "no-store")
@@ -365,6 +383,13 @@ func (h *handlers) authorize(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// It's allowed now, too, as a redirect can stop being allowed after
+	// the client registered
+	if !h.allowedRedirect(redirect) {
+		oauthFail(w, http.StatusBadRequest, "invalid_request", "The redirect URI isn't allowed")
+		return
+	}
+
 	// Otherwise, the client is told
 	origin := h.origin(r)
 	fail := func(code, reason string) {
@@ -399,7 +424,7 @@ func (h *handlers) authorize(w http.ResponseWriter, r *http.Request) {
 	}
 	code, err := h.sealer.sealValue(purposeCode, oauthCode{
 		ID:        provider.NewVerifier(),
-		Client:    query.ClientID,
+		Client:    clientHash(query.ClientID),
 		Redirect:  redirect,
 		Given:     query.RedirectURI != "",
 		Challenge: query.CodeChallenge,
@@ -453,7 +478,7 @@ func (h *handlers) token(w http.ResponseWriter, r *http.Request) {
 		resource = h.resourceURL(h.origin(r))
 	}
 	switch {
-	case code.Client != req.ClientID:
+	case code.Client != clientHash(req.ClientID):
 		oauthFail(w, http.StatusBadRequest, "invalid_grant", "The code isn't the client's")
 		return
 	case (code.Given || req.RedirectURI != "") && req.RedirectURI != code.Redirect:
@@ -468,8 +493,12 @@ func (h *handlers) token(w http.ResponseWriter, r *http.Request) {
 	case !now.Before(time.Unix(code.Ends, 0)):
 		oauthFail(w, http.StatusBadRequest, "invalid_grant", "The session the code was for has ended")
 		return
-	case !h.used.take(code.ID, code.Expires, now):
+	}
+	if err := h.consumer.Consume(r.Context(), code.ID, time.Unix(code.Expires, 0)); errors.Is(err, httpresponse.ErrConflict) {
 		oauthFail(w, http.StatusBadRequest, "invalid_grant", "The code has been exchanged")
+		return
+	} else if err != nil {
+		httpresponse.Error(w, httpresponse.ErrInternalError.With("The code couldn't be checked"))
 		return
 	}
 
@@ -573,21 +602,28 @@ func (c oauthClient) redirects(redirect string) bool {
 	return false
 }
 
-// take returns whether a code hasn't been exchanged, and remembers it has,
-// until it expires
-func (u *used) take(id string, expires int64, now time.Time) bool {
-	u.Lock()
-	defer u.Unlock()
-	for key, until := range u.codes {
-		if now.Unix() > until {
-			delete(u.codes, key)
+// Consume consumes a code's ID, until it expires, or returns conflict
+func (c *consumed) Consume(_ context.Context, id string, expires time.Time) error {
+	c.Lock()
+	defer c.Unlock()
+	now := time.Now().Unix()
+	for key, until := range c.codes {
+		if now > until {
+			delete(c.codes, key)
 		}
 	}
-	if _, exists := u.codes[id]; exists {
-		return false
+	if _, exists := c.codes[id]; exists {
+		return httpresponse.ErrConflict.With("It's been used")
 	}
-	u.codes[id] = expires
-	return true
+	c.codes[id] = expires.Unix()
+	return nil
+}
+
+// clientHash is a client's ID, hashed, which a code has, rather than the
+// ID, so it's shorter
+func clientHash(id string) string {
+	sum := sha256.Sum256([]byte(id))
+	return base64.RawURLEncoding.EncodeToString(sum[:])
 }
 
 // loopback returns whether the URI is a loopback redirect, with http, to

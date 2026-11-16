@@ -159,7 +159,7 @@ func Test_ResourceMetadata(t *testing.T) {
 	assert.Contains(t, w.Header().Get("WWW-Authenticate"), `resource_metadata="https://auth.example.com/.well-known/oauth-protected-resource"`)
 
 	// Not one which isn't a path, or an http URL
-	for _, metadata := range []string{"relative", "ftp://example.com/x", `/a"b`} {
+	for _, metadata := range []string{"relative", "ftp://example.com/x", `/a"b`, "https:/metadata", "http://", "//example.com/x"} {
 		_, err = security.New(sessions, security.WithResourceMetadata(metadata))
 		assert.Error(t, err, metadata)
 	}

@@ -130,3 +130,27 @@ func Test_SessionsDirectory(t *testing.T) {
 	_, err = file.New(path)
 	assert.Error(t, err)
 }
+
+func Test_Consume(t *testing.T) {
+	ctx := context.Background()
+	dir := filepath.Join(t.TempDir(), "sessions")
+	now := time.Now()
+	clock := func() time.Time { return now }
+	s, err := file.New(dir, file.WithClock(clock))
+	require.NoError(t, err)
+
+	// An ID is consumed once, by another store with the directory too
+	require.NoError(t, s.Consume(ctx, "code", now.Add(time.Minute)))
+	assert.ErrorIs(t, s.Consume(ctx, "code", now.Add(time.Minute)), httpresponse.ErrConflict)
+	other, err := file.New(dir, file.WithClock(clock))
+	require.NoError(t, err)
+	assert.ErrorIs(t, other.Consume(ctx, "code", now.Add(time.Minute)), httpresponse.ErrConflict)
+	require.NoError(t, other.Consume(ctx, "another", now.Add(time.Minute)))
+
+	// Until it expires, when it's removed
+	now = now.Add(2 * time.Minute)
+	require.NoError(t, s.Consume(ctx, "later", now.Add(time.Minute)))
+	entries, err := os.ReadDir(filepath.Join(dir, "consumed"))
+	require.NoError(t, err)
+	assert.Len(t, entries, 1)
+}

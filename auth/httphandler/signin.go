@@ -27,6 +27,7 @@ import (
 	provider "github.com/mutablelogic/go-auth/auth/provider"
 	schema "github.com/mutablelogic/go-auth/auth/schema"
 	security "github.com/mutablelogic/go-auth/auth/security"
+	store "github.com/mutablelogic/go-auth/auth/store"
 	httprequest "github.com/mutablelogic/go-server/pkg/httprequest"
 	httpresponse "github.com/mutablelogic/go-server/pkg/httpresponse"
 	httprouter "github.com/mutablelogic/go-server/pkg/httprouter"
@@ -44,8 +45,8 @@ type handlers struct {
 	byName    map[string]provider.Provider
 	sealer    *sealer
 	options
-	prefix string
-	used   *used
+	prefix   string
+	consumer store.Consumer
 }
 
 // providerParams is the path parameter of a provider
