@@ -309,3 +309,45 @@ func Test_GroupMembersExact(t *testing.T) {
 		assert.True(t, strings.EqualFold(carol.DN, list.Body[0].DN))
 	})
 }
+
+func Test_UsersAndGroupsTogether(t *testing.T) {
+	test.ForEach(t, func(t *testing.T, ctx context.Context, server test.Server, m *manager.Manager) {
+		// Users and groups under the same DN, with another entry, which are
+		// told apart by their object classes
+		ou := test.OU(t, ctx, m)
+		both := test.Manager(t, ctx, server, manager.WithUserDN(ou), manager.WithGroupDN(ou))
+		alice, err := both.CreateUser(ctx, "alice", userAttrs("alice", "first Passw0rd!"), true)
+		require.NoError(t, err)
+		staff, err := both.CreateGroup(ctx, "staff", nil)
+		require.NoError(t, err)
+		_, err = m.Create(ctx, "ou=other,"+ou, schema.Attrs{"objectClass": {"top", "organizationalUnit"}, "ou": {"other"}})
+		require.NoError(t, err)
+
+		users, err := both.ListUsers(ctx, schema.UserListRequest{})
+		require.NoError(t, err)
+		assert.Equal(t, uint64(1), users.Count, "alice")
+		require.Len(t, users.Body, 1)
+		assert.True(t, strings.EqualFold(alice.DN, users.Body[0].DN))
+
+		groups, err := both.ListGroups(ctx, schema.GroupListRequest{})
+		require.NoError(t, err)
+		assert.Equal(t, uint64(1), groups.Count, "staff")
+		require.Len(t, groups.Body, 1)
+		assert.True(t, strings.EqualFold(staff.DN, groups.Body[0].DN))
+
+		// With the request's filter too
+		users, err = both.ListUsers(ctx, schema.UserListRequest{ListRequest: schema.ListRequest{Filter: types.Ptr("(objectClass=*)")}})
+		require.NoError(t, err)
+		assert.Equal(t, uint64(1), users.Count)
+
+		// A group isn't a user, nor a user a group, by name
+		_, err = both.GetUser(ctx, "staff")
+		assert.ErrorIs(t, err, httpresponse.ErrNotFound)
+		_, err = both.GetGroup(ctx, "alice")
+		assert.ErrorIs(t, err, httpresponse.ErrNotFound)
+		_, err = both.GetUser(ctx, "alice")
+		assert.NoError(t, err)
+		_, err = both.GetGroup(ctx, "staff")
+		assert.NoError(t, err)
+	})
+}

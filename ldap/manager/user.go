@@ -70,7 +70,11 @@ func (manager *Manager) ListUsers(ctx context.Context, req schema.UserListReques
 	if err != nil {
 		return nil, err
 	}
+
+	// Only entries which have one of the users' classes, as others, such
+	// as groups, can be beside them
 	list := req.ListRequest
+	list.Filter = types.Ptr(andFilter(req.Filter, classFilter(manager.userSelectClasses())))
 	if req.Group == nil {
 		return manager.list(ctx, ldap.ScopeSingleLevel, base.String(), list, nil)
 	}
@@ -87,7 +91,7 @@ func (manager *Manager) ListUsers(ctx context.Context, req schema.UserListReques
 	for _, member := range members {
 		rdns = append(rdns, rdnFilter(member.RDNs[0]))
 	}
-	list.Filter = types.Ptr(andFilter(req.Filter, "(|"+strings.Join(rdns, "")+")"))
+	list.Filter = types.Ptr(andFilter(list.Filter, "(|"+strings.Join(rdns, "")+")"))
 	return manager.list(ctx, ldap.ScopeSingleLevel, base.String(), list, func(user *schema.Object) bool {
 		dn, err := ldap.ParseDN(user.DN)
 		return err == nil && containsDN(members, dn)
@@ -105,7 +109,13 @@ func (manager *Manager) GetUser(ctx context.Context, name string) (_ *schema.Obj
 	if err != nil {
 		return nil, err
 	}
-	return manager.get(ctx, dn.String())
+	user, err := manager.get(ctx, dn.String())
+	if err != nil {
+		return nil, err
+	} else if !hasClass(user, manager.userSelectClasses()) {
+		return nil, httpresponse.ErrNotFound.Withf("%q isn't a user", name)
+	}
+	return user, nil
 }
 
 // CreateUser adds a user with the name, and the attributes, and returns
@@ -285,6 +295,16 @@ func (manager *Manager) userClasses(ctx context.Context) ([]string, error) {
 		return classes, nil
 	}
 	return schema.DefaultUserObjectClasses, nil
+}
+
+// userSelectClasses returns the classes which make an entry a user: those
+// set, or else any of those well known, so users which another class was
+// created with are users too
+func (manager *Manager) userSelectClasses() []string {
+	if len(manager.users.ObjectClass) > 0 {
+		return manager.users.ObjectClass
+	}
+	return append(append([]string{}, schema.WellKnownUserClasses...), schema.WellKnownUserAuxiliaryClasses...)
 }
 
 // userNamingAttribute returns the attribute which names a user: cn for
