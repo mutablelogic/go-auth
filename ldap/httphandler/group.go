@@ -20,6 +20,7 @@ import (
 	"net/http"
 
 	// Packages
+	goauth "github.com/mutablelogic/go-auth"
 	manager "github.com/mutablelogic/go-auth/ldap/manager"
 	schema "github.com/mutablelogic/go-auth/ldap/schema"
 	httprequest "github.com/mutablelogic/go-server/pkg/httprequest"
@@ -41,12 +42,12 @@ func registerGroup(router *httprouter.Router, mgr *manager.Manager, auth bool, d
 			path.Get(func(w http.ResponseWriter, r *http.Request) {
 				var req schema.GroupListRequest
 				if err := httprequest.Query(r.URL.Query(), &req); err != nil {
-					badRequest(w, err)
+					httpresponse.Error(w, httpresponse.ErrBadRequest.Withf("%v", err))
 					return
 				}
 				list, err := mgr.ListGroups(r.Context(), req)
 				if err != nil {
-					fail(w, err)
+					httpresponse.Error(w, goauth.HTTPError(err))
 					return
 				}
 				httpresponse.JSON(w, http.StatusOK, httprequest.Indent(r), list)
@@ -65,7 +66,7 @@ func registerGroup(router *httprouter.Router, mgr *manager.Manager, auth bool, d
 			path.Get(func(w http.ResponseWriter, r *http.Request) {
 				group, err := mgr.GetGroup(r.Context(), r.PathValue("name"))
 				if err != nil {
-					fail(w, err)
+					httpresponse.Error(w, goauth.HTTPError(err))
 					return
 				}
 				httpresponse.JSON(w, http.StatusOK, httprequest.Indent(r), group)
@@ -79,12 +80,12 @@ func registerGroup(router *httprouter.Router, mgr *manager.Manager, auth bool, d
 			path.Put(func(w http.ResponseWriter, r *http.Request) {
 				req, err := readAttrs(r)
 				if err != nil {
-					badRequest(w, err)
+					httpresponse.Error(w, httpresponse.ErrBadRequest.Withf("%v", err))
 					return
 				}
 				group, err := mgr.CreateGroup(r.Context(), r.PathValue("name"), req.Attrs)
 				if err != nil {
-					fail(w, err)
+					httpresponse.Error(w, goauth.HTTPError(err))
 					return
 				}
 				httpresponse.JSON(w, http.StatusCreated, httprequest.Indent(r), group)
@@ -100,12 +101,12 @@ func registerGroup(router *httprouter.Router, mgr *manager.Manager, auth bool, d
 			path.Patch(func(w http.ResponseWriter, r *http.Request) {
 				var req schema.ObjectPutRequest
 				if err := httprequest.Read(r, &req); err != nil {
-					badRequest(w, err)
+					httpresponse.Error(w, httpresponse.ErrBadRequest.Withf("%v", err))
 					return
 				}
 				group, err := mgr.UpdateGroup(r.Context(), r.PathValue("name"), req.Attrs)
 				if err != nil {
-					fail(w, err)
+					httpresponse.Error(w, goauth.HTTPError(err))
 					return
 				}
 				httpresponse.JSON(w, http.StatusOK, httprequest.Indent(r), group)
@@ -121,7 +122,7 @@ func registerGroup(router *httprouter.Router, mgr *manager.Manager, auth bool, d
 			path.Delete(func(w http.ResponseWriter, r *http.Request) {
 				group, err := mgr.DeleteGroup(r.Context(), r.PathValue("name"))
 				if err != nil {
-					fail(w, err)
+					httpresponse.Error(w, goauth.HTTPError(err))
 					return
 				}
 				httpresponse.JSON(w, http.StatusOK, httprequest.Indent(r), group)
@@ -169,12 +170,12 @@ func registerGroup(router *httprouter.Router, mgr *manager.Manager, auth bool, d
 func changeMembers(w http.ResponseWriter, r *http.Request, fn func(context.Context, string, ...string) (*schema.Object, error)) {
 	var users []string
 	if err := httprequest.Read(r, &users); err != nil {
-		badRequest(w, err)
+		httpresponse.Error(w, httpresponse.ErrBadRequest.Withf("%v", err))
 		return
 	}
 	group, err := fn(r.Context(), r.PathValue("name"), users...)
 	if err != nil {
-		fail(w, err)
+		httpresponse.Error(w, goauth.HTTPError(err))
 		return
 	}
 	httpresponse.JSON(w, http.StatusOK, httprequest.Indent(r), group)

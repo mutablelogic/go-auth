@@ -20,6 +20,7 @@ import (
 	"net/http"
 
 	// Packages
+	goauth "github.com/mutablelogic/go-auth"
 	manager "github.com/mutablelogic/go-auth/ldap/manager"
 	schema "github.com/mutablelogic/go-auth/ldap/schema"
 	httprequest "github.com/mutablelogic/go-server/pkg/httprequest"
@@ -56,12 +57,12 @@ func registerObject(router *httprouter.Router, mgr *manager.Manager, auth bool, 
 			path.Get(func(w http.ResponseWriter, r *http.Request) {
 				var req schema.ObjectListRequest
 				if err := httprequest.Query(r.URL.Query(), &req); err != nil {
-					badRequest(w, err)
+					httpresponse.Error(w, httpresponse.ErrBadRequest.Withf("%v", err))
 					return
 				}
 				list, err := mgr.List(r.Context(), req)
 				if err != nil {
-					fail(w, err)
+					httpresponse.Error(w, goauth.HTTPError(err))
 					return
 				}
 				httpresponse.JSON(w, http.StatusOK, httprequest.Indent(r), list)
@@ -80,7 +81,7 @@ func registerObject(router *httprouter.Router, mgr *manager.Manager, auth bool, 
 			path.Get(func(w http.ResponseWriter, r *http.Request) {
 				object, err := mgr.Get(r.Context(), r.PathValue("dn"))
 				if err != nil {
-					fail(w, err)
+					httpresponse.Error(w, goauth.HTTPError(err))
 					return
 				}
 				httpresponse.JSON(w, http.StatusOK, httprequest.Indent(r), object)
@@ -95,12 +96,12 @@ func registerObject(router *httprouter.Router, mgr *manager.Manager, auth bool, 
 			path.Put(func(w http.ResponseWriter, r *http.Request) {
 				var req schema.ObjectPutRequest
 				if err := httprequest.Read(r, &req); err != nil {
-					badRequest(w, err)
+					httpresponse.Error(w, httpresponse.ErrBadRequest.Withf("%v", err))
 					return
 				}
 				object, err := mgr.Create(r.Context(), r.PathValue("dn"), req.Attrs)
 				if err != nil {
-					fail(w, err)
+					httpresponse.Error(w, goauth.HTTPError(err))
 					return
 				}
 				httpresponse.JSON(w, http.StatusCreated, httprequest.Indent(r), object)
@@ -117,12 +118,12 @@ func registerObject(router *httprouter.Router, mgr *manager.Manager, auth bool, 
 			path.Patch(func(w http.ResponseWriter, r *http.Request) {
 				var req schema.ObjectPutRequest
 				if err := httprequest.Read(r, &req); err != nil {
-					badRequest(w, err)
+					httpresponse.Error(w, httpresponse.ErrBadRequest.Withf("%v", err))
 					return
 				}
 				object, err := mgr.Update(r.Context(), r.PathValue("dn"), req.Attrs)
 				if err != nil {
-					fail(w, err)
+					httpresponse.Error(w, goauth.HTTPError(err))
 					return
 				}
 				httpresponse.JSON(w, http.StatusOK, httprequest.Indent(r), object)
@@ -138,7 +139,7 @@ func registerObject(router *httprouter.Router, mgr *manager.Manager, auth bool, 
 			path.Delete(func(w http.ResponseWriter, r *http.Request) {
 				object, err := mgr.Delete(r.Context(), r.PathValue("dn"))
 				if err != nil {
-					fail(w, err)
+					httpresponse.Error(w, goauth.HTTPError(err))
 					return
 				}
 				httpresponse.JSON(w, http.StatusOK, httprequest.Indent(r), object)
@@ -157,15 +158,15 @@ func registerObject(router *httprouter.Router, mgr *manager.Manager, auth bool, 
 			path.Post(func(w http.ResponseWriter, r *http.Request) {
 				password, err := io.ReadAll(io.LimitReader(r.Body, maxPassword+1))
 				if err != nil {
-					badRequest(w, err)
+					httpresponse.Error(w, httpresponse.ErrBadRequest.Withf("%v", err))
 					return
 				} else if len(password) > maxPassword {
-					badRequest(w, errors.New("the password is too long"))
+					httpresponse.Error(w, httpresponse.ErrBadRequest.With("the password is too long"))
 					return
 				}
 				object, err := mgr.Bind(r.Context(), r.PathValue("dn"), string(password))
 				if err != nil {
-					fail(w, err)
+					httpresponse.Error(w, goauth.HTTPError(err))
 					return
 				}
 				httpresponse.JSON(w, http.StatusOK, httprequest.Indent(r), object)
@@ -184,12 +185,12 @@ func registerObject(router *httprouter.Router, mgr *manager.Manager, auth bool, 
 			path.Post(func(w http.ResponseWriter, r *http.Request) {
 				var req schema.ObjectPasswordRequest
 				if err := httprequest.Read(r, &req); err != nil {
-					badRequest(w, err)
+					httpresponse.Error(w, httpresponse.ErrBadRequest.Withf("%v", err))
 					return
 				}
 				response, err := mgr.ChangePassword(r.Context(), r.PathValue("dn"), req)
 				if err != nil {
-					fail(w, err)
+					httpresponse.Error(w, goauth.HTTPError(err))
 					return
 				}
 				httpresponse.JSON(w, http.StatusOK, httprequest.Indent(r), response)
