@@ -17,6 +17,7 @@ package github_test
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"net/url"
 	"testing"
 
@@ -115,4 +116,25 @@ func Test_ClientOptions(t *testing.T) {
 	for _, path := range []string{"/login/oauth/access_token", "/api/user", "/api/user/emails"} {
 		assert.Contains(t, trace.String(), path)
 	}
+}
+
+func Test_Pages(t *testing.T) {
+	// Every page of a user's organisations, and email addresses, whose
+	// primary one is on the second
+	ctx := context.Background()
+	g := test.NewGitHub(t)
+	p, err := github.New(test.NewCredentials().WithClient("github", "client", "secret"), "github", github.WithURL(g.URL, g.APIURL()), github.WithOrganizations())
+	require.NoError(t, err)
+	user := test.GitHubUser{ID: 7, Login: "busy"}
+	for n := range 250 {
+		user.Orgs = append(user.Orgs, fmt.Sprint("org", n))
+	}
+	for n := range 120 {
+		user.Emails = append(user.Emails, test.GitHubEmail{Email: fmt.Sprint(n, "@example.com"), Primary: n == 110, Verified: true})
+	}
+	identity, err := p.Exchange(ctx, test.SignIn(t, ctx, p, func(challenge string) string { return g.Code(challenge, user) }))
+	require.NoError(t, err)
+	assert.Len(t, identity.Groups, 250)
+	assert.Equal(t, "org249", identity.Groups[249])
+	assert.Equal(t, "110@example.com", identity.Email)
 }

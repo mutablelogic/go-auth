@@ -167,3 +167,16 @@ func Test_Credential(t *testing.T) {
 		assert.Equal(t, id, u.Query().Get("client_id"))
 	}
 }
+
+func Test_IssuerAsIs(t *testing.T) {
+	// An issuer which ends with a slash is another issuer, which is kept as
+	// it is, as discovery checks it's the same
+	ctx := context.Background()
+	i := test.NewOIDC(t)
+	i.Issuer = i.URL + "/"
+	p, err := oidc.New("slash", "", i.Issuer, test.NewCredentials().WithClient("slash", i.Audience, "secret"), "slash")
+	require.NoError(t, err)
+	identity, err := p.Exchange(ctx, test.SignIn(t, ctx, p, func(challenge string) string { return i.Code(challenge, map[string]any{"sub": "u1"}) }))
+	require.NoError(t, err)
+	assert.Equal(t, i.URL+"/", identity.Issuer)
+}

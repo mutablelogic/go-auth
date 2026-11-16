@@ -38,6 +38,7 @@ import (
 // bind, which checks a password, the groups a user is in, and the
 // directory's status, for the identity's issuer
 type Manager interface {
+	Get(ctx context.Context, dn string, attrs ...string) (*ldapschema.Object, error)
 	GetUser(ctx context.Context, name string) (*ldapschema.Object, error)
 	Bind(ctx context.Context, dn, password string) (*ldapschema.Object, error)
 	ListGroups(ctx context.Context, req ldapschema.GroupListRequest) (*ldapschema.ObjectList, error)
@@ -57,6 +58,16 @@ type Provider struct {
 type Opt func(*Provider) error
 
 var _ provider.Provider = (*Provider)(nil)
+
+///////////////////////////////////////////////////////////////////////////////
+// GLOBALS
+
+// identifiers are the attributes which identify an entry, and don't change,
+// in the order they're used, of OpenLDAP, 389 DS and Active Directory
+var identifiers = []string{"entryUUID", "nsUniqueId", "objectGUID"}
+
+// groupsPage is how many of a user's groups are listed at a time
+const groupsPage = uint64(500)
 
 ///////////////////////////////////////////////////////////////////////////////
 // LIFECYCLE
@@ -127,37 +138,89 @@ func (p *Provider) Exchange(ctx context.Context, credential schema.Credential) (
 		return nil, err
 	}
 
-	// The identity, and its groups, when the manager has them
+	// The identity, by the user's identifier, which doesn't change when
+	// it's renamed, and isn't another user's when it's deleted, and its
+	// groups, when the manager has them
+	subject, err := p.subject(ctx, user.DN)
+	if err != nil {
+		return nil, err
+	}
 	identity := &schema.Identity{
 		Provider: p.meta.Name,
 		Issuer:   p.issuer(),
-		Subject:  user.DN,
+		Subject:  subject,
 		Email:    types.Value(user.Get("mail")),
 		Name:     types.Value(user.Get("displayName")),
-		Claims:   map[string]any{"username": credential.Username},
+		Claims:   map[string]any{"username": credential.Username, "dn": user.DN},
 	}
 	if identity.Name == "" {
 		identity.Name = types.Value(user.Get("cn"))
 	}
 	if p.manager.Status().GroupDN != "" {
-		groups, err := p.manager.ListGroups(ctx, ldapschema.GroupListRequest{
-			ListRequest: ldapschema.ListRequest{Attr: []string{"cn"}},
-			User:        types.Ptr(credential.Username),
-		})
+		groups, err := p.groups(ctx, credential.Username)
 		if err != nil {
 			return nil, err
 		}
-		for _, group := range groups.Body {
-			if cn := group.Get("cn"); cn != nil {
-				identity.Groups = append(identity.Groups, *cn)
-			}
-		}
+		identity.Groups = groups
 	}
 	return identity, nil
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 // PRIVATE METHODS
+
+// subject returns the user's identifier, which the directory gives each
+// entry, and doesn't change: entryUUID, which OpenLDAP has, nsUniqueId,
+// which 389 DS has, or objectGUID, which Active Directory has, or else its
+// DN, when the directory has none of them
+func (p *Provider) subject(ctx context.Context, dn string) (string, error) {
+	entry, err := p.manager.Get(ctx, dn, identifiers...)
+	if err != nil {
+		return "", err
+	}
+	for _, attr := range identifiers {
+		if value := types.Value(entry.Get(attr)); value != "" {
+			if attr == "objectGUID" {
+				return formatGUID([]byte(value)), nil
+			}
+			return value, nil
+		}
+	}
+	return dn, nil
+}
+
+// groups returns the names of every group the user is in, a page at a time
+func (p *Provider) groups(ctx context.Context, username string) ([]string, error) {
+	var result []string
+	for offset := uint64(0); ; {
+		page, err := p.manager.ListGroups(ctx, ldapschema.GroupListRequest{
+			ListRequest: ldapschema.ListRequest{OffsetLimit: ldapschema.OffsetLimit{Offset: offset, Limit: types.Ptr(groupsPage)}, Attr: []string{"cn"}},
+			User:        types.Ptr(username),
+		})
+		if err != nil {
+			return nil, err
+		}
+		for _, group := range page.Body {
+			if cn := group.Get("cn"); cn != nil {
+				result = append(result, *cn)
+			}
+		}
+		offset += uint64(len(page.Body))
+		if len(page.Body) == 0 || offset >= page.Count {
+			return result, nil
+		}
+	}
+}
+
+// formatGUID returns Active Directory's objectGUID, which is binary, as
+// its string, whose first three parts are little-endian
+func formatGUID(b []byte) string {
+	if len(b) != 16 {
+		return fmt.Sprintf("%x", b)
+	}
+	return fmt.Sprintf("%02x%02x%02x%02x-%02x%02x-%02x%02x-%02x%02x-%02x%02x%02x%02x%02x%02x",
+		b[3], b[2], b[1], b[0], b[5], b[4], b[7], b[6], b[8], b[9], b[10], b[11], b[12], b[13], b[14], b[15])
+}
 
 // issuer is the directory's URL, of its base DN, such as
 // ldap://ldap.example.com:389/dc=example,dc=com

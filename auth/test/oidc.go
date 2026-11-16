@@ -48,6 +48,10 @@ type OIDC struct {
 	*httptest.Server
 	Audience string
 
+	// Issuer is the issuer the fake says it is, which is its URL, unless
+	// it's set, such as to its URL with a slash
+	Issuer string
+
 	t     testing.TB
 	key   *rsa.PrivateKey
 	codes *codes[map[string]any]
@@ -78,7 +82,7 @@ func NewOIDC(t testing.TB) *OIDC {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /.well-known/openid-configuration", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]any{
-			"issuer":                                i.URL,
+			"issuer":                                i.issuer(),
 			"authorization_endpoint":                i.URL + "/authorize",
 			"token_endpoint":                        i.URL + "/token",
 			"jwks_uri":                              i.URL + "/keys",
@@ -115,7 +119,7 @@ func (i *OIDC) Code(challenge string, claims map[string]any) string {
 // audience, which expires in an hour, unless the claims say otherwise
 func (i *OIDC) Sign(claims map[string]any) string {
 	i.t.Helper()
-	payload := map[string]any{"iss": i.URL, "aud": i.Audience, "iat": time.Now().Unix(), "exp": time.Now().Add(time.Hour).Unix()}
+	payload := map[string]any{"iss": i.issuer(), "aud": i.Audience, "iat": time.Now().Unix(), "exp": time.Now().Add(time.Hour).Unix()}
 	for key, value := range claims {
 		payload[key] = value
 	}
@@ -148,6 +152,14 @@ func SignIn(t testing.TB, ctx context.Context, p provider.RedirectProvider, code
 
 ///////////////////////////////////////////////////////////////////////////////
 // PRIVATE METHODS
+
+// issuer is the issuer the fake says it is
+func (i *OIDC) issuer() string {
+	if i.Issuer != "" {
+		return i.Issuer
+	}
+	return i.URL
+}
 
 func newCodes[T any]() *codes[T] {
 	return &codes[T]{codes: make(map[string]code[T])}

@@ -17,6 +17,7 @@ package test
 import (
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -79,22 +80,18 @@ func NewGitHub(t testing.TB) *GitHub {
 		g.mu.Unlock()
 		writeJSON(w, http.StatusOK, map[string]string{"access_token": token, "token_type": "bearer", "scope": r.Form.Get("scope")})
 	})
-	mux.HandleFunc("GET /api/user", g.api(func(w http.ResponseWriter, user GitHubUser) {
+	mux.HandleFunc("GET /api/user", g.api(func(w http.ResponseWriter, _ *http.Request, user GitHubUser) {
 		writeJSON(w, http.StatusOK, map[string]any{"id": user.ID, "login": user.Login, "name": user.Name, "email": user.Email})
 	}))
-	mux.HandleFunc("GET /api/user/emails", g.api(func(w http.ResponseWriter, user GitHubUser) {
-		emails := user.Emails
-		if emails == nil {
-			emails = []GitHubEmail{}
-		}
-		writeJSON(w, http.StatusOK, emails)
+	mux.HandleFunc("GET /api/user/emails", g.api(func(w http.ResponseWriter, r *http.Request, user GitHubUser) {
+		writeJSON(w, http.StatusOK, page(r, user.Emails))
 	}))
-	mux.HandleFunc("GET /api/user/orgs", g.api(func(w http.ResponseWriter, user GitHubUser) {
+	mux.HandleFunc("GET /api/user/orgs", g.api(func(w http.ResponseWriter, r *http.Request, user GitHubUser) {
 		orgs := make([]map[string]string, 0, len(user.Orgs))
 		for _, org := range user.Orgs {
 			orgs = append(orgs, map[string]string{"login": org})
 		}
-		writeJSON(w, http.StatusOK, orgs)
+		writeJSON(w, http.StatusOK, page(r, orgs))
 	}))
 	g.Server = httptest.NewServer(mux)
 	t.Cleanup(g.Close)
@@ -119,7 +116,7 @@ func (g *GitHub) Code(challenge string, user GitHubUser) string {
 // PRIVATE METHODS
 
 // api calls fn with the user of the request's bearer token, or else is 401
-func (g *GitHub) api(fn func(http.ResponseWriter, GitHubUser)) http.HandlerFunc {
+func (g *GitHub) api(fn func(http.ResponseWriter, *http.Request, GitHubUser)) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		token, _ := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
 		g.mu.Lock()
@@ -129,6 +126,24 @@ func (g *GitHub) api(fn func(http.ResponseWriter, GitHubUser)) http.HandlerFunc 
 			writeJSON(w, http.StatusUnauthorized, map[string]string{"message": "Bad credentials"})
 			return
 		}
-		fn(w, user)
+		fn(w, r, user)
 	}
+}
+
+// page returns the page of the items the request asks for, with per_page,
+// which is 30 without it, as GitHub's is, and page, from 1
+func page[T any](r *http.Request, items []T) []T {
+	perPage, page := 30, 1
+	if n, err := strconv.Atoi(r.URL.Query().Get("per_page")); err == nil && n > 0 {
+		perPage = min(n, 100)
+	}
+	if n, err := strconv.Atoi(r.URL.Query().Get("page")); err == nil && n > 0 {
+		page = n
+	}
+	start := min((page-1)*perPage, len(items))
+	result := items[start:min(start+perPage, len(items))]
+	if result == nil {
+		result = []T{}
+	}
+	return result
 }

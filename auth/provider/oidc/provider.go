@@ -92,7 +92,7 @@ func New(name, label, issuer string, credentials credential.CredentialProvider, 
 	}
 	self := &Provider{
 		meta:        schema.ProviderMeta{Name: name, Label: label, Kind: schema.ProviderKindRedirect},
-		issuer:      strings.TrimSuffix(issuer, "/"),
+		issuer:      issuer,
 		credentials: credentials,
 		key:         key,
 		scopes:      []string{gooidc.ScopeOpenID, "email", "profile"},
