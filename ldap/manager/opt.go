@@ -20,6 +20,7 @@ import (
 
 	// Packages
 	schema "github.com/mutablelogic/go-auth/ldap/schema"
+	changes "github.com/mutablelogic/go-server/broadcaster/schema"
 	httpresponse "github.com/mutablelogic/go-server/pkg/httpresponse"
 	types "github.com/mutablelogic/go-server/pkg/types"
 	trace "go.opentelemetry.io/otel/trace"
@@ -37,6 +38,13 @@ type opt struct {
 	users      *schema.Group
 	groups     *schema.Group
 	tracer     trace.Tracer
+	publisher  Publisher
+}
+
+// Publisher publishes changes, such as go-server's broadcaster, which a web
+// UI follows
+type Publisher interface {
+	Publish(changes.Change) int
 }
 
 // Opt represents a function that modifies the options
@@ -152,6 +160,16 @@ func WithSkipVerify() Opt {
 }
 
 // WithTracer sets the OpenTelemetry tracer used for manager spans
+// WithBroadcaster publishes the changes the manager makes, to objects,
+// users and groups, and its connection coming up or going down, with
+// schema.SchemaName as their schema
+func WithBroadcaster(publisher Publisher) Opt {
+	return func(o *opt) error {
+		o.publisher = publisher
+		return nil
+	}
+}
+
 func WithTracer(tracer trace.Tracer) Opt {
 	return func(o *opt) error {
 		o.tracer = tracer

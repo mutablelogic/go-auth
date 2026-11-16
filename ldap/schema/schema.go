@@ -52,6 +52,13 @@ const (
 	AttrAttributeTypes = "attributeTypes"
 	AttrSubSchemaDN    = "subschemaSubentry"
 
+	// Tables of the changes the manager publishes, with SchemaName as their
+	// schema
+	TableObject     = "object"
+	TableUser       = "user"
+	TableGroup      = "group"
+	TableConnection = "connection"
+
 	// Initial GID/UID allocated when the lastgid/lastuid device entry is first created
 	InitialGID = 1000
 	InitialUID = 1000

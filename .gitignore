@@ -31,6 +31,7 @@ go.work.sum
 # .idea/
 # .vscode/
 build
+_old
 
 # The web UI, which make frontend builds
 node_modules

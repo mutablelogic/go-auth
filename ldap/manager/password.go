@@ -28,6 +28,7 @@ import (
 	ldap "github.com/go-ldap/ldap/v3"
 	schema "github.com/mutablelogic/go-auth/ldap/schema"
 	otel "github.com/mutablelogic/go-client/pkg/otel"
+	changes "github.com/mutablelogic/go-server/broadcaster/schema"
 	httpresponse "github.com/mutablelogic/go-server/pkg/httpresponse"
 	attribute "go.opentelemetry.io/otel/attribute"
 )
@@ -142,6 +143,7 @@ func (manager *Manager) ChangePassword(ctx context.Context, dn string, req schem
 	if object, err = manager.get(ctx, object.DN); err != nil {
 		return nil, err
 	}
+	manager.publish(changes.ChangeUpdate, schema.TableObject, object.DN, "")
 	return object.WithPassword(generated), nil
 }
 

@@ -208,3 +208,20 @@ func Test_WriteCancelled(t *testing.T) {
 func slogDiscard() *slog.Logger {
 	return slog.New(slog.NewTextHandler(io.Discard, nil))
 }
+
+func Test_SearchCancelled(t *testing.T) {
+	// A search which isn't answered, and is cancelled, is the context's
+	// error, not an entry which isn't found
+	d := test.NewFake(t, false)
+	d.Stall = func(op uint8, _ string) bool { return op == ldapv3.ApplicationSearchRequest }
+	m, err := manager.New(manager.WithUrl(d.URL("ldap")), manager.WithBaseDN("dc=example,dc=test"))
+	require.NoError(t, err)
+	require.NoError(t, m.Connect(context.Background()))
+	defer m.Disconnect(context.Background())
+
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+	_, err = m.Get(ctx, "ou=a")
+	assert.ErrorIs(t, err, context.DeadlineExceeded)
+	assert.NotErrorIs(t, err, httpresponse.ErrNotFound)
+}
