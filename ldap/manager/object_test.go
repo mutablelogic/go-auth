@@ -88,6 +88,29 @@ func Test_Object(t *testing.T) {
 		_, err = m.Get(ctx, created.DN)
 		assert.ErrorIs(t, err, httpresponse.ErrNotFound, "the old DN is gone")
 
+		// The RDN's value, unchanged
+		renamed, err = m.Update(ctx, renamed.DN, schema.Attrs{"ou": {"archive"}})
+		require.NoError(t, err)
+		assert.True(t, strings.EqualFold("ou=archive,"+ou, renamed.DN), renamed.DN)
+
+		// Rename, with more values of the RDN's attribute, which replace
+		// the others. Active Directory can only rename.
+		if server.ActiveDirectory {
+			_, err = m.Update(ctx, renamed.DN, schema.Attrs{"ou": {"current", "alias"}})
+			assert.ErrorIs(t, err, httpresponse.ErrBadRequest)
+			_, err = m.Get(ctx, renamed.DN)
+			assert.NoError(t, err, "the rename is undone")
+		} else {
+			renamed, err = m.Update(ctx, renamed.DN, schema.Attrs{"ou": {"current", "alias"}})
+			require.NoError(t, err)
+			assert.True(t, strings.EqualFold("ou=current,"+ou, renamed.DN), renamed.DN)
+			assert.ElementsMatch(t, []string{"current", "alias"}, renamed.GetAll("ou"))
+			renamed, err = m.Update(ctx, renamed.DN, schema.Attrs{"ou": {"latest"}})
+			require.NoError(t, err)
+			assert.True(t, strings.EqualFold("ou=latest,"+ou, renamed.DN), renamed.DN)
+			assert.Equal(t, []string{"latest"}, renamed.GetAll("ou"), "alias is removed")
+		}
+
 		// Delete
 		deleted, err := m.Delete(ctx, renamed.DN)
 		require.NoError(t, err)
