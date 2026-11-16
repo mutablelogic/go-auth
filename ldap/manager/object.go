@@ -24,7 +24,6 @@ import (
 
 	// Packages
 	ldap "github.com/go-ldap/ldap/v3"
-	auth "github.com/mutablelogic/go-auth"
 	schema "github.com/mutablelogic/go-auth/ldap/schema"
 	otel "github.com/mutablelogic/go-client/pkg/otel"
 	changes "github.com/mutablelogic/go-server/broadcaster/schema"
@@ -161,10 +160,24 @@ func (manager *Manager) Delete(ctx context.Context, dn string) (_ *schema.Object
 
 // update changes the entry at the absolute DN, as Update does
 func (manager *Manager) update(ctx context.Context, absdn *schema.DN, attrs schema.Attrs) (*schema.Object, error) {
-	values, err := (schema.ObjectPutRequest{Attrs: attrs}).ValidateUpdate()
+	values, err := normalize(attrs)
 	if err != nil {
-		return nil, auth.HTTPError(err)
+		return nil, err
 	}
+
+	// A password is set after the other attributes, so it's hashed
+	password, _, err := takePassword(values)
+	if err != nil {
+		return nil, err
+	} else if password != "" && len(values) == 0 {
+		if err := manager.setPassword(ctx, absdn.String(), password); err != nil {
+			return nil, err
+		}
+		return manager.get(ctx, absdn.String())
+	} else if len(values) == 0 {
+		return nil, httpresponse.ErrBadRequest.With("attrs is required")
+	}
+
 	target, rdn, err := renameTarget(absdn, values)
 	if err != nil {
 		return nil, err
@@ -177,7 +190,11 @@ func (manager *Manager) update(ctx context.Context, absdn *schema.DN, attrs sche
 			return nil, ldaperr(err)
 		}
 	}
-	if err := manager.modify(ctx, target, values); err != nil {
+	err = manager.modify(ctx, target, values)
+	if err == nil && password != "" {
+		err = manager.setPassword(ctx, target, password)
+	}
+	if err != nil {
 		// Undo the rename, so the entry is as it was, on a new connection,
 		// since the manager's can be lost when the context is cancelled
 		if rdn != "" {
@@ -274,7 +291,7 @@ func (manager *Manager) search(ctx context.Context, scope int, dn, filter string
 		r := manager.conn.SearchAsync(ctx, req, 0)
 		for r.Next() {
 			if entry := r.Entry(); entry != nil {
-				if err := fn(schema.NewObjectFromEntry(entry)); errors.Is(err, io.EOF) {
+				if err := fn(hidePasswords(schema.NewObjectFromEntry(entry))); errors.Is(err, io.EOF) {
 					return nil
 				} else if err != nil {
 					return err

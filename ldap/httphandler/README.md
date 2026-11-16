@@ -5,6 +5,7 @@ Manages an LDAP directory: its users, groups and their members, and any entry, b
 - **Directories:** OpenLDAP, 389 Directory Server, and Active Directory, or Samba, which is like it.
 - **Base DN:** every DN is under the manager's base DN. A DN can be relative to it, such as `ou=users`.
 - **Attributes:** an entry's attributes are `attrs`, by name, with a list of values each. A value which isn't UTF-8, such as a certificate, is `{"base64": "..."}`.
+- **Passwords:** a `userPassword` or `unicodePwd` in a create or an update is set as a password, after the rest, so the directory hashes it, rather than storing it as it's sent. It's never returned.
 - **Pages:** lists have `offset` and `limit`, which is 1000 at most, and `count`, which is all which match. `filter` is an LDAP filter, such as `(cn=a*)`, and `attr` the attributes to return.
 - **Changes:** with a broadcaster, the manager publishes the changes it makes, and its connection coming up or going down, with schema `ldap`.
 
@@ -48,7 +49,7 @@ Returns a user.
 
 Creates a user, with the attributes, which can be none.
 
-- **Password:** `userPassword`, or `unicodePwd`, is set. An Active Directory user is enabled once it's set, and stays disabled without one.
+- **Password:** `userPassword`, or `unicodePwd`, is set as a password, so it's hashed. When it can't be, the user is deleted. An Active Directory user is enabled once it's set, and stays disabled without one.
 - **`allocate_gid`:** sets the `gidNumber` to the `uidNumber`.
 
 ### PATCH /ldap/user/{name}

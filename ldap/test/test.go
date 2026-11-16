@@ -210,6 +210,19 @@ func OU(t *testing.T, ctx context.Context, m *manager.Manager) string {
 	return ou.DN
 }
 
+// Attribute returns the entry's values of the attribute, as the started
+// server has them, read with go-ldap, not the manager, which hides some
+func Attribute(t *testing.T, server Server, dn, name string) []string {
+	t.Helper()
+	conn, err := bind(server, server.URL, server.ConnectTimeout)
+	require.NoError(t, err)
+	defer conn.Close()
+	result, err := conn.Search(ldap.NewSearchRequest(dn, ldap.ScopeBaseObject, ldap.NeverDerefAliases, 1, 0, false, "(objectClass=*)", []string{name}, nil))
+	require.NoError(t, err)
+	require.Len(t, result.Entries, 1)
+	return result.Entries[0].GetAttributeValues(name)
+}
+
 // Subschema returns the definitions of the started server's object classes
 // and attribute types, as it has them, read with go-ldap, not the manager
 func Subschema(t *testing.T, server Server) (classes, attrs []string) {

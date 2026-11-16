@@ -16,6 +16,7 @@ package manager_test
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	// Packages
@@ -150,4 +151,140 @@ func Test_ChangePasswordNeedsLDAPS(t *testing.T) {
 	_, err = m.ChangePassword(context.Background(), dn, schema.ObjectPasswordRequest{New: types.Ptr("first Passw0rd!")})
 	assert.ErrorIs(t, err, httpresponse.ErrBadRequest)
 	assert.Empty(t, d.Requests("modify"))
+}
+
+func Test_PasswordsHashed(t *testing.T) {
+	// A password in a create or an update is set as a password, which the
+	// directory hashes, rather than stored as it's sent, and isn't returned
+	test.ForEach(t, func(t *testing.T, ctx context.Context, server test.Server, m *manager.Manager) {
+		users := usersIn(t, ctx, server, m)
+		stored := func(dn string) {
+			t.Helper()
+			for _, value := range test.Attribute(t, server, dn, "userPassword") {
+				assert.True(t, strings.HasPrefix(value, "{"), "hashed, not %q", value)
+				assert.NotContains(t, value, "Passw0rd")
+			}
+		}
+		hidden := func(object *schema.Object) {
+			t.Helper()
+			assert.Nil(t, object.Get("userPassword"))
+			assert.Nil(t, object.Get("unicodePwd"))
+		}
+
+		// A user
+		user, err := users.CreateUser(ctx, "alice", userAttrs("alice", "first Passw0rd!"), true)
+		require.NoError(t, err)
+		hidden(user)
+		stored(user.DN)
+		_, err = users.Bind(ctx, user.DN, "first Passw0rd!")
+		assert.NoError(t, err)
+
+		// An update, with the password alone, and with other attributes
+		user, err = users.UpdateUser(ctx, "alice", schema.Attrs{"userPassword": {"second Passw0rd!"}})
+		require.NoError(t, err)
+		hidden(user)
+		stored(user.DN)
+		_, err = users.Bind(ctx, user.DN, "second Passw0rd!")
+		assert.NoError(t, err)
+		user, err = users.UpdateUser(ctx, "alice", schema.Attrs{"userPassword": {"third Passw0rd!"}, "description": {"Third"}})
+		require.NoError(t, err)
+		assert.Equal(t, types.Ptr("Third"), user.Get("description"))
+		_, err = users.Bind(ctx, user.DN, "third Passw0rd!")
+		assert.NoError(t, err)
+
+		// Reads don't return it
+		got, err := users.GetUser(ctx, "alice")
+		require.NoError(t, err)
+		hidden(got)
+		list, err := users.List(ctx, schema.ObjectListRequest{ListRequest: schema.ListRequest{Filter: types.Ptr("(objectClass=person)"), Attr: []string{"userPassword", "cn"}}})
+		require.NoError(t, err)
+		for _, object := range list.Body {
+			hidden(object)
+		}
+
+		// One value only
+		_, err = users.UpdateUser(ctx, "alice", schema.Attrs{"userPassword": {"a Passw0rd!", "b Passw0rd!"}})
+		assert.ErrorIs(t, err, httpresponse.ErrBadRequest)
+
+		// A generic entry, which isn't Active Directory's
+		if !server.ActiveDirectory {
+			ou := test.OU(t, ctx, m)
+			object, err := m.Create(ctx, "cn=bob,"+ou, schema.Attrs{"objectClass": {"top", "person", "organizationalPerson", "inetOrgPerson"}, "cn": {"bob"}, "sn": {"Example"}, "userPassword": {"bob Passw0rd!"}})
+			require.NoError(t, err)
+			hidden(object)
+			stored(object.DN)
+			_, err = m.Bind(ctx, object.DN, "bob Passw0rd!")
+			assert.NoError(t, err)
+		}
+	})
+}
+
+func Test_PasswordsNotAdded(t *testing.T) {
+	// The password isn't in the add, but set after it
+	d := test.NewFake(t, false)
+	m := fakeManager(t, d)
+	user, err := m.CreateUser(context.Background(), "alice", userAttrs("alice", "first Passw0rd!"), true)
+	require.NoError(t, err)
+	assert.Nil(t, user.Get("userPassword"))
+	assert.Equal(t, []string{"uid=alice,ou=users,dc=example,dc=test"}, d.Requests("password"))
+	assert.Equal(t, []string{"{FAKE}first Passw0rd!"}, d.Entry(user.DN)["userPassword"])
+}
+
+func Test_PasswordsReview(t *testing.T) {
+	test.ForEach(t, func(t *testing.T, ctx context.Context, server test.Server, m *manager.Manager) {
+		ou := test.OU(t, ctx, m)
+		hashed := func(t *testing.T, dn string) {
+			t.Helper()
+			values := test.Attribute(t, server, dn, "userPassword")
+			require.NotEmpty(t, values)
+			for _, value := range values {
+				assert.True(t, strings.HasPrefix(value, "{"), "hashed, not %q", value)
+			}
+		}
+
+		if server.ActiveDirectory {
+			// A unicodePwd with an option is a password, which enables the
+			// user
+			users := usersIn(t, ctx, server, m)
+			user, err := users.CreateUser(ctx, "alice", schema.Attrs{"sn": {"Example"}, "unicodePwd;binary": {"first Passw0rd!"}}, false)
+			require.NoError(t, err)
+			assert.Equal(t, types.Ptr("512"), user.Get("userAccountControl"), "enabled")
+			_, err = users.Bind(ctx, user.DN, "first Passw0rd!")
+			assert.NoError(t, err)
+			return
+		}
+
+		t.Run("OID", func(t *testing.T) {
+			// userPassword by its OID is a password
+			object, err := m.Create(ctx, "cn=oid,"+ou, schema.Attrs{"objectClass": {"top", "person", "organizationalPerson", "inetOrgPerson"}, "cn": {"oid"}, "sn": {"Example"}, "2.5.4.35": {"oid Passw0rd!"}})
+			require.NoError(t, err)
+			assert.Nil(t, object.Get("2.5.4.35"))
+			assert.Nil(t, object.Get("userPassword"))
+			hashed(t, object.DN)
+			_, err = m.Bind(ctx, object.DN, "oid Passw0rd!")
+			assert.NoError(t, err)
+		})
+
+		t.Run("Required", func(t *testing.T) {
+			// A class which needs a userPassword is created, with it hashed
+			object, err := m.Create(ctx, "uid=app,"+ou, schema.Attrs{"objectClass": {"top", "account", "simpleSecurityObject"}, "uid": {"app"}, "userPassword": {"app Passw0rd!"}})
+			require.NoError(t, err)
+			hashed(t, object.DN)
+			_, err = m.Bind(ctx, object.DN, "app Passw0rd!")
+			assert.NoError(t, err)
+		})
+
+		t.Run("RenameUndone", func(t *testing.T) {
+			// A rename whose password fails, as a device can't have one, is
+			// undone
+			_, err := m.Create(ctx, "cn=dev,"+ou, schema.Attrs{"objectClass": {"top", "device"}, "cn": {"dev"}})
+			require.NoError(t, err)
+			_, err = m.Update(ctx, "cn=dev,"+ou, schema.Attrs{"cn": {"dev2"}, "userPassword": {"dev Passw0rd!"}})
+			assert.Error(t, err)
+			_, err = m.Get(ctx, "cn=dev,"+ou)
+			assert.NoError(t, err, "renamed back")
+			_, err = m.Get(ctx, "cn=dev2,"+ou)
+			assert.ErrorIs(t, err, httpresponse.ErrNotFound)
+		})
+	})
 }

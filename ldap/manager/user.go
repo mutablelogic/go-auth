@@ -169,16 +169,10 @@ func (manager *Manager) CreateUser(ctx context.Context, name string, attrs schem
 
 	// An Active Directory user has its password set after it's created, and
 	// is disabled until it has
-	password := ""
+	withPassword := false
 	activeDirectory := containsFold(objectClasses, "user")
 	if activeDirectory {
-		for _, attr := range []string{"unicodePwd", "userPassword"} {
-			if values, ok := attrValues(values, attr); ok && len(values) > 0 {
-				password = values[0]
-			}
-		}
-		attrDelete(values, "unicodePwd")
-		attrDelete(values, "userPassword")
+		withPassword = hasPassword(values)
 		if !attrHas(values, "sAMAccountName") {
 			attrSet(values, "sAMAccountName", []string{name})
 		}
@@ -190,14 +184,9 @@ func (manager *Manager) CreateUser(ctx context.Context, name string, attrs schem
 	if err != nil {
 		return nil, err
 	}
-	if activeDirectory && password != "" {
-		if err := manager.enableUser(ctx, user.DN, password); err != nil {
-			// Delete it on a new connection, since the manager's can be lost
-			// when the context is cancelled
-			if deleteErr := manager.cleanup(ctx, func(conn *ldap.Conn) error { return conn.Del(ldap.NewDelRequest(user.DN, nil)) }); deleteErr != nil {
-				return nil, errors.Join(err, httpresponse.ErrInternalError.Withf("%q isn't deleted: %v", user.DN, deleteErr))
-			}
-			return nil, err
+	if withPassword {
+		if err := manager.enableUser(ctx, user.DN); err != nil {
+			return nil, manager.undoCreate(ctx, user.DN, err)
 		}
 		if user, err = manager.get(ctx, user.DN); err != nil {
 			return nil, err
@@ -311,20 +300,11 @@ func userNamingAttribute(classes []string) string {
 	}
 }
 
-// enableUser sets an Active Directory user's password, and enables it
-func (manager *Manager) enableUser(ctx context.Context, dn, password string) error {
-	if manager.tls == nil {
-		return httpresponse.ErrBadRequest.With("Active Directory passwords need ldaps")
-	}
-	if err := manager.write(ctx, func(conn *ldap.Conn) error { return setUnicodePwd(conn, dn, "", password) }); err != nil {
-		return ldaperr(err)
-	}
+// enableUser enables an Active Directory user, which has its password
+func (manager *Manager) enableUser(ctx context.Context, dn string) error {
 	modify := ldap.NewModifyRequest(dn, nil)
 	modify.Replace("userAccountControl", []string{adNormalAccount})
-	if err := manager.write(ctx, func(conn *ldap.Conn) error { return conn.Modify(modify) }); err != nil {
-		return ldaperr(err)
-	}
-	return nil
+	return ldaperr(manager.write(ctx, func(conn *ldap.Conn) error { return conn.Modify(modify) }))
 }
 
 // nextID returns the next ID, from the serialNumber of the entry with the
@@ -390,16 +370,50 @@ func (manager *Manager) create(ctx context.Context, dn string, values url.Values
 	if err != nil {
 		return nil, auth.HTTPError(err)
 	}
+
+	// A password is set after the entry is created, so it's hashed
+	password, user, err := takePassword(values)
+	if err != nil {
+		return nil, err
+	}
 	add := ldap.NewAddRequest(dn, nil)
 	for key, values := range values {
 		if len(values) > 0 {
 			add.Attribute(key, values)
 		}
 	}
-	if err := manager.write(ctx, func(conn *ldap.Conn) error { return conn.Add(add) }); err != nil {
+	err = manager.write(ctx, func(conn *ldap.Conn) error { return conn.Add(add) })
+
+	// A class which needs a userPassword, such as simpleSecurityObject, is
+	// added with a random one, which nobody knows, and the password, hashed,
+	// replaces it
+	if user && ldap.IsErrorWithCode(err, ldap.LDAPResultObjectClassViolation) {
+		placeholder, randErr := randomPassword()
+		if randErr != nil {
+			return nil, randErr
+		}
+		add.Attribute("userPassword", []string{placeholder})
+		err = manager.write(ctx, func(conn *ldap.Conn) error { return conn.Add(add) })
+	}
+	if err != nil {
 		return nil, ldaperr(err)
 	}
+	if password != "" {
+		if err := manager.setPassword(ctx, dn, password); err != nil {
+			return nil, manager.undoCreate(ctx, dn, err)
+		}
+	}
 	return manager.get(ctx, dn)
+}
+
+// undoCreate deletes the entry which was created, when what followed
+// failed, on a new connection, since the manager's can be lost when the
+// context is cancelled, and returns the error
+func (manager *Manager) undoCreate(ctx context.Context, dn string, err error) error {
+	if deleteErr := manager.cleanup(ctx, func(conn *ldap.Conn) error { return conn.Del(ldap.NewDelRequest(dn, nil)) }); deleteErr != nil {
+		return errors.Join(err, httpresponse.ErrInternalError.Withf("%q isn't deleted: %v", dn, deleteErr))
+	}
+	return err
 }
 
 // normalize returns the attributes, with names trimmed and checked, and
