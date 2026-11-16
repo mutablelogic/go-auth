@@ -110,6 +110,7 @@ func Test_ldaperr(t *testing.T) {
 		ldapv3.LDAPResultNotAllowedOnNonLeaf:      httpresponse.ErrConflict,
 		ldapv3.LDAPResultUndefinedAttributeType:   httpresponse.ErrBadRequest,
 		ldapv3.LDAPResultNotAllowedOnRDN:          httpresponse.ErrBadRequest,
+		ldapv3.LDAPResultInvalidDNSyntax:          httpresponse.ErrBadRequest,
 		ldapv3.LDAPResultBusy:                     httpresponse.ErrInternalError,
 	} {
 		err := ldaperr(&ldapv3.Error{ResultCode: code, Err: errors.New("reason")})
