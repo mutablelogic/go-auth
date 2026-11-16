@@ -351,3 +351,26 @@ func Test_FindUserByName(t *testing.T) {
 	_, err = m.GetUser(ctx, "dave")
 	assert.ErrorIs(t, err, httpresponse.ErrNotFound)
 }
+
+func Test_CountersNotDeleted(t *testing.T) {
+	// The entries with the next IDs can't be deleted, by a relative or
+	// absolute DN, in any case, as the IDs would start again
+	d := test.NewFake(t, false)
+	d.Set("cn=lastuid,dc=example,dc=test", map[string][]string{"objectClass": {"top", "device"}, "cn": {"lastuid"}, "serialNumber": {"1005"}})
+	d.Set("cn=lastgid,dc=example,dc=test", map[string][]string{"objectClass": {"top", "device"}, "cn": {"lastgid"}, "serialNumber": {"1005"}})
+	d.Set("cn=other,dc=example,dc=test", map[string][]string{"objectClass": {"top", "device"}, "cn": {"other"}})
+	m, err := manager.New(manager.WithUrl(d.URL("ldap")), manager.WithBaseDN("dc=example,dc=test"))
+	require.NoError(t, err)
+	require.NoError(t, m.Connect(context.Background()))
+	defer m.Disconnect(context.Background())
+	ctx := context.Background()
+
+	for _, dn := range []string{"cn=lastuid", "CN=LastGID,DC=Example,DC=Test"} {
+		_, err := m.Delete(ctx, dn)
+		assert.ErrorIs(t, err, httpresponse.ErrForbidden, dn)
+	}
+	assert.NotNil(t, d.Entry("cn=lastuid,dc=example,dc=test"))
+	assert.NotNil(t, d.Entry("cn=lastgid,dc=example,dc=test"))
+	_, err = m.Delete(ctx, "cn=other")
+	assert.NoError(t, err, "other entries can")
+}

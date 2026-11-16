@@ -8,7 +8,7 @@ import type { AttributeType, ObjectClass } from '../src/ldap/schema.ts';
 import { listAll } from '../src/ldap/controller.ts';
 import { GroupController, LdapStatusController, ObjectController, UserController } from '../src/ldap/controller.ts';
 import {
-    binarySize, dnKey, entryKind, escapeFilter, first, hasChildren, hasClass, isBranch, memberCount, isBinary, parentDN, rdn, rdnValue, sameDN, searchFilter, splitDN, valueText, values,
+    binarySize, dnKey, entryKind, escapeFilter, first, hasChildren, hasClass, isBranch, isCounter, memberCount, isBinary, parentDN, rdn, rdnValue, sameDN, searchFilter, splitDN, valueText, values,
     type LdapObject,
 } from '../src/ldap/schema.ts';
 
@@ -400,4 +400,9 @@ test('objects', async () => {
     assert.ok(isBranch({ dn: 'cn=a', attrs: { objectClass: ['device'], hasSubordinates: ['TRUE'] } }), 'an entry with entries under it');
     assert.ok(!isBranch({ dn: 'uid=a', attrs: { objectClass: ['inetOrgPerson'], hasSubordinates: ['FALSE'] } }));
     assert.ok(!isBranch({ dn: 'uid=a', attrs: { objectClass: ['inetOrgPerson'] } }), "a person, when the directory doesn't say");
+
+    // The entries with the next IDs, directly under the base DN
+    assert.ok(isCounter('cn=lastuid,dc=example,dc=test', 'dc=example,dc=test'));
+    assert.ok(isCounter('CN=LastGID, DC=Example,DC=Test', 'dc=example,dc=test'));
+    assert.ok(!isCounter('cn=lastuid,ou=users,dc=example,dc=test', 'dc=example,dc=test'));
 });

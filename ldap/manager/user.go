@@ -382,6 +382,17 @@ func (manager *Manager) enableUser(ctx context.Context, dn string) error {
 	return ldaperr(manager.write(ctx, func(conn *ldap.Conn) error { return conn.Modify(modify) }))
 }
 
+// isCounter returns whether the DN is one of the entries which have the
+// next user or group ID, such as cn=lastuid, under the base DN
+func (manager *Manager) isCounter(dn *schema.DN) bool {
+	for _, name := range []string{lastUID, lastGID} {
+		if counter, err := ldap.ParseDN("cn=" + name + "," + manager.dn.String()); err == nil && counter.EqualFold((*ldap.DN)(dn)) {
+			return true
+		}
+	}
+	return false
+}
+
 // nextID returns the next ID, from the serialNumber of the entry with the
 // name, such as cn=lastuid, under the base DN, which is created with the
 // initial ID when there's none. The old value is deleted, and the new one

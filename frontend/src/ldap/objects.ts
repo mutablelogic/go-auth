@@ -8,13 +8,14 @@
 
 import { html, nothing, type PropertyValues, type TemplateResult } from 'lit';
 import { repeat } from 'lit/directives/repeat.js';
+import { ApiError } from '@mutablelogic/go-server/api';
 import { ListController } from '@mutablelogic/go-server/list';
 import type { Column, TableActionError, TableSearch, TableToolbarAction } from '@mutablelogic/go-server/list/view';
 import { PanelController, type PanelAction } from '@mutablelogic/go-server/panel';
 import { ObjectController } from './controller.ts';
 import * as api from './httpclient.ts';
 import { LdapPage, attrsView } from './parts.ts';
-import { dnKey, entryKind, hasChildren, isBranch, parentDN, rdn, sameDN, values, type LdapObject } from './schema.ts';
+import { dnKey, entryKind, hasChildren, isBranch, isCounter, parentDN, rdn, sameDN, values, type LdapObject } from './schema.ts';
 
 // go-server's and Carbon's elements
 import '@mutablelogic/go-server/list/view';
@@ -86,6 +87,11 @@ export class LdapObjectsElement extends LdapPage {
     // The entries' children, which entries are expanded, by their DNs'
     // keys, and the branch which is selected, whose leaves are shown
     private readonly loaded = new Map<string, Children>();
+
+    // The latest load of each entry's children, and its count, so an older
+    // response, which a newer load replaced, isn't kept
+    private readonly loading = new Map<string, { generation: number; done: Promise<void> }>();
+    private generation = 0;
     private readonly expanded = new Set<string>();
     private branch?: string;
 
@@ -245,34 +251,53 @@ export class LdapObjectsElement extends LdapPage {
         if (!dn) {
             return [];
         }
-        let children = this.loaded.get(dnKey(dn));
-        if (children?.state !== 'loaded') {
-            await this.load(dn);
-            children = this.loaded.get(dnKey(dn));
+        // They're loaded, unless they are, or are loading, when the latest
+        // load is waited for, until there's none
+        const key = dnKey(dn);
+        if (this.loaded.get(key)?.state !== 'loaded' && !this.loading.has(key)) {
+            void this.load(dn);
         }
+        for (let pending = this.loading.get(key); pending; pending = this.loading.get(key)) {
+            await pending.done;
+        }
+        const children = this.loaded.get(key);
         return children?.state === 'loaded' ? children.entries : [];
     }
 
     // load loads the entry's children, which are kept as they are, while
     // they're loaded again
-    private async load(dn: string) {
+    private load(dn: string): Promise<void> {
         const key = dnKey(dn);
-        if (!this.controller) {
-            return;
+        const controller = this.controller;
+        if (!controller) {
+            return Promise.resolve();
         }
         if (this.loaded.get(key)?.state !== 'loaded') {
             this.loaded.set(key, { state: 'loading' });
             this.version++;
         }
-        try {
+        const generation = ++this.generation;
+        const latest = () => this.loading.get(key)?.generation === generation;
+        const done = (async () => {
             const base = this.current?.base_dn;
-            const entries = await this.controller.children(base && sameDN(base, dn) ? undefined : dn);
-            this.loaded.set(key, { state: 'loaded', entries });
-        } catch (error) {
-            this.notifications?.error(`The entries under ${dn} couldn't be loaded`, error);
-            this.loaded.set(key, { state: 'error' });
-        }
-        this.version++;
+            try {
+                const entries = await controller.children(base && sameDN(base, dn) ? undefined : dn);
+                if (latest()) {
+                    this.loaded.set(key, { state: 'loaded', entries });
+                }
+            } catch (error) {
+                if (latest()) {
+                    this.notifications?.error(`The entries under ${dn} couldn't be loaded`, error);
+                    this.loaded.set(key, { state: 'error' });
+                }
+            }
+            if (latest()) {
+                this.loading.delete(key);
+                this.version++;
+            }
+        })();
+        this.loading.set(key, { generation, done });
+        return done;
     }
 
     // watch loads what's shown again, when entries change, and opens a leaf
@@ -296,18 +321,22 @@ export class LdapObjectsElement extends LdapPage {
     // reload loads the children of the branches which are expanded, or
     // selected, again, and forgets the others', so they're loaded when
     // they're needed, then the leaves, and the entry the panel shows, or
-    // closes it, when it's gone
+    // closes it, when it's gone. A load which was already running is
+    // replaced, as it may be from before the change.
     private async reload() {
         const keep = new Set(this.expanded);
         if (this.branch) {
             keep.add(dnKey(this.branch));
         }
         const dns: string[] = [];
-        for (const [key, children] of [...this.loaded]) {
+        // Those which are loading, or couldn't be loaded, such as while the
+        // directory was disconnected, are loaded again too
+        for (const key of [...this.loaded.keys()]) {
             const dn = this.dnOf(key);
             if (!keep.has(key) || !dn) {
                 this.loaded.delete(key);
-            } else if (children.state === 'loaded') {
+                this.loading.delete(key);
+            } else {
                 dns.push(dn);
             }
         }
@@ -320,9 +349,15 @@ export class LdapObjectsElement extends LdapPage {
                 if (this.opened === opened && this.panel.isOpen) {
                     this.show(entry, false);
                 }
-            } catch {
+            } catch (error) {
+                // Only an entry which is gone closes the panel, and it's
+                // otherwise kept, until it can be loaded
                 if (this.opened === opened && this.panel.isOpen) {
-                    this.panel.close();
+                    if (error instanceof ApiError && error.status === 404) {
+                        this.panel.close();
+                    } else {
+                        this.notifications?.error(`${rdn(this.body.dn)} couldn't be loaded again`, error);
+                    }
                 }
             }
         }
@@ -365,7 +400,9 @@ export class LdapObjectsElement extends LdapPage {
     private show(entry: LdapObject, open: boolean) {
         this.body = { dn: entry.dn, content: attrsView(entry) };
         this.panel.setHeader({ title: rdn(entry.dn), subtitle: classesOf(entry).join(', ') || 'Entry' });
-        const actions: PanelAction[] = [
+        // The entries with the next user and group IDs aren't deleted
+        const base = this.current?.base_dn;
+        const actions: PanelAction[] = base && isCounter(entry.dn, base) ? [] : [
             { label: 'Delete', kind: 'danger', close: false, run: () => this.delete(entry) },
         ];
         this.panel.setActions(actions);

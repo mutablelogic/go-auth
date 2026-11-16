@@ -244,6 +244,13 @@ export function isBranch(object: LdapObject): boolean {
     return hasChildren(object) === true || entryKind(object) === 'container';
 }
 
+// isCounter returns whether the DN is one of the entries which have the
+// next user or group ID, cn=lastuid and cn=lastgid under the base DN, which
+// the server doesn't delete
+export function isCounter(dn: string, base: string): boolean {
+    return ['lastuid', 'lastgid'].some((name) => sameDN(dn, `cn=${name},${base}`));
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 // DNS
 
