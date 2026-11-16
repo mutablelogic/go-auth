@@ -229,3 +229,62 @@ func Test_PasswordsNotAdded(t *testing.T) {
 	assert.Equal(t, []string{"uid=alice,ou=users,dc=example,dc=test"}, d.Requests("password"))
 	assert.Equal(t, []string{"{FAKE}first Passw0rd!"}, d.Entry(user.DN)["userPassword"])
 }
+
+func Test_PasswordsReview(t *testing.T) {
+	test.ForEach(t, func(t *testing.T, ctx context.Context, server test.Server, m *manager.Manager) {
+		ou := test.OU(t, ctx, m)
+		hashed := func(t *testing.T, dn string) {
+			t.Helper()
+			values := test.Attribute(t, server, dn, "userPassword")
+			require.NotEmpty(t, values)
+			for _, value := range values {
+				assert.True(t, strings.HasPrefix(value, "{"), "hashed, not %q", value)
+			}
+		}
+
+		if server.ActiveDirectory {
+			// A unicodePwd with an option is a password, which enables the
+			// user
+			users := usersIn(t, ctx, server, m)
+			user, err := users.CreateUser(ctx, "alice", schema.Attrs{"sn": {"Example"}, "unicodePwd;binary": {"first Passw0rd!"}}, false)
+			require.NoError(t, err)
+			assert.Equal(t, types.Ptr("512"), user.Get("userAccountControl"), "enabled")
+			_, err = users.Bind(ctx, user.DN, "first Passw0rd!")
+			assert.NoError(t, err)
+			return
+		}
+
+		t.Run("OID", func(t *testing.T) {
+			// userPassword by its OID is a password
+			object, err := m.Create(ctx, "cn=oid,"+ou, schema.Attrs{"objectClass": {"top", "person", "organizationalPerson", "inetOrgPerson"}, "cn": {"oid"}, "sn": {"Example"}, "2.5.4.35": {"oid Passw0rd!"}})
+			require.NoError(t, err)
+			assert.Nil(t, object.Get("2.5.4.35"))
+			assert.Nil(t, object.Get("userPassword"))
+			hashed(t, object.DN)
+			_, err = m.Bind(ctx, object.DN, "oid Passw0rd!")
+			assert.NoError(t, err)
+		})
+
+		t.Run("Required", func(t *testing.T) {
+			// A class which needs a userPassword is created, with it hashed
+			object, err := m.Create(ctx, "uid=app,"+ou, schema.Attrs{"objectClass": {"top", "account", "simpleSecurityObject"}, "uid": {"app"}, "userPassword": {"app Passw0rd!"}})
+			require.NoError(t, err)
+			hashed(t, object.DN)
+			_, err = m.Bind(ctx, object.DN, "app Passw0rd!")
+			assert.NoError(t, err)
+		})
+
+		t.Run("RenameUndone", func(t *testing.T) {
+			// A rename whose password fails, as a device can't have one, is
+			// undone
+			_, err := m.Create(ctx, "cn=dev,"+ou, schema.Attrs{"objectClass": {"top", "device"}, "cn": {"dev"}})
+			require.NoError(t, err)
+			_, err = m.Update(ctx, "cn=dev,"+ou, schema.Attrs{"cn": {"dev2"}, "userPassword": {"dev Passw0rd!"}})
+			assert.Error(t, err)
+			_, err = m.Get(ctx, "cn=dev,"+ou)
+			assert.NoError(t, err, "renamed back")
+			_, err = m.Get(ctx, "cn=dev2,"+ou)
+			assert.ErrorIs(t, err, httpresponse.ErrNotFound)
+		})
+	})
+}

@@ -325,3 +325,14 @@ func Test_sameRow(t *testing.T) {
 	assert.Equal(t, "alice", rdnValue("UID=alice,ou=users,dc=example,dc=org"))
 	assert.Empty(t, rdnValue("not a dn"))
 }
+
+func Test_isPassword(t *testing.T) {
+	for _, name := range []string{"userPassword", "USERPASSWORD", "userPassword;binary", "2.5.4.35", "2.5.4.35;x", "unicodePwd", "unicodePwd;binary", "1.2.840.113556.1.4.90"} {
+		assert.True(t, isPassword(name), name)
+	}
+	for _, name := range []string{"cn", "2.5.4.3", "userPasswordx", "unicodePwdHistory"} {
+		assert.False(t, isPassword(name), name)
+	}
+	assert.True(t, isUserPassword("2.5.4.35;binary"))
+	assert.False(t, isUserPassword("unicodePwd"))
+}

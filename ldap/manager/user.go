@@ -169,10 +169,10 @@ func (manager *Manager) CreateUser(ctx context.Context, name string, attrs schem
 
 	// An Active Directory user has its password set after it's created, and
 	// is disabled until it has
-	hasPassword := false
+	withPassword := false
 	activeDirectory := containsFold(objectClasses, "user")
 	if activeDirectory {
-		hasPassword = attrHas(values, "unicodePwd") || attrHas(values, "userPassword")
+		withPassword = hasPassword(values)
 		if !attrHas(values, "sAMAccountName") {
 			attrSet(values, "sAMAccountName", []string{name})
 		}
@@ -184,7 +184,7 @@ func (manager *Manager) CreateUser(ctx context.Context, name string, attrs schem
 	if err != nil {
 		return nil, err
 	}
-	if hasPassword {
+	if withPassword {
 		if err := manager.enableUser(ctx, user.DN); err != nil {
 			return nil, manager.undoCreate(ctx, user.DN, err)
 		}
@@ -372,7 +372,7 @@ func (manager *Manager) create(ctx context.Context, dn string, values url.Values
 	}
 
 	// A password is set after the entry is created, so it's hashed
-	password, err := takePassword(values)
+	password, user, err := takePassword(values)
 	if err != nil {
 		return nil, err
 	}
@@ -382,7 +382,20 @@ func (manager *Manager) create(ctx context.Context, dn string, values url.Values
 			add.Attribute(key, values)
 		}
 	}
-	if err := manager.write(ctx, func(conn *ldap.Conn) error { return conn.Add(add) }); err != nil {
+	err = manager.write(ctx, func(conn *ldap.Conn) error { return conn.Add(add) })
+
+	// A class which needs a userPassword, such as simpleSecurityObject, is
+	// added with a random one, which nobody knows, and the password, hashed,
+	// replaces it
+	if user && ldap.IsErrorWithCode(err, ldap.LDAPResultObjectClassViolation) {
+		placeholder, randErr := randomPassword()
+		if randErr != nil {
+			return nil, randErr
+		}
+		add.Attribute("userPassword", []string{placeholder})
+		err = manager.write(ctx, func(conn *ldap.Conn) error { return conn.Add(add) })
+	}
+	if err != nil {
 		return nil, ldaperr(err)
 	}
 	if password != "" {

@@ -166,7 +166,7 @@ func (manager *Manager) update(ctx context.Context, absdn *schema.DN, attrs sche
 	}
 
 	// A password is set after the other attributes, so it's hashed
-	password, err := takePassword(values)
+	password, _, err := takePassword(values)
 	if err != nil {
 		return nil, err
 	} else if password != "" && len(values) == 0 {
@@ -190,7 +190,11 @@ func (manager *Manager) update(ctx context.Context, absdn *schema.DN, attrs sche
 			return nil, ldaperr(err)
 		}
 	}
-	if err := manager.modify(ctx, target, values); err != nil {
+	err = manager.modify(ctx, target, values)
+	if err == nil && password != "" {
+		err = manager.setPassword(ctx, target, password)
+	}
+	if err != nil {
 		// Undo the rename, so the entry is as it was, on a new connection,
 		// since the manager's can be lost when the context is cancelled
 		if rdn != "" {
@@ -200,11 +204,6 @@ func (manager *Manager) update(ctx context.Context, absdn *schema.DN, attrs sche
 			}
 		}
 		return nil, err
-	}
-	if password != "" {
-		if err := manager.setPassword(ctx, target, password); err != nil {
-			return nil, err
-		}
 	}
 	return manager.get(ctx, target)
 }
