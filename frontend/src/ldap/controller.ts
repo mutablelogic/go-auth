@@ -219,19 +219,32 @@ export class ObjectController {
 // SCHEMA
 
 // SchemaController keeps the directory's object classes and attribute
-// types, a page at a time, by name, whose names or OIDs are the search's
+// types, which are loaded once, and again when the directory connects, a
+// page at a time, by name, whose names, OIDs or descriptions have the
+// search's text
 export class SchemaController {
     readonly classes: ListController<ObjectClass>;
     readonly attributes: ListController<AttributeType>;
     private classQuery = '';
     private attributeQuery = '';
+    private schema?: Promise<{ classes: ObjectClass[]; types: AttributeType[] }>;
 
     constructor(client: Client, options: LdapOptions = {}) {
+        const load = () => {
+            this.schema ??= Promise.all([
+                listAll((offset, limit) => api.listObjectClasses(client, { offset, limit })),
+                listAll((offset, limit) => api.listAttributeTypes(client, { offset, limit })),
+            ]).then(([classes, types]) => ({ classes, types }));
+            return this.schema.catch((error: unknown) => {
+                this.schema = undefined;
+                throw error;
+            });
+        };
         this.classes = new ListController<ObjectClass>({
             name: 'Object classes',
             list: async (offset, limit) => {
-                const page = await api.listObjectClasses(client, { offset, limit, filter: this.classQuery || undefined });
-                return { count: page.count, body: page.body ?? [] };
+                const found = (await load()).classes.filter((c) => schemaMatches(c, this.classQuery));
+                return { count: found.length, body: found.slice(offset, offset + limit) };
             },
             same: (a, b) => a.numericOid === b.numericOid,
             notifications: options.notifications,
@@ -240,17 +253,58 @@ export class SchemaController {
         this.attributes = new ListController<AttributeType>({
             name: 'Attribute types',
             list: async (offset, limit) => {
-                const page = await api.listAttributeTypes(client, { offset, limit, filter: this.attributeQuery || undefined });
-                return { count: page.count, body: page.body ?? [] };
+                const found = (await load()).types.filter((t) => schemaMatches(t, this.attributeQuery));
+                return { count: found.length, body: found.slice(offset, offset + limit) };
             },
             same: (a, b) => a.numericOid === b.numericOid,
             notifications: options.notifications,
             pageSize: options.pageSize,
         });
+
+        // The schema is read again when the directory connects, as it can
+        // be another, or have changed
+        options.changes?.on(filter(TableConnection, 'create'), () => {
+            this.schema = undefined;
+            void this.classes.refresh();
+            void this.attributes.refresh();
+        });
+        this.allClasses = async () => (await load()).classes;
+        this.syntaxOf = async (attribute) => {
+            const { types } = await load();
+            const seen = new Set<string>();
+            for (let type: AttributeType | undefined = attribute; type && !seen.has(type.numericOid); ) {
+                if (type.syntax) {
+                    return { syntax: type.syntax, from: type === attribute ? undefined : type.name?.[0] ?? type.numericOid };
+                }
+                seen.add(type.numericOid);
+                const superType: string | undefined = type.superType?.toLowerCase();
+                type = superType ? types.find((t) => t.numericOid === superType || (t.name ?? []).some((n) => n.toLowerCase() === superType)) : undefined;
+            }
+            return undefined;
+        };
+        this.find = async (kind, name) => {
+            const { classes, types } = await load();
+            const list: (ObjectClass | AttributeType)[] = kind === 'class' ? classes : types;
+            return list.find((item) => item.numericOid === name || (item.name ?? []).some((n) => n.toLowerCase() === name.toLowerCase()));
+        };
     }
 
-    // setClassSearch and setAttributeSearch list those with the name or OID,
-    // or all of them, without one
+    // allClasses returns the directory's object classes
+    readonly allClasses: () => Promise<ObjectClass[]>;
+
+    // syntaxOf returns an attribute type's syntax, which can be its super
+    // type's, and which type it's from, when it isn't its own
+    readonly syntaxOf: (attribute: AttributeType) => Promise<{ syntax: string; from?: string } | undefined>;
+
+    // find returns the class, or attribute type, with the name, or OID
+    readonly find: {
+        (kind: 'class', name: string): Promise<ObjectClass | undefined>;
+        (kind: 'attribute', name: string): Promise<AttributeType | undefined>;
+    };
+
+    // setClassSearch and setAttributeSearch list those with the text in
+    // their names, OIDs or descriptions, or all of them, without, from the
+    // first page
     setClassSearch(text: string): Promise<void> {
         this.classQuery = text.trim();
         return this.classes.reset();
@@ -260,6 +314,22 @@ export class SchemaController {
         this.attributeQuery = text.trim();
         return this.attributes.reset();
     }
+
+    get classSearch(): string {
+        return this.classQuery;
+    }
+
+    get attributeSearch(): string {
+        return this.attributeQuery;
+    }
+}
+
+// schemaMatches returns whether a class, or attribute type, has the text in
+// its names, OID or description, in any case, or there's none
+export function schemaMatches(item: ObjectClass | AttributeType, text: string): boolean {
+    const query = text.trim().toLowerCase();
+    return !query || item.numericOid.includes(query) || (item.name ?? []).some((n) => n.toLowerCase().includes(query))
+        || (item.description ?? '').toLowerCase().includes(query);
 }
 
 ///////////////////////////////////////////////////////////////////////////////

@@ -5,10 +5,10 @@ import type { Change, ChangeFilter, ChangesController } from '@mutablelogic/go-s
 import * as api from '../src/ldap/httpclient.ts';
 import { addable, classClosure, entryAttrs, entryForm, entryFormErrors, entrySchema, formFields, isPosix, namingAttr, passwordForm, passwordFormErrors, passwordRequest } from '../src/ldap/form.ts';
 import type { AttributeType, ObjectClass } from '../src/ldap/schema.ts';
-import { listAll } from '../src/ldap/controller.ts';
+import { listAll, schemaMatches } from '../src/ldap/controller.ts';
 import { GroupController, LdapStatusController, ObjectController, UserController } from '../src/ldap/controller.ts';
 import {
-    binarySize, dnKey, entryKind, escapeFilter, first, hasChildren, hasClass, isBranch, isCounter, memberCount, isBinary, parentDN, rdn, rdnValue, sameDN, searchFilter, splitDN, valueText, values,
+    binarySize, dnKey, entryKind, escapeFilter, syntaxName, first, hasChildren, hasClass, isBranch, isCounter, memberCount, isBinary, parentDN, rdn, rdnValue, sameDN, searchFilter, splitDN, valueText, values,
     type LdapObject,
 } from '../src/ldap/schema.ts';
 
@@ -405,4 +405,19 @@ test('objects', async () => {
     assert.ok(isCounter('cn=lastuid,dc=example,dc=test', 'dc=example,dc=test'));
     assert.ok(isCounter('CN=LastGID, DC=Example,DC=Test', 'dc=example,dc=test'));
     assert.ok(!isCounter('cn=lastuid,ou=users,dc=example,dc=test', 'dc=example,dc=test'));
+});
+
+test('schema page', async () => {
+    assert.equal(syntaxName('1.3.6.1.4.1.1466.115.121.1.15'), 'Directory String');
+    assert.equal(syntaxName('1.3.6.1.4.1.1466.115.121.1.26{256}'), 'IA5 String {256}');
+    assert.equal(syntaxName('1.2.3'), '1.2.3', 'not a known one');
+    assert.equal(syntaxName(), '');
+
+    const mail: AttributeType = { numericOid: '0.9.2342.19200300.100.1.3', name: ['mail', 'rfc822Mailbox'], description: 'RFC1274: RFC822 Mailbox' };
+    assert.ok(schemaMatches(mail, ''));
+    assert.ok(schemaMatches(mail, 'MAI'), 'a name, in any case');
+    assert.ok(schemaMatches(mail, 'rfc822mail'), 'another name');
+    assert.ok(schemaMatches(mail, '19200300'), 'its OID');
+    assert.ok(schemaMatches(mail, 'mailbox'), 'its description');
+    assert.ok(!schemaMatches(mail, 'phone'));
 });
