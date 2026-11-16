@@ -57,13 +57,36 @@ func Test_Provider(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, "directory", identity.Provider)
 		assert.True(t, strings.HasPrefix(identity.Issuer, "ldap://"), identity.Issuer)
-		assert.True(t, strings.EqualFold(user.DN, identity.Subject))
+		assert.NotEmpty(t, identity.Subject)
+		assert.False(t, strings.EqualFold(user.DN, identity.Subject), "an identifier, rather than the DN")
+		assert.True(t, strings.EqualFold(user.DN, identity.Claims["dn"].(string)))
 		assert.Equal(t, "alice@example.com", identity.Email)
 		assert.False(t, identity.EmailVerified)
 		assert.Contains(t, []string{"Alice Smith", "alice"}, identity.Name)
 		assert.Contains(t, identity.Groups, "staff")
 
-		// A wrong password, and a user who isn't, are the same error
+		// The same subject, once it's renamed, which Samba doesn't, and
+		// another, when it's deleted, and another is made with the name
+		if !server.ActiveDirectory {
+			_, err = m.UpdateUser(ctx, "alice", ldapschema.Attrs{"uid": {"alicia"}})
+			require.NoError(t, err)
+			renamed, err := p.Exchange(ctx, schema.Credential{Username: "alicia", Password: "alice Passw0rd!"})
+			require.NoError(t, err)
+			assert.Equal(t, identity.Subject, renamed.Subject)
+			_, err = m.UpdateUser(ctx, "alicia", ldapschema.Attrs{"uid": {"alice"}})
+			require.NoError(t, err)
+		}
+		_, err = m.DeleteUser(ctx, "alice")
+		require.NoError(t, err)
+		_, err = m.CreateUser(ctx, "alice", ldapschema.Attrs{
+			"cn": {"Alice Jones"}, "sn": {"Jones"}, "homeDirectory": {"/home/alice"}, "userPassword": {"alice Passw0rd!"},
+		}, true)
+		require.NoError(t, err)
+		another, err := p.Exchange(ctx, schema.Credential{Username: "alice", Password: "alice Passw0rd!"})
+		require.NoError(t, err)
+		assert.NotEqual(t, identity.Subject, another.Subject, "another user, with the same DN")
+
+				// A wrong password, and a user who isn't, are the same error
 		_, err = p.Exchange(ctx, schema.Credential{Username: "alice", Password: "wrong"})
 		assert.ErrorIs(t, err, httpresponse.ErrNotAuthorized)
 		_, err = p.Exchange(ctx, schema.Credential{Username: "nobody", Password: "wrong"})

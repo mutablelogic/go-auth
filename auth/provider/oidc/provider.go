@@ -26,9 +26,10 @@ import (
 
 	// Packages
 	gooidc "github.com/coreos/go-oidc/v3/oidc"
-	client "github.com/mutablelogic/go-client"
 	provider "github.com/mutablelogic/go-auth/auth/provider"
 	schema "github.com/mutablelogic/go-auth/auth/schema"
+	credential "github.com/mutablelogic/go-auth/credential"
+	client "github.com/mutablelogic/go-client"
 	httpresponse "github.com/mutablelogic/go-server/pkg/httpresponse"
 	oauth2 "golang.org/x/oauth2"
 )
@@ -39,14 +40,14 @@ import (
 // Provider is an OpenID Connect issuer, which is discovered when it's first
 // used, so the server starts without it
 type Provider struct {
-	meta         schema.ProviderMeta
-	issuer       string
-	clientID     string
-	clientSecret string
-	scopes       []string
-	groups       string
-	clientOpts   []client.ClientOpt
-	client       *client.Client
+	meta        schema.ProviderMeta
+	issuer      string
+	credentials credential.CredentialProvider
+	key         string
+	scopes      []string
+	groups      string
+	clientOpts  []client.ClientOpt
+	client      *client.Client
 
 	mu       sync.Mutex
 	provider *gooidc.Provider
@@ -77,23 +78,24 @@ var standardClaims = map[string]bool{
 // LIFECYCLE
 
 // New returns a provider, with a name, which is in its paths, and a label,
-// to show, of the issuer, with the client's ID and secret, which it's
-// registered with at the issuer. It asks for openid, email and profile.
-func New(name, label, issuer, clientID, clientSecret string, opts ...Opt) (*Provider, error) {
+// to show, of the issuer, whose client, which it's registered with at the
+// issuer, is the credential at the key: an OAuthClient, with its ID and
+// secret. It asks for openid, email and profile.
+func New(name, label, issuer string, credentials credential.CredentialProvider, key string, opts ...Opt) (*Provider, error) {
 	switch {
 	case name == "":
 		return nil, httpresponse.ErrBadRequest.With("An OIDC provider needs a name")
 	case issuer == "":
 		return nil, httpresponse.ErrBadRequest.Withf("%s needs an issuer", name)
-	case clientID == "":
-		return nil, httpresponse.ErrBadRequest.Withf("%s needs a client ID", name)
+	case credentials == nil || key == "":
+		return nil, httpresponse.ErrBadRequest.Withf("%s needs the credential of its client", name)
 	}
 	self := &Provider{
-		meta:         schema.ProviderMeta{Name: name, Label: label, Kind: schema.ProviderKindRedirect},
-		issuer:       strings.TrimSuffix(issuer, "/"),
-		clientID:     clientID,
-		clientSecret: clientSecret,
-		scopes:       []string{gooidc.ScopeOpenID, "email", "profile"},
+		meta:        schema.ProviderMeta{Name: name, Label: label, Kind: schema.ProviderKindRedirect},
+		issuer:      issuer,
+		credentials: credentials,
+		key:         key,
+		scopes:      []string{gooidc.ScopeOpenID, "email", "profile"},
 	}
 	if self.meta.Label == "" {
 		self.meta.Label = name
@@ -114,10 +116,10 @@ func New(name, label, issuer, clientID, clientSecret string, opts ...Opt) (*Prov
 	return self, nil
 }
 
-// NewGoogle returns a provider of Google, named google, with the client's
-// ID and secret, from the Google Cloud Console
-func NewGoogle(clientID, clientSecret string, opts ...Opt) (*Provider, error) {
-	return New("google", "Google", GoogleIssuer, clientID, clientSecret, opts...)
+// NewGoogle returns a provider of Google, named google, whose client, from
+// the Google Cloud Console, is the credential at the key
+func NewGoogle(credentials credential.CredentialProvider, key string, opts ...Opt) (*Provider, error) {
+	return New("google", "Google", GoogleIssuer, credentials, key, opts...)
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -172,7 +174,11 @@ func (p *Provider) AuthCodeURL(ctx context.Context, redirectURL, state, verifier
 	if err != nil {
 		return "", err
 	}
-	return p.config(discovered, redirectURL).AuthCodeURL(state, oauth2.S256ChallengeOption(verifier)), nil
+	client, err := provider.Client(ctx, p.credentials, p.key)
+	if err != nil {
+		return "", err
+	}
+	return p.config(discovered, client, redirectURL).AuthCodeURL(state, oauth2.S256ChallengeOption(verifier)), nil
 }
 
 // Exchange exchanges the code, with its verifier, for tokens, and returns
@@ -186,10 +192,14 @@ func (p *Provider) Exchange(ctx context.Context, credential schema.Credential) (
 	if err != nil {
 		return nil, err
 	}
+	client, err := provider.Client(ctx, p.credentials, p.key)
+	if err != nil {
+		return nil, err
+	}
 
 	// Exchange the code
 	ctx = gooidc.ClientContext(ctx, p.client.Client)
-	token, err := p.config(discovered, credential.RedirectURL).Exchange(ctx, credential.Code, oauth2.VerifierOption(credential.CodeVerifier))
+	token, err := p.config(discovered, client, credential.RedirectURL).Exchange(ctx, credential.Code, oauth2.VerifierOption(credential.CodeVerifier))
 	if err != nil {
 		return nil, exchangeErr(p.meta.Name, err)
 	}
@@ -199,7 +209,7 @@ func (p *Provider) Exchange(ctx context.Context, credential schema.Credential) (
 	}
 
 	// Check the ID token, which is for this client, and its claims
-	idToken, err := discovered.Verifier(&gooidc.Config{ClientID: p.clientID}).Verify(ctx, raw)
+	idToken, err := discovered.Verifier(&gooidc.Config{ClientID: client.ClientID}).Verify(ctx, raw)
 	if err != nil {
 		return nil, httpresponse.ErrNotAuthorized.Withf("%s's ID token isn't valid: %v", p.meta.Name, err)
 	}
@@ -231,10 +241,10 @@ func (p *Provider) discover(ctx context.Context) (*gooidc.Provider, error) {
 
 // config returns the OAuth2 configuration of the client, at the issuer,
 // which redirects to the URL
-func (p *Provider) config(discovered *gooidc.Provider, redirectURL string) *oauth2.Config {
+func (p *Provider) config(discovered *gooidc.Provider, client *schema.OAuthClient, redirectURL string) *oauth2.Config {
 	return &oauth2.Config{
-		ClientID:     p.clientID,
-		ClientSecret: p.clientSecret,
+		ClientID:     client.ClientID,
+		ClientSecret: client.ClientSecret,
 		Endpoint:     discovered.Endpoint(),
 		RedirectURL:  redirectURL,
 		Scopes:       p.scopes,

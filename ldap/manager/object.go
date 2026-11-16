@@ -72,8 +72,10 @@ func (manager *Manager) List(ctx context.Context, req schema.ObjectListRequest) 
 	return manager.list(ctx, scope, base.String(), req.ListRequest, nil)
 }
 
-// Get returns the entry, whose DN is under the base DN, or relative to it
-func (manager *Manager) Get(ctx context.Context, dn string) (_ *schema.Object, err error) {
+// Get returns the entry, whose DN is under the base DN, or relative to it,
+// with its attributes, or only those named, such as operational ones,
+// which aren't returned otherwise, such as entryUUID
+func (manager *Manager) Get(ctx context.Context, dn string, attrs ...string) (_ *schema.Object, err error) {
 	ctx, endSpan := otel.StartSpan(manager.tracer, ctx, "ldapmanager.Get", manager.spanAttrs(attribute.String("arg.dn", dn))...)
 	defer func() { endSpan(err) }()
 
@@ -86,7 +88,7 @@ func (manager *Manager) Get(ctx context.Context, dn string) (_ *schema.Object, e
 	if err != nil {
 		return nil, err
 	}
-	return manager.get(ctx, absdn.String())
+	return manager.get(ctx, absdn.String(), attrs...)
 }
 
 // Create adds the entry, whose DN is under the base DN, or relative to it,
