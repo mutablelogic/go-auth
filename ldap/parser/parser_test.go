@@ -202,3 +202,16 @@ func fixtureLine(t *testing.T, name, prefix string) string {
 	t.Fatalf("fixture line with prefix %q not found in %s", prefix, name)
 	return ""
 }
+
+func TestParseDefaults(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+
+	class, err := New("( 1.2.3 NAME 'example' SUP top MUST cn )").ParseObjectClass()
+	require.NoError(err)
+	assert.Equal(schemadef.ObjectClassKindStructural, class.ClassKind, "a class is STRUCTURAL without a kind")
+
+	attr, err := New("( 1.2.4 NAME 'example' SYNTAX 1.3.6.1.4.1.1466.115.121.1.15 )").ParseAttributeType()
+	require.NoError(err)
+	assert.Equal(schemadef.AttributeUsageUserApplications, attr.Usage, "an attribute type is for user applications without a usage")
+}
