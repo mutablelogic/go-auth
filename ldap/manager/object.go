@@ -261,15 +261,24 @@ func (manager *Manager) connected() error {
 
 // get returns the entry at the DN, or a not found error
 func (manager *Manager) get(ctx context.Context, dn string, attrs ...string) (*schema.Object, error) {
+	result, err := manager.find(ctx, dn, filterAll, attrs...)
+	if err != nil {
+		return nil, err
+	} else if result == nil {
+		return nil, httpresponse.ErrNotFound.Withf("%q not found", dn)
+	}
+	return result, nil
+}
+
+// find returns the entry at the DN, when it matches the filter, which the
+// directory applies, or nil
+func (manager *Manager) find(ctx context.Context, dn, filter string, attrs ...string) (*schema.Object, error) {
 	var result *schema.Object
-	if err := manager.search(ctx, ldap.ScopeBaseObject, dn, filterAll, 1, func(entry *schema.Object) error {
+	if err := manager.search(ctx, ldap.ScopeBaseObject, dn, filter, 1, func(entry *schema.Object) error {
 		result = entry
 		return io.EOF
 	}, attrs...); err != nil {
 		return nil, err
-	}
-	if result == nil {
-		return nil, httpresponse.ErrNotFound.Withf("%q not found", dn)
 	}
 	return result, nil
 }

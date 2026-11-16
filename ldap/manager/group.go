@@ -75,11 +75,13 @@ func (manager *Manager) GetGroup(ctx context.Context, name string) (_ *schema.Ob
 	if err != nil {
 		return nil, err
 	}
-	group, err := manager.get(ctx, dn.String())
+	// The directory matches the classes, by any of their names, or OIDs, as
+	// a list of groups does
+	group, err := manager.find(ctx, dn.String(), classFilter(manager.groupSelectClasses()))
 	if err != nil {
 		return nil, err
-	} else if !hasClass(group, manager.groupSelectClasses()) {
-		return nil, httpresponse.ErrNotFound.Withf("%q isn't a group", name)
+	} else if group == nil {
+		return nil, httpresponse.ErrNotFound.Withf("Group %q not found", name)
 	}
 	return group, nil
 }
@@ -489,7 +491,8 @@ func (manager *Manager) groupSelectClasses() []string {
 }
 
 // classFilter returns a filter of the entries which have one of the object
-// classes, other than top, which every entry has
+// classes, other than top, which every entry has, or of none, without
+// another
 func classFilter(classes []string) string {
 	var filters []string
 	for _, class := range classes {
@@ -499,24 +502,13 @@ func classFilter(classes []string) string {
 	}
 	switch len(filters) {
 	case 0:
-		return "(objectClass=*)"
+		// None, so nothing is one
+		return "(!(objectClass=*))"
 	case 1:
 		return filters[0]
 	default:
 		return "(|" + strings.Join(filters, "") + ")"
 	}
-}
-
-// hasClass returns whether the entry has one of the object classes, other
-// than top
-func hasClass(object *schema.Object, classes []string) bool {
-	values := object.GetAll("objectClass")
-	for _, class := range classes {
-		if !strings.EqualFold(class, "top") && containsFold(values, class) {
-			return true
-		}
-	}
-	return false
 }
 
 // requiredMember returns the attribute which a group of the classes needs

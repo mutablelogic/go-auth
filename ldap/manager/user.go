@@ -109,11 +109,13 @@ func (manager *Manager) GetUser(ctx context.Context, name string) (_ *schema.Obj
 	if err != nil {
 		return nil, err
 	}
-	user, err := manager.get(ctx, dn.String())
+	// The directory matches the classes, by any of their names, or OIDs, as
+	// a list of users does
+	user, err := manager.find(ctx, dn.String(), classFilter(manager.userSelectClasses()))
 	if err != nil {
 		return nil, err
-	} else if !hasClass(user, manager.userSelectClasses()) {
-		return nil, httpresponse.ErrNotFound.Withf("%q isn't a user", name)
+	} else if user == nil {
+		return nil, httpresponse.ErrNotFound.Withf("User %q not found", name)
 	}
 	return user, nil
 }

@@ -351,3 +351,38 @@ func Test_UsersAndGroupsTogether(t *testing.T) {
 		assert.NoError(t, err)
 	})
 }
+
+func Test_GroupClassByOID(t *testing.T) {
+	test.ForEach(t, func(t *testing.T, ctx context.Context, server test.Server, m *manager.Manager) {
+		// A group, and a manager whose groups' class is the group's class's
+		// OID, which the directory matches, in a list and by name
+		ou := test.OU(t, ctx, m)
+		group, err := test.Manager(t, ctx, server, manager.WithGroupDN(ou)).CreateGroup(ctx, "byoid", nil)
+		require.NoError(t, err)
+		var class string
+		for _, value := range group.GetAll("objectClass") {
+			if !strings.EqualFold(value, "top") {
+				class = value
+				break
+			}
+		}
+		classes, err := m.ListObjectClasses(ctx, schema.ObjectClassListRequest{Filter: types.Ptr(class)})
+		require.NoError(t, err)
+		require.NotEmpty(t, classes.Body)
+		oid := test.Manager(t, ctx, server, manager.WithGroupDN(ou, classes.Body[0].NumericOID))
+
+		list, err := oid.ListGroups(ctx, schema.GroupListRequest{})
+		require.NoError(t, err)
+		assert.Equal(t, uint64(1), list.Count, "by %s's OID %s", class, classes.Body[0].NumericOID)
+		_, err = oid.GetGroup(ctx, "byoid")
+		assert.NoError(t, err)
+
+		// A class which isn't one, which nothing is
+		top := test.Manager(t, ctx, server, manager.WithGroupDN(ou, "top"))
+		list, err = top.ListGroups(ctx, schema.GroupListRequest{})
+		require.NoError(t, err)
+		assert.Zero(t, list.Count)
+		_, err = top.GetGroup(ctx, "byoid")
+		assert.ErrorIs(t, err, httpresponse.ErrNotFound)
+	})
+}

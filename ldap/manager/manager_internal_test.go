@@ -336,3 +336,10 @@ func Test_isPassword(t *testing.T) {
 	assert.True(t, isUserPassword("2.5.4.35;binary"))
 	assert.False(t, isUserPassword("unicodePwd"))
 }
+
+func Test_classFilter(t *testing.T) {
+	assert.Equal(t, "(objectClass=person)", classFilter([]string{"top", "person"}))
+	assert.Equal(t, "(|(objectClass=a)(objectClass=b\\2a))", classFilter([]string{"a", "b*"}))
+	assert.Equal(t, "(!(objectClass=*))", classFilter([]string{"top"}), "none, which nothing matches")
+	assert.Equal(t, "(!(objectClass=*))", classFilter(nil))
+}
