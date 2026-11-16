@@ -5,7 +5,7 @@ import type { Change, ChangeFilter, ChangesController } from '@mutablelogic/go-s
 import * as api from '../src/ldap/httpclient.ts';
 import { addable, carryForm, classClosure, entryAttrs, entryForm, entryFormErrors, entrySchema, formFields, isPosix, namingAttr, namingChoices, newEntry, passwordForm, passwordFormErrors, passwordRequest } from '../src/ldap/form.ts';
 import type { AttributeType, ObjectClass } from '../src/ldap/schema.ts';
-import { listAll, schemaMatches } from '../src/ldap/controller.ts';
+import { listAll, schemaIs, schemaMatches } from '../src/ldap/controller.ts';
 import { GroupController, LdapStatusController, ObjectController, UserController } from '../src/ldap/controller.ts';
 import {
     binarySize, dnKey, entryKind, escapeDN, escapeFilter, syntaxName, first, hasChildren, hasClass, isBranch, isCounter, memberCount, isBinary, parentDN, rdn, rdnValue, sameDN, searchFilter, splitDN, valueText, values,
@@ -420,6 +420,13 @@ test('schema page', async () => {
     assert.ok(schemaMatches(mail, '19200300'), 'its OID');
     assert.ok(schemaMatches(mail, 'mailbox'), 'its description');
     assert.ok(!schemaMatches(mail, 'phone'));
+
+    // Identifiers in any case, as some OIDs are descriptors
+    const config: ObjectClass = { numericOid: 'nsCertConfig-oid', name: ['nsCertConfig'] };
+    assert.ok(schemaIs(config, 'NSCERTCONFIG-OID'));
+    assert.ok(schemaIs(config, 'nscertconfig'));
+    assert.ok(!schemaIs(config, 'nsCert'));
+    assert.ok(schemaMatches(config, 'CONFIG-OID'));
 });
 
 test('entries', async (t) => {

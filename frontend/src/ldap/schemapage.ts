@@ -9,7 +9,7 @@ import { until } from 'lit/directives/until.js';
 import type { ListController } from '@mutablelogic/go-server/list';
 import type { Column, TableSearch } from '@mutablelogic/go-server/list/view';
 import { PanelController } from '@mutablelogic/go-server/panel';
-import { SchemaController } from './controller.ts';
+import { SchemaController, schemaIs } from './controller.ts';
 import { LdapPage } from './parts.ts';
 import { syntaxName, type AttributeType, type ObjectClass } from './schema.ts';
 
@@ -165,10 +165,10 @@ export class LdapSchemaElement extends LdapPage {
             let previous: T | undefined;
             return list.subscribe(({ selected }) => {
                 if (selected) {
-                    if (!this.panel.isOpen || this.body?.oid !== selected.numericOid) {
+                    if (!this.panel.isOpen || !this.body || !schemaIs(selected, this.body.oid)) {
                         show(selected);
                     }
-                } else if (previous && this.panel.isOpen && this.body?.oid === previous.numericOid) {
+                } else if (previous && this.panel.isOpen && this.body && schemaIs(previous, this.body.oid)) {
                     this.panel.close();
                 }
                 previous = selected;
@@ -177,22 +177,47 @@ export class LdapSchemaElement extends LdapPage {
         this.unsubscribe.push(
             follow(this.controller.classes, (c) => this.showClass(c)),
             follow(this.controller.attributes, (a) => this.showAttribute(a)),
+            this.controller.onReload(() => void this.rebuild()),
         );
     }
 
-    // open shows the body in the panel, with its header
-    private open(title: string, subtitle: string, body: Body) {
-        this.opened++;
+    // rebuild shows the class, or attribute type, the panel shows again, as
+    // the schema has been read again, however it was opened, or closes the
+    // panel, when the directory no longer has it
+    private async rebuild() {
+        const body = this.body;
+        if (!this.panel.isOpen || !body || !this.controller) {
+            return;
+        }
+        const opened = this.opened;
+        const found = body.kind === 'class' ? await this.controller.find('class', body.oid) : await this.controller.find('attribute', body.oid);
+        if (this.opened !== opened || !this.panel.isOpen) {
+            return;
+        } else if (!found) {
+            this.panel.close();
+        } else if (body.kind === 'class') {
+            this.showClass(found as ObjectClass, false);
+        } else {
+            this.showAttribute(found as AttributeType, false);
+        }
+    }
+
+    // open shows the body in the panel, with its header, and opens it, or
+    // else shows it again, in the panel which is open
+    private open(title: string, subtitle: string, body: Body, open = true) {
         this.body = body;
         this.panel.setHeader({ title, subtitle });
         this.panel.setActions([]);
-        this.panel.open({ oid: body.oid });
+        if (open) {
+            this.opened++;
+            this.panel.open({ oid: body.oid });
+        }
     }
 
     // showClass shows an object class: its names, OID, kind, description,
     // the classes it inherits from, and the attributes it must, and may,
     // have, which open when they're clicked
-    private showClass(c: ObjectClass) {
+    private showClass(c: ObjectClass, open = true) {
         this.open(nameOf(c), `${(c.classKind ?? 'STRUCTURAL').toLowerCase()} object class`, {
             kind: 'class',
             oid: c.numericOid,
@@ -207,13 +232,13 @@ export class LdapSchemaElement extends LdapPage {
                     <dt>May have</dt><dd>${this.links('attribute', c.may)}</dd>
                 </dl>
             `,
-        });
+        }, open);
     }
 
     // showAttribute shows an attribute type: its names, OID, description,
     // syntax, the type it inherits from, its flags, and the classes which
     // must, or may, have it
-    private showAttribute(a: AttributeType) {
+    private showAttribute(a: AttributeType, open = true) {
         const usedBy = this.usedBy(a);
         this.open(nameOf(a), 'Attribute type', {
             kind: 'attribute',
@@ -233,7 +258,7 @@ export class LdapSchemaElement extends LdapPage {
                     <dt>Used by</dt><dd>${usedBy}</dd>
                 </dl>
             `,
-        });
+        }, open);
     }
 
     // syntaxView is an attribute's syntax, by name, and OID, and the type
@@ -248,22 +273,25 @@ export class LdapSchemaElement extends LdapPage {
     // usedBy is the classes which must, or may, have the attribute, once
     // they're found
     private usedBy(a: AttributeType): unknown {
-        const names = new Set((a.name ?? []).map((n) => n.toLowerCase()).concat(a.numericOid));
+        const names = new Set((a.name ?? []).concat(a.numericOid).map((n) => n.toLowerCase()));
         const uses = (list?: string[]) => (list ?? []).some((n) => names.has(n.toLowerCase()));
         const classes = this.controller?.allClasses().then((all) => all.filter((c) => uses(c.must) || uses(c.may)).map(nameOf));
         return classes ? html`${until(classes.then((found) => found.length ? this.links('class', found) : 'No class'), nothing)}` : nothing;
     }
 
-    // links are the names of classes, or attribute types, as tags, which
-    // open them when they're clicked
+    // links are the names of classes, or attribute types, as tags in
+    // buttons, which open them when they're clicked, or chosen with the
+    // keyboard
     private links(kind: 'class' | 'attribute', names?: string[]): TemplateResult {
         if (!names?.length) {
             return html`None`;
         }
         return html`
             <span style="display: inline-flex; flex-wrap: wrap; gap: 0.25rem">
-                ${names.map((name) => html`<cds-tag size="sm" type=${kind === 'class' ? 'blue' : 'cool-gray'} style="cursor: pointer"
-                    title=${`Open ${name}`} @click=${() => void this.follow(kind, name)}>${name}</cds-tag>`)}
+                ${names.map((name) => html`<button type="button" title=${`Open ${name}`} aria-label=${`Open ${name}`}
+                    style="all: unset; cursor: pointer; display: inline-flex; border-radius: 1rem; outline-offset: 2px"
+                    @click=${() => void this.follow(kind, name)}><cds-tag size="sm" type=${kind === 'class' ? 'blue' : 'cool-gray'}
+                    style="pointer-events: none; margin: 0">${name}</cds-tag></button>`)}
             </span>
         `;
     }

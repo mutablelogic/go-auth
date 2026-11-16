@@ -246,7 +246,7 @@ export class SchemaController {
                 const found = (await load()).classes.filter((c) => schemaMatches(c, this.classQuery));
                 return { count: found.length, body: found.slice(offset, offset + limit) };
             },
-            same: (a, b) => a.numericOid === b.numericOid,
+            same: (a, b) => a.numericOid.toLowerCase() === b.numericOid.toLowerCase(),
             notifications: options.notifications,
             pageSize: options.pageSize,
         });
@@ -256,7 +256,7 @@ export class SchemaController {
                 const found = (await load()).types.filter((t) => schemaMatches(t, this.attributeQuery));
                 return { count: found.length, body: found.slice(offset, offset + limit) };
             },
-            same: (a, b) => a.numericOid === b.numericOid,
+            same: (a, b) => a.numericOid.toLowerCase() === b.numericOid.toLowerCase(),
             notifications: options.notifications,
             pageSize: options.pageSize,
         });
@@ -265,32 +265,43 @@ export class SchemaController {
         // be another, or have changed
         options.changes?.on(filter(TableConnection, 'create'), () => {
             this.schema = undefined;
-            void this.classes.refresh();
-            void this.attributes.refresh();
+            void Promise.all([this.classes.refresh(), this.attributes.refresh()]).then(() => {
+                for (const fn of this.reloads) {
+                    fn();
+                }
+            });
         });
         this.allClasses = async () => (await load()).classes;
         this.syntaxOf = async (attribute) => {
             const { types } = await load();
             const seen = new Set<string>();
-            for (let type: AttributeType | undefined = attribute; type && !seen.has(type.numericOid); ) {
+            for (let type: AttributeType | undefined = attribute; type && !seen.has(type.numericOid.toLowerCase()); ) {
                 if (type.syntax) {
                     return { syntax: type.syntax, from: type === attribute ? undefined : type.name?.[0] ?? type.numericOid };
                 }
-                seen.add(type.numericOid);
-                const superType: string | undefined = type.superType?.toLowerCase();
-                type = superType ? types.find((t) => t.numericOid === superType || (t.name ?? []).some((n) => n.toLowerCase() === superType)) : undefined;
+                seen.add(type.numericOid.toLowerCase());
+                const superType: string | undefined = type.superType;
+                type = superType ? types.find((t) => schemaIs(t, superType)) : undefined;
             }
             return undefined;
         };
         this.find = async (kind, name) => {
             const { classes, types } = await load();
             const list: (ObjectClass | AttributeType)[] = kind === 'class' ? classes : types;
-            return list.find((item) => item.numericOid === name || (item.name ?? []).some((n) => n.toLowerCase() === name.toLowerCase()));
+            return list.find((item) => schemaIs(item, name));
         };
     }
 
     // allClasses returns the directory's object classes
     readonly allClasses: () => Promise<ObjectClass[]>;
+
+    // onReload calls fn when the schema has been read again, until it's
+    // unsubscribed, so what's shown of it is shown again
+    onReload(fn: () => void): () => void {
+        this.reloads.add(fn);
+        return () => this.reloads.delete(fn);
+    }
+    private readonly reloads = new Set<() => void>();
 
     // syntaxOf returns an attribute type's syntax, which can be its super
     // type's, and which type it's from, when it isn't its own
@@ -324,11 +335,19 @@ export class SchemaController {
     }
 }
 
+// schemaIs returns whether a class, or attribute type, is the one with the
+// name, or OID, in any case, as some OIDs are descriptors, such as
+// nsCertConfig-oid
+export function schemaIs(item: ObjectClass | AttributeType, name: string): boolean {
+    const lower = name.toLowerCase();
+    return item.numericOid.toLowerCase() === lower || (item.name ?? []).some((n) => n.toLowerCase() === lower);
+}
+
 // schemaMatches returns whether a class, or attribute type, has the text in
 // its names, OID or description, in any case, or there's none
 export function schemaMatches(item: ObjectClass | AttributeType, text: string): boolean {
     const query = text.trim().toLowerCase();
-    return !query || item.numericOid.includes(query) || (item.name ?? []).some((n) => n.toLowerCase().includes(query))
+    return !query || item.numericOid.toLowerCase().includes(query) || (item.name ?? []).some((n) => n.toLowerCase().includes(query))
         || (item.description ?? '').toLowerCase().includes(query);
 }
 
