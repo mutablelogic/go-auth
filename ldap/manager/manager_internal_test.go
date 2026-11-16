@@ -234,3 +234,33 @@ func Test_listLimit(t *testing.T) {
 	assert.Equal(t, uint64(5), listLimit(types.Ptr(uint64(5))))
 	assert.Equal(t, uint64(schema.MaxListEntries), listLimit(types.Ptr(uint64(schema.MaxListEntries+1))))
 }
+
+func Test_userNamingAttribute(t *testing.T) {
+	assert.Equal(t, "cn", userNamingAttribute([]string{"user", "posixAccount"}), "Active Directory")
+	assert.Equal(t, "uid", userNamingAttribute([]string{"inetOrgPerson", "posixAccount"}))
+	assert.Equal(t, "uid", userNamingAttribute([]string{"account"}))
+	assert.Equal(t, "cn", userNamingAttribute([]string{"person"}))
+}
+
+func Test_choose(t *testing.T) {
+	subschema := &subschema{classes: parseObjectClasses([]string{
+		"( 1.1 NAME 'person' SUP top STRUCTURAL MUST cn )",
+		"( 1.2 NAME 'inetOrgPerson' SUP person STRUCTURAL )",
+		"( 1.3 NAME 'posixAccount' SUP top AUXILIARY MUST uid )",
+		"( 1.4 NAME 'shadowAccount' SUP top AUXILIARY )",
+		"( 1.5 NAME 'user' SUP top AUXILIARY )",
+	})}
+
+	// The first structural one, which "user" isn't here, and the auxiliary
+	// ones, in any case
+	assert.Equal(t, []string{"inetOrgPerson", "posixAccount"}, subschema.choose([]string{"user", "inetOrgPerson", "person"}, []string{"posixaccount", "missing"}))
+	assert.Nil(t, subschema.choose([]string{"user", "missing"}, []string{"posixAccount"}), "no structural class")
+}
+
+func Test_attrSet(t *testing.T) {
+	attrs := url.Values{"ObjectClass": {"top"}, "cn": {"a"}}
+	attrSet(attrs, "objectClass", []string{"top", "person"})
+	assert.Equal(t, url.Values{"objectClass": {"top", "person"}, "cn": {"a"}}, attrs, "in any case")
+	attrDelete(attrs, "CN")
+	assert.Equal(t, url.Values{"objectClass": {"top", "person"}}, attrs)
+}

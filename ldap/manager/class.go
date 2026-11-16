@@ -135,6 +135,40 @@ func (manager *Manager) subschema(ctx context.Context) (*subschema, error) {
 	return result, nil
 }
 
+// choose returns the first of the structural classes which the directory
+// has as structural, and those of the auxiliary classes it has as
+// auxiliary, as the directory names them, or none, when it has none of the
+// structural classes
+func (subschema *subschema) choose(structural, auxiliary []string) []string {
+	find := func(name string, kind schema.ObjectClassKind) string {
+		for _, class := range subschema.classes {
+			for _, n := range class.Name {
+				if strings.EqualFold(n, name) && schema.ObjectClassKind(class.ClassKind) == kind {
+					return n
+				}
+			}
+		}
+		return ""
+	}
+
+	var result []string
+	for _, name := range structural {
+		if n := find(name, schema.ObjectClassKindStructural); n != "" {
+			result = append(result, n)
+			break
+		}
+	}
+	if len(result) == 0 {
+		return nil
+	}
+	for _, name := range auxiliary {
+		if n := find(name, schema.ObjectClassKindAuxiliary); n != "" {
+			result = append(result, n)
+		}
+	}
+	return result
+}
+
 // parseObjectClasses returns the object classes which parse, by name
 func parseObjectClasses(values []string) []*schema.ObjectClass {
 	result := make([]*schema.ObjectClass, 0, len(values))

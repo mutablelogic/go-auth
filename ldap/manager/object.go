@@ -51,31 +51,7 @@ func (manager *Manager) List(ctx context.Context, req schema.ObjectListRequest) 
 
 	manager.mu.Lock()
 	defer manager.mu.Unlock()
-	if err := manager.connected(); err != nil {
-		return nil, err
-	}
-
-	limit := uint64(schema.MaxListEntries)
-	if req.Limit != nil {
-		limit = min(types.Value(req.Limit), limit)
-	}
-	filter := filterAll
-	if req.Filter != nil {
-		filter = types.Value(req.Filter)
-	}
-
-	// Count each entry, and keep those from the offset, up to the limit
-	var list schema.ObjectList
-	if err := manager.search(ctx, ldap.ScopeWholeSubtree, manager.dn.String(), filter, 0, func(entry *schema.Object) error {
-		if list.Count >= req.Offset && list.Count < req.Offset+limit {
-			list.Body = append(list.Body, entry)
-		}
-		list.Count++
-		return nil
-	}, req.Attr...); err != nil {
-		return nil, err
-	}
-	return &list, nil
+	return manager.list(ctx, ldap.ScopeWholeSubtree, manager.dn.String(), req)
 }
 
 // Get returns the entry, whose DN is under the base DN, or relative to it
@@ -106,25 +82,11 @@ func (manager *Manager) Create(ctx context.Context, dn string, attrs schema.Attr
 	if err := manager.connected(); err != nil {
 		return nil, err
 	}
-	values, err := (schema.ObjectPutRequest{Attrs: attrs}).ValidateCreate()
-	if err != nil {
-		return nil, auth.HTTPError(err)
-	}
 	absdn, err := manager.absdn(dn)
 	if err != nil {
 		return nil, err
 	}
-
-	add := ldap.NewAddRequest(absdn.String(), nil)
-	for key, values := range values {
-		if len(values) > 0 {
-			add.Attribute(key, values)
-		}
-	}
-	if err := manager.write(ctx, func(conn *ldap.Conn) error { return conn.Add(add) }); err != nil {
-		return nil, ldaperr(err)
-	}
-	return manager.get(ctx, add.DN)
+	return manager.create(ctx, absdn.String(), url.Values(attrs))
 }
 
 // Update replaces the entry's attributes which have values, and deletes
@@ -141,13 +103,38 @@ func (manager *Manager) Update(ctx context.Context, dn string, attrs schema.Attr
 	if err := manager.connected(); err != nil {
 		return nil, err
 	}
-	values, err := (schema.ObjectPutRequest{Attrs: attrs}).ValidateUpdate()
+	absdn, err := manager.absdn(dn)
 	if err != nil {
-		return nil, auth.HTTPError(err)
+		return nil, err
+	}
+	return manager.update(ctx, absdn, attrs)
+}
+
+// Delete removes the entry, which has no children, and returns it
+func (manager *Manager) Delete(ctx context.Context, dn string) (_ *schema.Object, err error) {
+	ctx, endSpan := otel.StartSpan(manager.tracer, ctx, "ldapmanager.Delete", manager.spanAttrs(attribute.String("arg.dn", dn))...)
+	defer func() { endSpan(err) }()
+
+	manager.mu.Lock()
+	defer manager.mu.Unlock()
+	if err := manager.connected(); err != nil {
+		return nil, err
 	}
 	absdn, err := manager.absdn(dn)
 	if err != nil {
 		return nil, err
+	}
+	return manager.delete(ctx, absdn.String())
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// PRIVATE METHODS
+
+// update changes the entry at the absolute DN, as Update does
+func (manager *Manager) update(ctx context.Context, absdn *schema.DN, attrs schema.Attrs) (*schema.Object, error) {
+	values, err := (schema.ObjectPutRequest{Attrs: attrs}).ValidateUpdate()
+	if err != nil {
+		return nil, auth.HTTPError(err)
 	}
 	target, rdn, err := renameTarget(absdn, values)
 	if err != nil {
@@ -175,21 +162,32 @@ func (manager *Manager) Update(ctx context.Context, dn string, attrs schema.Attr
 	return manager.get(ctx, target)
 }
 
-// Delete removes the entry, which has no children, and returns it
-func (manager *Manager) Delete(ctx context.Context, dn string) (_ *schema.Object, err error) {
-	ctx, endSpan := otel.StartSpan(manager.tracer, ctx, "ldapmanager.Delete", manager.spanAttrs(attribute.String("arg.dn", dn))...)
-	defer func() { endSpan(err) }()
+// list returns the entries in the scope of the absolute DN which match the
+// request's filter, as List does
+func (manager *Manager) list(ctx context.Context, scope int, dn string, req schema.ObjectListRequest) (*schema.ObjectList, error) {
+	limit := listLimit(req.Limit)
+	filter := filterAll
+	if req.Filter != nil {
+		filter = types.Value(req.Filter)
+	}
 
-	manager.mu.Lock()
-	defer manager.mu.Unlock()
-	if err := manager.connected(); err != nil {
+	// Count each entry, and keep those from the offset, up to the limit
+	var list schema.ObjectList
+	if err := manager.search(ctx, scope, dn, filter, 0, func(entry *schema.Object) error {
+		if list.Count >= req.Offset && list.Count < req.Offset+limit {
+			list.Body = append(list.Body, entry)
+		}
+		list.Count++
+		return nil
+	}, req.Attr...); err != nil {
 		return nil, err
 	}
-	absdn, err := manager.absdn(dn)
-	if err != nil {
-		return nil, err
-	}
-	object, err := manager.get(ctx, absdn.String())
+	return &list, nil
+}
+
+// delete removes the entry at the absolute DN, and returns it
+func (manager *Manager) delete(ctx context.Context, dn string) (*schema.Object, error) {
+	object, err := manager.get(ctx, dn)
 	if err != nil {
 		return nil, err
 	}
@@ -198,9 +196,6 @@ func (manager *Manager) Delete(ctx context.Context, dn string) (_ *schema.Object
 	}
 	return object, nil
 }
-
-///////////////////////////////////////////////////////////////////////////////
-// PRIVATE METHODS
 
 // connected returns an error when the manager isn't connected
 func (manager *Manager) connected() error {

@@ -320,6 +320,17 @@ func startContainer(ctx context.Context, server Server) (*pgtest.Container, stri
 			return c, "", err
 		}
 	}
+
+	// The organizational units of the users and groups
+	for _, dn := range []string{server.UserDN, server.GroupDN} {
+		ou := strings.TrimPrefix(strings.SplitN(dn, ",", 2)[0], "ou=")
+		add := ldap.NewAddRequest(dn+","+server.BaseDN, nil)
+		add.Attribute("objectClass", []string{"top", "organizationalUnit"})
+		add.Attribute("ou", []string{ou})
+		if err := conn.Add(add); err != nil && !ldap.IsErrorWithCode(err, ldap.LDAPResultEntryAlreadyExists) {
+			return c, "", fmt.Errorf("%s: creating %s: %w", server.Name, add.DN, err)
+		}
+	}
 	return c, url, nil
 }
 
