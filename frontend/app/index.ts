@@ -1,8 +1,9 @@
 // The auth server's web UI, which is composed of modules, each of which
 // owns an item in the menu bar, and the sidebar while it's active:
-// Credentials, and Certificates, when the server has them, which its
-// configuration's cert section says. Another app includes a module the same
-// way, from @mutablelogic/go-auth/credential/view or cert/view.
+// Credentials, which the server always has, and Certificates and LDAP, when
+// it has them, which its configuration's cert and ldap sections say. Another
+// app includes a module the same way, from @mutablelogic/go-auth/credential/view,
+// cert/view or ldap/view.
 
 import '@carbon/styles/css/styles.min.css';
 import './fonts.css';
