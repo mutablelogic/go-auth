@@ -26,6 +26,7 @@ import (
 
 	// Packages
 	gooidc "github.com/coreos/go-oidc/v3/oidc"
+	client "github.com/mutablelogic/go-client"
 	provider "github.com/mutablelogic/go-auth/auth/provider"
 	schema "github.com/mutablelogic/go-auth/auth/schema"
 	httpresponse "github.com/mutablelogic/go-server/pkg/httpresponse"
@@ -44,7 +45,8 @@ type Provider struct {
 	clientSecret string
 	scopes       []string
 	groups       string
-	client       *http.Client
+	clientOpts   []client.ClientOpt
+	client       *client.Client
 
 	mu       sync.Mutex
 	provider *gooidc.Provider
@@ -92,7 +94,6 @@ func New(name, label, issuer, clientID, clientSecret string, opts ...Opt) (*Prov
 		clientID:     clientID,
 		clientSecret: clientSecret,
 		scopes:       []string{gooidc.ScopeOpenID, "email", "profile"},
-		client:       http.DefaultClient,
 	}
 	if self.meta.Label == "" {
 		self.meta.Label = name
@@ -102,6 +103,14 @@ func New(name, label, issuer, clientID, clientSecret string, opts ...Opt) (*Prov
 			return nil, err
 		}
 	}
+
+	// The client of the issuer, whose options, such as for tracing and
+	// timeouts, are for discovery, its keys, and exchanges
+	c, err := client.New(append([]client.ClientOpt{client.OptEndpoint(self.issuer)}, self.clientOpts...)...)
+	if err != nil {
+		return nil, err
+	}
+	self.client, self.clientOpts = c, nil
 	return self, nil
 }
 
@@ -135,13 +144,11 @@ func WithGroupsClaim(claim string) Opt {
 	}
 }
 
-// WithHTTPClient discovers the issuer, and exchanges codes, with the client
-func WithHTTPClient(client *http.Client) Opt {
+// WithClient sets options of the client which discovers the issuer, gets
+// its keys, and exchanges codes, such as client.OptTracer, or OptTimeout
+func WithClient(opts ...client.ClientOpt) Opt {
 	return func(p *Provider) error {
-		if client == nil {
-			return httpresponse.ErrBadRequest.With("No HTTP client")
-		}
-		p.client = client
+		p.clientOpts = append(p.clientOpts, opts...)
 		return nil
 	}
 }
@@ -181,7 +188,7 @@ func (p *Provider) Exchange(ctx context.Context, credential schema.Credential) (
 	}
 
 	// Exchange the code
-	ctx = gooidc.ClientContext(ctx, p.client)
+	ctx = gooidc.ClientContext(ctx, p.client.Client)
 	token, err := p.config(discovered, credential.RedirectURL).Exchange(ctx, credential.Code, oauth2.VerifierOption(credential.CodeVerifier))
 	if err != nil {
 		return nil, exchangeErr(p.meta.Name, err)
@@ -214,7 +221,7 @@ func (p *Provider) discover(ctx context.Context) (*gooidc.Provider, error) {
 	if p.provider != nil {
 		return p.provider, nil
 	}
-	discovered, err := gooidc.NewProvider(gooidc.ClientContext(ctx, p.client), p.issuer)
+	discovered, err := gooidc.NewProvider(gooidc.ClientContext(ctx, p.client.Client), p.issuer)
 	if err != nil {
 		return nil, httpresponse.ErrGatewayError.Withf("%s can't be discovered: %v", p.meta.Name, err)
 	}

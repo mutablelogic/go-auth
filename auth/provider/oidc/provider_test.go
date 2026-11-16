@@ -15,6 +15,7 @@
 package oidc_test
 
 import (
+	"bytes"
 	"context"
 	"net/url"
 	"testing"
@@ -22,6 +23,7 @@ import (
 
 	// Packages
 	provider "github.com/mutablelogic/go-auth/auth/provider"
+	client "github.com/mutablelogic/go-client"
 	oidc "github.com/mutablelogic/go-auth/auth/provider/oidc"
 	schema "github.com/mutablelogic/go-auth/auth/schema"
 	test "github.com/mutablelogic/go-auth/auth/test"
@@ -119,4 +121,20 @@ func Test_Discovery(t *testing.T) {
 	google, err := oidc.NewGoogle("client", "secret")
 	require.NoError(t, err)
 	assert.Equal(t, schema.ProviderMeta{Name: "google", Label: "Google", Kind: schema.ProviderKindRedirect}, google.Meta())
+}
+
+func Test_ClientOptions(t *testing.T) {
+	// The client's options are for discovery, the issuer's keys, and the
+	// exchange, such as a trace of each request
+	ctx := context.Background()
+	i := test.NewOIDC(t)
+	var trace bytes.Buffer
+	p, err := oidc.New("traced", "", i.URL, "client", "secret", oidc.WithClient(client.OptTrace(&trace, false)))
+	require.NoError(t, err)
+	credential := test.SignIn(t, ctx, p, func(challenge string) string { return i.Code(challenge, map[string]any{"sub": "u1"}) })
+	_, err = p.Exchange(ctx, credential)
+	require.NoError(t, err)
+	for _, path := range []string{"/.well-known/openid-configuration", "/keys", "/token"} {
+		assert.Contains(t, trace.String(), path)
+	}
 }

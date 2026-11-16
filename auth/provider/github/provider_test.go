@@ -15,12 +15,14 @@
 package github_test
 
 import (
+	"bytes"
 	"context"
 	"net/url"
 	"testing"
 
 	// Packages
 	provider "github.com/mutablelogic/go-auth/auth/provider"
+	client "github.com/mutablelogic/go-client"
 	github "github.com/mutablelogic/go-auth/auth/provider/github"
 	schema "github.com/mutablelogic/go-auth/auth/schema"
 	test "github.com/mutablelogic/go-auth/auth/test"
@@ -97,4 +99,20 @@ func Test_Provider(t *testing.T) {
 		_, err = p.Exchange(ctx, schema.Credential{Code: "x"})
 		assert.ErrorIs(t, err, httpresponse.ErrBadRequest)
 	})
+}
+
+func Test_ClientOptions(t *testing.T) {
+	// The client's options are for the exchange, and the API, such as a
+	// trace of each request
+	ctx := context.Background()
+	g := test.NewGitHub(t)
+	var trace bytes.Buffer
+	p, err := github.New("client", "secret", github.WithURL(g.URL, g.APIURL()), github.WithClient(client.OptTrace(&trace, false)))
+	require.NoError(t, err)
+	credential := test.SignIn(t, ctx, p, func(challenge string) string { return g.Code(challenge, octocat) })
+	_, err = p.Exchange(ctx, credential)
+	require.NoError(t, err)
+	for _, path := range []string{"/login/oauth/access_token", "/api/user", "/api/user/emails"} {
+		assert.Contains(t, trace.String(), path)
+	}
 }

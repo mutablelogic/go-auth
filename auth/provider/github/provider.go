@@ -19,7 +19,6 @@ package github
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -28,6 +27,7 @@ import (
 
 	// Packages
 	provider "github.com/mutablelogic/go-auth/auth/provider"
+	client "github.com/mutablelogic/go-client"
 	schema "github.com/mutablelogic/go-auth/auth/schema"
 	httpresponse "github.com/mutablelogic/go-server/pkg/httpresponse"
 	oauth2 "golang.org/x/oauth2"
@@ -43,7 +43,8 @@ type Provider struct {
 	clientSecret string
 	web, api     string
 	orgs         bool
-	client       *http.Client
+	clientOpts   []client.ClientOpt
+	client       *client.Client
 }
 
 // Opt is an option of a provider
@@ -96,13 +97,20 @@ func New(clientID, clientSecret string, opts ...Opt) (*Provider, error) {
 		clientSecret: clientSecret,
 		web:          DefaultURL,
 		api:          DefaultAPIURL,
-		client:       http.DefaultClient,
 	}
 	for _, opt := range opts {
 		if err := opt(self); err != nil {
 			return nil, err
 		}
 	}
+
+	// The client of the API, whose options, such as for tracing and
+	// timeouts, are for exchanges too
+	c, err := client.New(append([]client.ClientOpt{client.OptEndpoint(self.api)}, self.clientOpts...)...)
+	if err != nil {
+		return nil, err
+	}
+	self.client, self.clientOpts = c, nil
 	return self, nil
 }
 
@@ -129,13 +137,11 @@ func WithOrganizations() Opt {
 	}
 }
 
-// WithHTTPClient exchanges codes, and calls the API, with the client
-func WithHTTPClient(client *http.Client) Opt {
+// WithClient sets options of the client which exchanges codes, and calls
+// the API, such as client.OptTracer, or OptTimeout
+func WithClient(opts ...client.ClientOpt) Opt {
 	return func(p *Provider) error {
-		if client == nil {
-			return httpresponse.ErrBadRequest.With("No HTTP client")
-		}
-		p.client = client
+		p.clientOpts = append(p.clientOpts, opts...)
 		return nil
 	}
 }
@@ -166,17 +172,16 @@ func (p *Provider) Exchange(ctx context.Context, credential schema.Credential) (
 	if credential.Code == "" || credential.CodeVerifier == "" || credential.RedirectURL == "" {
 		return nil, httpresponse.ErrBadRequest.With("A code, its verifier and the redirect URL are needed")
 	}
-	ctx = context.WithValue(ctx, oauth2.HTTPClient, p.client)
-	config := p.config(credential.RedirectURL)
-	token, err := config.Exchange(ctx, credential.Code, oauth2.VerifierOption(credential.CodeVerifier))
+	exchange := context.WithValue(ctx, oauth2.HTTPClient, p.client.Client)
+	token, err := p.config(credential.RedirectURL).Exchange(exchange, credential.Code, oauth2.VerifierOption(credential.CodeVerifier))
 	if err != nil {
 		return nil, exchangeErr(err)
 	}
-	client := config.Client(ctx, token)
+	bearer := client.Token{Scheme: client.Bearer, Value: token.AccessToken}
 
 	// The user, their email addresses, and organisations
 	var u user
-	if err := p.get(ctx, client, "/user", &u); err != nil {
+	if err := p.get(ctx, bearer, &u, "user"); err != nil {
 		return nil, err
 	} else if u.ID == 0 {
 		return nil, httpresponse.ErrGatewayError.With("GitHub returned no user")
@@ -199,7 +204,7 @@ func (p *Provider) Exchange(ctx context.Context, credential schema.Credential) (
 		identity.Claims["html_url"] = u.HTMLURL
 	}
 	var emails []email
-	if err := p.get(ctx, client, "/user/emails", &emails); err != nil {
+	if err := p.get(ctx, bearer, &emails, "user", "emails"); err != nil {
 		return nil, err
 	}
 	for _, e := range emails {
@@ -209,7 +214,7 @@ func (p *Provider) Exchange(ctx context.Context, credential schema.Credential) (
 	}
 	if p.orgs {
 		var orgs []org
-		if err := p.get(ctx, client, "/user/orgs", &orgs); err != nil {
+		if err := p.get(ctx, bearer, &orgs, "user", "orgs"); err != nil {
 			return nil, err
 		}
 		for _, o := range orgs {
@@ -241,23 +246,17 @@ func (p *Provider) config(redirectURL string) *oauth2.Config {
 	}
 }
 
-// get calls the API, with the token's client, and decodes its response
-func (p *Provider) get(ctx context.Context, client *http.Client, path string, v any) error {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, p.api+path, nil)
-	if err != nil {
-		return err
+// get calls the API, at the path's segments, with the token, and decodes
+// its response
+func (p *Provider) get(ctx context.Context, token client.Token, v any, path ...string) error {
+	segments := make([]any, len(path))
+	for i, segment := range path {
+		segments[i] = segment
 	}
-	req.Header.Set("Accept", "application/vnd.github+json")
-	response, err := client.Do(req)
-	if err != nil {
-		return httpresponse.ErrGatewayError.Withf("GitHub: %v", err)
-	}
-	defer response.Body.Close()
-	if response.StatusCode != http.StatusOK {
-		return httpresponse.ErrGatewayError.Withf("GitHub's %s: %s", path, response.Status)
-	}
-	if err := json.NewDecoder(response.Body).Decode(v); err != nil {
-		return httpresponse.ErrGatewayError.Withf("GitHub's %s: %v", path, err)
+	if err := p.client.DoWithContext(ctx, client.NewRequest(), v,
+		client.OptPath(segments...), client.OptToken(token), client.OptReqHeader("Accept", "application/vnd.github+json"),
+	); err != nil {
+		return httpresponse.ErrGatewayError.Withf("GitHub's /%s: %v", strings.Join(path, "/"), err)
 	}
 	return nil
 }
