@@ -19,13 +19,10 @@ package httphandler
 import (
 	_ "embed"
 	"errors"
-	"net/http"
 
 	// Packages
-	auth "github.com/mutablelogic/go-auth"
 	manager "github.com/mutablelogic/go-auth/ldap/manager"
 	httprequest "github.com/mutablelogic/go-server/pkg/httprequest"
-	httpresponse "github.com/mutablelogic/go-server/pkg/httpresponse"
 	httprouter "github.com/mutablelogic/go-server/pkg/httprouter"
 	opts "github.com/mutablelogic/go-server/pkg/openapi"
 )
@@ -79,29 +76,4 @@ func security(op httprequest.PathOperation, auth bool, scopes ...string) {
 	if auth {
 		op.Security(securityScheme, scopes...)
 	}
-}
-
-// httpErr translates an error from the manager into an HTTP error: the
-// manager's own are HTTP errors already
-func httpErr(err error) error {
-	var httpErr httpresponse.Err
-	var authErr auth.Err
-	switch {
-	case errors.As(err, &httpErr):
-		return err
-	case errors.As(err, &authErr):
-		return auth.HTTPError(err)
-	default:
-		return httpresponse.ErrInternalError.With(err)
-	}
-}
-
-// fail writes the error, as an HTTP error
-func fail(w http.ResponseWriter, err error) {
-	httpresponse.Error(w, httpErr(err))
-}
-
-// badRequest writes a bad request, with the error
-func badRequest(w http.ResponseWriter, err error) {
-	httpresponse.Error(w, httpresponse.ErrBadRequest.Withf("%v", err))
 }

@@ -19,6 +19,7 @@ import (
 	"net/http"
 
 	// Packages
+	goauth "github.com/mutablelogic/go-auth"
 	manager "github.com/mutablelogic/go-auth/ldap/manager"
 	schema "github.com/mutablelogic/go-auth/ldap/schema"
 	httprequest "github.com/mutablelogic/go-server/pkg/httprequest"
@@ -40,12 +41,12 @@ func registerSchema(router *httprouter.Router, mgr *manager.Manager, auth bool, 
 			path.Get(func(w http.ResponseWriter, r *http.Request) {
 				var req schema.ObjectClassListRequest
 				if err := httprequest.Query(r.URL.Query(), &req); err != nil {
-					badRequest(w, err)
+					httpresponse.Error(w, httpresponse.ErrBadRequest.Withf("%v", err))
 					return
 				}
 				classes, err := mgr.ListObjectClasses(r.Context(), req)
 				if err != nil {
-					fail(w, err)
+					httpresponse.Error(w, goauth.HTTPError(err))
 					return
 				}
 				httpresponse.JSON(w, http.StatusOK, httprequest.Indent(r), classes)
@@ -63,12 +64,12 @@ func registerSchema(router *httprouter.Router, mgr *manager.Manager, auth bool, 
 			path.Get(func(w http.ResponseWriter, r *http.Request) {
 				var req schema.AttributeTypeListRequest
 				if err := httprequest.Query(r.URL.Query(), &req); err != nil {
-					badRequest(w, err)
+					httpresponse.Error(w, httpresponse.ErrBadRequest.Withf("%v", err))
 					return
 				}
 				attrs, err := mgr.ListAttributeTypes(r.Context(), req)
 				if err != nil {
-					fail(w, err)
+					httpresponse.Error(w, goauth.HTTPError(err))
 					return
 				}
 				httpresponse.JSON(w, http.StatusOK, httprequest.Indent(r), attrs)

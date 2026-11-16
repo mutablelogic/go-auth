@@ -19,6 +19,7 @@ import (
 	"net/http"
 
 	// Packages
+	goauth "github.com/mutablelogic/go-auth"
 	manager "github.com/mutablelogic/go-auth/ldap/manager"
 	schema "github.com/mutablelogic/go-auth/ldap/schema"
 	httprequest "github.com/mutablelogic/go-server/pkg/httprequest"
@@ -53,12 +54,12 @@ func registerUser(router *httprouter.Router, mgr *manager.Manager, auth bool, do
 			path.Get(func(w http.ResponseWriter, r *http.Request) {
 				var req schema.UserListRequest
 				if err := httprequest.Query(r.URL.Query(), &req); err != nil {
-					badRequest(w, err)
+					httpresponse.Error(w, httpresponse.ErrBadRequest.Withf("%v", err))
 					return
 				}
 				list, err := mgr.ListUsers(r.Context(), req)
 				if err != nil {
-					fail(w, err)
+					httpresponse.Error(w, goauth.HTTPError(err))
 					return
 				}
 				httpresponse.JSON(w, http.StatusOK, httprequest.Indent(r), list)
@@ -77,7 +78,7 @@ func registerUser(router *httprouter.Router, mgr *manager.Manager, auth bool, do
 			path.Get(func(w http.ResponseWriter, r *http.Request) {
 				user, err := mgr.GetUser(r.Context(), r.PathValue("name"))
 				if err != nil {
-					fail(w, err)
+					httpresponse.Error(w, goauth.HTTPError(err))
 					return
 				}
 				httpresponse.JSON(w, http.StatusOK, httprequest.Indent(r), user)
@@ -91,17 +92,17 @@ func registerUser(router *httprouter.Router, mgr *manager.Manager, auth bool, do
 			path.Put(func(w http.ResponseWriter, r *http.Request) {
 				var query userCreateQuery
 				if err := httprequest.Query(r.URL.Query(), &query); err != nil {
-					badRequest(w, err)
+					httpresponse.Error(w, httpresponse.ErrBadRequest.Withf("%v", err))
 					return
 				}
 				req, err := readAttrs(r)
 				if err != nil {
-					badRequest(w, err)
+					httpresponse.Error(w, httpresponse.ErrBadRequest.Withf("%v", err))
 					return
 				}
 				user, err := mgr.CreateUser(r.Context(), r.PathValue("name"), req.Attrs, query.AllocateGID)
 				if err != nil {
-					fail(w, err)
+					httpresponse.Error(w, goauth.HTTPError(err))
 					return
 				}
 				httpresponse.JSON(w, http.StatusCreated, httprequest.Indent(r), user)
@@ -118,12 +119,12 @@ func registerUser(router *httprouter.Router, mgr *manager.Manager, auth bool, do
 			path.Patch(func(w http.ResponseWriter, r *http.Request) {
 				var req schema.ObjectPutRequest
 				if err := httprequest.Read(r, &req); err != nil {
-					badRequest(w, err)
+					httpresponse.Error(w, httpresponse.ErrBadRequest.Withf("%v", err))
 					return
 				}
 				user, err := mgr.UpdateUser(r.Context(), r.PathValue("name"), req.Attrs)
 				if err != nil {
-					fail(w, err)
+					httpresponse.Error(w, goauth.HTTPError(err))
 					return
 				}
 				httpresponse.JSON(w, http.StatusOK, httprequest.Indent(r), user)
@@ -139,7 +140,7 @@ func registerUser(router *httprouter.Router, mgr *manager.Manager, auth bool, do
 			path.Delete(func(w http.ResponseWriter, r *http.Request) {
 				user, err := mgr.DeleteUser(r.Context(), r.PathValue("name"))
 				if err != nil {
-					fail(w, err)
+					httpresponse.Error(w, goauth.HTTPError(err))
 					return
 				}
 				httpresponse.JSON(w, http.StatusOK, httprequest.Indent(r), user)
