@@ -34,15 +34,15 @@ import (
 // as, and the DNs of its users and groups, which are passed to
 // WithLDAPManager. They're embedded with a prefix, such as ldap.
 type ServerFlags struct {
-	URL        string   `name:"url" env:"${ENV_NAME}_LDAP_URL" help:"URL of the directory, ldap or ldaps, which can have the user and password, such as ldaps://cn=admin:password@ldap.example.com"`
-	BaseDN     string   `name:"base-dn" env:"${ENV_NAME}_LDAP_BASE_DN" help:"Base DN, which every DN is under, such as dc=example,dc=com"`
-	User       string   `name:"user" env:"${ENV_NAME}_LDAP_USER" help:"User to bind as, which is a DN, or a name under the base DN, rather than the URL's"`
-	Password   string   `name:"password" env:"${ENV_NAME}_LDAP_PASSWORD" help:"Password of the user, rather than the URL's"`
-	UserDN     string   `name:"user-dn" env:"${ENV_NAME}_LDAP_USER_DN" help:"DN of the users, relative to the base DN, such as ou=users. Without it, there are no users."`
-	UserClass  []string `name:"user-class" env:"${ENV_NAME}_LDAP_USER_CLASS" help:"Object classes of new users. Without them, they're those the directory has, such as inetOrgPerson and posixAccount."`
-	GroupDN    string   `name:"group-dn" env:"${ENV_NAME}_LDAP_GROUP_DN" help:"DN of the groups, relative to the base DN, such as ou=groups. Without it, there are no groups."`
-	GroupClass []string `name:"group-class" env:"${ENV_NAME}_LDAP_GROUP_CLASS" help:"Object classes of new groups. Without them, they're those the directory has, such as groupOfNames and posixGroup."`
-	SkipVerify bool     `name:"skip-verify" env:"${ENV_NAME}_LDAP_SKIP_VERIFY" help:"Don't verify the directory's TLS certificate"`
+	URL        string   `name:"url" env:"LDAP_URL" help:"URL of the directory, ldap or ldaps, which can have the user and password, such as ldaps://cn=admin:password@ldap.example.com"`
+	BaseDN     string   `name:"base-dn" env:"LDAP_BASE_DN" help:"Base DN, which every DN is under, such as dc=example,dc=com"`
+	User       string   `name:"user" env:"LDAP_USER" help:"User to bind as, which is a DN, or a name under the base DN, rather than the URL's"`
+	Password   string   `name:"password" env:"LDAP_PASSWORD" help:"Password of the user, rather than the URL's"`
+	UserDN     string   `name:"user-dn" env:"LDAP_USER_DN" help:"DN of the users, relative to the base DN, such as ou=users. Without it, there are no users."`
+	UserClass  []string `name:"user-class" env:"LDAP_USER_CLASS" help:"Object classes of new users. Without them, they're those the directory has, such as inetOrgPerson and posixAccount."`
+	GroupDN    string   `name:"group-dn" env:"LDAP_GROUP_DN" help:"DN of the groups, relative to the base DN, such as ou=groups. Without it, there are no groups."`
+	GroupClass []string `name:"group-class" env:"LDAP_GROUP_CLASS" help:"Object classes of new groups. Without them, they're those the directory has, such as groupOfNames and posixGroup."`
+	SkipVerify bool     `name:"skip-verify" env:"LDAP_SKIP_VERIFY" help:"Don't verify the directory's TLS certificate" negatable:""`
 }
 
 ///////////////////////////////////////////////////////////////////////////////

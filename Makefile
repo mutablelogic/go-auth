@@ -18,11 +18,14 @@ endif
 # It needs PostgreSQL, which it shares with the pg backend.
 AUTH_CERT ?=
 
+# The LDAP manager, with AUTH_LDAP=1, which is its build tag, ldap
+AUTH_LDAP ?=
+
 # The commands embed the web UI, with the "frontend" tag, once it's built
 # into frontend/app/dist, by make frontend, which needs npm, and a token which
 # can read GitHub Packages, in GITHUB_TOKEN
 comma := ,
-TAGS = $(strip $(filter-out file,$(AUTH_CREDENTIALS_BACKEND)) $(if $(filter 1 yes true,$(AUTH_CERT)),cert,) $(if $(wildcard $(TS_DIR)/app/dist/index.html),frontend,))
+TAGS = $(strip $(filter-out file,$(AUTH_CREDENTIALS_BACKEND)) $(if $(filter 1 yes true,$(AUTH_CERT)),cert,) $(if $(filter 1 yes true,$(AUTH_LDAP)),ldap,) $(if $(wildcard $(TS_DIR)/app/dist/index.html),frontend,))
 BUILD_TAGS = $(if $(TAGS),-tags $(subst $() ,$(comma),$(TAGS)),)
 
 # Set OS and Architecture
@@ -48,13 +51,14 @@ all: build
 
 # Build the web UI, and then the commands in the cmd directory, which embed
 # it, with the server's backend set by AUTH_CREDENTIALS_BACKEND, and the certificate
-# manager by AUTH_CERT, such as make AUTH_CREDENTIALS_BACKEND=pg AUTH_CERT=1
+# manager by AUTH_CERT, and the LDAP manager by AUTH_LDAP, such as
+# make AUTH_CREDENTIALS_BACKEND=pg AUTH_CERT=1 AUTH_LDAP=1
 .PHONY: build
 build: frontend
 	@$(MAKE) --no-print-directory tidy $(CMD_DIR)
 
 $(CMD_DIR): go-dep mkdir
-	@echo Build command $(notdir $@) GOOS=${OS} GOARCH=${ARCH} AUTH_CREDENTIALS_BACKEND=${AUTH_CREDENTIALS_BACKEND} AUTH_CERT=${AUTH_CERT}
+	@echo Build command $(notdir $@) GOOS=${OS} GOARCH=${ARCH} AUTH_CREDENTIALS_BACKEND=${AUTH_CREDENTIALS_BACKEND} AUTH_CERT=${AUTH_CERT} AUTH_LDAP=${AUTH_LDAP}
 	@GOOS=${OS} GOARCH=${ARCH} ${GO} build ${BUILD_TAGS} ${BUILD_FLAGS} -o ${BUILD_DIR}/$(notdir $@) ./$@
 
 # Build the web UI's modules into frontend/dist, and the auth server's app
