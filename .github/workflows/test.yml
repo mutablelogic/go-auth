@@ -15,10 +15,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
 
@@ -55,7 +55,7 @@ jobs:
 
       - name: Set commit coverage status
         if: always() && steps.coverage.outputs.coverage != ''
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         env:
           COVERAGE: ${{ steps.coverage.outputs.coverage }}
         with:
@@ -74,7 +74,7 @@ jobs:
 
       - name: Comment coverage on pull request
         if: always() && github.event_name == 'pull_request' && steps.coverage.outputs.coverage != ''
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         env:
           COVERAGE: ${{ steps.coverage.outputs.coverage }}
         with:
@@ -120,7 +120,7 @@ jobs:
       packages: read
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up Node
         uses: actions/setup-node@v7
