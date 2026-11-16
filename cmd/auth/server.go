@@ -20,6 +20,7 @@ import (
 	"context"
 
 	// Packages
+	ldapprovider "github.com/mutablelogic/go-auth/auth/provider/ldap"
 	credential "github.com/mutablelogic/go-auth/credential"
 	httphandler "github.com/mutablelogic/go-auth/credential/httphandler"
 	frontend "github.com/mutablelogic/go-auth/frontend/cmd"
@@ -89,6 +90,7 @@ type RunServer struct {
 	Credential  BackendFlags         `embed:"" prefix:"credential."`
 	Cert        CertFlags            `embed:"" prefix:"cert."`
 	LDAP        LDAPFlags            `embed:"" prefix:"ldap."`
+	Auth        AuthFlags            `embed:"" prefix:"auth."`
 	Broadcaster broadcastercmd.Flags `embed:"" prefix:"broadcaster."`
 	Frontend    frontend.Flags       `embed:""`
 }
@@ -103,15 +105,17 @@ func (runner *RunServer) Run(ctx server.Cmd) error {
 				ctx.Logger().InfoContext(ctx.Context(), "Credentials", "backend", backend)
 				ctx.Logger().WarnContext(ctx.Context(), "The credential API has no authentication")
 				return runner.Cert.withHandlers(ctx, pool, follow, runner.Passphrase, runner.Insecure, func(certs *module) error {
-					return runner.LDAP.withHandlers(ctx, changes, runner.Insecure, func(ldap *module) error {
-						// The API publishes its changes, unless the backend's
-						// trigger notifies of them, as pg's does
-						var publisher httphandler.Publisher
-						if !notified {
-							publisher = changes
-						}
-						runner.register(ctx, manager, publisher, certs, ldap)
-						return runner.run(ctx, changes, follow)
+					return runner.LDAP.withHandlers(ctx, changes, runner.Insecure, func(ldap *module, directory ldapprovider.Manager) error {
+						return runner.Auth.withHandlers(ctx, directory, func(signin *module) error {
+							// The API publishes its changes, unless the
+							// backend's trigger notifies of them, as pg's does
+							var publisher httphandler.Publisher
+							if !notified {
+								publisher = changes
+							}
+							runner.register(ctx, manager, publisher, certs, ldap, signin)
+							return runner.run(ctx, changes, follow)
+						})
 					})
 				})
 			})

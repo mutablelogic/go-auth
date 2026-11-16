@@ -18,6 +18,7 @@ package main
 
 import (
 	// Packages
+	ldapprovider "github.com/mutablelogic/go-auth/auth/provider/ldap"
 	server "github.com/mutablelogic/go-server"
 	broadcaster "github.com/mutablelogic/go-server/broadcaster"
 )
@@ -31,7 +32,8 @@ type LDAPFlags struct{}
 ///////////////////////////////////////////////////////////////////////////////
 // PRIVATE METHODS
 
-// withHandlers calls fn without the LDAP handlers
-func (LDAPFlags) withHandlers(_ server.Cmd, _ *broadcaster.Broadcaster, _ bool, fn func(*module) error) error {
-	return fn(nil)
+// withHandlers calls fn without the LDAP handlers, or a directory to sign
+// in with
+func (LDAPFlags) withHandlers(_ server.Cmd, _ *broadcaster.Broadcaster, _ bool, fn func(*module, ldapprovider.Manager) error) error {
+	return fn(nil, nil)
 }
