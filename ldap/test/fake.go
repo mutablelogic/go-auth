@@ -38,7 +38,7 @@ import (
 // TYPES
 
 // Fake is an LDAP directory in memory, which answers binds, searches of
-// one entry, by its DN, adds, modifies and deletes, so tests can make a
+// one entry, by its DN, adds, modifies, deletes and password modifies, so tests can make a
 // request stall, or another manager change something first, every time.
 // It has no schema, filters, paging, renames or extended operations, so
 // the directories in containers are for everything else.
@@ -58,6 +58,13 @@ type Fake struct {
 	// The requests, as "op dn"
 	requests []string
 }
+
+// The OIDs of the password modify (RFC 3062) and who am I (RFC 4532)
+// operations
+const (
+	passwordModifyOID = "1.3.6.1.4.1.4203.1.11.1"
+	whoAmIOID         = "1.3.6.1.4.1.4203.1.11.3"
+)
 
 ///////////////////////////////////////////////////////////////////////////////
 // LIFECYCLE
@@ -119,7 +126,7 @@ func (d *Fake) Connections() int {
 }
 
 // Requests returns the requests of the operation, as their DNs: "bind",
-// "search", "add", "modify" or "delete"
+// "search", "add", "modify", "delete", "password" or "whoami"
 func (d *Fake) Requests(op string) []string {
 	d.Lock()
 	defer d.Unlock()
@@ -159,6 +166,8 @@ func (d *Fake) serve(conn net.Conn) {
 			responses = d.modify(id, request)
 		case ldapv3.ApplicationDelRequest:
 			responses = d.del(id, request.Data.String())
+		case ldapv3.ApplicationExtendedRequest:
+			responses = d.extended(id, request)
 		case ldapv3.ApplicationUnbindRequest:
 			return
 		default:
@@ -287,6 +296,45 @@ func (d *Fake) del(id any, dn string) []*ber.Packet {
 	}
 	delete(d.entries, strings.ToLower(dn))
 	return []*ber.Packet{result(id, ldapv3.ApplicationDelResponse, 0)}
+}
+
+// extended answers who am I (RFC 4532), and the password modify operation
+// (RFC 3062), which sets the entry's userPassword to {FAKE} and the
+// password, as a directory stores a hash. Others aren't supported.
+func (d *Fake) extended(id any, request *ber.Packet) []*ber.Packet {
+	if len(request.Children) > 0 && request.Children[0].Data.String() == whoAmIOID {
+		if d.record(ldapv3.ApplicationExtendedRequest, "whoami", "") {
+			return nil
+		}
+		return []*ber.Packet{result(id, ldapv3.ApplicationExtendedResponse, 0)}
+	}
+	if len(request.Children) < 2 || request.Children[0].Data.String() != passwordModifyOID {
+		return []*ber.Packet{result(id, ldapv3.ApplicationExtendedResponse, ldapv3.LDAPResultProtocolError)}
+	}
+	value, err := ber.DecodePacketErr(request.Children[1].Data.Bytes())
+	if err != nil {
+		return []*ber.Packet{result(id, ldapv3.ApplicationExtendedResponse, ldapv3.LDAPResultProtocolError)}
+	}
+	var dn, password string
+	for _, child := range value.Children {
+		switch child.Tag {
+		case 0:
+			dn = child.Data.String()
+		case 2:
+			password = child.Data.String()
+		}
+	}
+	if d.record(ldapv3.ApplicationExtendedRequest, "password", dn) {
+		return nil
+	}
+	d.Lock()
+	defer d.Unlock()
+	attrs := d.entries[strings.ToLower(dn)]
+	if attrs == nil {
+		return []*ber.Packet{result(id, ldapv3.ApplicationExtendedResponse, ldapv3.LDAPResultNoSuchObject)}
+	}
+	attrs["userPassword"] = []string{"{FAKE}" + password}
+	return []*ber.Packet{result(id, ldapv3.ApplicationExtendedResponse, 0)}
 }
 
 // result returns a response to the message, with the result code

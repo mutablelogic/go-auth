@@ -20,6 +20,7 @@ import (
 	"encoding/base64"
 	"encoding/binary"
 	"errors"
+	"net/url"
 	"strings"
 	"unicode"
 	"unicode/utf16"
@@ -229,4 +230,62 @@ func containsFold(values []string, value string) bool {
 		}
 	}
 	return false
+}
+
+// setPassword resets the entry's password, which the directory stores
+// hashed: an Active Directory user's unicodePwd, which needs ldaps, or by
+// the password modify operation (RFC 3062), rather than in an add or a
+// modify, which keep it as it's sent
+func (manager *Manager) setPassword(ctx context.Context, dn, password string) error {
+	object, err := manager.get(ctx, dn, "objectClass")
+	if err != nil {
+		return err
+	}
+	activeDirectory := containsFold(object.GetAll("objectClass"), "user")
+	if activeDirectory && manager.tls == nil {
+		return httpresponse.ErrBadRequest.With("Active Directory passwords need ldaps")
+	}
+	return ldaperr(manager.write(ctx, func(conn *ldap.Conn) error {
+		if activeDirectory {
+			return setUnicodePwd(conn, object.DN, "", password)
+		}
+		_, err := conn.PasswordModify(ldap.NewPasswordModifyRequest(object.DN, "", password))
+		return err
+	}))
+}
+
+// takePassword removes a password, in userPassword or unicodePwd, which has
+// a value, from the attributes, and returns it, or empty. One without a
+// value is kept, which deletes it in an update. A password has one value.
+func takePassword(values url.Values) (string, error) {
+	var password string
+	count := 0
+	for key, value := range values {
+		if isPassword(key) && len(value) > 0 {
+			password, count = value[0], count+len(value)
+			delete(values, key)
+		}
+	}
+	if count > 1 {
+		return "", httpresponse.ErrBadRequest.With("A password has one value")
+	}
+	return password, nil
+}
+
+// isPassword returns whether the attribute, in any case, and with options,
+// such as userPassword;binary, has a password
+func isPassword(name string) bool {
+	name, _, _ = strings.Cut(name, ";")
+	return strings.EqualFold(name, "userPassword") || strings.EqualFold(name, "unicodePwd")
+}
+
+// hidePasswords removes the attributes which have passwords from the
+// object, which some directories return, as they were sent
+func hidePasswords(object *schema.Object) *schema.Object {
+	for key := range object.Values {
+		if isPassword(key) {
+			delete(object.Values, key)
+		}
+	}
+	return object
 }
