@@ -136,3 +136,18 @@ func Test_PasswordTrace(t *testing.T) {
 		assert.Equal(t, []string{"ldapmanager.ChangePassword", "ldapmanager.Bind"}, names)
 	}, manager.WithTracer(tracer))
 }
+
+func Test_ChangePasswordNeedsLDAPS(t *testing.T) {
+	// An Active Directory password isn't sent over plain ldap
+	d := test.NewFake(t, false)
+	dn := "cn=alice,ou=users,dc=example,dc=test"
+	d.Set(dn, map[string][]string{"objectClass": {"top", "person", "user"}, "cn": {"alice"}})
+	m, err := manager.New(manager.WithUrl(d.URL("ldap")), manager.WithBaseDN("dc=example,dc=test"))
+	require.NoError(t, err)
+	require.NoError(t, m.Connect(context.Background()))
+	defer m.Disconnect(context.Background())
+
+	_, err = m.ChangePassword(context.Background(), dn, schema.ObjectPasswordRequest{New: types.Ptr("first Passw0rd!")})
+	assert.ErrorIs(t, err, httpresponse.ErrBadRequest)
+	assert.Empty(t, d.Requests("modify"))
+}

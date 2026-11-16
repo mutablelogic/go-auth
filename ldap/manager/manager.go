@@ -208,6 +208,24 @@ func (manager *Manager) write(ctx context.Context, fn func(*ldap.Conn) error) er
 	return err
 }
 
+// cleanup calls the function with a new connection, bound as the manager's
+// user, which ends after schema.RequestTimeout, rather than with the
+// caller's context. It undoes an operation which failed, or was cancelled,
+// when the manager's connection may have been lost.
+func (manager *Manager) cleanup(ctx context.Context, fn func(*ldap.Conn) error) error {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), schema.RequestTimeout)
+	defer cancel()
+	conn, err := ldapConnect(ctx, manager.Host(), manager.Port(), manager.tls)
+	if err != nil {
+		return ldaperr(err)
+	}
+	defer ldapDisconnect(conn)
+	if err := whileOpen(ctx, conn, func() error { return ldapBind(conn, manager.User(), manager.pass) }); err != nil {
+		return ldaperr(err)
+	}
+	return ldaperr(whileOpen(ctx, conn, func() error { return fn(conn) }))
+}
+
 // forget forgets the manager's connection, which is closed, and wakes Run,
 // which reconnects
 func (manager *Manager) forget() {
