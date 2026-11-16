@@ -293,10 +293,7 @@ func (manager *Manager) userClasses(ctx context.Context) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	if classes := subschema.choose(schema.WellKnownUserClasses, schema.WellKnownUserAuxiliaryClasses); len(classes) > 0 {
-		return classes, nil
-	}
-	return schema.DefaultUserObjectClasses, nil
+	return subschema.userClasses(), nil
 }
 
 // userSelectClasses returns the classes which make an entry a user: those

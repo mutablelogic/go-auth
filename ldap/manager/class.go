@@ -44,7 +44,8 @@ type subschema struct {
 
 // ListObjectClasses returns copies of the directory's object classes, by
 // name, which match the request. Count is the number which match, and Body those from
-// the offset, up to the limit, or schema.MaxListEntries.
+// the offset, up to the limit, or schema.MaxListEntries. With For, they're
+// only the classes users, or groups, are created with, and their superiors.
 func (manager *Manager) ListObjectClasses(ctx context.Context, req schema.ObjectClassListRequest) (_ *schema.ObjectClassListResponse, err error) {
 	ctx, endSpan := otel.StartSpan(manager.tracer, ctx, "ldapmanager.ListObjectClasses", manager.spanAttrs(attribute.String("arg.req", types.Stringify(req)))...)
 	defer func() { endSpan(err) }()
@@ -56,10 +57,34 @@ func (manager *Manager) ListObjectClasses(ctx context.Context, req schema.Object
 		return nil, err
 	}
 
+	// The classes users, or groups, are created with, and their superiors
+	var only map[string]bool
+	if req.For != nil {
+		var classes []string
+		switch *req.For {
+		case schema.ObjectClassForUser:
+			if manager.users == nil {
+				return nil, httpresponse.ErrNotFound.With("The manager has no users")
+			}
+			classes, err = manager.userClasses(ctx)
+		case schema.ObjectClassForGroup:
+			if manager.groups == nil {
+				return nil, httpresponse.ErrNotFound.With("The manager has no groups")
+			}
+			classes, err = manager.groupClasses(ctx)
+		default:
+			return nil, httpresponse.ErrBadRequest.Withf("Invalid for %q: user or group", *req.For)
+		}
+		if err != nil {
+			return nil, err
+		}
+		only = subschema.superiors(classes)
+	}
+
 	var response schema.ObjectClassListResponse
 	limit := listLimit(req.Limit)
 	for _, class := range subschema.classes {
-		if !class.Matches(req) {
+		if !class.Matches(req) || (only != nil && !only[strings.ToLower(class.Identifier())]) {
 			continue
 		}
 		if response.Count >= req.Offset && response.Count < req.Offset+limit {
@@ -133,6 +158,51 @@ func (manager *Manager) subschema(ctx context.Context) (*subschema, error) {
 	}
 	manager.schema = result
 	return result, nil
+}
+
+// superiors returns the classes, and the classes they inherit from, by
+// their identifiers, their first names, or OIDs without one, in lower case,
+// as the directory has them. A class is referred to by any of its names, or
+// its OID. Classes it doesn't have are left out.
+func (subschema *subschema) superiors(names []string) map[string]bool {
+	result := make(map[string]bool)
+	var walk func(name string)
+	walk = func(name string) {
+		for _, class := range subschema.classes {
+			id := strings.ToLower(class.Identifier())
+			if result[id] || !(containsFold(class.Name, name) || strings.EqualFold(class.NumericOID, name)) {
+				continue
+			}
+			result[id] = true
+			for _, superior := range class.SuperClasses {
+				walk(superior)
+			}
+		}
+	}
+	for _, name := range names {
+		walk(name)
+	}
+	return result
+}
+
+// userClasses returns one structural class which the directory has, of
+// those well known for users, and the auxiliary posixAccount, when it has
+// that, or the default
+func (subschema *subschema) userClasses() []string {
+	if classes := subschema.choose(schema.WellKnownUserClasses, schema.WellKnownUserAuxiliaryClasses); len(classes) > 0 {
+		return classes
+	}
+	return schema.DefaultUserObjectClasses
+}
+
+// groupClasses returns one structural class which the directory has, of
+// those well known for groups, and the auxiliary posixGroup, when it has
+// that, or the default
+func (subschema *subschema) groupClasses() []string {
+	if classes := subschema.choose(schema.WellKnownGroupClasses, []string{"posixGroup"}); len(classes) > 0 {
+		return classes
+	}
+	return schema.DefaultGroupObjectClasses
 }
 
 // hasAttribute returns whether the directory's schema has the attribute

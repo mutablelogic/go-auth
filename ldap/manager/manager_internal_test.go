@@ -343,3 +343,20 @@ func Test_classFilter(t *testing.T) {
 	assert.Equal(t, "(!(objectClass=*))", classFilter([]string{"top"}), "none, which nothing matches")
 	assert.Equal(t, "(!(objectClass=*))", classFilter(nil))
 }
+
+func Test_superiors(t *testing.T) {
+	subschema := &subschema{classes: parseObjectClasses([]string{
+		"( 2.5.6.0 NAME 'top' ABSTRACT MUST objectClass )",
+		"( 2.5.6.6 NAME 'person' SUP top STRUCTURAL MUST ( sn $ cn ) )",
+		"( 2.5.6.7 NAME 'organizationalPerson' SUP 2.5.6.6 STRUCTURAL )",
+		"( 1.9 SUP top AUXILIARY )",
+		"( 1.10 NAME 'extra' SUP 1.9 AUXILIARY )",
+		"( 1.11 NAME 'other' SUP top STRUCTURAL )",
+	})}
+	require.Len(t, subschema.classes, 6)
+
+	// By name or OID, and a superior without a name by its OID
+	assert.Equal(t, map[string]bool{"organizationalperson": true, "person": true, "top": true}, subschema.superiors([]string{"organizationalPerson"}), "a superior by OID")
+	assert.Equal(t, map[string]bool{"extra": true, "1.9": true, "top": true}, subschema.superiors([]string{"EXTRA"}), "a superior without a name")
+	assert.Equal(t, map[string]bool{"person": true, "top": true}, subschema.superiors([]string{"2.5.6.6", "missing"}))
+}

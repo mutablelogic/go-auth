@@ -108,6 +108,7 @@ func TestObjectClassListRequestAndMatching(t *testing.T) {
 		kind := ObjectClassKindStructural
 		obsolete := false
 		limit := uint64(25)
+		forUser := ObjectClassForUser
 		req := ObjectClassListRequest{
 			OffsetLimit: OffsetLimit{Offset: 10, Limit: &limit},
 			Filter:      &filter,
@@ -116,6 +117,7 @@ func TestObjectClassListRequestAndMatching(t *testing.T) {
 			Must:        []string{"sn"},
 			May:         []string{"telephoneNumber"},
 			Obsolete:    &obsolete,
+			For:         &forUser,
 		}
 
 		values := req.Query()
@@ -127,6 +129,7 @@ func TestObjectClassListRequestAndMatching(t *testing.T) {
 		assert.Equal([]string{"sn"}, values["must"])
 		assert.Equal([]string{"telephoneNumber"}, values["may"])
 		assert.Equal("false", values.Get("obsolete"))
+		assert.Equal("user", values.Get("for"))
 	})
 
 	t.Run("MatchesFilterAndAttributes", func(t *testing.T) {

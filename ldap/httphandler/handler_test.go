@@ -74,6 +74,12 @@ func Test_Schema(t *testing.T) {
 
 		status, _ := s.Do(t, http.MethodGet, "ldap/class?limit=x", nil)
 		assert.Equal(t, http.StatusBadRequest, status)
+
+		// The classes users are created with
+		require.Equal(t, http.StatusOK, s.JSON(t, http.MethodGet, "ldap/class?for=user", nil, &classes))
+		assert.NotEmpty(t, classes.Body)
+		status, _ = s.Do(t, http.MethodGet, "ldap/class?for=x", nil)
+		assert.Equal(t, http.StatusBadRequest, status)
 	})
 }
 

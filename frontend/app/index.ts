@@ -1,8 +1,9 @@
 // The auth server's web UI, which is composed of modules, each of which
 // owns an item in the menu bar, and the sidebar while it's active:
-// Credentials, and Certificates, when the server has them, which its
-// configuration's cert section says. Another app includes a module the same
-// way, from @mutablelogic/go-auth/credential/view or cert/view.
+// Credentials, which the server always has, and Certificates and LDAP, when
+// it has them, which its configuration's cert and ldap sections say. Another
+// app includes a module the same way, from @mutablelogic/go-auth/credential/view,
+// cert/view or ldap/view.
 
 import '@carbon/styles/css/styles.min.css';
 import './fonts.css';
@@ -22,6 +23,8 @@ import type { CertFeatures } from '../src/cert/schema.ts';
 import { certModule } from '../src/cert/view.ts';
 import type { CredentialFeatures } from '../src/credential/schema.ts';
 import { credentialModule } from '../src/credential/view.ts';
+import type { LdapStatus } from '../src/ldap/schema.ts';
+import { ldapModule } from '../src/ldap/view.ts';
 
 // Errors, and the server's status, are shown as toasts
 const notifications = new NotificationController();
@@ -62,6 +65,10 @@ credentialModule({ ...app, features: configSection<CredentialFeatures>(read, 'cr
 const certs = configSection<CertFeatures>(read, 'cert');
 if (certs) {
     certModule({ ...app, features: certs });
+}
+const ldap = configSection<LdapStatus>(read, 'ldap');
+if (ldap) {
+    ldapModule({ ...app, status: ldap });
 }
 
 // Show the page of the location's hash, and follow the server
