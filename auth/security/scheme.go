@@ -19,6 +19,7 @@ package security
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"slices"
 	"strings"
@@ -83,8 +84,13 @@ func (s *Scheme) Wrap(handler http.HandlerFunc, scopes []string) http.HandlerFun
 			return
 		}
 		session, err := s.sessions.Session(r.Context(), token)
-		if err != nil {
+		if errors.Is(err, httpresponse.ErrNotAuthorized) {
 			unauthorized(w, "invalid_token", err.Error())
+			return
+		} else if err != nil {
+			// The store failed, which isn't the token's fault, so it isn't
+			// a challenge, nor says why, which is the server's
+			_ = httpresponse.Error(w, httpresponse.ErrInternalError.With("The session couldn't be checked"))
 			return
 		}
 		for _, scope := range scopes {
@@ -94,6 +100,9 @@ func (s *Scheme) Wrap(handler http.HandlerFunc, scopes []string) http.HandlerFun
 				return
 			}
 		}
+		// What a session is allowed isn't kept by a shared cache, for
+		// another request, which wouldn't be checked
+		w.Header().Set("Cache-Control", "no-store")
 		handler(w, r.WithContext(context.WithValue(r.Context(), sessionKey{}, session)))
 	}
 }

@@ -16,7 +16,9 @@ package security_test
 
 import (
 	"context"
+	"errors"
 	"net/http"
+	"net/http/httptest"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -70,14 +72,15 @@ func Test_Scheme(t *testing.T) {
 	s, token, without := newServer(t)
 
 	// A bearer token, and a cookie, with the scope
-	status, _, body := s.Request(t, http.MethodGet, "protected", http.Header{"Authorization": {"Bearer " + token}})
+	status, header, body := s.Request(t, http.MethodGet, "protected", http.Header{"Authorization": {"Bearer " + token}})
 	assert.Equal(t, http.StatusOK, status)
+	assert.Equal(t, "no-store", header.Get("Cache-Control"), "not kept by a shared cache")
 	assert.Equal(t, `"alice"`, strings.TrimSpace(string(body)))
 	status, _, _ = s.Request(t, http.MethodGet, "protected", http.Header{"Cookie": {security.CookieName + "=" + token}})
 	assert.Equal(t, http.StatusOK, status)
 
 	// Without a token, with one which isn't, and without the scope
-	status, header, _ := s.Request(t, http.MethodGet, "protected", nil)
+	status, header, _ = s.Request(t, http.MethodGet, "protected", nil)
 	assert.Equal(t, http.StatusUnauthorized, status)
 	assert.Contains(t, header.Get("WWW-Authenticate"), "Bearer")
 	status, _, _ = s.Request(t, http.MethodGet, "protected", http.Header{"Authorization": {"Bearer another"}})
@@ -104,4 +107,36 @@ func Test_Token(t *testing.T) {
 
 	_, err = security.New(nil)
 	assert.ErrorIs(t, err, httpresponse.ErrBadRequest)
+}
+
+// broken is a session store which can't be read
+type broken struct{}
+
+func (broken) Create(context.Context, schema.Session) (*schema.SessionToken, error) {
+	return nil, errors.New("the disk is on fire")
+}
+
+func (broken) Session(context.Context, string) (*schema.Session, error) {
+	return nil, errors.New("the disk is on fire")
+}
+
+func (broken) Revoke(context.Context, string) error {
+	return errors.New("the disk is on fire")
+}
+
+func Test_StoreFails(t *testing.T) {
+	// A store which fails is the server's error, without a challenge, or
+	// why
+	scheme, err := security.New(broken{})
+	require.NoError(t, err)
+	called := false
+	handler := scheme.Wrap(func(http.ResponseWriter, *http.Request) { called = true }, nil)
+	r := httptest.NewRequest(http.MethodGet, "/", nil)
+	r.Header.Set("Authorization", "Bearer token")
+	w := httptest.NewRecorder()
+	handler(w, r)
+	assert.False(t, called)
+	assert.Equal(t, http.StatusInternalServerError, w.Code)
+	assert.Empty(t, w.Header().Get("WWW-Authenticate"))
+	assert.NotContains(t, w.Body.String(), "fire")
 }
