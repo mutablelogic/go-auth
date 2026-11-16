@@ -19,6 +19,7 @@ package main
 import (
 	// Packages
 	auth "github.com/mutablelogic/go-auth"
+	ldapprovider "github.com/mutablelogic/go-auth/auth/provider/ldap"
 	ldapcmd "github.com/mutablelogic/go-auth/ldap/cmd"
 	ldaphandler "github.com/mutablelogic/go-auth/ldap/httphandler"
 	manager "github.com/mutablelogic/go-auth/ldap/manager"
@@ -40,9 +41,9 @@ type LDAPFlags struct {
 
 // withHandlers creates the LDAP manager, which publishes its changes, and
 // its connection coming up or going down, to the server's, and calls fn
-// with the registration of its handlers, while it runs, when insecure is
-// set
-func (flags LDAPFlags) withHandlers(ctx server.Cmd, changes *broadcaster.Broadcaster, insecure bool, fn func(*module) error) error {
+// with the registration of its handlers, and the manager, which can be
+// signed in with, while it runs, when insecure is set
+func (flags LDAPFlags) withHandlers(ctx server.Cmd, changes *broadcaster.Broadcaster, insecure bool, fn func(*module, ldapprovider.Manager) error) error {
 	// Until the API has authentication, serving it is a choice, as it
 	// changes the directory as the manager's user
 	if !insecure {
@@ -55,6 +56,6 @@ func (flags LDAPFlags) withHandlers(ctx server.Cmd, changes *broadcaster.Broadca
 		return fn(&module{
 			register: ldaphandler.RegisterHandlers(mgr, false),
 			section:  config.WithSectionFunc("ldap", mgr.Status),
-		})
+		}, mgr)
 	})
 }

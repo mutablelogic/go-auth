@@ -69,6 +69,12 @@ type ProviderMeta struct {
 	Kind  ProviderKind `json:"kind" help:"How it's signed in with: redirect, or password" enum:"redirect,password"`
 }
 
+// Config is what a server's configuration says of signing in: the
+// providers, for a sign-in page
+type Config struct {
+	Providers []ProviderMeta `json:"providers" help:"Providers which can be signed in with"`
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 // GLOBALS
 
