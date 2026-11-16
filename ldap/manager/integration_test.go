@@ -293,13 +293,20 @@ func managerOf(server integrationServer, url string) (*Manager, error) {
 
 // connectWithin connects, retrying until the timeout
 func connectWithin(ctx context.Context, manager *Manager, timeout time.Duration) error {
-	deadline := time.Now().Add(timeout)
+	// Connect closes its connection when the context ends, so a server
+	// which stalls in a bind can't outlast the timeout
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
 	for {
 		err := manager.Connect(ctx)
-		if err == nil || time.Now().After(deadline) {
+		if err == nil || ctx.Err() != nil {
 			return err
 		}
-		time.Sleep(250 * time.Millisecond)
+		select {
+		case <-ctx.Done():
+			return err
+		case <-time.After(250 * time.Millisecond):
+		}
 	}
 }
 

@@ -90,11 +90,12 @@ unit-test: go-dep
 
 # The ldap/manager integration tests start OpenLDAP, 389 DS and SMB LDS
 # containers, so need docker. LDAPMANAGER_INTEGRATION_SERVER chooses some
-# of them, such as openldap,389ds.
+# of them, such as openldap,389ds. Results aren't cached, since the
+# images and docker can change.
 .PHONY: integration-test
 integration-test: go-dep
 	@echo Integration Tests
-	@${GO} test -tags integration -timeout 20m ./ldap/...
+	@${GO} test -count=1 -tags integration -timeout 20m ./ldap/...
 
 .PHONY: coverage-test
 coverage-test: go-dep mkdir
