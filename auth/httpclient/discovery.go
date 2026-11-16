@@ -251,13 +251,13 @@ func wellKnown(raw, path string) []string {
 	suffix := strings.Trim(u.EscapedPath(), "/")
 	candidates := []string{}
 	if suffix != "" {
-		// Inserted, the path is as it is, with a slash at its end, when it
-		// has one, as a resource's can be another's without
-		inserted := base.JoinPath(path, suffix).String()
-		if strings.HasSuffix(u.EscapedPath(), "/") {
-			inserted += "/"
+		// A resource's path is inserted as it is, with a slash at its end,
+		// when it has one, as RFC 9728 has it, as well as without, which
+		// some servers use, while an issuer's is without, as RFC 8414 has it
+		if path == ResourceMetadataPath && strings.HasSuffix(u.EscapedPath(), "/") {
+			candidates = append(candidates, base.JoinPath(path, suffix).String()+"/")
 		}
-		candidates = append(candidates, inserted, base.JoinPath(suffix, path).String())
+		candidates = append(candidates, base.JoinPath(path, suffix).String(), base.JoinPath(suffix, path).String())
 	}
 	candidates = append(candidates, base.JoinPath(path).String())
 	seen := map[string]bool{}
@@ -277,11 +277,10 @@ func wellKnown(raw, path string) []string {
 // scheme and host, and without a query, or fragment. Another host's, or
 // another path's, such as a sibling's, isn't.
 func sameResource(metadata, resource string) bool {
-	metadata, resource = strings.TrimSpace(metadata), strings.TrimSpace(resource)
-	if metadata == "" {
+	// A resource is sent as it's named, so one with spaces isn't one
+	resource = strings.TrimSpace(resource)
+	if metadata == "" || metadata != strings.TrimSpace(metadata) {
 		return false
-	} else if metadata == resource {
-		return true
 	}
 	m, err := url.Parse(metadata)
 	if err != nil || m.RawQuery != "" || m.Fragment != "" || m.User != nil {

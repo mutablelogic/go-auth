@@ -31,9 +31,15 @@ func Test_WellKnown(t *testing.T) {
 	}, wellKnown("https://example.com/v1/mcp?x=1", ResourceMetadataPath))
 	assert.Equal(t, []string{
 		"https://example.com/.well-known/oauth-protected-resource/mcp/",
+		"https://example.com/.well-known/oauth-protected-resource/mcp",
 		"https://example.com/mcp/.well-known/oauth-protected-resource",
 		"https://example.com/.well-known/oauth-protected-resource",
 	}, wellKnown("https://example.com/mcp/", ResourceMetadataPath), "with its slash")
+	assert.Equal(t, []string{
+		"https://example.com/.well-known/oauth-authorization-server/auth",
+		"https://example.com/auth/.well-known/oauth-authorization-server",
+		"https://example.com/.well-known/oauth-authorization-server",
+	}, wellKnown("https://example.com/auth/", OAuthMetadataPath), "an issuer's, without its slash")
 	assert.Equal(t, []string{"https://example.com/.well-known/oauth-authorization-server"}, wellKnown("https://example.com/", OAuthMetadataPath))
 	assert.Nil(t, wellKnown("not a url", OAuthMetadataPath))
 	assert.Equal(t, "https://example.com:8443", origin("https://example.com:8443/mcp"))
@@ -67,7 +73,17 @@ func Test_SameResource(t *testing.T) {
 		"https://example.com/v1?tenant=a",
 		"https://user@example.com/v1",
 		"/v1/mcp",
+		" https://example.com/v1/mcp ",
 	} {
 		assert.False(t, sameResource(metadata, "https://example.com/v1/mcp"), metadata)
+	}
+
+	// Nor the same, with a query, a fragment, or a user
+	for _, resource := range []string{
+		"https://example.com/mcp?tenant=a",
+		"https://example.com/mcp#x",
+		"https://user@example.com/mcp",
+	} {
+		assert.False(t, sameResource(resource, resource), resource)
 	}
 }
