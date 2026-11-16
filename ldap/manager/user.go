@@ -318,7 +318,11 @@ func (manager *Manager) findNamed(ctx context.Context, kind string, base *schema
 				named = append(named, entry)
 			}
 		}
-		found = named
+		// Only when it's one, or else they're all as good, which is a
+		// conflict
+		if len(named) == 1 {
+			found = named
+		}
 	}
 	switch len(found) {
 	case 0:

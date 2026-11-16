@@ -317,3 +317,37 @@ func Test_CreateUserNeedsLDAPS(t *testing.T) {
 	assert.Nil(t, d.Entry(dn))
 	assert.Empty(t, d.Requests("modify"), "no password was sent")
 }
+
+func Test_FindUserByName(t *testing.T) {
+	d := test.NewFake(t, false)
+	users := "ou=users,dc=example,dc=test"
+	person := []string{"top", "inetOrgPerson"}
+	d.Set(`cn=Smith\, Alice,`+users, map[string][]string{"objectClass": person, "cn": {"Smith, Alice"}})
+	d.Set("cn=bob,"+users, map[string][]string{"objectClass": person, "cn": {"bob"}})
+	d.Set("ou=bob,"+users, map[string][]string{"objectClass": person, "ou": {"bob"}})
+	d.Set("cn=carol,"+users, map[string][]string{"objectClass": person, "cn": {"carol"}})
+	d.Set("uid=carol,"+users, map[string][]string{"objectClass": person, "uid": {"carol"}})
+	d.Set("cn=dave,cn=bob,"+users, map[string][]string{"objectClass": person, "cn": {"dave"}})
+	m, err := manager.New(manager.WithUrl(d.URL("ldap")), manager.WithBaseDN("dc=example,dc=test"), manager.WithUserDN("ou=users", "inetOrgPerson"))
+	require.NoError(t, err)
+	require.NoError(t, m.Connect(context.Background()))
+	defer m.Disconnect(context.Background())
+	ctx := context.Background()
+
+	// A name with an escaped comma, directly under the users' DN
+	user, err := m.GetUser(ctx, "Smith, Alice")
+	require.NoError(t, err)
+	assert.True(t, strings.EqualFold(`cn=Smith\, Alice,`+users, user.DN))
+
+	// Two, neither by uid, which is a conflict, and two, one by uid, which
+	// is that one
+	_, err = m.GetUser(ctx, "bob")
+	assert.ErrorIs(t, err, httpresponse.ErrConflict)
+	user, err = m.GetUser(ctx, "carol")
+	require.NoError(t, err)
+	assert.True(t, strings.EqualFold("uid=carol,"+users, user.DN))
+
+	// Not one which isn't directly under the users' DN
+	_, err = m.GetUser(ctx, "dave")
+	assert.ErrorIs(t, err, httpresponse.ErrNotFound)
+}

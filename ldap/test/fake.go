@@ -215,9 +215,11 @@ func (d *Fake) search(id any, dn string, scope int) []*ber.Packet {
 	if scope == ldapv3.ScopeSingleLevel {
 		d.Lock()
 		var children []string
-		for key := range d.entries {
-			if parts := strings.SplitN(key, ",", 2); len(parts) == 2 && strings.EqualFold(parts[1], dn) {
-				children = append(children, key)
+		if parent, err := ldapv3.ParseDN(dn); err == nil {
+			for key := range d.entries {
+				if child, err := ldapv3.ParseDN(key); err == nil && len(child.RDNs) == len(parent.RDNs)+1 && parent.AncestorOfFold(child) {
+					children = append(children, key)
+				}
 			}
 		}
 		d.Unlock()
