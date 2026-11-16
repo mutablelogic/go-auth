@@ -215,6 +215,28 @@ export function memberCount(group: LdapObject): number {
     return Math.max(dns.size, values(group, 'memberUid').length);
 }
 
+// hasChildren returns whether the entry has entries under it, as its
+// hasSubordinates says, or undefined, when the directory doesn't say
+export function hasChildren(object: LdapObject): boolean | undefined {
+    const value = first(object, 'hasSubordinates');
+    return value === undefined ? undefined : value.toUpperCase() === 'TRUE';
+}
+
+// entryKind returns what an entry is, from its object classes, for its
+// icon: a container, such as an organizational unit, a person, a group, or
+// another entry
+export function entryKind(object: LdapObject): 'container' | 'person' | 'group' | 'entry' {
+    const has = (...names: string[]) => names.some((name) => hasClass(object, name));
+    if (has('person', 'user', 'account', 'inetOrgPerson', 'posixAccount')) {
+        return 'person';
+    } else if (has('group', 'groupOfNames', 'groupOfUniqueNames', 'groupOfMembers', 'posixGroup')) {
+        return 'group';
+    } else if (has('organizationalUnit', 'organization', 'domain', 'dcObject', 'container', 'builtinDomain')) {
+        return 'container';
+    }
+    return 'entry';
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 // DNS
 

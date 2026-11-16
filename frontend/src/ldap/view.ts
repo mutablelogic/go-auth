@@ -1,6 +1,7 @@
 // The LDAP module's elements, which need lit, and Carbon's web components:
 //
-// - ga-ldap-users and ga-ldap-groups are the Users and Groups pages.
+// - ga-ldap-users, ga-ldap-groups and ga-ldap-objects are the Users, Groups
+//   and Objects pages.
 // - ga-ldap-page is a page of the module which isn't made yet, with a
 //   header of the directory's status: whether it's connected, its host, and
 //   the user it binds as.
@@ -19,11 +20,13 @@ import { LdapStatusController } from './controller.ts';
 import { LdapPage } from './parts.ts';
 import type { LdapStatus } from './schema.ts';
 import { LdapGroupsElement, LdapGroupsTag } from './groups.ts';
+import { LdapObjectsElement, LdapObjectsTag } from './objects.ts';
 import { LdapUsersElement, LdapUsersTag } from './users.ts';
 
 export { LdapPage, attrsView, entryFormView, secretView, statusView } from './parts.ts';
 export { LdapUsersElement, LdapUsersTag, passwordFormView, userColumns } from './users.ts';
 export { LdapGroupsElement, LdapGroupsTag, groupColumns } from './groups.ts';
+export { LdapObjectsElement, LdapObjectsTag } from './objects.ts';
 
 // Carbon components
 import '@mutablelogic/go-server/page/view';
@@ -107,7 +110,7 @@ export interface LdapPages {
     status: LdapStatusController;
     users?: LdapUsersElement;
     groups?: LdapGroupsElement;
-    objects: LdapPageElement;
+    objects: LdapObjectsElement;
     schema: LdapPageElement;
 }
 
@@ -152,7 +155,7 @@ export function ldapModule(app: LdapApp, section = 'LDAP'): LdapPages {
         status,
         users: app.status.user_dn ? add('users', document.createElement(LdapUsersTag)) : undefined,
         groups: app.status.group_dn ? add('groups', document.createElement(LdapGroupsTag)) : undefined,
-        objects: placeholder('objects'),
+        objects: add('objects', document.createElement(LdapObjectsTag)),
         schema: placeholder('schema'),
     };
     app.nav.setSection(section, kinds.map((kind) => ({ id: pages[kind].id, label: pages[kind].heading, href: `#${pages[kind].id}` })));

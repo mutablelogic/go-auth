@@ -183,11 +183,12 @@ export class ObjectController {
     }
 
     // children returns the entries directly under the DN, or the base DN,
-    // without one, with their object classes, in the directory's order
+    // without one, with their object classes, and whether they have children,
+    // when the directory says, in its order
     async children(dn?: string, signal?: AbortSignal): Promise<LdapObject[]> {
         const result: LdapObject[] = [];
         for (let offset = 0; ; ) {
-            const page = await api.listObjects(this.client, { prefix: dn || undefined, children: true, attr: ['objectClass'], offset, limit: 500 }, signal);
+            const page = await api.listObjects(this.client, { prefix: dn || undefined, children: true, attr: ['objectClass', 'hasSubordinates'], offset, limit: 500 }, signal);
             result.push(...(page.body ?? []));
             offset += page.body?.length ?? 0;
             if (!page.body?.length || offset >= page.count) {

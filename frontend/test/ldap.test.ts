@@ -8,7 +8,7 @@ import type { AttributeType, ObjectClass } from '../src/ldap/schema.ts';
 import { listAll } from '../src/ldap/controller.ts';
 import { GroupController, LdapStatusController, ObjectController, UserController } from '../src/ldap/controller.ts';
 import {
-    binarySize, dnKey, escapeFilter, first, hasClass, memberCount, isBinary, parentDN, rdn, rdnValue, sameDN, searchFilter, splitDN, valueText, values,
+    binarySize, dnKey, entryKind, escapeFilter, first, hasChildren, hasClass, memberCount, isBinary, parentDN, rdn, rdnValue, sameDN, searchFilter, splitDN, valueText, values,
     type LdapObject,
 } from '../src/ldap/schema.ts';
 
@@ -384,4 +384,14 @@ test('groups', async (t) => {
         assert.deepEqual(entryFormErrors(form), {});
         assert.deepEqual(entryAttrs(form), { description: ['Engineers'] });
     });
+});
+
+test('objects', async () => {
+    assert.equal(hasChildren({ dn: 'ou=a', attrs: { hasSubordinates: ['TRUE'] } }), true);
+    assert.equal(hasChildren({ dn: 'cn=a', attrs: { hasSubordinates: ['FALSE'] } }), false);
+    assert.equal(hasChildren({ dn: 'cn=a', attrs: {} }), undefined, "when the directory doesn't say");
+    assert.equal(entryKind({ dn: 'ou=a', attrs: { objectClass: ['top', 'organizationalUnit'] } }), 'container');
+    assert.equal(entryKind({ dn: 'uid=a', attrs: { objectClass: ['inetOrgPerson', 'posixAccount'] } }), 'person');
+    assert.equal(entryKind({ dn: 'cn=a', attrs: { objectClass: ['groupOfUniqueNames'] } }), 'group');
+    assert.equal(entryKind({ dn: 'cn=a', attrs: { objectClass: ['device'] } }), 'entry');
 });
