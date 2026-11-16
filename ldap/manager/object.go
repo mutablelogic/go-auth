@@ -121,7 +121,7 @@ func (manager *Manager) Create(ctx context.Context, dn string, attrs schema.Attr
 			add.Attribute(key, values)
 		}
 	}
-	if err := manager.conn.Add(add); err != nil {
+	if err := manager.write(ctx, func(conn *ldap.Conn) error { return conn.Add(add) }); err != nil {
 		return nil, ldaperr(err)
 	}
 	return manager.get(ctx, add.DN)
@@ -156,16 +156,18 @@ func (manager *Manager) Update(ctx context.Context, dn string, attrs schema.Attr
 
 	// Rename, then change the other attributes
 	if rdn != "" {
-		if err := manager.conn.ModifyDN(ldap.NewModifyDNRequest(absdn.String(), rdn, true, "")); err != nil {
+		rename := ldap.NewModifyDNRequest(absdn.String(), rdn, true, "")
+		if err := manager.write(ctx, func(conn *ldap.Conn) error { return conn.ModifyDN(rename) }); err != nil {
 			return nil, ldaperr(err)
 		}
 	}
 	if err := manager.modify(ctx, target, values); err != nil {
-		// Undo the rename, so the entry is as it was
+		// Undo the rename, so the entry is as it was, unless the connection
+		// was lost
 		if rdn != "" {
 			undo := ldap.NewModifyDNRequest(target, absdn.RDNs[0].String(), true, "")
-			if undoErr := manager.conn.ModifyDN(undo); undoErr != nil {
-				return nil, errors.Join(err, ldaperr(undoErr))
+			if undoErr := manager.write(context.WithoutCancel(ctx), func(conn *ldap.Conn) error { return conn.ModifyDN(undo) }); undoErr != nil {
+				return nil, errors.Join(err, httpresponse.ErrInternalError.Withf("%q isn't renamed back: %v", target, ldaperr(undoErr)))
 			}
 		}
 		return nil, err
@@ -191,7 +193,7 @@ func (manager *Manager) Delete(ctx context.Context, dn string) (_ *schema.Object
 	if err != nil {
 		return nil, err
 	}
-	if err := manager.conn.Del(ldap.NewDelRequest(object.DN, nil)); err != nil {
+	if err := manager.write(ctx, func(conn *ldap.Conn) error { return conn.Del(ldap.NewDelRequest(object.DN, nil)) }); err != nil {
 		return nil, ldaperr(err)
 	}
 	return object, nil
@@ -227,6 +229,10 @@ func (manager *Manager) get(ctx context.Context, dn string, attrs ...string) (*s
 // pages, or, when max isn't zero, up to max entries, until the function
 // returns io.EOF, or another error, which is returned
 func (manager *Manager) search(ctx context.Context, scope int, dn, filter string, max int, fn func(*schema.Object) error, attrs ...string) error {
+	if err := manager.connected(); err != nil {
+		return err
+	}
+
 	// Stop the search when the function does
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -321,7 +327,7 @@ func (manager *Manager) modify(ctx context.Context, dn string, attrs url.Values)
 		return err
 	}
 	if modify := modifyRequest(dn, attrs, skip); len(modify.Changes) > 0 {
-		if err := manager.conn.Modify(modify); err != nil {
+		if err := manager.write(ctx, func(conn *ldap.Conn) error { return conn.Modify(modify) }); err != nil {
 			return ldaperr(err)
 		}
 	}

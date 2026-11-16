@@ -21,6 +21,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"strings"
+	"unicode"
 	"unicode/utf16"
 
 	// Packages
@@ -115,20 +116,25 @@ func (manager *Manager) ChangePassword(ctx context.Context, dn string, req schem
 		return nil, httpresponse.ErrBadRequest.With("Active Directory passwords need ldaps")
 	}
 
-	// Change the password as the entry, with the old password, or reset it
-	conn := manager.conn
+	// Change the password as the entry, with the old password, or reset it,
+	// on a connection which is closed when the context is cancelled
+	change := func(conn *ldap.Conn) error {
+		if activeDirectory {
+			return setUnicodePwd(conn, object.DN, req.Old, password)
+		}
+		_, err := conn.PasswordModify(ldap.NewPasswordModifyRequest(object.DN, req.Old, password))
+		return err
+	}
 	if req.Old != "" {
-		if conn, err = manager.bindAs(ctx, object.DN, req.Old); err != nil {
+		conn, err := manager.bindAs(ctx, object.DN, req.Old)
+		if err != nil {
 			return nil, err
 		}
 		defer ldapDisconnect(conn)
-	}
-	if activeDirectory {
-		err = setUnicodePwd(conn, object.DN, req.Old, password)
-	} else {
-		_, err = conn.PasswordModify(ldap.NewPasswordModifyRequest(object.DN, req.Old, password))
-	}
-	if err != nil {
+		if err := whileOpen(ctx, conn, func() error { return change(conn) }); err != nil {
+			return nil, ldaperr(err)
+		}
+	} else if err := manager.write(ctx, change); err != nil {
 		return nil, ldaperr(err)
 	}
 
@@ -179,13 +185,38 @@ func unicodePwd(password string) string {
 	return string(buf)
 }
 
-// randomPassword returns a password of 24 characters, from 18 random bytes
+// randomPassword returns a password of 24 characters, from 18 random bytes,
+// with at least three of upper case, lower case, digits and symbols, which
+// Active Directory's complexity rule needs
 func randomPassword() (string, error) {
 	buf := make([]byte, 18)
-	if _, err := rand.Read(buf); err != nil {
-		return "", err
+	for {
+		if _, err := rand.Read(buf); err != nil {
+			return "", err
+		}
+		if password := base64.RawURLEncoding.EncodeToString(buf); passwordClasses(password) >= 3 {
+			return password, nil
+		}
 	}
-	return base64.RawURLEncoding.EncodeToString(buf), nil
+}
+
+// passwordClasses returns how many of upper case, lower case, digits and
+// symbols the password has
+func passwordClasses(password string) int {
+	var upper, lower, digit, symbol int
+	for _, r := range password {
+		switch {
+		case unicode.IsUpper(r):
+			upper = 1
+		case unicode.IsLower(r):
+			lower = 1
+		case unicode.IsDigit(r):
+			digit = 1
+		default:
+			symbol = 1
+		}
+	}
+	return upper + lower + digit + symbol
 }
 
 // containsFold returns whether the value is one of the values, in any case

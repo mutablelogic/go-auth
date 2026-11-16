@@ -185,4 +185,24 @@ func Test_randomPassword(t *testing.T) {
 	require.NoError(t, err)
 	assert.Len(t, a, 24)
 	assert.NotEqual(t, a, b)
+
+	// Each has at least three classes of character, for Active Directory
+	for range 1000 {
+		password, err := randomPassword()
+		require.NoError(t, err)
+		require.GreaterOrEqual(t, passwordClasses(password), 3, password)
+	}
+}
+
+func Test_passwordClasses(t *testing.T) {
+	for password, want := range map[string]int{
+		"":           0,
+		"abcdef":     1,
+		"abcDEF":     2,
+		"abcDEF123":  3,
+		"abcDEF123_": 4,
+		"abc-_":      2,
+	} {
+		assert.Equal(t, want, passwordClasses(password), password)
+	}
 }
