@@ -17,9 +17,11 @@ package manager
 import (
 	"context"
 	"errors"
+	"math/rand/v2"
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 
 	// Packages
 	ldap "github.com/go-ldap/ldap/v3"
@@ -29,18 +31,22 @@ import (
 	httpresponse "github.com/mutablelogic/go-server/pkg/httpresponse"
 	types "github.com/mutablelogic/go-server/pkg/types"
 	attribute "go.opentelemetry.io/otel/attribute"
+	trace "go.opentelemetry.io/otel/trace"
 )
 
 ///////////////////////////////////////////////////////////////////////////////
 // GLOBALS
 
 const (
-	// The entry which has the last user ID, in its serialNumber, under the
-	// base DN
-	lastUID = "cn=lastuid"
+	// The entries which have the last user and group IDs, in their
+	// serialNumber, under the base DN
+	lastUID = "lastuid"
+	lastGID = "lastgid"
 
-	// Times to try for the next user ID, when another manager takes it
-	uidRetries = 5
+	// Times to try for the next ID, when another manager takes it, with a
+	// random pause of up to idRetryPause between
+	idRetries    = 10
+	idRetryPause = 20 * time.Millisecond
 
 	// userAccountControl values of an Active Directory user
 	adNormalAccount   = "512"
@@ -102,9 +108,9 @@ func (manager *Manager) CreateUser(ctx context.Context, name string, attrs schem
 	if err != nil {
 		return nil, err
 	}
-	values := url.Values{}
-	for key, value := range attrs {
-		values[key] = append([]string(nil), value...)
+	values, err := normalize(attrs)
+	if err != nil {
+		return nil, err
 	}
 
 	// The object classes, and the name
@@ -122,12 +128,12 @@ func (manager *Manager) CreateUser(ctx context.Context, name string, attrs schem
 	if allocateGID {
 		if !posix {
 			return nil, httpresponse.ErrBadRequest.With("allocate_gid needs posixAccount users")
-		} else if _, ok := attrValues(values, "gidNumber"); ok {
+		} else if attrHas(values, "gidNumber") {
 			return nil, httpresponse.ErrBadRequest.With("allocate_gid can't be used with a gidNumber")
 		}
 	}
-	if _, ok := attrValues(values, "uidNumber"); posix && !ok {
-		uid, err := manager.nextUID(ctx)
+	if posix && !attrHas(values, "uidNumber") {
+		uid, err := manager.nextID(ctx, lastUID, schema.InitialUID)
 		if err != nil {
 			return nil, err
 		}
@@ -150,7 +156,7 @@ func (manager *Manager) CreateUser(ctx context.Context, name string, attrs schem
 		}
 		attrDelete(values, "unicodePwd")
 		attrDelete(values, "userPassword")
-		if _, ok := attrValues(values, "sAMAccountName"); !ok {
+		if !attrHas(values, "sAMAccountName") {
 			attrSet(values, "sAMAccountName", []string{name})
 		}
 		attrSet(values, "userAccountControl", []string{adDisabledAccount})
@@ -163,8 +169,10 @@ func (manager *Manager) CreateUser(ctx context.Context, name string, attrs schem
 	}
 	if activeDirectory && password != "" {
 		if err := manager.enableUser(ctx, user.DN, password); err != nil {
-			if _, deleteErr := manager.delete(context.WithoutCancel(ctx), user.DN); deleteErr != nil {
-				return nil, errors.Join(err, deleteErr)
+			// Delete it on a new connection, since the manager's can be lost
+			// when the context is cancelled
+			if deleteErr := manager.cleanup(ctx, func(conn *ldap.Conn) error { return conn.Del(ldap.NewDelRequest(user.DN, nil)) }); deleteErr != nil {
+				return nil, errors.Join(err, httpresponse.ErrInternalError.Withf("%q isn't deleted: %v", user.DN, deleteErr))
 			}
 			return nil, err
 		}
@@ -283,26 +291,35 @@ func (manager *Manager) enableUser(ctx context.Context, dn, password string) err
 	return nil
 }
 
-// nextUID returns the next user ID, from the serialNumber of cn=lastuid
-// under the base DN, which is created with schema.InitialUID when there's
-// none. The old value is deleted, and the new one added, in one request,
-// which fails when another manager has changed it, so it's tried again.
-func (manager *Manager) nextUID(ctx context.Context) (int, error) {
-	dn := lastUID + "," + manager.dn.String()
-	for range uidRetries {
+// nextID returns the next ID, from the serialNumber of the entry with the
+// name, such as cn=lastuid, under the base DN, which is created with the
+// initial ID when there's none. The old value is deleted, and the new one
+// added, in one request, which fails when another manager has changed it,
+// so it's tried again.
+func (manager *Manager) nextID(ctx context.Context, name string, initial int) (int, error) {
+	dn := "cn=" + name + "," + manager.dn.String()
+	for retry := range idRetries {
+		if retry > 0 {
+			trace.SpanFromContext(ctx).AddEvent("ID taken, retrying", trace.WithAttributes(attribute.String("dn", dn)))
+			select {
+			case <-ctx.Done():
+				return 0, ctx.Err()
+			case <-time.After(rand.N(idRetryPause)):
+			}
+		}
 		entry, err := manager.get(ctx, dn, "serialNumber")
 		if errors.Is(err, httpresponse.ErrNotFound) {
 			_, err := manager.create(ctx, dn, url.Values{
 				"objectClass":  {"top", "device"},
-				"cn":           {strings.TrimPrefix(lastUID, "cn=")},
-				"serialNumber": {strconv.Itoa(schema.InitialUID)},
+				"cn":           {name},
+				"serialNumber": {strconv.Itoa(initial)},
 			})
 			if errors.Is(err, httpresponse.ErrConflict) {
 				continue
 			} else if err != nil {
 				return 0, err
 			}
-			return schema.InitialUID, nil
+			return initial, nil
 		} else if err != nil {
 			return 0, err
 		}
@@ -327,7 +344,7 @@ func (manager *Manager) nextUID(ctx context.Context) (int, error) {
 		}
 		return current + 1, nil
 	}
-	return 0, httpresponse.ErrConflict.With("The next user ID is taken, try again")
+	return 0, httpresponse.ErrConflict.With("The next ID is taken, try again")
 }
 
 // create adds the entry at the absolute DN, with the attributes, and
@@ -347,6 +364,26 @@ func (manager *Manager) create(ctx context.Context, dn string, values url.Values
 		return nil, ldaperr(err)
 	}
 	return manager.get(ctx, dn)
+}
+
+// normalize returns the attributes, with names trimmed and checked, and
+// values which aren't empty, before anything is read from them
+func normalize(attrs schema.Attrs) (url.Values, error) {
+	if len(attrs) == 0 {
+		return url.Values{}, nil
+	}
+	values, err := (schema.ObjectPutRequest{Attrs: attrs}).ValidateUpdate()
+	if err != nil {
+		return nil, auth.HTTPError(err)
+	}
+	return values, nil
+}
+
+// attrHas returns whether the attribute, whose name is in any case, has a
+// value
+func attrHas(attrs url.Values, name string) bool {
+	values, ok := attrValues(attrs, name)
+	return ok && len(values) > 0
 }
 
 // attrSet sets the attribute's values, whose name is in any case

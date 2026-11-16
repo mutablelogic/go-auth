@@ -149,11 +149,11 @@ func (manager *Manager) update(ctx context.Context, absdn *schema.DN, attrs sche
 		}
 	}
 	if err := manager.modify(ctx, target, values); err != nil {
-		// Undo the rename, so the entry is as it was, unless the connection
-		// was lost
+		// Undo the rename, so the entry is as it was, on a new connection,
+		// since the manager's can be lost when the context is cancelled
 		if rdn != "" {
 			undo := ldap.NewModifyDNRequest(target, absdn.RDNs[0].String(), true, "")
-			if undoErr := manager.write(context.WithoutCancel(ctx), func(conn *ldap.Conn) error { return conn.ModifyDN(undo) }); undoErr != nil {
+			if undoErr := manager.cleanup(ctx, func(conn *ldap.Conn) error { return conn.ModifyDN(undo) }); undoErr != nil {
 				return nil, errors.Join(err, httpresponse.ErrInternalError.Withf("%q isn't renamed back: %v", target, ldaperr(undoErr)))
 			}
 		}
