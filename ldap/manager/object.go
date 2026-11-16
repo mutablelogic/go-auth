@@ -64,7 +64,7 @@ func (manager *Manager) List(ctx context.Context, req schema.ObjectListRequest) 
 			return nil, err
 		}
 	}
-	return manager.list(ctx, ldap.ScopeWholeSubtree, base.String(), req.ListRequest)
+	return manager.list(ctx, ldap.ScopeWholeSubtree, base.String(), req.ListRequest, nil)
 }
 
 // Get returns the entry, whose DN is under the base DN, or relative to it
@@ -176,8 +176,8 @@ func (manager *Manager) update(ctx context.Context, absdn *schema.DN, attrs sche
 }
 
 // list returns the entries in the scope of the absolute DN which match the
-// request's filter, as List does
-func (manager *Manager) list(ctx context.Context, scope int, dn string, req schema.ListRequest) (*schema.ObjectList, error) {
+// request's filter, and keep, when it's set, as List does
+func (manager *Manager) list(ctx context.Context, scope int, dn string, req schema.ListRequest, keep func(*schema.Object) bool) (*schema.ObjectList, error) {
 	limit := listLimit(req.Limit)
 	filter := filterAll
 	if req.Filter != nil {
@@ -187,6 +187,9 @@ func (manager *Manager) list(ctx context.Context, scope int, dn string, req sche
 	// Count each entry, and keep those from the offset, up to the limit
 	var list schema.ObjectList
 	if err := manager.search(ctx, scope, dn, filter, 0, func(entry *schema.Object) error {
+		if keep != nil && !keep(entry) {
+			return nil
+		}
 		if list.Count >= req.Offset && list.Count < req.Offset+limit {
 			list.Body = append(list.Body, entry)
 		}

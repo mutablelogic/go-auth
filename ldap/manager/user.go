@@ -70,16 +70,27 @@ func (manager *Manager) ListUsers(ctx context.Context, req schema.UserListReques
 		return nil, err
 	}
 	list := req.ListRequest
-	if req.Group != nil {
-		members, err := manager.membersFilter(ctx, base, *req.Group)
-		if err != nil {
-			return nil, err
-		} else if members == "" {
-			return &schema.ObjectList{}, nil
-		}
-		list.Filter = types.Ptr(andFilter(req.Filter, members))
+	if req.Group == nil {
+		return manager.list(ctx, ldap.ScopeSingleLevel, base.String(), list, nil)
 	}
-	return manager.list(ctx, ldap.ScopeSingleLevel, base.String(), list)
+
+	// The group's members, by DN, which narrow the search by their RDNs,
+	// and are kept, when they're one of them
+	members, err := manager.groupMembers(ctx, base, *req.Group)
+	if err != nil {
+		return nil, err
+	} else if len(members) == 0 {
+		return &schema.ObjectList{}, nil
+	}
+	rdns := make([]string, 0, len(members))
+	for _, member := range members {
+		rdns = append(rdns, rdnFilter(member.RDNs[0]))
+	}
+	list.Filter = types.Ptr(andFilter(req.Filter, "(|"+strings.Join(rdns, "")+")"))
+	return manager.list(ctx, ldap.ScopeSingleLevel, base.String(), list, func(user *schema.Object) bool {
+		dn, err := ldap.ParseDN(user.DN)
+		return err == nil && containsDN(members, dn)
+	})
 }
 
 // GetUser returns the user with the name

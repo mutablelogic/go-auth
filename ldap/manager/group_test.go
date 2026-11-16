@@ -264,3 +264,48 @@ func Test_GroupMemberLists(t *testing.T) {
 		assert.ErrorIs(t, err, httpresponse.ErrNotFound)
 	})
 }
+
+func Test_GroupMembersExact(t *testing.T) {
+	test.ForEach(t, func(t *testing.T, ctx context.Context, server test.Server, m *manager.Manager) {
+		users := test.OU(t, ctx, m)
+		groups := test.Manager(t, ctx, server, manager.WithUserDN(users), manager.WithGroupDN(test.OU(t, ctx, m)))
+
+		// A user whose uid is bob and cn is alice, which memberUid=alice
+		// isn't, since memberUid is the uid, and the cn only without one
+		attrs := userAttrs("bob", "first Passw0rd!")
+		name := "bob"
+		if server.ActiveDirectory {
+			name, attrs["uid"] = "alice", []string{"bob"}
+		} else {
+			attrs["cn"] = []string{"alice"}
+		}
+		bob, err := groups.CreateUser(ctx, name, attrs, true)
+		require.NoError(t, err)
+		require.Equal(t, types.Ptr("bob"), bob.Get("uid"))
+		require.Equal(t, types.Ptr("alice"), bob.Get("cn"))
+		_, err = groups.CreateGroup(ctx, "uids", schema.Attrs{"memberUid": {"alice"}})
+		require.NoError(t, err)
+		list, err := groups.ListUsers(ctx, schema.UserListRequest{Group: types.Ptr("uids")})
+		require.NoError(t, err)
+		assert.Zero(t, list.Count, "not by cn, when there's a uid")
+
+		if server.ActiveDirectory {
+			return
+		}
+
+		// A member by DN, cn=carol, and bob, whose cn is carol too, which
+		// the filter of its RDN matches, but isn't a member
+		carol, err := m.Create(ctx, "cn=carol,"+users, schema.Attrs{"objectClass": {"top", "person", "organizationalPerson", "inetOrgPerson"}, "cn": {"carol"}, "sn": {"Example"}})
+		require.NoError(t, err)
+		_, err = groups.UpdateUser(ctx, "bob", schema.Attrs{"cn": {"carol"}})
+		require.NoError(t, err)
+		named := test.Manager(t, ctx, server, manager.WithUserDN(users), manager.WithGroupDN(test.OU(t, ctx, m), "groupOfNames"))
+		_, err = named.CreateGroup(ctx, "dns", schema.Attrs{"member": {carol.DN}})
+		require.NoError(t, err)
+		list, err = named.ListUsers(ctx, schema.UserListRequest{Group: types.Ptr("dns")})
+		require.NoError(t, err)
+		assert.Equal(t, uint64(1), list.Count, "carol, not bob")
+		require.Len(t, list.Body, 1)
+		assert.True(t, strings.EqualFold(carol.DN, list.Body[0].DN))
+	})
+}
