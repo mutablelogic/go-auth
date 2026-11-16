@@ -29,6 +29,7 @@ import (
 	ldapprovider "github.com/mutablelogic/go-auth/auth/provider/ldap"
 	oidc "github.com/mutablelogic/go-auth/auth/provider/oidc"
 	schema "github.com/mutablelogic/go-auth/auth/schema"
+	security "github.com/mutablelogic/go-auth/auth/security"
 	store "github.com/mutablelogic/go-auth/auth/store"
 	credential "github.com/mutablelogic/go-auth/credential"
 	client "github.com/mutablelogic/go-client"
@@ -86,18 +87,26 @@ type OIDCProviderFlags struct {
 // providers which are configured, or without, when there are none. Their
 // OAuth clients are credentials, and the directory is the LDAP manager,
 // when LDAP is built in.
-func (flags AuthFlags) withHandlers(ctx server.Cmd, credentials credential.CredentialProvider, directory ldapprovider.Manager, fn func(*module) error) error {
+func (flags AuthFlags) withHandlers(ctx server.Cmd, credentials credential.CredentialProvider, directory ldapprovider.Manager, insecure bool, fn func(*module) error) error {
 	providers, err := flags.providers(ctx, credentials, directory)
 	if err != nil {
 		return err
 	} else if len(providers) == 0 {
+		// The APIs need sessions, which need a provider to sign in with
+		if !insecure {
+			return httpresponse.ErrBadRequest.With("The APIs need sessions, so set a provider to sign in with, such as --auth.google.credential, or --auth.ldap, or set --insecure to serve them without authentication")
+		}
 		return fn(nil)
 	}
-	exchanger, err := flags.exchanger(ctx, directory)
+	exchanger, sessions, err := flags.exchanger(ctx, directory)
 	if err != nil {
 		return err
 	}
-	opts := []authhandler.Opt{authhandler.WithExchange(exchanger.Exchange, store.ResponseSchema())}
+	scheme, err := security.New(sessions)
+	if err != nil {
+		return err
+	}
+	opts := []authhandler.Opt{authhandler.WithExchange(exchanger.Exchange, store.ResponseSchema()), authhandler.WithSessions(sessions)}
 	if flags.URL != "" {
 		opts = append(opts, authhandler.WithBaseURL(flags.URL))
 	}
@@ -109,6 +118,7 @@ func (flags AuthFlags) withHandlers(ctx server.Cmd, credentials credential.Crede
 	return fn(&module{
 		register: authhandler.RegisterHandlers(providers, opts...),
 		section:  config.WithSection("auth", schema.Config{Providers: authhandler.Providers(providers)}),
+		security: scheme,
 	})
 }
 
@@ -171,18 +181,18 @@ func (flags AuthFlags) providers(ctx server.Cmd, credentials credential.Credenti
 // exchanger returns what signing in is exchanged for: a session, in files,
 // of the LDAP directory's user, with their groups' scopes, when LDAP is
 // signed in with, or else the identity, when the hook allows it
-func (flags AuthFlags) exchanger(ctx server.Cmd, directory ldapprovider.Manager) (*store.Exchanger, error) {
+func (flags AuthFlags) exchanger(ctx server.Cmd, directory ldapprovider.Manager) (*store.Exchanger, store.SessionStore, error) {
 	path := flags.Sessions
 	if path == "" {
 		config, err := os.UserConfigDir()
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		path = filepath.Join(config, ctx.Name(), "sessions")
 	}
 	sessions, err := file.New(path)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	opts := []store.Opt{store.WithTTL(flags.TTL)}
 	if len(flags.Allow) > 0 {
@@ -191,16 +201,20 @@ func (flags AuthFlags) exchanger(ctx server.Cmd, directory ldapprovider.Manager)
 	if flags.LDAP && directory != nil {
 		scopes, err := ldapprovider.ParseGroupScopes(flags.LDAPScopes...)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		users, err := ldapprovider.NewUsers(directory, scopes)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		opts = append(opts, store.WithUsers(users))
 	} else if len(flags.LDAPScopes) > 0 {
-		return nil, httpresponse.ErrBadRequest.With("LDAP groups' scopes need --auth.ldap")
+		return nil, nil, httpresponse.ErrBadRequest.With("LDAP groups' scopes need --auth.ldap")
 	}
 	ctx.Logger().InfoContext(ctx.Context(), "Sessions", "path", path, "ttl", flags.TTL)
-	return store.NewExchanger(sessions, opts...)
+	exchanger, err := store.NewExchanger(sessions, opts...)
+	if err != nil {
+		return nil, nil, err
+	}
+	return exchanger, sessions, nil
 }

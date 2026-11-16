@@ -28,6 +28,7 @@ import (
 	// Packages
 	provider "github.com/mutablelogic/go-auth/auth/provider"
 	schema "github.com/mutablelogic/go-auth/auth/schema"
+	store "github.com/mutablelogic/go-auth/auth/store"
 	httpresponse "github.com/mutablelogic/go-server/pkg/httpresponse"
 	httprouter "github.com/mutablelogic/go-server/pkg/httprouter"
 	jsonschema "github.com/mutablelogic/go-server/pkg/jsonschema"
@@ -49,6 +50,7 @@ type options struct {
 	base     *url.URL
 	exchange ExchangeFunc
 	response *jsonschema.Schema
+	sessions store.SessionStore
 	ttl      time.Duration
 	now      func() time.Time
 }
@@ -106,6 +108,17 @@ func WithExchange(fn ExchangeFunc, response *jsonschema.Schema) Opt {
 			return httpresponse.ErrBadRequest.With("An exchange needs a function, and the schema of its result")
 		}
 		o.exchange, o.response = fn, response
+		return nil
+	}
+}
+
+// WithSessions sets a session's token as a cookie, when signing in is
+// exchanged for a session, for a browser, and registers getting the
+// session and signing out, which need the security scheme, which is
+// registered first
+func WithSessions(sessions store.SessionStore) Opt {
+	return func(o *options) error {
+		o.sessions = sessions
 		return nil
 	}
 }
