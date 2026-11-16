@@ -199,16 +199,10 @@ func Test_ChangesNotOnFailure(t *testing.T) {
 	user := "uid=alice,ou=users,dc=example,dc=test"
 	d.Set(group, map[string][]string{"objectClass": {"top", "groupOfNames"}, "cn": {"eng"}, "member": {group}})
 	d.Set(user, map[string][]string{"objectClass": {"top", "inetOrgPerson"}, "uid": {"alice"}})
-	var mu sync.Mutex
-	reads := 0
+	// The group is found with a search of the groups' DN, and read by its
+	// own DN only after the change, which stalls
 	d.Stall = func(op uint8, dn string) bool {
-		if op != ldapv3.ApplicationSearchRequest || !strings.EqualFold(dn, group) {
-			return false
-		}
-		mu.Lock()
-		defer mu.Unlock()
-		reads++
-		return reads > 1
+		return op == ldapv3.ApplicationSearchRequest && strings.EqualFold(dn, group)
 	}
 	r := new(recorder)
 	m, err := manager.New(manager.WithUrl(d.URL("ldap")), manager.WithBaseDN("dc=example,dc=test"),

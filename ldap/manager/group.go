@@ -16,7 +16,6 @@ package manager
 
 import (
 	"context"
-	"errors"
 	"net/url"
 	"strconv"
 	"strings"
@@ -71,19 +70,8 @@ func (manager *Manager) GetGroup(ctx context.Context, name string) (_ *schema.Ob
 
 	manager.mu.Lock()
 	defer manager.mu.Unlock()
-	dn, err := manager.groupDN(name)
-	if err != nil {
-		return nil, err
-	}
-	// The directory matches the classes, by any of their names, or OIDs, as
-	// a list of groups does
-	group, err := manager.find(ctx, dn.String(), classFilter(manager.groupSelectClasses()))
-	if err != nil {
-		return nil, err
-	} else if group == nil {
-		return nil, httpresponse.ErrNotFound.Withf("Group %q not found", name)
-	}
-	return group, nil
+	group, _, err := manager.findGroup(ctx, name)
+	return group, err
 }
 
 // CreateGroup adds a group with the name, as its cn, and the attributes,
@@ -157,7 +145,7 @@ func (manager *Manager) UpdateGroup(ctx context.Context, name string, attrs sche
 
 	manager.mu.Lock()
 	defer manager.mu.Unlock()
-	dn, err := manager.groupDN(name)
+	_, dn, err := manager.findGroup(ctx, name)
 	if err != nil {
 		return nil, err
 	}
@@ -176,7 +164,7 @@ func (manager *Manager) DeleteGroup(ctx context.Context, name string) (_ *schema
 
 	manager.mu.Lock()
 	defer manager.mu.Unlock()
-	dn, err := manager.groupDN(name)
+	_, dn, err := manager.findGroup(ctx, name)
 	if err != nil {
 		return nil, err
 	}
@@ -224,6 +212,19 @@ func (manager *Manager) groupsDN() (*schema.DN, error) {
 	return manager.absdn(manager.groups.DN.String())
 }
 
+// findGroup returns the group with the name, and its DN: the entry
+// directly under the groups' DN, with one of their classes, whose RDN's
+// value is the name, such as cn=staff, or ou=staff
+func (manager *Manager) findGroup(ctx context.Context, name string) (*schema.Object, *schema.DN, error) {
+	base, err := manager.groupsDN()
+	if err != nil {
+		return nil, nil, err
+	} else if name == "" {
+		return nil, nil, httpresponse.ErrBadRequest.With("A group needs a name")
+	}
+	return manager.findNamed(ctx, "Group", base, name, "cn", manager.groupSelectClasses())
+}
+
 // groupDN returns the DN of the group with the name, as its cn, under the
 // groups' DN
 func (manager *Manager) groupDN(name string) (*schema.DN, error) {
@@ -261,11 +262,7 @@ func (manager *Manager) changeMembers(ctx context.Context, name string, users []
 	if len(users) == 0 {
 		return nil, httpresponse.ErrBadRequest.With("At least one user is needed")
 	}
-	dn, err := manager.groupDN(name)
-	if err != nil {
-		return nil, err
-	}
-	group, err := manager.get(ctx, dn.String())
+	group, _, err := manager.findGroup(ctx, name)
 	if err != nil {
 		return nil, err
 	}
@@ -323,14 +320,8 @@ func (manager *Manager) members(ctx context.Context, names []string) ([]*schema.
 			continue
 		}
 		seen[name] = true
-		dn, _, err := manager.userDN(ctx, name)
+		user, _, err := manager.findUser(ctx, name)
 		if err != nil {
-			return nil, err
-		}
-		user, err := manager.get(ctx, dn.String())
-		if errors.Is(err, httpresponse.ErrNotFound) {
-			return nil, httpresponse.ErrNotFound.Withf("User %q not found", name)
-		} else if err != nil {
 			return nil, err
 		}
 		result = append(result, user)
@@ -360,11 +351,7 @@ func memberAttrs(classes []string) []string {
 // whose uid is in memberUid, or, without a uid, their cn, as memberValues
 // writes them, exactly
 func (manager *Manager) groupMembers(ctx context.Context, users *schema.DN, name string) ([]*ldap.DN, error) {
-	dn, err := manager.groupDN(name)
-	if err != nil {
-		return nil, err
-	}
-	group, err := manager.get(ctx, dn.String())
+	group, _, err := manager.findGroup(ctx, name)
 	if err != nil {
 		return nil, err
 	}
@@ -430,11 +417,7 @@ func containsDN(dns []*ldap.DN, dn *ldap.DN) bool {
 // member or uniqueMember, by DN, or memberUid, of those the directory has,
 // or empty when it has none
 func (manager *Manager) groupsFilter(ctx context.Context, name string) (string, error) {
-	dn, _, err := manager.userDN(ctx, name)
-	if err != nil {
-		return "", err
-	}
-	user, err := manager.get(ctx, dn.String())
+	user, _, err := manager.findUser(ctx, name)
 	if err != nil {
 		return "", err
 	}

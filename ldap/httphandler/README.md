@@ -30,11 +30,12 @@ Lists the attribute types.
 
 ## Users
 
-Entries directly under the users' DN, by name: `uid`, or `cn` in Active Directory, which have one of the users' object classes: those the manager has, or any well known, such as `inetOrgPerson`, `person` or `posixAccount`. Other entries, such as groups beside them, aren't users.
+Entries directly under the users' DN, by name, which is the value of their RDN, such as `uid=alice`, or `cn=alice` in Active Directory, which have one of the users' object classes: those the manager has, or any well known, such as `inetOrgPerson`, `person` or `posixAccount`. Other entries, such as groups beside them, aren't users.
 
 - **Object classes:** those the manager has, or those the directory has: one structural, such as `inetOrgPerson` or Active Directory's `user`, and `posixAccount`, when it has it.
 - **IDs:** a `posixAccount` without a `uidNumber` has the next one.
 - **Renaming:** changing the name in an update renames the user.
+- **Names:** a user is found by its name in `uid`, `cn` or `ou`, and created with the naming attribute, `uid`, or `cn` in Active Directory. When two have the name, it's the one with the naming attribute.
 
 ### GET /ldap/user
 
@@ -63,7 +64,7 @@ Deletes a user, and returns it, as it was.
 
 ## Groups
 
-Entries directly under the groups' DN, by `cn`, which have one of the groups' object classes: those the manager has, or any well known, such as `groupOfNames`, `groupOfUniqueNames` or `posixGroup`.
+Entries directly under the groups' DN, by name, which is the value of their RDN, such as `cn=staff`, or `ou=staff`, which have one of the groups' object classes: those the manager has, or any well known, such as `groupOfNames`, `groupOfUniqueNames` or `posixGroup`.
 
 - **Object classes:** those the manager has, or those the directory has, such as `groupOfNames`, Active Directory's `group`, and `posixGroup`.
 - **IDs:** a `posixGroup` without a `gidNumber` has the next one.

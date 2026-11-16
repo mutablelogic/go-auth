@@ -105,19 +105,8 @@ func (manager *Manager) GetUser(ctx context.Context, name string) (_ *schema.Obj
 
 	manager.mu.Lock()
 	defer manager.mu.Unlock()
-	dn, _, err := manager.userDN(ctx, name)
-	if err != nil {
-		return nil, err
-	}
-	// The directory matches the classes, by any of their names, or OIDs, as
-	// a list of users does
-	user, err := manager.find(ctx, dn.String(), classFilter(manager.userSelectClasses()))
-	if err != nil {
-		return nil, err
-	} else if user == nil {
-		return nil, httpresponse.ErrNotFound.Withf("User %q not found", name)
-	}
-	return user, nil
+	user, _, err := manager.findUser(ctx, name)
+	return user, err
 }
 
 // CreateUser adds a user with the name, and the attributes, and returns
@@ -216,7 +205,7 @@ func (manager *Manager) UpdateUser(ctx context.Context, name string, attrs schem
 
 	manager.mu.Lock()
 	defer manager.mu.Unlock()
-	dn, _, err := manager.userDN(ctx, name)
+	_, dn, err := manager.findUser(ctx, name)
 	if err != nil {
 		return nil, err
 	}
@@ -235,7 +224,7 @@ func (manager *Manager) DeleteUser(ctx context.Context, name string) (_ *schema.
 
 	manager.mu.Lock()
 	defer manager.mu.Unlock()
-	dn, _, err := manager.userDN(ctx, name)
+	_, dn, err := manager.findUser(ctx, name)
 	if err != nil {
 		return nil, err
 	}
@@ -280,6 +269,73 @@ func (manager *Manager) userDN(ctx context.Context, name string) (*schema.DN, []
 		return nil, nil, httpresponse.ErrBadRequest.Withf("Invalid user name: %v", err)
 	}
 	return rdn.Join(base), classes, nil
+}
+
+// findUser returns the user with the name, and its DN: the entry directly
+// under the users' DN, with one of their classes, whose RDN's value is the
+// name, such as uid=alice, or cn=alice
+func (manager *Manager) findUser(ctx context.Context, name string) (*schema.Object, *schema.DN, error) {
+	base, err := manager.usersDN()
+	if err != nil {
+		return nil, nil, err
+	} else if name == "" {
+		return nil, nil, httpresponse.ErrBadRequest.With("A user needs a name")
+	}
+	classes, err := manager.userClasses(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	return manager.findNamed(ctx, "User", base, name, userNamingAttribute(classes), manager.userSelectClasses())
+}
+
+// findNamed returns the entry directly under the base, with one of the
+// classes, whose RDN's value is the name, in any of the attributes which
+// name entries, and its DN. When there's more than one, it's the one
+// named by the attribute entries are created with, or else a conflict.
+func (manager *Manager) findNamed(ctx context.Context, kind string, base *schema.DN, name, naming string, classes []string) (*schema.Object, *schema.DN, error) {
+	var attrs, names []string
+	for _, attr := range []string{naming, "uid", "cn", "ou"} {
+		if !containsFold(attrs, attr) {
+			attrs = append(attrs, attr)
+			names = append(names, "("+attr+"="+ldap.EscapeFilter(name)+")")
+		}
+	}
+	filter := "(&" + classFilter(classes) + "(|" + strings.Join(names, "") + "))"
+
+	var found []*schema.Object
+	if err := manager.search(ctx, ldap.ScopeSingleLevel, base.String(), filter, 0, func(entry *schema.Object) error {
+		if strings.EqualFold(rdnValue(entry.DN), name) {
+			found = append(found, entry)
+		}
+		return nil
+	}); err != nil {
+		return nil, nil, err
+	}
+	if len(found) > 1 {
+		var named []*schema.Object
+		for _, entry := range found {
+			if dn, err := ldap.ParseDN(entry.DN); err == nil && len(dn.RDNs) > 0 && strings.EqualFold(dn.RDNs[0].Attributes[0].Type, naming) {
+				named = append(named, entry)
+			}
+		}
+		// Only when it's one, or else they're all as good, which is a
+		// conflict
+		if len(named) == 1 {
+			found = named
+		}
+	}
+	switch len(found) {
+	case 0:
+		return nil, nil, httpresponse.ErrNotFound.Withf("%s %q not found", kind, name)
+	case 1:
+		dn, err := schema.NewDN(found[0].DN)
+		if err != nil {
+			return nil, nil, err
+		}
+		return found[0], dn, nil
+	default:
+		return nil, nil, httpresponse.ErrConflict.Withf("More than one %s is named %q", strings.ToLower(kind), name)
+	}
 }
 
 // userClasses returns the users' object classes, or, when they aren't set,

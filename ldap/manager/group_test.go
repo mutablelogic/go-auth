@@ -386,3 +386,62 @@ func Test_GroupClassByOID(t *testing.T) {
 		assert.ErrorIs(t, err, httpresponse.ErrNotFound)
 	})
 }
+
+func Test_FindByName(t *testing.T) {
+	test.ForEach(t, func(t *testing.T, ctx context.Context, server test.Server, m *manager.Manager) {
+		// A group named by its ou, as in some directories, and a user by
+		// its cn, beside those named as the manager names them
+		ou := test.OU(t, ctx, m)
+		both := test.Manager(t, ctx, server, manager.WithUserDN(ou), manager.WithGroupDN(ou))
+		alice, err := both.CreateUser(ctx, "alice", userAttrs("alice", "first Passw0rd!"), true)
+		require.NoError(t, err)
+		if server.ActiveDirectory {
+			t.Skip("Active Directory names groups by cn")
+		}
+		science, err := m.Create(ctx, "ou=science,"+ou, schema.Attrs{
+			"objectClass":  {"top", "groupOfUniqueNames"},
+			"ou":           {"science"},
+			"cn":           {"Science"},
+			"uniqueMember": {alice.DN},
+		})
+		require.NoError(t, err)
+
+		// A user named by its cn, without a uid
+		carol, err := m.Create(ctx, "cn=Carol Smith,"+ou, schema.Attrs{"objectClass": {"top", "person", "organizationalPerson", "inetOrgPerson"}, "cn": {"Carol Smith"}, "sn": {"Smith"}})
+		require.NoError(t, err)
+		got, err := both.GetUser(ctx, "carol smith")
+		require.NoError(t, err)
+		assert.True(t, strings.EqualFold(carol.DN, got.DN), "in any case")
+
+		// By name, which is its ou's value, to get, change, and delete
+		got, err = both.GetGroup(ctx, "science")
+		require.NoError(t, err)
+		assert.True(t, strings.EqualFold(science.DN, got.DN))
+		_, err = both.UpdateGroup(ctx, "science", schema.Attrs{"description": {"By its ou"}})
+		require.NoError(t, err)
+		groups, err := both.ListGroups(ctx, schema.GroupListRequest{User: types.Ptr("alice")})
+		require.NoError(t, err)
+		assert.NotZero(t, groups.Count)
+
+		// A name which is no entry's, and one which isn't a group's
+		_, err = both.GetGroup(ctx, "nobody")
+		assert.ErrorIs(t, err, httpresponse.ErrNotFound)
+		_, err = both.GetGroup(ctx, "alice")
+		assert.ErrorIs(t, err, httpresponse.ErrNotFound)
+
+		_, err = both.DeleteGroup(ctx, "science")
+		require.NoError(t, err)
+		_, err = both.GetGroup(ctx, "science")
+		assert.ErrorIs(t, err, httpresponse.ErrNotFound)
+	})
+}
+
+// containsFold returns whether the values have the value, in any case
+func containsFold(values []string, value string) bool {
+	for _, v := range values {
+		if strings.EqualFold(v, value) {
+			return true
+		}
+	}
+	return false
+}
