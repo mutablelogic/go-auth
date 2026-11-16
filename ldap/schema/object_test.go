@@ -249,17 +249,18 @@ func Test_object_001(t *testing.T) {
 		assert := assert.New(t)
 		filter := "(objectClass=inetOrgPerson)"
 		limit := uint64(25)
-		request := ObjectListRequest{
+		request := ObjectListRequest{ListRequest: ListRequest{
 			OffsetLimit: OffsetLimit{Offset: 10, Limit: &limit},
 			Filter:      &filter,
 			Attr:        []string{"cn", "mail"},
-		}
+		}, Prefix: types.Ptr("ou=users")}
 
 		values := request.Query()
 
 		assert.Equal("10", values.Get("offset"))
 		assert.Equal("25", values.Get("limit"))
 		assert.Equal("(objectClass=inetOrgPerson)", values.Get("filter"))
+		assert.Equal("ou=users", values.Get("prefix"))
 		assert.Equal([]string{"cn", "mail"}, values["attr"])
 	})
 
@@ -480,7 +481,7 @@ func Test_AttrsJSON(t *testing.T) {
 
 func Test_MemberListRequests(t *testing.T) {
 	assert := assert.New(t)
-	users := UserListRequest{ObjectListRequest: ObjectListRequest{Filter: types.Ptr("(sn=a)")}, Group: types.Ptr("eng")}
+	users := UserListRequest{ListRequest: ListRequest{Filter: types.Ptr("(sn=a)")}, Group: types.Ptr("eng")}
 	assert.Equal("filter=%28sn%3Da%29&group=eng", users.Query().Encode())
 	assert.Equal("", UserListRequest{}.Query().Encode())
 	assert.NotEmpty(users.String())

@@ -46,7 +46,7 @@ func (manager *Manager) ListGroups(ctx context.Context, req schema.GroupListRequ
 	if err != nil {
 		return nil, err
 	}
-	list := req.ObjectListRequest
+	list := req.ListRequest
 	if req.User != nil {
 		groups, err := manager.groupsFilter(ctx, *req.User)
 		if err != nil {

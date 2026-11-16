@@ -242,7 +242,7 @@ func deleteTree(ctx context.Context, m *manager.Manager, dn string) error {
 	// Every page, before any is deleted, which would move the offsets
 	tree := []*schema.DN{parent}
 	for offset := uint64(0); ; {
-		list, err := m.List(ctx, schema.ObjectListRequest{OffsetLimit: schema.OffsetLimit{Offset: offset}, Attr: []string{"1.1"}})
+		list, err := m.List(ctx, schema.ObjectListRequest{ListRequest: schema.ListRequest{OffsetLimit: schema.OffsetLimit{Offset: offset}, Attr: []string{"1.1"}}})
 		if err != nil {
 			return err
 		}

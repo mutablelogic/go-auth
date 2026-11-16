@@ -239,7 +239,7 @@ func Test_GroupMemberLists(t *testing.T) {
 		}
 
 		// With a filter as well
-		list, err := groups.ListUsers(ctx, schema.UserListRequest{ObjectListRequest: schema.ObjectListRequest{Filter: types.Ptr("(!(objectClass=*))")}, Group: types.Ptr("eng")})
+		list, err := groups.ListUsers(ctx, schema.UserListRequest{ListRequest: schema.ListRequest{Filter: types.Ptr("(!(objectClass=*))")}, Group: types.Ptr("eng")})
 		require.NoError(t, err)
 		assert.Zero(t, list.Count)
 
