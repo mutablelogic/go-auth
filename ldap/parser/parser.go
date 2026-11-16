@@ -61,7 +61,9 @@ func (p *parser) ParseObjectClass() (*schema.ObjectClassSchema, error) {
 		return nil, err
 	}
 
+	// Without a kind, a class is STRUCTURAL (RFC 4512 4.1.1)
 	result := &schema.ObjectClassSchema{
+		ClassKind:  schema.ObjectClassKindStructural,
 		Extensions: make(map[string][]string),
 	}
 	if err := p.expect(tokenizer.OpenParen); err != nil {
@@ -122,7 +124,9 @@ func (p *parser) ParseAttributeType() (*schema.AttributeTypeSchema, error) {
 		return nil, err
 	}
 
+	// Without a usage, an attribute type is for user applications (RFC 4512 4.1.2)
 	result := &schema.AttributeTypeSchema{
+		Usage:      schema.AttributeUsageUserApplications,
 		Extensions: make(map[string][]string),
 	}
 	if err := p.expect(tokenizer.OpenParen); err != nil {
