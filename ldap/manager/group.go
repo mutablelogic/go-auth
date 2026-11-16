@@ -298,8 +298,11 @@ func (manager *Manager) changeMembers(ctx context.Context, name string, users []
 	if err := manager.write(ctx, func(conn *ldap.Conn) error { return conn.Modify(modify) }); err != nil {
 		return nil, ldaperr(err)
 	}
+	if group, err = manager.get(ctx, group.DN); err != nil {
+		return nil, err
+	}
 	manager.publish(changes.ChangeUpdate, schema.TableGroup, name, "")
-	return manager.get(ctx, group.DN)
+	return group, nil
 }
 
 // members returns the users with the names, once each, or not found

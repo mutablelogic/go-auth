@@ -314,10 +314,13 @@ func Test_memberFilters(t *testing.T) {
 }
 
 func Test_sameRow(t *testing.T) {
-	assert.True(t, sameRow("OU=a, DC=Example,DC=org", "ou=a,dc=example,dc=org"))
-	assert.False(t, sameRow("ou=b,dc=example,dc=org", "ou=a,dc=example,dc=org"))
-	assert.True(t, sameRow("Alice", "alice"))
-	assert.False(t, sameRow("alicia", "alice"))
+	assert.True(t, sameRow(schema.TableObject, "OU=a, DC=Example,DC=org", "ou=a,dc=example,dc=org"))
+	assert.False(t, sameRow(schema.TableObject, "ou=b,dc=example,dc=org", "ou=a,dc=example,dc=org"))
+	assert.True(t, sameRow(schema.TableUser, "Alice", "alice"))
+	assert.False(t, sameRow(schema.TableUser, "alicia", "alice"))
+
+	// Names are names, though they look like DNs
+	assert.False(t, sameRow(schema.TableGroup, "cn=a,dc=x", "cn=a, dc=x"))
 	assert.Equal(t, "alice", rdnValue("UID=alice,ou=users,dc=example,dc=org"))
 	assert.Empty(t, rdnValue("not a dn"))
 }

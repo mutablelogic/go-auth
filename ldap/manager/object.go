@@ -283,6 +283,9 @@ func (manager *Manager) search(ctx context.Context, scope int, dn, filter string
 		}
 		if err := r.Err(); err != nil {
 			return ldaperr(err)
+		} else if err := ctx.Err(); err != nil {
+			// A search which is cancelled ends without an error
+			return err
 		}
 
 		// The next page, when there is one

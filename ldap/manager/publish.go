@@ -47,7 +47,7 @@ func (manager *Manager) publish(action changes.ChangeAction, table, row, previou
 		return
 	}
 	change := changes.Change{Action: action, Schema: schema.SchemaName, Table: table, Row: row}
-	if previous != "" && !sameRow(previous, row) {
+	if previous != "" && !sameRow(table, previous, row) {
 		change.Data, _ = json.Marshal(map[string]string{"previous": previous})
 	}
 	manager.publisher.Publish(change)
@@ -63,11 +63,14 @@ func rdnValue(dn string) string {
 	return parsed.RDNs[0].Attributes[0].Value
 }
 
-// sameRow returns whether two rows are the same: DNs which are equal, as
-// directories return them in any case and spacing, or names in any case
-func sameRow(a, b string) bool {
+// sameRow returns whether two rows of the table are the same: an object's
+// DNs which are equal, as directories return them in any case and spacing,
+// and other rows, which are names, in any case
+func sameRow(table, a, b string) bool {
 	if strings.EqualFold(a, b) {
 		return true
+	} else if table != schema.TableObject {
+		return false
 	}
 	x, errA := ldap.ParseDN(a)
 	y, errB := ldap.ParseDN(b)
