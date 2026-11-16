@@ -163,7 +163,8 @@ export class LdapObjectsElement extends LdapPage {
             <gs-page-header heading=${this.heading} .icon=${ObjectsIcon} .details=${this.details}></gs-page-header>
             ${base ? html`
                 <div style="display: flex; flex-wrap: wrap; gap: 1.5rem; align-items: flex-start">
-                    <cds-tree-view label="Branches" hide-label size="sm" style="flex: 0 1 20rem; min-width: 14rem; max-width: 100%; overflow-x: auto"
+                    <!-- Nodes are chosen, not text, which Carbon only shows for nodes with links -->
+                    <cds-tree-view label="Branches" hide-label size="sm" style="flex: 0 1 20rem; min-width: 14rem; max-width: 100%; overflow-x: auto; cursor: pointer; user-select: none"
                         @cds-tree-node-toggled=${(event: CustomEvent<{ expanded: boolean }>) => this.toggled(event)}
                         @cds-tree-node-selected=${(event: Event) => this.selectedNode(event)}>
                         ${this.nodeView(base, base)}
@@ -198,7 +199,7 @@ export class LdapObjectsElement extends LdapPage {
                 ${SlotIcons[entry ? entryKind(entry) : 'container']}
                 ${leaf ? nothing : branches
                     ? repeat(branches, (child) => dnKey(child.dn), (child) => this.nodeView(child.dn, rdn(child.dn), child))
-                    : html`<cds-tree-node label=${children?.state === 'error' ? "They couldn't be loaded" : 'Loading…'} disabled></cds-tree-node>`}
+                    : html`<cds-tree-node label=${children?.state === 'error' ? "They couldn't be loaded" : 'Loading…'} disabled style="cursor: default"></cds-tree-node>`}
             </cds-tree-node>
         `;
     }
