@@ -215,14 +215,14 @@ func Test_UserIDsConcurrent(t *testing.T) {
 func Test_CreateUserCancelled(t *testing.T) {
 	// When setting an Active Directory user's password is cancelled, which
 	// loses the manager's connection, the user is deleted on another
-	d := newFakeDirectory(t, true)
+	d := test.NewFake(t, true)
 	m, err := manager.New(manager.WithUrl(d.URL("ldaps")), manager.WithBaseDN("dc=example,dc=test"), manager.WithUserDN("ou=users", "user"), manager.WithSkipVerify())
 	require.NoError(t, err)
 	require.NoError(t, m.Connect(context.Background()))
 	defer m.Disconnect(context.Background())
 
 	dn := "cn=alice,ou=users,dc=example,dc=test"
-	d.stall = func(op uint8, target string) bool {
+	d.Stall = func(op uint8, target string) bool {
 		return op == ldapv3.ApplicationModifyRequest && strings.EqualFold(target, dn)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
@@ -237,11 +237,11 @@ func Test_CreateUserCancelled(t *testing.T) {
 func Test_NextIDRetries(t *testing.T) {
 	// Another manager takes the ID between reading and changing the counter,
 	// so it's read again
-	d := newFakeDirectory(t, false)
+	d := test.NewFake(t, false)
 	counter := "cn=lastuid,dc=example,dc=test"
 	d.Set(counter, map[string][]string{"objectClass": {"top", "device"}, "cn": {"lastuid"}, "serialNumber": {"1000"}})
 	var once sync.Once
-	d.beforeModify = func(dn string) {
+	d.BeforeModify = func(dn string) {
 		if strings.EqualFold(dn, counter) {
 			once.Do(func() { d.Entry(counter)["serialNumber"] = []string{"1001"} })
 		}
@@ -257,10 +257,10 @@ func Test_NextIDRetries(t *testing.T) {
 
 func Test_NextIDCreated(t *testing.T) {
 	// Another manager creates the counter first, so it's read, and changed
-	d := newFakeDirectory(t, false)
+	d := test.NewFake(t, false)
 	counter := "cn=lastuid,dc=example,dc=test"
 	var once sync.Once
-	d.beforeAdd = func(dn string) {
+	d.BeforeAdd = func(dn string) {
 		if strings.EqualFold(dn, counter) {
 			once.Do(func() {
 				d.Set(counter, map[string][]string{"objectClass": {"top", "device"}, "cn": {"lastuid"}, "serialNumber": {"1000"}})
@@ -278,7 +278,7 @@ func Test_NextIDCreated(t *testing.T) {
 func Test_CreateUserNormalizes(t *testing.T) {
 	// Attribute names are trimmed before they're read, so a uidNumber with
 	// spaces around its name is kept, and no ID is taken
-	d := newFakeDirectory(t, false)
+	d := test.NewFake(t, false)
 	m := fakeManager(t, d)
 
 	attrs := userAttrs("alice", "first Passw0rd!")
@@ -292,11 +292,28 @@ func Test_CreateUserNormalizes(t *testing.T) {
 
 // fakeManager returns a manager connected to the fake directory, whose
 // users are inetOrgPerson and posixAccount
-func fakeManager(t *testing.T, d *fakeDirectory) *manager.Manager {
+func fakeManager(t *testing.T, d *test.Fake) *manager.Manager {
 	t.Helper()
 	m, err := manager.New(manager.WithUrl(d.URL("ldap")), manager.WithBaseDN("dc=example,dc=test"), manager.WithUserDN("ou=users", "inetOrgPerson", "posixAccount"))
 	require.NoError(t, err)
 	require.NoError(t, m.Connect(context.Background()))
 	t.Cleanup(func() { m.Disconnect(context.Background()) })
 	return m
+}
+
+func Test_CreateUserNeedsLDAPS(t *testing.T) {
+	// An Active Directory user's password isn't sent over plain ldap, so
+	// the user is deleted
+	d := test.NewFake(t, false)
+	m, err := manager.New(manager.WithUrl(d.URL("ldap")), manager.WithBaseDN("dc=example,dc=test"), manager.WithUserDN("ou=users", "user"))
+	require.NoError(t, err)
+	require.NoError(t, m.Connect(context.Background()))
+	defer m.Disconnect(context.Background())
+
+	dn := "cn=alice,ou=users,dc=example,dc=test"
+	_, err = m.CreateUser(context.Background(), "alice", schema.Attrs{"userPassword": {"first Passw0rd!"}}, false)
+	assert.ErrorIs(t, err, httpresponse.ErrBadRequest)
+	assert.Equal(t, []string{dn}, d.Requests("delete"))
+	assert.Nil(t, d.Entry(dn))
+	assert.Empty(t, d.Requests("modify"), "no password was sent")
 }

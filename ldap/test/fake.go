@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package manager_test
+package test
 
 import (
 	"crypto/ecdsa"
@@ -37,19 +37,23 @@ import (
 ///////////////////////////////////////////////////////////////////////////////
 // TYPES
 
-// fakeDirectory is an LDAP directory in memory, which answers binds,
-// searches of one entry, adds, modifies and deletes, so tests can make it
-// stall, or fail, at a point
-type fakeDirectory struct {
+// Fake is an LDAP directory in memory, which answers binds, searches of
+// one entry, by its DN, adds, modifies and deletes, so tests can make a
+// request stall, or another manager change something first, every time.
+// It has no schema, filters, paging, renames or extended operations, so
+// the directories in containers are for everything else.
+type Fake struct {
 	sync.Mutex
-	listener net.Listener
-	entries  map[string]map[string][]string // by lower case DN
+	listener    net.Listener
+	entries     map[string]map[string][]string // by lower case DN
+	connections int
 
-	// When they're set, they're called before a request is answered, and
-	// stall stops it being answered
-	beforeAdd    func(dn string)
-	beforeModify func(dn string)
-	stall        func(op uint8, dn string) bool
+	// When they're set, BeforeAdd and BeforeModify are called before an add
+	// or modify of the DN is answered, and Stall stops a request of the
+	// operation, such as ldap.ApplicationBindRequest, being answered
+	BeforeAdd    func(dn string)
+	BeforeModify func(dn string)
+	Stall        func(op uint8, dn string) bool
 
 	// The requests, as "op dn"
 	requests []string
@@ -58,16 +62,17 @@ type fakeDirectory struct {
 ///////////////////////////////////////////////////////////////////////////////
 // LIFECYCLE
 
-// newFakeDirectory returns a directory listening on localhost, with TLS
-// when secure is true, which is closed when the test ends
-func newFakeDirectory(t *testing.T, secure bool) *fakeDirectory {
+// NewFake returns a directory listening on localhost, with TLS, whose
+// certificate isn't trusted, when secure is true, which is closed when the
+// test ends
+func NewFake(t *testing.T, secure bool) *Fake {
 	t.Helper()
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
 	if secure {
 		listener = tls.NewListener(listener, &tls.Config{Certificates: []tls.Certificate{selfSigned(t)}})
 	}
-	d := &fakeDirectory{listener: listener, entries: map[string]map[string][]string{}}
+	d := &Fake{listener: listener, entries: map[string]map[string][]string{}}
 	t.Cleanup(func() { listener.Close() })
 	go func() {
 		for {
@@ -75,6 +80,9 @@ func newFakeDirectory(t *testing.T, secure bool) *fakeDirectory {
 			if err != nil {
 				return
 			}
+			d.Lock()
+			d.connections++
+			d.Unlock()
 			go d.serve(conn)
 		}
 	}()
@@ -85,26 +93,34 @@ func newFakeDirectory(t *testing.T, secure bool) *fakeDirectory {
 // PUBLIC METHODS
 
 // URL returns the directory's URL, with the user and password
-func (d *fakeDirectory) URL(scheme string) string {
+func (d *Fake) URL(scheme string) string {
 	return scheme + "://admin:secret@" + d.listener.Addr().String()
 }
 
 // Set sets an entry's attributes
-func (d *fakeDirectory) Set(dn string, attrs map[string][]string) {
+func (d *Fake) Set(dn string, attrs map[string][]string) {
 	d.Lock()
 	defer d.Unlock()
 	d.entries[strings.ToLower(dn)] = attrs
 }
 
 // Entry returns an entry's attributes, or nil
-func (d *fakeDirectory) Entry(dn string) map[string][]string {
+func (d *Fake) Entry(dn string) map[string][]string {
 	d.Lock()
 	defer d.Unlock()
 	return d.entries[strings.ToLower(dn)]
 }
 
-// Requests returns the requests of the operation, as their DNs
-func (d *fakeDirectory) Requests(op string) []string {
+// Connections returns how many connections the directory has accepted
+func (d *Fake) Connections() int {
+	d.Lock()
+	defer d.Unlock()
+	return d.connections
+}
+
+// Requests returns the requests of the operation, as their DNs: "bind",
+// "search", "add", "modify" or "delete"
+func (d *Fake) Requests(op string) []string {
 	d.Lock()
 	defer d.Unlock()
 	var result []string
@@ -119,7 +135,7 @@ func (d *fakeDirectory) Requests(op string) []string {
 ///////////////////////////////////////////////////////////////////////////////
 // PRIVATE METHODS
 
-func (d *fakeDirectory) serve(conn net.Conn) {
+func (d *Fake) serve(conn net.Conn) {
 	defer conn.Close()
 	for {
 		packet, err := ber.ReadPacket(conn)
@@ -131,6 +147,9 @@ func (d *fakeDirectory) serve(conn net.Conn) {
 		var responses []*ber.Packet
 		switch op := uint8(request.Tag); op {
 		case ldapv3.ApplicationBindRequest:
+			if d.record(op, "bind", request.Children[1].Data.String()) {
+				continue
+			}
 			responses = []*ber.Packet{result(id, ldapv3.ApplicationBindResponse, 0)}
 		case ldapv3.ApplicationSearchRequest:
 			responses = d.search(id, request.Children[0].Data.String())
@@ -154,15 +173,15 @@ func (d *fakeDirectory) serve(conn net.Conn) {
 }
 
 // record records the request, and returns true when it should stall
-func (d *fakeDirectory) record(op uint8, name, dn string) bool {
+func (d *Fake) record(op uint8, name, dn string) bool {
 	d.Lock()
 	d.requests = append(d.requests, name+" "+dn)
-	stall := d.stall
+	stall := d.Stall
 	d.Unlock()
 	return stall != nil && stall(op, dn)
 }
 
-func (d *fakeDirectory) search(id any, dn string) []*ber.Packet {
+func (d *Fake) search(id any, dn string) []*ber.Packet {
 	if d.record(ldapv3.ApplicationSearchRequest, "search", dn) {
 		return nil
 	}
@@ -187,13 +206,13 @@ func (d *fakeDirectory) search(id any, dn string) []*ber.Packet {
 	return []*ber.Packet{envelope(id, entry), result(id, ldapv3.ApplicationSearchResultDone, 0)}
 }
 
-func (d *fakeDirectory) add(id any, request *ber.Packet) []*ber.Packet {
+func (d *Fake) add(id any, request *ber.Packet) []*ber.Packet {
 	dn := request.Children[0].Data.String()
 	if d.record(ldapv3.ApplicationAddRequest, "add", dn) {
 		return nil
 	}
-	if d.beforeAdd != nil {
-		d.beforeAdd(dn)
+	if d.BeforeAdd != nil {
+		d.BeforeAdd(dn)
 	}
 	if d.Entry(dn) != nil {
 		return []*ber.Packet{result(id, ldapv3.ApplicationAddResponse, ldapv3.LDAPResultEntryAlreadyExists)}
@@ -208,13 +227,13 @@ func (d *fakeDirectory) add(id any, request *ber.Packet) []*ber.Packet {
 	return []*ber.Packet{result(id, ldapv3.ApplicationAddResponse, 0)}
 }
 
-func (d *fakeDirectory) modify(id any, request *ber.Packet) []*ber.Packet {
+func (d *Fake) modify(id any, request *ber.Packet) []*ber.Packet {
 	dn := request.Children[0].Data.String()
 	if d.record(ldapv3.ApplicationModifyRequest, "modify", dn) {
 		return nil
 	}
-	if d.beforeModify != nil {
-		d.beforeModify(dn)
+	if d.BeforeModify != nil {
+		d.BeforeModify(dn)
 	}
 	d.Lock()
 	defer d.Unlock()
@@ -257,7 +276,7 @@ func (d *fakeDirectory) modify(id any, request *ber.Packet) []*ber.Packet {
 	return []*ber.Packet{result(id, ldapv3.ApplicationModifyResponse, 0)}
 }
 
-func (d *fakeDirectory) del(id any, dn string) []*ber.Packet {
+func (d *Fake) del(id any, dn string) []*ber.Packet {
 	if d.record(ldapv3.ApplicationDelRequest, "delete", dn) {
 		return nil
 	}
