@@ -244,15 +244,24 @@ func (manager *Manager) changeMembers(ctx context.Context, name string, users []
 	// Add the values which are missing, or delete those which are there, as
 	// the directory has them
 	modify := ldap.NewModifyRequest(group.DN, nil)
+	required := requiredMember(group.GetAll("objectClass"))
 	for _, attr := range attrs {
 		current := group.GetAll(attr)
+		removed := 0
 		for _, value := range memberValues(attr, members) {
 			existing := findMember(attr, current, value)
 			if add && existing == "" {
 				modify.Add(attr, []string{value})
 			} else if !add && existing != "" {
 				modify.Delete(attr, []string{existing})
+				removed++
 			}
+		}
+
+		// A group whose class needs a member, which would have none, has
+		// itself, in the same request
+		if removed > 0 && removed == len(current) && attr == required {
+			modify.Add(attr, []string{group.DN})
 		}
 	}
 	if len(modify.Changes) == 0 {
@@ -305,8 +314,23 @@ func memberAttrs(classes []string) []string {
 	return attrs
 }
 
-// memberValues returns the values of the attribute for the users: their
-// uid, or cn, for memberUid, and their DN otherwise
+// requiredMember returns the attribute which a group of the classes needs
+// a value of: uniqueMember for groupOfUniqueNames, and member for
+// groupOfNames, or none
+func requiredMember(classes []string) string {
+	switch {
+	case containsFold(classes, "groupOfUniqueNames"):
+		return "uniqueMember"
+	case containsFold(classes, "groupOfNames"):
+		return "member"
+	default:
+		return ""
+	}
+}
+
+// memberValues returns the values of the attribute for the users, once
+// each, as findMember matches them: their uid, or cn, for memberUid, and
+// their DN otherwise
 func memberValues(attr string, users []*schema.Object) []string {
 	values := make([]string, 0, len(users))
 	for _, user := range users {
@@ -319,7 +343,7 @@ func memberValues(attr string, users []*schema.Object) []string {
 				value = *cn
 			}
 		}
-		if value != "" && !containsFold(values, value) {
+		if value != "" && findMember(attr, values, value) == "" {
 			values = append(values, value)
 		}
 	}

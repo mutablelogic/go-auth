@@ -165,3 +165,35 @@ func Test_GroupIDs(t *testing.T) {
 		assert.Equal(t, types.Ptr("9999"), c.Get("gidNumber"))
 	})
 }
+
+func Test_GroupLastMember(t *testing.T) {
+	// A group whose class needs a member, and which doesn't have itself,
+	// has itself when its last member is removed
+	test.ForEach(t, func(t *testing.T, ctx context.Context, server test.Server, m *manager.Manager) {
+		if server.ActiveDirectory {
+			t.Skip("Active Directory's groups don't need a member")
+		}
+		for class, attr := range map[string]string{"groupOfNames": "member", "groupOfUniqueNames": "uniqueMember"} {
+			t.Run(class, func(t *testing.T) {
+				groups := test.Manager(t, ctx, server, manager.WithUserDN(test.OU(t, ctx, m)), manager.WithGroupDN(test.OU(t, ctx, m), class))
+				alice, err := groups.CreateUser(ctx, "alice", userAttrs("alice", "first Passw0rd!"), true)
+				require.NoError(t, err)
+				group, err := groups.CreateGroup(ctx, "eng", schema.Attrs{attr: {alice.DN}})
+				require.NoError(t, err)
+				require.Len(t, group.GetAll(attr), 1, "alice alone")
+
+				group, err = groups.RemoveGroupUsers(ctx, "eng", "alice")
+				require.NoError(t, err)
+				dn, _ := isMember(group, alice, "alice")
+				assert.Zero(t, dn, "removed")
+				members := group.GetAll(attr)
+				require.Len(t, members, 1)
+				a, err := ldapv3.ParseDN(members[0])
+				require.NoError(t, err)
+				b, err := ldapv3.ParseDN(group.DN)
+				require.NoError(t, err)
+				assert.True(t, a.EqualFold(b), "itself")
+			})
+		}
+	})
+}

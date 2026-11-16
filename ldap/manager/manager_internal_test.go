@@ -278,6 +278,18 @@ func Test_memberValues(t *testing.T) {
 	bob := &schema.Object{DN: "cn=bob,ou=users,dc=example,dc=test", Values: schema.Attrs{"cn": {"bob"}}}
 	assert.Equal(t, []string{"alice", "bob"}, memberValues("memberUid", []*schema.Object{alice, bob, alice}), "uid, or cn, once")
 	assert.Equal(t, []string{alice.DN, bob.DN}, memberValues("member", []*schema.Object{alice, bob}))
+
+	// uids are exact, and DNs equal in any case
+	upper := &schema.Object{DN: "UID=Alice,OU=Users,DC=Example,DC=Test", Values: schema.Attrs{"uid": {"Alice"}}}
+	assert.Equal(t, []string{"alice", "Alice"}, memberValues("memberUid", []*schema.Object{alice, upper}))
+	assert.Equal(t, []string{alice.DN}, memberValues("member", []*schema.Object{alice, upper}))
+}
+
+func Test_requiredMember(t *testing.T) {
+	assert.Equal(t, "uniqueMember", requiredMember([]string{"top", "groupOfUniqueNames"}))
+	assert.Equal(t, "member", requiredMember([]string{"top", "groupOfNames", "posixGroup"}))
+	assert.Empty(t, requiredMember([]string{"top", "group"}), "Active Directory")
+	assert.Empty(t, requiredMember([]string{"top", "posixGroup"}))
 }
 
 func Test_findMember(t *testing.T) {
