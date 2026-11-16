@@ -7,13 +7,14 @@
 // are offered, except those the server sets itself, such as the name, and
 // IDs it allocates.
 
-import { first, rdn, rdnValue, values, type Attrs, type AttributeType, type LdapObject, type ObjectClass, type PasswordRequest } from './schema.ts';
+import { escapeDN, first, rdn, rdnValue, values, type Attrs, type AttributeType, type LdapObject, type ObjectClass, type PasswordRequest } from './schema.ts';
 
 ///////////////////////////////////////////////////////////////////////////////
 // SCHEMA
 
-// EntryKind is what an entry's form creates or edits
-export type EntryKind = 'user' | 'group';
+// EntryKind is what an entry's form creates or edits: a user, a group, or
+// any entry
+export type EntryKind = 'user' | 'group' | 'entry';
 
 // EntrySchema is what entries of a kind are: their object classes, the
 // attributes they must, and may, have, by the names the directory uses, in
@@ -25,11 +26,14 @@ export interface EntrySchema {
     must: string[];
     may: string[];
     types: Map<string, AttributeType>;
+    // naming is the attribute which names the entries, such as an existing
+    // entry's RDN's, or one chosen for a new one, or else the kind's
+    naming?: string;
 }
 
 // entrySchema returns the schema of entries of the kind, from their object
 // classes, with those they inherit from, and the directory's attribute types
-export function entrySchema(kind: EntryKind, classes: readonly ObjectClass[], types: readonly AttributeType[]): EntrySchema {
+export function entrySchema(kind: EntryKind, classes: readonly ObjectClass[], types: readonly AttributeType[], naming?: string): EntrySchema {
     const byName = new Map<string, AttributeType>();
     for (const type of types) {
         for (const name of type.name ?? []) {
@@ -55,7 +59,19 @@ export function entrySchema(kind: EntryKind, classes: readonly ObjectClass[], ty
     for (const c of classes) {
         add(may, c.may);
     }
-    return { kind, classes: classes.flatMap((c) => c.name?.slice(0, 1) ?? []), must, may, types: byName };
+    return { kind, classes: classes.flatMap((c) => c.name?.slice(0, 1) ?? []), must, may, types: byName, naming: naming ? canonical(naming) : undefined };
+}
+
+// namingChoices returns the attributes which can name an entry of the
+// schema: those it must, or may, have, which are text, other than its
+// classes, with the one it's best named by first, which is one of those
+// well known, which it must have, or else the first it must have
+export function namingChoices(schema: EntrySchema): string[] {
+    const choices = [...schema.must, ...schema.may].filter((name) =>
+        name.toLowerCase() !== 'objectclass' && !isBinaryAttr(schema, name) && !schema.types.get(name.toLowerCase())?.noUserModification);
+    const must = choices.filter((name) => schema.must.includes(name));
+    const best = ['cn', 'ou', 'uid', 'o', 'dc', 'l', 'c'].map((n) => must.find((m) => m.toLowerCase() === n)).find(Boolean) ?? must[0];
+    return best ? [best, ...choices.filter((name) => name !== best)] : choices;
 }
 
 // classClosure returns the classes, by any of their names, or OIDs, and
@@ -115,7 +131,9 @@ export function isBinaryAttr(schema: EntrySchema, name: string): boolean {
 // for groups, and for Active Directory's users, and else uid, as the server
 // names them
 export function namingAttr(schema: EntrySchema): string {
-    if (schema.kind === 'group' || schemaHasClass(schema, 'user')) {
+    if (schema.naming) {
+        return schema.naming;
+    } else if (schema.kind === 'group' || schema.kind === 'entry' || schemaHasClass(schema, 'user')) {
         return 'cn';
     }
     return ['posixAccount', 'account', 'inetOrgPerson'].some((c) => schemaHasClass(schema, c)) ? 'uid' : 'cn';
@@ -126,6 +144,7 @@ export function namingAttr(schema: EntrySchema): string {
 const Managed: Record<EntryKind, string[]> = {
     user: ['objectClass', 'uidNumber', 'userPassword', 'unicodePwd', 'sAMAccountName', 'userAccountControl'],
     group: ['objectClass', 'gidNumber', 'member', 'uniqueMember', 'memberUid', 'sAMAccountName', 'groupType'],
+    entry: ['objectClass', 'userPassword', 'unicodePwd'],
 };
 
 // Attributes which are offered, when the entries may have them, before
@@ -133,6 +152,7 @@ const Managed: Record<EntryKind, string[]> = {
 const Common: Record<EntryKind, string[]> = {
     user: ['givenName', 'sn', 'displayName', 'mail', 'loginShell', 'description'],
     group: ['description'],
+    entry: ['description'],
 };
 
 // Labels of attributes which have a friendlier name
@@ -336,6 +356,18 @@ export function entryAttrs(form: EntryForm): Attrs {
         }
     }
     return attrs;
+}
+
+// newEntry returns the DN and attributes of a new entry, under the parent:
+// its name, in the attribute which names it, and its object classes, with
+// the attributes the form sets
+export function newEntry(form: EntryForm, parent: string): { dn: string; attrs: Attrs } {
+    const naming = namingAttr(form.schema);
+    const name = form.name.trim();
+    const attrs = entryAttrs(form);
+    attrs.objectClass = [...form.schema.classes];
+    attrs[naming] = [name];
+    return { dn: `${naming}=${escapeDN(name)},${parent}`, attrs };
 }
 
 ///////////////////////////////////////////////////////////////////////////////

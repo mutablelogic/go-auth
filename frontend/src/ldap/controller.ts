@@ -10,7 +10,7 @@ import type { NotificationController } from '@mutablelogic/go-server/notificatio
 import { classClosure, entrySchema, type EntryKind, type EntrySchema } from './form.ts';
 import * as api from './httpclient.ts';
 import {
-    ChangeSchema, TableConnection, TableGroup, TableObject, TableUser, rdnValue, sameDN, searchFilter,
+    ChangeSchema, TableConnection, TableGroup, TableObject, TableUser, rdn, rdnValue, sameDN, searchFilter,
     values, type GroupListRequest, type UserListRequest, type LdapObject, type LdapStatus, type ObjectClass, type AttributeType,
 } from './schema.ts';
 
@@ -271,20 +271,29 @@ export class SchemaController {
 export interface EntrySchemas {
     created: EntrySchema;
     of(entry: LdapObject): EntrySchema;
+    // classes are the directory's object classes, and create returns the
+    // schema of a new entry of the classes, and those they inherit from,
+    // named by the attribute
+    classes: ObjectClass[];
+    create(classes: readonly string[], naming?: string): EntrySchema;
 }
 
 // loadEntrySchemas returns the schemas of users', or groups', forms, from
 // the classes they're created with, the directory's object classes, and its
 // attribute types, every page of them
 export async function loadEntrySchemas(client: Client, kind: EntryKind, signal?: AbortSignal): Promise<EntrySchemas> {
+    // Any entry has no classes it's created with, which are chosen
     const [created, classes, types] = await Promise.all([
-        listAll((offset, limit) => api.listObjectClasses(client, { for: kind, offset, limit }, signal)),
+        kind === 'entry' ? [] : listAll((offset, limit) => api.listObjectClasses(client, { for: kind, offset, limit }, signal)),
         listAll((offset, limit) => api.listObjectClasses(client, { offset, limit }, signal)),
         listAll((offset, limit) => api.listAttributeTypes(client, { offset, limit }, signal)),
     ]);
     return {
         created: entrySchema(kind, created, types),
-        of: (entry) => entrySchema(kind, classClosure(classes, values(entry, 'objectClass').filter((v): v is string => typeof v === 'string')), types),
+        // An existing entry is named by its RDN's attribute
+        of: (entry) => entrySchema(kind, classClosure(classes, values(entry, 'objectClass').filter((v): v is string => typeof v === 'string')), types, rdnAttr(entry.dn)),
+        classes,
+        create: (names, naming) => entrySchema(kind, classClosure(classes, names), types, naming),
     };
 }
 
@@ -292,6 +301,13 @@ export async function loadEntrySchemas(client: Client, kind: EntryKind, signal?:
 // of them
 export function listAllGroups(client: Client, req: GroupListRequest = {}, signal?: AbortSignal): Promise<LdapObject[]> {
     return listAll((offset, limit) => api.listGroups(client, { ...req, offset, limit }, signal));
+}
+
+// rdnAttr returns the attribute of the DN's RDN, such as uid
+function rdnAttr(dn: string): string | undefined {
+    const value = rdn(dn);
+    const equals = value.indexOf('=');
+    return equals < 0 ? undefined : value.slice(0, equals).trim();
 }
 
 // listAllUsers returns every user which matches the request, every page of

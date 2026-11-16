@@ -8,7 +8,7 @@ import type { ChangesController } from '@mutablelogic/go-server/broadcaster';
 import type { NotificationController } from '@mutablelogic/go-server/notification';
 import type { LdapStatusController } from './controller.ts';
 import { live } from 'lit/directives/live.js';
-import { addable, attrLabel, defaultValue, formFields, isPosix, isRequired, type EntryForm, type EntryFormErrors } from './form.ts';
+import { addable, attrLabel, defaultValue, formFields, isPosix, isRequired, namingAttr, type EntryForm, type EntryFormErrors } from './form.ts';
 import { valueText, type LdapObject, type LdapStatus } from './schema.ts';
 
 // Carbon components
@@ -126,10 +126,17 @@ export function secretView(value: string, note: string): TemplateResult {
 export function entryFormView(form: EntryForm, rerender: () => void, errors: EntryFormErrors = {}): TemplateResult {
     const user = form.schema.kind === 'user';
     const more = addable(form);
+    // An entry's name is the value of the attribute which names it, which
+    // is said
+    const naming = namingAttr(form.schema);
+    const helper = form.original
+        ? `Changing it renames the ${form.schema.kind}`
+        : user ? 'What the user signs in with, such as alice'
+            : form.schema.kind === 'group' ? 'Such as developers' : `Its ${naming}, which is in its DN, as ${naming}=…`;
     return html`
         <div class="form">
-            <cds-text-input label="Name" .value=${live(form.name)}
-                helper-text=${form.original ? `Changing it renames the ${form.schema.kind}` : user ? 'What the user signs in with, such as alice' : 'Such as developers'}
+            <cds-text-input label=${form.schema.kind === 'entry' ? `Name (${naming})` : 'Name'} .value=${live(form.name)}
+                helper-text=${helper}
                 ?invalid=${!!errors.name} invalid-text=${errors.name ?? ''}
                 @input=${(event: Event) => { form.name = (event.target as HTMLInputElement).value; }}></cds-text-input>
             ${isPosix(form.schema) && !form.original ? html`

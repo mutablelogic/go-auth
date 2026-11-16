@@ -7,27 +7,32 @@
 // when entries change.
 
 import { html, nothing, type PropertyValues, type TemplateResult } from 'lit';
+import { live } from 'lit/directives/live.js';
 import { repeat } from 'lit/directives/repeat.js';
 import { ApiError } from '@mutablelogic/go-server/api';
 import { ListController } from '@mutablelogic/go-server/list';
 import type { Column, TableActionError, TableSearch, TableToolbarAction } from '@mutablelogic/go-server/list/view';
 import { PanelController, type PanelAction } from '@mutablelogic/go-server/panel';
-import { ObjectController } from './controller.ts';
+import { ObjectController, loadEntrySchemas, type EntrySchemas } from './controller.ts';
+import { entryAttrs, entryForm, entryFormErrors, namingChoices, newEntry, type EntryForm, type EntryFormErrors } from './form.ts';
 import * as api from './httpclient.ts';
-import { LdapPage, attrsView } from './parts.ts';
-import { dnKey, entryKind, hasChildren, isBranch, isCounter, parentDN, rdn, sameDN, values, type LdapObject } from './schema.ts';
+import { LdapPage, attrsView, entryFormView } from './parts.ts';
+import { dnKey, entryKind, hasChildren, isBranch, isCounter, parentDN, rdnLabel, sameDN, values, type LdapObject } from './schema.ts';
 
 // go-server's and Carbon's elements
 import '@mutablelogic/go-server/list/view';
 import '@mutablelogic/go-server/page/view';
 import '@mutablelogic/go-server/panel/view';
 import '@carbon/web-components/es/components/tree-view/index.js';
+import '@carbon/web-components/es/components/combo-box/index.js';
+import '@carbon/web-components/es/components/password-input/index.js';
 import iconLoader from '@carbon/web-components/es/globals/internal/icon-loader.js';
 import ContainerIcon from '@carbon/icons/es/folder/16.js';
 import PersonIcon from '@carbon/icons/es/user/16.js';
 import GroupIcon from '@carbon/icons/es/events/16.js';
 import EntryIcon from '@carbon/icons/es/document/16.js';
 import DetailsIcon from '@carbon/icons/es/information/16.js';
+import AddIcon from '@carbon/icons/es/add/16.js';
 import ObjectsIcon from '@carbon/icons/es/tree-view--alt/32.js';
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -54,7 +59,7 @@ const SlotIcons = {
 export const entryColumns: Column<LdapObject>[] = [
     {
         header: 'Name',
-        cell: (entry) => html`<span style="display: inline-flex; align-items: center; gap: 0.5rem">${iconLoader(Icons[entryKind(entry)])}${rdn(entry.dn)}</span>`,
+        cell: (entry) => html`<span style="display: inline-flex; align-items: center; gap: 0.5rem">${iconLoader(Icons[entryKind(entry)])}${rdnLabel(entry.dn)}</span>`,
     },
     { header: 'Classes', cell: (entry) => classesOf(entry).join(', ') },
 ];
@@ -79,7 +84,9 @@ export class LdapObjectsElement extends LdapPage {
     // isn't given
     declare controller?: ObjectController;
     declare heading: string;
-    declare private body?: { dn: string; content: TemplateResult };
+    // body is what the panel shows: an entry, or a form, which a change
+    // doesn't replace, and the DN it's of, or under, for a new entry
+    declare private body?: { kind: 'entry' | 'form'; dn: string; content: TemplateResult };
 
     // version is changed when the tree changes, so it's rendered again
     declare private version: number;
@@ -101,6 +108,10 @@ export class LdapObjectsElement extends LdapPage {
     private search = '';
 
     private readonly panel = new PanelController<{ dn: string }>();
+
+    // schemas are the directory's classes and attributes, which forms are
+    // made from, loaded when a form is first shown
+    private schemas?: Promise<EntrySchemas>;
     private unsubscribe?: () => void;
     private unsubscribeLeaves?: () => void;
 
@@ -117,7 +128,7 @@ export class LdapObjectsElement extends LdapPage {
             list: async (offset, limit) => {
                 const search = this.search.toLowerCase();
                 const leaves = (await this.childrenOf(this.branch))
-                    .filter((entry) => !isBranch(entry) && (!search || rdn(entry.dn).toLowerCase().includes(search)));
+                    .filter((entry) => !isBranch(entry) && (!search || rdnLabel(entry.dn).toLowerCase().includes(search)));
                 return { count: leaves.length, body: leaves.slice(offset, offset + limit) };
             },
             get: (entry) => this.controller ? this.controller.get(entry.dn) : Promise.resolve(entry),
@@ -162,9 +173,10 @@ export class LdapObjectsElement extends LdapPage {
     protected override render() {
         const base = this.current?.base_dn;
         const branch = this.branch;
-        const tools: TableToolbarAction[] = branch
-            ? [{ label: `Details of ${rdn(branch)}`, kind: 'ghost', icon: DetailsIcon, run: () => this.openEntry(branch) }]
-            : [];
+        const tools: TableToolbarAction[] = branch ? [
+            { label: `Details of ${rdnLabel(branch)}`, kind: 'ghost', icon: DetailsIcon, run: () => this.openEntry(branch) },
+            { label: 'Create an entry', icon: AddIcon, run: () => this.create(branch) },
+        ] : [];
         return html`
             <gs-page-header heading=${this.heading} .icon=${ObjectsIcon} .details=${this.details}></gs-page-header>
             ${base ? html`
@@ -177,7 +189,7 @@ export class LdapObjectsElement extends LdapPage {
                     </cds-tree-view>
                     <div style="flex: 1 1 28rem; min-width: 0">
                         <gs-table .controller=${this.leaves} .columns=${entryColumns} .itemKey=${(entry: LdapObject) => dnKey(entry.dn)}
-                            search=${`Search ${branch ? rdn(branch) : 'entries'}`} .toolbarActions=${tools}
+                            search=${`Search ${branch ? rdnLabel(branch) : 'entries'}`} .toolbarActions=${tools}
                             @gs-table-search=${(event: CustomEvent<TableSearch>) => {
                                 this.search = event.detail.value.trim();
                                 void this.leaves.reset();
@@ -204,7 +216,7 @@ export class LdapObjectsElement extends LdapPage {
             <cds-tree-node label=${label} data-dn=${dn} .isExpanded=${!leaf && this.expanded.has(key)} .selected=${this.branch !== undefined && dnKey(this.branch) === key}>
                 ${SlotIcons[entry ? entryKind(entry) : 'container']}
                 ${leaf ? nothing : branches
-                    ? repeat(branches, (child) => dnKey(child.dn), (child) => this.nodeView(child.dn, rdn(child.dn), child))
+                    ? repeat(branches, (child) => dnKey(child.dn), (child) => this.nodeView(child.dn, rdnLabel(child.dn), child))
                     : html`<cds-tree-node label=${children?.state === 'error' ? "They couldn't be loaded" : 'Loading…'} disabled style="cursor: default"></cds-tree-node>`}
             </cds-tree-node>
         `;
@@ -302,20 +314,33 @@ export class LdapObjectsElement extends LdapPage {
 
     // watch loads what's shown again, when entries change, and opens a leaf
     // in the panel when it's opened in the table, and closes the panel when
-    // it's closed, unless it shows the branch
+    // the leaf it shows is closed in the table, or is gone from it
     private watch() {
         this.unsubscribe?.();
         this.unsubscribe = this.isConnected ? this.controller?.onChange(() => void this.reload()) : undefined;
         this.unsubscribeLeaves?.();
+        let previous: LdapObject | undefined;
         this.unsubscribeLeaves = this.isConnected ? this.leaves.subscribe(({ selected }) => {
             if (selected) {
                 if (!this.panel.isOpen || !this.body || !sameDN(this.body.dn, selected.dn)) {
                     this.show(selected, true);
                 }
-            } else if (this.panel.isOpen && this.body && !(this.branch && sameDN(this.body.dn, this.branch))) {
+            } else if (previous && this.panel.isOpen && this.body && sameDN(this.body.dn, previous.dn)) {
                 this.panel.close();
             }
+            previous = selected;
         }) : undefined;
+    }
+
+    // select opens an entry in the table, when it's a leaf, so it's the
+    // selected row, as a new, or renamed, entry is, before the table is
+    // loaded again
+    private select(entry: LdapObject) {
+        if (isBranch(entry)) {
+            this.leaves.close();
+        } else {
+            this.leaves.open(entry);
+        }
     }
 
     // reload loads the children of the branches which are expanded, or
@@ -342,7 +367,7 @@ export class LdapObjectsElement extends LdapPage {
         }
         await Promise.all(dns.map((dn) => this.load(dn)));
         await this.leaves.refresh();
-        if (this.panel.isOpen && this.body && this.controller) {
+        if (this.panel.isOpen && this.body?.kind === 'entry' && this.controller) {
             const opened = this.opened;
             try {
                 const entry = await this.controller.get(this.body.dn);
@@ -356,7 +381,7 @@ export class LdapObjectsElement extends LdapPage {
                     if (error instanceof ApiError && error.status === 404) {
                         this.panel.close();
                     } else {
-                        this.notifications?.error(`${rdn(this.body.dn)} couldn't be loaded again`, error);
+                        this.notifications?.error(`${rdnLabel(this.body?.dn ?? '')} couldn't be loaded again`, error);
                     }
                 }
             }
@@ -398,18 +423,254 @@ export class LdapObjectsElement extends LdapPage {
 
     // show shows an entry's attributes, and what can be done with it
     private show(entry: LdapObject, open: boolean) {
-        this.body = { dn: entry.dn, content: attrsView(entry) };
-        this.panel.setHeader({ title: rdn(entry.dn), subtitle: classesOf(entry).join(', ') || 'Entry' });
-        // The entries with the next user and group IDs aren't deleted
+        this.body = { kind: 'entry', dn: entry.dn, content: attrsView(entry) };
+        this.panel.setHeader({ title: rdnLabel(entry.dn), subtitle: classesOf(entry).join(', ') || 'Entry' });
+        // The entries with the next user and group IDs aren't deleted, and a
+        // person's password can be checked
         const base = this.current?.base_dn;
-        const actions: PanelAction[] = base && isCounter(entry.dn, base) ? [] : [
-            { label: 'Delete', kind: 'danger', close: false, run: () => this.delete(entry) },
-        ];
+        const actions: PanelAction[] = [];
+        if (!base || !isCounter(entry.dn, base)) {
+            actions.push({ label: 'Delete', kind: 'danger', close: false, run: () => this.delete(entry) });
+        }
+        actions.push({ label: 'Edit', kind: entryKind(entry) === 'person' ? 'secondary' : 'primary', close: false, run: () => this.edit(entry) });
+        if (entryKind(entry) === 'person') {
+            actions.push({ label: 'Check password', kind: 'primary', close: false, run: () => this.checkPassword(entry) });
+        }
         this.panel.setActions(actions);
         if (open) {
             this.opened++;
             this.panel.open({ dn: entry.dn });
         }
+    }
+
+    // stillOpen returns whether what was opened, when opened was the count,
+    // is still open, so a response for it can change the panel
+    private stillOpen(opened: number): boolean {
+        return this.opened === opened && this.panel.isOpen;
+    }
+
+    // openForm shows a form in the panel, with its header and actions
+    private openForm(dn: string, title: string, subtitle: string, content: TemplateResult, actions: PanelAction[]) {
+        this.opened++;
+        this.body = { kind: 'form', dn, content };
+        this.panel.setHeader({ title, subtitle });
+        this.panel.setActions(actions);
+        this.panel.open({ dn });
+    }
+
+    // loadSchemas returns the directory's classes and attributes, which are
+    // loaded once, or again, when they couldn't be
+    private async loadSchemas(): Promise<EntrySchemas> {
+        if (!this.controller) {
+            throw new Error('No client');
+        }
+        this.schemas ??= loadEntrySchemas(this.controller.client, 'entry');
+        try {
+            return await this.schemas;
+        } catch (error) {
+            this.schemas = undefined;
+            throw error;
+        }
+    }
+
+    // edit shows the form which edits an entry, from its object classes,
+    // which renames it, when its name changes, under the same parent
+    private async edit(entry: LdapObject) {
+        const opened = this.opened;
+        const schemas = await this.loadSchemas();
+        if (this.opened !== opened || !this.controller) {
+            return;
+        }
+        const client = this.controller.client;
+        const form = entryForm(schemas.of(entry), entry);
+        let errors: EntryFormErrors = {};
+        const rerender = () => {
+            this.body = { kind: 'form', dn: entry.dn, content: entryFormView(form, rerender, errors) };
+        };
+        this.openForm(entry.dn, `Edit ${rdnLabel(entry.dn)}`, classesOf(entry).join(', ') || 'Entry', entryFormView(form, rerender, errors), [
+            { label: 'Cancel', kind: 'secondary', close: false, run: () => this.show(entry, false) },
+            {
+                label: 'Save',
+                kind: 'primary',
+                close: false,
+                run: async () => {
+                    errors = entryFormErrors(form);
+                    rerender();
+                    if (Object.keys(errors).length) {
+                        return;
+                    }
+                    const attrs = entryAttrs(form);
+                    if (!Object.keys(attrs).length) {
+                        this.notifications?.push({ kind: 'info', title: 'Nothing was changed' });
+                        this.show(entry, false);
+                        return;
+                    }
+                    const saved = this.opened;
+                    const updated = await api.updateObject(client, entry.dn, attrs);
+                    this.notifications?.push({ kind: 'success', title: `${rdnLabel(updated.dn)} was changed` });
+                    if (this.branch && sameDN(this.branch, entry.dn) && !sameDN(entry.dn, updated.dn)) {
+                        this.selectBranch(updated.dn);
+                    }
+                    if (this.stillOpen(saved)) {
+                        this.select(updated);
+                        this.show(updated, false);
+                    }
+                    await this.loadParent(updated.dn);
+                },
+            },
+        ]);
+    }
+
+    // create shows the form which creates an entry under the branch: its
+    // structural class, the attribute which names it, and then its
+    // attributes, from the class and those it inherits from
+    private async create(parent: string) {
+        this.leaves.close();
+        const opened = this.opened;
+        const schemas = await this.loadSchemas();
+        if (this.opened !== opened || !this.controller) {
+            return;
+        }
+        const client = this.controller.client;
+        const structural = schemas.classes
+            .filter((c) => (c.classKind ?? 'STRUCTURAL') === 'STRUCTURAL' && !c.obsolete && c.name?.length)
+            .map((c) => c.name![0]).sort((a, b) => a.localeCompare(b));
+        const state: { class?: string; naming?: string; form?: EntryForm; errors: EntryFormErrors } = { errors: {} };
+
+        // choose makes the form of the class, named by the attribute, or the
+        // one it's best named by, keeping what was typed
+        const choose = (name: string, naming?: string) => {
+            const choices = namingChoices(schemas.create([name]));
+            const chosen = naming && choices.includes(naming) ? naming : choices[0];
+            const form = entryForm(schemas.create([name], chosen));
+            if (state.form) {
+                form.name = state.form.name;
+                form.values = { ...state.form.values };
+                form.added = [...state.form.added];
+            }
+            Object.assign(state, { class: name, naming: chosen, form, errors: {} });
+        };
+        const view = (): TemplateResult => {
+            const choices = state.class ? namingChoices(schemas.create([state.class])) : [];
+            return html`
+                <div class="form" style="margin-bottom: 1.5rem">
+                    <cds-combo-box title-text="Class" helper-text="Its structural class, such as organizationalUnit or inetOrgPerson"
+                        .value=${state.class ?? ''} ?invalid=${!!state.errors.class} invalid-text=${state.errors.class ?? ''}
+                        @cds-combo-box-selected=${(event: Event) => {
+                            const name = (event.target as HTMLInputElement).value;
+                            if (name && name !== state.class) {
+                                choose(name);
+                                rerender();
+                            }
+                        }}>
+                        ${structural.map((name) => html`<cds-combo-box-item value=${name}>${name}</cds-combo-box-item>`)}
+                    </cds-combo-box>
+                    ${state.class ? html`
+                        <cds-combo-box title-text="Named by" helper-text="The attribute which names it, in its DN" .value=${state.naming ?? ''}
+                            @cds-combo-box-selected=${(event: Event) => {
+                                const naming = (event.target as HTMLInputElement).value;
+                                if (naming && naming !== state.naming && state.class) {
+                                    choose(state.class, naming);
+                                    rerender();
+                                }
+                            }}>
+                            ${choices.map((name) => html`<cds-combo-box-item value=${name}>${name}</cds-combo-box-item>`)}
+                        </cds-combo-box>
+                    ` : nothing}
+                </div>
+                ${state.form ? entryFormView(state.form, rerender, state.errors) : nothing}
+            `;
+        };
+        const rerender = () => {
+            this.body = { kind: 'form', dn: parent, content: view() };
+        };
+        this.openForm(parent, 'Create an entry', `Under ${rdnLabel(parent)}`, view(), [
+            { label: 'Cancel', kind: 'secondary' },
+            {
+                label: 'Create',
+                kind: 'primary',
+                close: false,
+                run: async () => {
+                    if (!state.form) {
+                        state.errors = { class: 'Choose a class' };
+                        rerender();
+                        return;
+                    }
+                    state.errors = entryFormErrors(state.form);
+                    rerender();
+                    if (Object.keys(state.errors).length) {
+                        return;
+                    }
+                    const { dn, attrs } = newEntry(state.form, parent);
+                    const saved = this.opened;
+                    const created = await api.createObject(client, dn, attrs);
+                    this.notifications?.push({ kind: 'success', title: `${rdnLabel(created.dn)} was created` });
+                    if (this.stillOpen(saved)) {
+                        this.select(created);
+                        this.show(created, false);
+                    }
+                    await this.loadParent(created.dn);
+                },
+            },
+        ]);
+    }
+
+    // checkPassword checks a person's password, with a bind as it, on a
+    // connection of the server's own, so it's said whether it's right
+    private checkPassword(entry: LdapObject) {
+        if (!this.controller) {
+            return;
+        }
+        const client = this.controller.client;
+        const state = { password: '' };
+        const view = (error?: string) => html`
+            <div class="form">
+                <cds-password-input label="Password" .value=${live(state.password)} autocomplete="off"
+                    helper-text="It's checked, and not changed" ?invalid=${!!error} invalid-text=${error ?? ''}
+                    @input=${(event: Event) => { state.password = (event.target as HTMLInputElement).value; }}></cds-password-input>
+            </div>
+        `;
+        this.openForm(entry.dn, `Check ${rdnLabel(entry.dn)}'s password`, classesOf(entry).join(', ') || 'Entry', view(), [
+            { label: 'Cancel', kind: 'secondary', close: false, run: () => this.show(entry, false) },
+            {
+                label: 'Check',
+                kind: 'primary',
+                close: false,
+                run: async () => {
+                    if (!state.password) {
+                        this.body = { kind: 'form', dn: entry.dn, content: view('A password is required') };
+                        return;
+                    }
+                    const checked = this.opened;
+                    try {
+                        await api.bindObject(client, entry.dn, state.password);
+                    } catch (error) {
+                        if (error instanceof ApiError && error.status === 401) {
+                            if (this.stillOpen(checked)) {
+                                this.body = { kind: 'form', dn: entry.dn, content: view("It isn't the password") };
+                            }
+                            return;
+                        }
+                        throw error;
+                    }
+                    state.password = '';
+                    this.notifications?.push({ kind: 'success', title: `It's ${rdnLabel(entry.dn)}'s password` });
+                    if (this.stillOpen(checked)) {
+                        this.show(entry, false);
+                    }
+                },
+            },
+        ]);
+    }
+
+    // loadParent loads the children of an entry's parent again, when
+    // they're loaded, and the leaves, so a new, or renamed, entry is shown
+    private async loadParent(dn: string) {
+        const parent = parentDN(dn);
+        if (this.loaded.has(dnKey(parent))) {
+            await this.load(parent);
+        }
+        await this.leaves.refresh();
     }
 
     // delete deletes an entry, which has no children, once it's confirmed,
@@ -421,7 +682,7 @@ export class LdapObjectsElement extends LdapPage {
         }
         const opened = this.opened;
         await api.deleteObject(this.controller.client, entry.dn);
-        this.notifications?.push({ kind: 'success', title: `${rdn(entry.dn)} was deleted` });
+        this.notifications?.push({ kind: 'success', title: `${rdnLabel(entry.dn)} was deleted` });
         if (this.opened === opened && this.panel.isOpen) {
             this.panel.close();
         }
