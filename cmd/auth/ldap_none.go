@@ -32,6 +32,6 @@ type LDAPFlags struct{}
 // PRIVATE METHODS
 
 // withHandlers calls fn without the LDAP handlers
-func (LDAPFlags) withHandlers(_ server.Cmd, _ *broadcaster.Broadcaster, fn func(*module) error) error {
+func (LDAPFlags) withHandlers(_ server.Cmd, _ *broadcaster.Broadcaster, _ bool, fn func(*module) error) error {
 	return fn(nil)
 }
