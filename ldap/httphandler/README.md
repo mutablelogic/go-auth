@@ -18,6 +18,7 @@ The object classes and attribute types the directory has, from its subschema ent
 Lists the object classes.
 
 - **Filters:** `filter` is a name or OID, `kind` is `ABSTRACT`, `STRUCTURAL` or `AUXILIARY`, and `superior`, `must` and `may` are attributes they all have.
+- **`for`:** `user` or `group`, only the classes users, or groups, are created with, and those they inherit from, so a form knows their attributes.
 - A class without a kind is `STRUCTURAL`.
 
 ### GET /ldap/attr

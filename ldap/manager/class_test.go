@@ -24,6 +24,7 @@ import (
 	manager "github.com/mutablelogic/go-auth/ldap/manager"
 	schema "github.com/mutablelogic/go-auth/ldap/schema"
 	test "github.com/mutablelogic/go-auth/ldap/test"
+	httpresponse "github.com/mutablelogic/go-server/pkg/httpresponse"
 	types "github.com/mutablelogic/go-server/pkg/types"
 	assert "github.com/stretchr/testify/assert"
 	require "github.com/stretchr/testify/require"
@@ -88,6 +89,51 @@ func Test_ListObjectClasses(t *testing.T) {
 		for _, class := range auxiliary.Body {
 			assert.Equal(t, schema.ObjectClassKindAuxiliary, schema.ObjectClassKind(class.ClassKind), class.Identifier())
 		}
+	})
+}
+
+func Test_ListObjectClassesFor(t *testing.T) {
+	test.ForEach(t, func(t *testing.T, ctx context.Context, server test.Server, m *manager.Manager) {
+		// The classes a user, or a group, is created with, and their
+		// superiors, so their attributes are known before one is
+		names := func(list *schema.ObjectClassListResponse) []string {
+			var result []string
+			for _, class := range list.Body {
+				result = append(result, strings.ToLower(class.Identifier()))
+			}
+			return result
+		}
+		users, err := m.ListObjectClasses(ctx, schema.ObjectClassListRequest{For: types.Ptr(schema.ObjectClassForUser)})
+		require.NoError(t, err)
+		assert.Contains(t, names(users), "top", "a superior")
+		posix := false
+		for _, name := range names(users) {
+			posix = posix || name == "posixaccount"
+		}
+		user, err := m.CreateUser(ctx, "classes-for", schema.Attrs{"cn": {"Classes"}, "sn": {"For"}, "homeDirectory": {"/home/classes-for"}}, posix)
+		require.NoError(t, err)
+		t.Cleanup(func() { _, _ = m.DeleteUser(context.Background(), "classes-for") })
+		for _, class := range user.GetAll("objectClass") {
+			assert.Contains(t, names(users), strings.ToLower(class), "the user's classes")
+		}
+
+		groups, err := m.ListObjectClasses(ctx, schema.ObjectClassListRequest{For: types.Ptr(schema.ObjectClassForGroup)})
+		require.NoError(t, err)
+		group, err := m.CreateGroup(ctx, "classes-for", nil)
+		require.NoError(t, err)
+		t.Cleanup(func() { _, _ = m.DeleteGroup(context.Background(), "classes-for") })
+		for _, class := range group.GetAll("objectClass") {
+			assert.Contains(t, names(groups), strings.ToLower(class), "the group's classes")
+		}
+
+		// With the other filters
+		structural, err := m.ListObjectClasses(ctx, schema.ObjectClassListRequest{For: types.Ptr(schema.ObjectClassForUser), Kind: types.Ptr(schema.ObjectClassKindStructural)})
+		require.NoError(t, err)
+		assert.NotZero(t, structural.Count)
+		assert.Less(t, structural.Count, users.Count)
+
+		_, err = m.ListObjectClasses(ctx, schema.ObjectClassListRequest{For: types.Ptr(schema.ObjectClassFor("x"))})
+		assert.ErrorIs(t, err, httpresponse.ErrBadRequest)
 	})
 }
 
