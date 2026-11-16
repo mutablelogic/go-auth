@@ -22,10 +22,12 @@ package test
 
 import (
 	"context"
+	"crypto/rand"
 	"crypto/tls"
 	"fmt"
 	"net"
 	"os"
+	"sort"
 	"strings"
 	"sync"
 	"testing"
@@ -57,6 +59,10 @@ type Server struct {
 	// URL is the ldaps URL of the server's container, when it's started.
 	// Its certificate isn't trusted.
 	URL string
+
+	// ActiveDirectory is true when the directory is Active Directory, or
+	// like it, whose users have the "user" class, and unicodePwd passwords
+	ActiveDirectory bool
 
 	// ConnectTimeout is how long the directory can take to accept a bind,
 	// once its container has started
@@ -180,8 +186,59 @@ func Servers(t *testing.T) []Server {
 	return result
 }
 
+// OU creates an organizational unit for the test, with a random name, under
+// the base DN, and returns its DN. It's deleted when the test ends, with
+// the entries under it.
+func OU(t *testing.T, ctx context.Context, m *manager.Manager) string {
+	t.Helper()
+	dn := "ou=test-" + strings.ToLower(rand.Text()[:10])
+	ou, err := m.Create(ctx, dn, schema.Attrs{
+		"objectClass": {"top", "organizationalUnit"},
+		"ou":          {strings.TrimPrefix(dn, "ou=")},
+	})
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		if err := deleteTree(context.WithoutCancel(ctx), m, ou.DN); err != nil {
+			t.Errorf("deleting %s: %v", ou.DN, err)
+		}
+	})
+	return ou.DN
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 // PRIVATE METHODS
+
+// deleteTree deletes the entry, and those under it, the deepest first
+func deleteTree(ctx context.Context, m *manager.Manager, dn string) error {
+	parent, err := schema.NewDN(dn)
+	if err != nil {
+		return err
+	}
+	// Every page, before any is deleted, which would move the offsets
+	tree := []*schema.DN{parent}
+	for offset := uint64(0); ; {
+		list, err := m.List(ctx, schema.ObjectListRequest{OffsetLimit: schema.OffsetLimit{Offset: offset}, Attr: []string{"1.1"}})
+		if err != nil {
+			return err
+		}
+		for _, object := range list.Body {
+			if child, err := schema.NewDN(object.DN); err == nil && (*ldap.DN)(parent).AncestorOfFold((*ldap.DN)(child)) {
+				tree = append(tree, child)
+			}
+		}
+		offset += uint64(len(list.Body))
+		if len(list.Body) == 0 || offset >= list.Count {
+			break
+		}
+	}
+	sort.Slice(tree, func(i, j int) bool { return len(tree[i].RDNs) > len(tree[j].RDNs) })
+	for _, dn := range tree {
+		if _, err := m.Delete(ctx, dn.String()); err != nil {
+			return err
+		}
+	}
+	return nil
+}
 
 // start starts the server's container, once, and returns its ldaps URL, or
 // fails the test when it can't be started
