@@ -19,13 +19,10 @@ import (
 	"errors"
 	"io"
 	"log/slog"
-	"net"
-	"sync/atomic"
 	"testing"
 	"time"
 
 	// Packages
-	ber "github.com/go-asn1-ber/asn1-ber"
 	ldapv3 "github.com/go-ldap/ldap/v3"
 	manager "github.com/mutablelogic/go-auth/ldap/manager"
 	schema "github.com/mutablelogic/go-auth/ldap/schema"
@@ -38,8 +35,8 @@ import (
 )
 
 // The tests run against each directory in ldap/test, and are skipped with
-// -short, other than Test_ConnectCancelled and Test_WriteCancelled, which
-// need a server which doesn't answer
+// -short, other than those with test.Fake, which need a directory which
+// doesn't answer, or fails, at a point
 
 // TestMain runs the tests, then stops the directories' containers
 func TestMain(m *testing.M) {
@@ -143,21 +140,10 @@ func Test_Trace(t *testing.T) {
 }
 
 func Test_ConnectCancelled(t *testing.T) {
-	// A server which accepts connections, and never answers
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	require.NoError(t, err)
-	defer listener.Close()
-	go func() {
-		for {
-			conn, err := listener.Accept()
-			if err != nil {
-				return
-			}
-			defer conn.Close()
-		}
-	}()
-
-	m, err := manager.New(manager.WithUrl("ldap://admin:secret@"+listener.Addr().String()), manager.WithBaseDN("dc=example,dc=test"))
+	// A directory which never answers a bind
+	d := test.NewFake(t, false)
+	d.Stall = func(op uint8, _ string) bool { return op == ldapv3.ApplicationBindRequest }
+	m, err := manager.New(manager.WithUrl(d.URL("ldap")), manager.WithBaseDN("dc=example,dc=test"))
 	require.NoError(t, err)
 
 	// The bind is abandoned when the context is cancelled
@@ -188,23 +174,10 @@ func Test_ConnectCancelled(t *testing.T) {
 }
 
 func Test_WriteCancelled(t *testing.T) {
-	// A server which answers binds, and nothing else
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	require.NoError(t, err)
-	defer listener.Close()
-	var connections atomic.Int32
-	go func() {
-		for {
-			conn, err := listener.Accept()
-			if err != nil {
-				return
-			}
-			connections.Add(1)
-			go answerBind(conn)
-		}
-	}()
-
-	m, err := manager.New(manager.WithUrl("ldap://admin:secret@"+listener.Addr().String()), manager.WithBaseDN("dc=example,dc=test"))
+	// A directory which never answers an add
+	d := test.NewFake(t, false)
+	d.Stall = func(op uint8, _ string) bool { return op == ldapv3.ApplicationAddRequest }
+	m, err := manager.New(manager.WithUrl(d.URL("ldap")), manager.WithBaseDN("dc=example,dc=test"))
 	require.NoError(t, err)
 
 	// Run connects
@@ -215,6 +188,7 @@ func Test_WriteCancelled(t *testing.T) {
 		stop()
 		<-done
 	}()
+
 	// A write which isn't answered is abandoned when the context is
 	// cancelled, which closes the connection. Until Run has connected,
 	// it's not connected.
@@ -225,35 +199,10 @@ func Test_WriteCancelled(t *testing.T) {
 		_, err := m.Create(ctx, "ou=a", attrs)
 		return errors.Is(err, context.DeadlineExceeded)
 	}, 5*time.Second, 10*time.Millisecond)
-	assert.Equal(t, int32(1), connections.Load())
+	assert.Equal(t, 1, d.Connections())
 
 	// And Run reconnects at once, rather than at its next check
-	assert.Eventually(t, func() bool { return connections.Load() == 2 }, 5*time.Second, 10*time.Millisecond)
-}
-
-// answerBind answers a bind with success, then reads the requests which
-// follow, and never answers them
-func answerBind(conn net.Conn) {
-	defer conn.Close()
-	for {
-		packet, err := ber.ReadPacket(conn)
-		if err != nil {
-			return
-		}
-		if len(packet.Children) < 2 || packet.Children[1].Tag != ldapv3.ApplicationBindRequest {
-			continue
-		}
-		response := ber.Encode(ber.ClassUniversal, ber.TypeConstructed, ber.TagSequence, nil, "LDAP Response")
-		response.AppendChild(ber.NewInteger(ber.ClassUniversal, ber.TypePrimitive, ber.TagInteger, packet.Children[0].Value, "MessageID"))
-		bind := ber.Encode(ber.ClassApplication, ber.TypeConstructed, ldapv3.ApplicationBindResponse, nil, "Bind Response")
-		bind.AppendChild(ber.NewInteger(ber.ClassUniversal, ber.TypePrimitive, ber.TagEnumerated, uint64(0), "resultCode"))
-		bind.AppendChild(ber.NewString(ber.ClassUniversal, ber.TypePrimitive, ber.TagOctetString, "", "matchedDN"))
-		bind.AppendChild(ber.NewString(ber.ClassUniversal, ber.TypePrimitive, ber.TagOctetString, "", "diagnosticMessage"))
-		response.AppendChild(bind)
-		if _, err := conn.Write(response.Bytes()); err != nil {
-			return
-		}
-	}
+	assert.Eventually(t, func() bool { return d.Connections() == 2 }, 5*time.Second, 10*time.Millisecond)
 }
 
 func slogDiscard() *slog.Logger {
