@@ -3,6 +3,9 @@ import assert from 'node:assert/strict';
 import type { Client } from '@mutablelogic/go-server/api';
 import type { Change, ChangeFilter, ChangesController } from '@mutablelogic/go-server/broadcaster';
 import * as api from '../src/ldap/httpclient.ts';
+import { addable, classClosure, entryAttrs, entryForm, entryFormErrors, entrySchema, formFields, isPosix, namingAttr, passwordForm, passwordFormErrors, passwordRequest } from '../src/ldap/form.ts';
+import type { AttributeType, ObjectClass } from '../src/ldap/schema.ts';
+import { listAll } from '../src/ldap/controller.ts';
 import { GroupController, LdapStatusController, ObjectController, UserController } from '../src/ldap/controller.ts';
 import {
     binarySize, escapeFilter, first, hasClass, isBinary, parentDN, rdn, rdnValue, sameDN, searchFilter, splitDN, valueText, values,
@@ -233,4 +236,124 @@ test('controllers', async (t) => {
         send({ schema: 'ldap', table: 'connection', action: 'delete' });
         assert.equal(changed, 2);
     });
+});
+
+// The users' classes, and the attribute types, of an OpenLDAP directory
+const classes: ObjectClass[] = [
+    { numericOid: '1', name: ['inetOrgPerson'], superClasses: ['organizationalPerson'], may: ['displayName', 'givenName', 'jpegPhoto', 'mail', 'uid'] },
+    { numericOid: '2', name: ['organizationalPerson'], superClasses: ['person'], may: ['telephoneNumber'] },
+    { numericOid: '3', name: ['person'], superClasses: ['top'], must: ['sn', 'cn'], may: ['description', 'userPassword'] },
+    { numericOid: '4', name: ['posixAccount'], superClasses: ['top'], must: ['cn', 'uid', 'uidNumber', 'gidNumber', 'homeDirectory'], may: ['loginShell', 'userPassword'] },
+    { numericOid: '5', name: ['top'], must: ['objectClass'] },
+];
+const types: AttributeType[] = [
+    { numericOid: 'n', name: ['name'], syntax: '1.3.6.1.4.1.1466.115.121.1.15{32768}' },
+    ...['cn', 'sn', 'givenName'].map((n) => ({ numericOid: n, name: [n], superType: 'name' })),
+    ...['uidNumber', 'gidNumber'].map((n) => ({ numericOid: n, name: [n], syntax: '1.3.6.1.4.1.1466.115.121.1.27', singleValue: true })),
+    ...['homeDirectory', 'loginShell', 'mail', 'displayName', 'uid', 'description', 'telephoneNumber', 'objectClass'].map((n) => ({ numericOid: n, name: [n], syntax: '1.3.6.1.4.1.1466.115.121.1.26' })),
+    { numericOid: 'p', name: ['jpegPhoto'], syntax: '1.3.6.1.4.1.1466.115.121.1.28' },
+    { numericOid: 'w', name: ['userPassword'], syntax: '1.3.6.1.4.1.1466.115.121.1.40' },
+];
+
+test('forms', async (t) => {
+    const schema = entrySchema('user', classes, types);
+    const alice: LdapObject = { dn: 'uid=alice,ou=users,dc=test', attrs: { uid: ['alice'], cn: ['Alice Smith'], sn: ['Smith'], mail: ['alice@example.com'], telephoneNumber: ['1', '2'], uidNumber: ['1001'], gidNumber: ['1001'] } };
+
+    await t.test('the schema is what the classes must and may have', () => {
+        assert.deepEqual(schema.must, ['sn', 'cn', 'uid', 'uidNumber', 'gidNumber', 'homeDirectory', 'objectClass']);
+        assert.ok(schema.may.includes('mail'));
+        assert.ok(!schema.may.includes('cn'), "what's required isn't optional");
+        assert.ok(isPosix(schema));
+        assert.equal(namingAttr(schema), 'uid');
+        assert.equal(namingAttr(entrySchema('user', [{ numericOid: 'u', name: ['user'], must: ['cn'] }], types)), 'cn', 'Active Directory');
+    });
+
+    await t.test("a new user's fields are what it must have, which the server doesn't set, and those which are common", () => {
+        const form = entryForm(schema);
+        assert.ok(form.allocateGID, 'its group ID is its user ID');
+        assert.deepEqual(formFields(form), ['cn', 'givenName', 'sn', 'displayName', 'mail', 'homeDirectory', 'loginShell', 'description']);
+        form.allocateGID = false;
+        assert.ok(formFields(form).includes('gidNumber'), 'its own group ID');
+        assert.deepEqual(addable(form), ['telephoneNumber'], 'not binary, nor the name, nor the password');
+        form.added.push('telephoneNumber');
+        assert.equal(formFields(form).at(-1), 'telephoneNumber');
+    });
+
+    await t.test('a new user needs what it must have, and its defaults are filled', () => {
+        const form = entryForm(schema);
+        assert.deepEqual(Object.keys(entryFormErrors(form)).sort(), ['cn', 'homeDirectory', 'name', 'sn']);
+        Object.assign(form, { name: ' bob ', password: 'a', confirm: 'b' });
+        Object.assign(form.values, { cn: 'Bob Jones', sn: 'Jones', mail: 'bob' });
+        assert.deepEqual(Object.keys(entryFormErrors(form)).sort(), ['confirm', 'mail'], 'the home directory has a default');
+        form.confirm = 'a';
+        form.values.mail = 'bob@example.com';
+        form.allocateGID = false;
+        form.values.gidNumber = 'x';
+        assert.deepEqual(Object.keys(entryFormErrors(form)), ['gidNumber'], 'a number');
+        form.values.gidNumber = '500';
+        assert.deepEqual(entryFormErrors(form), {});
+        assert.deepEqual(entryAttrs(form), { cn: ['Bob Jones'], sn: ['Jones'], mail: ['bob@example.com'], gidNumber: ['500'], homeDirectory: ['/home/bob'], userPassword: ['a'] });
+    });
+
+    await t.test('an edited user has what changed, emptied ones deleted, and its name, when renamed', () => {
+        const form = entryForm(schema, alice);
+        assert.equal(form.name, 'alice');
+        assert.ok(!form.allocateGID);
+        assert.equal(form.values.cn, 'Alice Smith');
+        assert.ok(formFields(form).includes('gidNumber'), 'its group ID');
+        assert.ok(!formFields(form).includes('telephoneNumber'), 'not more than one value');
+        assert.ok(!formFields(form).includes('uidNumber'), 'allocated');
+        assert.deepEqual(entryAttrs(form), {}, 'nothing changed');
+        Object.assign(form.values, { mail: '', givenName: 'Alice', homeDirectory: '/home/alice' });
+        assert.deepEqual(entryFormErrors(form), {});
+        assert.deepEqual(entryAttrs(form), { givenName: ['Alice'], mail: null, homeDirectory: ['/home/alice'] });
+        form.values.sn = '';
+        assert.ok(entryFormErrors(form).sn, 'required');
+        form.name = 'alicia';
+        assert.deepEqual(entryAttrs(form).uid, ['alicia']);
+    });
+
+    await t.test("an existing user's schema is of its own classes, by name or OID, and their superiors", () => {
+        assert.deepEqual(classClosure(classes, ['inetOrgPerson']).map((c) => c.name?.[0]), ['inetOrgPerson', 'organizationalPerson', 'person', 'top']);
+        assert.deepEqual(classClosure(classes, ['4']).map((c) => c.name?.[0]), ['posixAccount', 'top'], 'by OID');
+        const own = entrySchema('user', classClosure(classes, ['top', 'inetOrgPerson']), types);
+        const form = entryForm(own, alice);
+        assert.ok(!formFields(form).includes('homeDirectory'), 'not a posixAccount');
+        assert.deepEqual(entryFormErrors(form), {});
+    });
+
+    await t.test("what wasn't changed isn't sent, even with spaces, and a rename keeps the name's other values", () => {
+        const spaced: LdapObject = { ...alice, attrs: { ...alice.attrs, description: [' Spaced '], uid: ['alice', 'login-alias'] } };
+        const form = entryForm(schema, spaced);
+        assert.deepEqual(entryAttrs(form), {});
+        form.values.description = 'Spaced';
+        assert.deepEqual(entryAttrs(form), { description: ['Spaced'] });
+        form.values.description = ' Spaced ';
+        form.name = 'alicia';
+        assert.deepEqual(entryAttrs(form), { uid: ['alicia', 'login-alias'] });
+    });
+
+    await t.test('a password is generated, or typed twice', () => {
+        const form = passwordForm();
+        assert.deepEqual(passwordFormErrors(form), {});
+        assert.deepEqual(passwordRequest(form), {});
+        form.generate = false;
+        assert.ok(passwordFormErrors(form).password);
+        Object.assign(form, { password: 'x', confirm: 'y' });
+        assert.ok(passwordFormErrors(form).confirm);
+        form.confirm = 'x';
+        assert.deepEqual(passwordFormErrors(form), {});
+        assert.deepEqual(passwordRequest(form), { new: 'x' });
+    });
+});
+
+test('listAll', async () => {
+    const pages: [number, number][] = [];
+    const items = await listAll(async (offset, limit) => {
+        pages.push([offset, limit]);
+        return { count: 2500, body: Array.from({ length: Math.min(limit, 2500 - offset) }, (_, i) => offset + i) };
+    });
+    assert.equal(items.length, 2500);
+    assert.deepEqual(pages, [[0, 1000], [1000, 1000], [2000, 1000]]);
+    assert.deepEqual(await listAll(async () => ({ count: 5 })), [], 'an empty page');
 });

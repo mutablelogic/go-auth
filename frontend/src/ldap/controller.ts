@@ -7,10 +7,11 @@ import type { Client } from '@mutablelogic/go-server/api';
 import type { Change, ChangeFilter, ChangesController } from '@mutablelogic/go-server/broadcaster';
 import { ListController } from '@mutablelogic/go-server/list';
 import type { NotificationController } from '@mutablelogic/go-server/notification';
+import { classClosure, entrySchema, type EntryKind, type EntrySchema } from './form.ts';
 import * as api from './httpclient.ts';
 import {
     ChangeSchema, TableConnection, TableGroup, TableObject, TableUser, rdnValue, sameDN, searchFilter,
-    type AttributeType, type LdapObject, type LdapStatus, type ObjectClass,
+    values, type GroupListRequest, type LdapObject, type LdapStatus, type ObjectClass, type AttributeType,
 } from './schema.ts';
 
 // LdapOptions are the controllers' notifications, which say why entries
@@ -257,6 +258,51 @@ export class SchemaController {
     setAttributeSearch(text: string): Promise<void> {
         this.attributeQuery = text.trim();
         return this.attributes.reset();
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// ENTRY SCHEMA
+
+// EntrySchemas are the schemas of users', or groups', forms: a new one's,
+// from the classes they're created with, and an existing one's, from its
+// own object classes, which can be others
+export interface EntrySchemas {
+    created: EntrySchema;
+    of(entry: LdapObject): EntrySchema;
+}
+
+// loadEntrySchemas returns the schemas of users', or groups', forms, from
+// the classes they're created with, the directory's object classes, and its
+// attribute types, every page of them
+export async function loadEntrySchemas(client: Client, kind: EntryKind, signal?: AbortSignal): Promise<EntrySchemas> {
+    const [created, classes, types] = await Promise.all([
+        listAll((offset, limit) => api.listObjectClasses(client, { for: kind, offset, limit }, signal)),
+        listAll((offset, limit) => api.listObjectClasses(client, { offset, limit }, signal)),
+        listAll((offset, limit) => api.listAttributeTypes(client, { offset, limit }, signal)),
+    ]);
+    return {
+        created: entrySchema(kind, created, types),
+        of: (entry) => entrySchema(kind, classClosure(classes, values(entry, 'objectClass').filter((v): v is string => typeof v === 'string')), types),
+    };
+}
+
+// listAllGroups returns every group which matches the request, every page
+// of them
+export function listAllGroups(client: Client, req: GroupListRequest = {}, signal?: AbortSignal): Promise<LdapObject[]> {
+    return listAll((offset, limit) => api.listGroups(client, { ...req, offset, limit }, signal));
+}
+
+// listAll returns the items of every page, from the first, until there are
+// as many as the count, or a page is empty
+export async function listAll<T>(page: (offset: number, limit: number) => Promise<{ count: number; body?: T[] }>): Promise<T[]> {
+    const result: T[] = [];
+    for (;;) {
+        const next = await page(result.length, 1000);
+        result.push(...(next.body ?? []));
+        if (!next.body?.length || result.length >= next.count) {
+            return result;
+        }
     }
 }
 
