@@ -218,37 +218,66 @@ export function parentDN(dn: string): string {
     return splitDN(dn).slice(1).join(',');
 }
 
-// sameDN returns whether two DNs are the same, in any case and spacing
+// sameDN returns whether two DNs are the same, in any case, and spacing
+// around their RDNs
 export function sameDN(a: string, b: string): boolean {
-    const normal = (dn: string) => splitDN(dn).map((part) => part.trim().toLowerCase()).join(',');
+    const normal = (dn: string) => splitDN(dn).map((part) => part.toLowerCase()).join(',');
     return normal(a) === normal(b);
 }
 
-// splitDN returns the RDNs of the DN, at commas which aren't escaped
+// splitDN returns the RDNs of the DN, at commas which aren't escaped,
+// without the spaces around them, but with escaped ones, such as a
+// trailing space which is part of a value
 export function splitDN(dn: string): string[] {
     const parts: string[] = [];
     let part = '';
+    // kept is how much of the part is escaped, which isn't trimmed
+    let kept = 0;
+    const push = () => {
+        const trimmed = part.slice(0, kept) + part.slice(kept).trimEnd();
+        parts.push(trimmed.trimStart());
+        part = '';
+        kept = 0;
+    };
     for (let i = 0; i < dn.length; i++) {
         const c = dn[i];
         if (c === '\\' && i + 1 < dn.length) {
             part += c + dn[++i];
+            kept = part.length;
         } else if (c === ',') {
-            parts.push(part.trim());
-            part = '';
+            push();
         } else {
             part += c;
         }
     }
     if (part.trim() !== '' || parts.length > 0) {
-        parts.push(part.trim());
+        push();
     }
     return parts.filter((p) => p !== '');
 }
 
-// unescapeDN unescapes a value of an RDN, such as a\,b or a\2cb
+// unescapeDN unescapes a value of an RDN, such as a\,b or a\2cb, whose hex
+// escapes are the bytes of UTF-8, such as Jos\c3\a9
 function unescapeDN(value: string): string {
-    return value.replace(/\\([0-9a-fA-F]{2}|.)/g, (_, escaped: string) =>
-        escaped.length === 2 ? String.fromCharCode(parseInt(escaped, 16)) : escaped);
+    const bytes: number[] = [];
+    const encoder = new TextEncoder();
+    for (let i = 0; i < value.length; i++) {
+        const c = value[i];
+        const hex = value.slice(i + 1, i + 3);
+        if (c === '\\' && /^[0-9a-fA-F]{2}$/.test(hex)) {
+            bytes.push(parseInt(hex, 16));
+            i += 2;
+        } else if (c === '\\' && i + 1 < value.length) {
+            bytes.push(...encoder.encode(value[++i]));
+        } else {
+            // A character, which can be two UTF-16 code units
+            const point = value.codePointAt(i)!;
+            const char = String.fromCodePoint(point);
+            bytes.push(...encoder.encode(char));
+            i += char.length - 1;
+        }
+    }
+    return new TextDecoder().decode(new Uint8Array(bytes));
 }
 
 ///////////////////////////////////////////////////////////////////////////////

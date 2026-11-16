@@ -9,6 +9,7 @@
 import { LitElement, html, nothing, type TemplateResult } from 'lit';
 import type { Client } from '@mutablelogic/go-server/api';
 import type { ChangesController } from '@mutablelogic/go-server/broadcaster';
+import { configSection, getConfig } from '@mutablelogic/go-server/config';
 import type { NavController } from '@mutablelogic/go-server/nav';
 import type { NotificationController } from '@mutablelogic/go-server/notification';
 import type { Router } from '@mutablelogic/go-server/router';
@@ -54,18 +55,25 @@ export class LdapPageElement extends LitElement {
         current: { state: true },
     };
 
-    kind: LdapPageKind = 'users';
-    status?: LdapStatusController;
-    client?: Client;
-    notifications?: NotificationController;
-    changes?: ChangesController;
-    private current?: LdapStatus;
+    // Reactive properties are declared, so they aren't class fields, which
+    // would hide Lit's accessors, and not update the page
+    declare kind: LdapPageKind;
+    declare status?: LdapStatusController;
+    declare client?: Client;
+    declare notifications?: NotificationController;
+    declare changes?: ChangesController;
+    declare private current?: LdapStatus;
     private unsubscribe?: () => void;
 
     // The page is in the light DOM, as the certificate pages are, so Carbon's
     // styles, such as the header's theme, apply to it
     protected override createRenderRoot(): HTMLElement {
         return this;
+    }
+
+    constructor() {
+        super();
+        this.kind = 'users';
     }
 
     override connectedCallback(): void {
@@ -127,6 +135,9 @@ export interface LdapApp {
     status: LdapStatus;
     notifications?: NotificationController;
     changes?: ChangesController;
+    // refreshStatus reads the status again, when changes may have been
+    // missed, which is the configuration's ldap section, without it
+    refreshStatus?: () => Promise<LdapStatus | undefined>;
 }
 
 // LdapPages are the module's pages, with the status they follow
@@ -144,7 +155,7 @@ export interface LdapPages {
 // the directory has them. The pages' ids are prefixed with page-, not the
 // hashes they're routed to, so the browser doesn't scroll to them.
 export function ldapModule(app: LdapApp, section = 'LDAP'): LdapPages {
-    const status = new LdapStatusController(app.status, app.changes);
+    const status = new LdapStatusController(app.status, app.changes, app.refreshStatus ?? (() => getConfig().then((config) => configSection<LdapStatus>(config, 'ldap'))));
     const add = (kind: LdapPageKind) => {
         const page = document.createElement('section');
         page.id = `page-${pages[kind].id}`;

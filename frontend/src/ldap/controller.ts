@@ -9,7 +9,7 @@ import { ListController } from '@mutablelogic/go-server/list';
 import type { NotificationController } from '@mutablelogic/go-server/notification';
 import * as api from './httpclient.ts';
 import {
-    ChangeSchema, TableConnection, TableGroup, TableObject, TableUser, parentDN, rdnValue, sameDN, searchFilter,
+    ChangeSchema, TableConnection, TableGroup, TableObject, TableUser, rdnValue, sameDN, searchFilter,
     type AttributeType, type LdapObject, type LdapStatus, type ObjectClass,
 } from './schema.ts';
 
@@ -35,11 +35,17 @@ export class LdapStatusController {
     private state: LdapStatus;
     private readonly listeners = new Set<(status: LdapStatus) => void>();
 
-    constructor(status: LdapStatus, changes?: ChangesController) {
+    // refresh reads the status again, such as from the configuration, when
+    // changes may have been missed, as when the changes' stream starts
+    constructor(status: LdapStatus, changes?: ChangesController, refresh?: () => Promise<LdapStatus | undefined>) {
         this.state = { ...status };
         changes?.on(filter(TableConnection), (change?: Change) => {
             if (change?.action === 'create' || change?.action === 'delete') {
                 this.update({ ...this.state, connected: change.action === 'create' });
+            } else if (!change && refresh) {
+                refresh().then((status) => status && this.update(status), () => {
+                    // The status is kept until it can be read
+                });
             }
         });
     }
@@ -86,11 +92,12 @@ export class UserController {
                 const page = await api.listUsers(client, { offset, limit, filter: searchFilter(this.query, UserSearch), group: this.group });
                 return { count: page.count, body: page.body ?? [] };
             },
-            get: (user) => api.getUser(client, rdnValue(user.dn)).catch(() => user),
+            get: (user) => api.getUser(client, rdnValue(user.dn)),
             same: (a, b) => sameDN(a.dn, b.dn),
             notifications: options.notifications,
             changes: options.changes,
-            filter: options.changes ? [filter(TableUser), filter(TableObject), filter(TableConnection, 'create')] : undefined,
+            // A group's change, such as its members, changes its members
+            filter: options.changes ? [filter(TableUser), filter(TableGroup), filter(TableObject), filter(TableConnection, 'create')] : undefined,
             pageSize: options.pageSize,
         });
     }
@@ -130,11 +137,12 @@ export class GroupController {
                 const page = await api.listGroups(client, { offset, limit, filter: searchFilter(this.query, GroupSearch), user: this.user });
                 return { count: page.count, body: page.body ?? [] };
             },
-            get: (group) => api.getGroup(client, rdnValue(group.dn)).catch(() => group),
+            get: (group) => api.getGroup(client, rdnValue(group.dn)),
             same: (a, b) => sameDN(a.dn, b.dn),
             notifications: options.notifications,
             changes: options.changes,
-            filter: options.changes ? [filter(TableGroup), filter(TableObject), filter(TableConnection, 'create')] : undefined,
+            // A user's change, such as its uid, changes which groups it's in
+            filter: options.changes ? [filter(TableGroup), filter(TableUser), filter(TableObject), filter(TableConnection, 'create')] : undefined,
             pageSize: options.pageSize,
         });
     }
@@ -161,27 +169,16 @@ export class GroupController {
 // OBJECTS
 
 // ObjectController loads the entries directly under a DN, for a tree, and
-// says which DN's children change, so a tree loads them again
+// says when entries change, so a tree loads those it shows again
 export class ObjectController {
     readonly client: Client;
-    private readonly listeners = new Set<(parent: string) => void>();
+    private readonly listeners = new Set<() => void>();
 
     constructor(client: Client, options: LdapOptions = {}) {
         this.client = client;
-        options.changes?.on([filter(TableObject), filter(TableUser), filter(TableGroup)], (change?: Change) => {
-            // An entry's change is its parent's, and a rename's is also the
-            // parent of what it was
-            if (change?.table === TableObject && change.row) {
-                this.changed(parentDN(change.row));
-                const previous = (change.data as { previous?: string } | undefined)?.previous;
-                if (previous && !sameDN(parentDN(previous), parentDN(change.row))) {
-                    this.changed(parentDN(previous));
-                }
-            } else {
-                // A user's or group's is by its name, so its parent isn't known
-                this.changed('');
-            }
-        });
+        // Changes which arrive together are one, the last, so which entries
+        // changed isn't known, and any change is all of them
+        options.changes?.on([filter(TableObject), filter(TableUser), filter(TableGroup), filter(TableConnection, 'create')], () => this.changed());
     }
 
     // children returns the entries directly under the DN, or the base DN,
@@ -203,16 +200,15 @@ export class ObjectController {
         return api.getObject(this.client, dn);
     }
 
-    // onChange calls fn with the DN whose children changed, which is empty
-    // when it isn't known, until it's unsubscribed
-    onChange(fn: (parent: string) => void): () => void {
+    // onChange calls fn when entries change, until it's unsubscribed
+    onChange(fn: () => void): () => void {
         this.listeners.add(fn);
         return () => this.listeners.delete(fn);
     }
 
-    private changed(parent: string): void {
+    private changed(): void {
         for (const fn of this.listeners) {
-            fn(parent);
+            fn();
         }
     }
 }
