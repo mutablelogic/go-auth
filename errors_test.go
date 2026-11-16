@@ -21,6 +21,7 @@ import (
 
 	// Packages
 	auth "github.com/mutablelogic/go-auth"
+	httpresponse "github.com/mutablelogic/go-server/pkg/httpresponse"
 	assert "github.com/stretchr/testify/assert"
 )
 
@@ -40,4 +41,15 @@ func Test_ErrWithf(t *testing.T) {
 	assert.True(errors.As(err, &authErr))
 	assert.Equal(auth.ErrInternalServerError, authErr)
 	assert.Equal(`not found: missing`, auth.ErrNotFound.Withf("missing").Error())
+}
+
+func Test_ClientError(t *testing.T) {
+	// Each auth error, as its HTTP status, is the auth error again
+	for _, want := range []auth.Err{auth.ErrBadParameter, auth.ErrInvalidProvider, auth.ErrForbidden, auth.ErrNotFound, auth.ErrConflict, auth.ErrNotImplemented, auth.ErrServiceUnavailable, auth.ErrInternalServerError} {
+		var code httpresponse.Err
+		if assert.ErrorAs(t, auth.HTTPError(want.With("reason")), &code, want.Error()) {
+			assert.ErrorIs(t, auth.ClientError(httpresponse.ErrResponse{Code: int(code), Reason: "reason"}), want, want.Error())
+		}
+	}
+	assert.NoError(t, auth.ClientError(nil))
 }

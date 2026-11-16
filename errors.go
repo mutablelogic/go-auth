@@ -171,6 +171,8 @@ func ClientError(err error) error {
 		authErr = ErrNotModified
 	case http.StatusBadRequest:
 		authErr = ErrBadParameter
+	case http.StatusUnauthorized:
+		authErr = ErrInvalidProvider
 	case http.StatusForbidden:
 		authErr = ErrForbidden
 	case http.StatusNotFound:
