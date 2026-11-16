@@ -314,7 +314,7 @@ func Test_Session(t *testing.T) {
 // for a session, whose cookie it sets, with the security scheme
 func newSessionServer(t *testing.T) *test.Server {
 	t.Helper()
-	sessions, err := file.New(t.TempDir())
+	sessions, err := file.New(filepath.Join(t.TempDir(), "sessions"))
 	require.NoError(t, err)
 	exchanger, err := store.NewExchanger(sessions)
 	require.NoError(t, err)
@@ -359,7 +359,7 @@ func Test_SessionCookie(t *testing.T) {
 	// The session, with the cookie, or the token
 	resp, body = c.do(http.MethodGet, "auth/session", nil, "", cookie)
 	require.Equal(t, http.StatusOK, resp.StatusCode, body)
-	assert.Contains(t, body, `"id": "local:alice"`)
+	assert.Contains(t, body, `"id": "local#alice"`)
 	status, _, _ := s.Request(t, http.MethodGet, "auth/session", http.Header{"Authorization": {"Bearer " + token.Token}})
 	assert.Equal(t, http.StatusOK, status)
 
@@ -399,7 +399,7 @@ func Test_Return(t *testing.T) {
 	i := authtest.NewOIDC(t)
 	p, err := oidc.New("oidc", "", i.URL, authtest.NewCredentials().WithClient("oidc", i.Audience, "secret"), "oidc")
 	require.NoError(t, err)
-	sessions, err := file.New(t.TempDir())
+	sessions, err := file.New(filepath.Join(t.TempDir(), "sessions"))
 	require.NoError(t, err)
 	exchanger, err := store.NewExchanger(sessions)
 	require.NoError(t, err)

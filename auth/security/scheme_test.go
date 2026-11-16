@@ -17,6 +17,7 @@ package security_test
 import (
 	"context"
 	"net/http"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -38,7 +39,7 @@ import (
 func newServer(t *testing.T) (*test.Server, string, string) {
 	t.Helper()
 	ctx := context.Background()
-	sessions, err := file.New(t.TempDir())
+	sessions, err := file.New(filepath.Join(t.TempDir(), "sessions"))
 	require.NoError(t, err)
 	scheme, err := security.New(sessions)
 	require.NoError(t, err)
