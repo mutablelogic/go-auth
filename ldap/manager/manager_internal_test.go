@@ -264,3 +264,26 @@ func Test_attrSet(t *testing.T) {
 	attrDelete(attrs, "CN")
 	assert.Equal(t, url.Values{"objectClass": {"top", "person"}}, attrs)
 }
+
+func Test_memberAttrs(t *testing.T) {
+	assert.Equal(t, []string{"member", "memberUid"}, memberAttrs([]string{"top", "groupOfNames", "posixGroup"}))
+	assert.Equal(t, []string{"uniqueMember"}, memberAttrs([]string{"groupOfUniqueNames"}))
+	assert.Equal(t, []string{"member", "memberUid"}, memberAttrs([]string{"group", "posixGroup"}), "Active Directory")
+	assert.Equal(t, []string{"memberUid"}, memberAttrs([]string{"top", "posixGroup"}), "RFC 2307")
+	assert.Equal(t, []string{"member"}, memberAttrs([]string{"top"}))
+}
+
+func Test_memberValues(t *testing.T) {
+	alice := &schema.Object{DN: "uid=alice,ou=users,dc=example,dc=test", Values: schema.Attrs{"uid": {"alice"}, "cn": {"Alice"}}}
+	bob := &schema.Object{DN: "cn=bob,ou=users,dc=example,dc=test", Values: schema.Attrs{"cn": {"bob"}}}
+	assert.Equal(t, []string{"alice", "bob"}, memberValues("memberUid", []*schema.Object{alice, bob, alice}), "uid, or cn, once")
+	assert.Equal(t, []string{alice.DN, bob.DN}, memberValues("member", []*schema.Object{alice, bob}))
+}
+
+func Test_findMember(t *testing.T) {
+	current := []string{"UID=Alice, OU=Users,DC=Example,DC=Test", "cn=bob"}
+	assert.Equal(t, current[0], findMember("member", current, "uid=alice,ou=users,dc=example,dc=test"), "as the directory has it")
+	assert.Empty(t, findMember("member", current, "uid=carol,ou=users,dc=example,dc=test"))
+	assert.Equal(t, "alice", findMember("memberUid", []string{"alice"}, "alice"))
+	assert.Empty(t, findMember("memberUid", []string{"Alice"}, "alice"), "uids are exact")
+}

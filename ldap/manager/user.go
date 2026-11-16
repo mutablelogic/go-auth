@@ -35,12 +35,13 @@ import (
 // GLOBALS
 
 const (
-	// The entry which has the last user ID, in its serialNumber, under the
-	// base DN
-	lastUID = "cn=lastuid"
+	// The entries which have the last user and group IDs, in their
+	// serialNumber, under the base DN
+	lastUID = "lastuid"
+	lastGID = "lastgid"
 
-	// Times to try for the next user ID, when another manager takes it
-	uidRetries = 5
+	// Times to try for the next ID, when another manager takes it
+	idRetries = 5
 
 	// userAccountControl values of an Active Directory user
 	adNormalAccount   = "512"
@@ -127,7 +128,7 @@ func (manager *Manager) CreateUser(ctx context.Context, name string, attrs schem
 		}
 	}
 	if _, ok := attrValues(values, "uidNumber"); posix && !ok {
-		uid, err := manager.nextUID(ctx)
+		uid, err := manager.nextID(ctx, lastUID, schema.InitialUID)
 		if err != nil {
 			return nil, err
 		}
@@ -283,26 +284,27 @@ func (manager *Manager) enableUser(ctx context.Context, dn, password string) err
 	return nil
 }
 
-// nextUID returns the next user ID, from the serialNumber of cn=lastuid
-// under the base DN, which is created with schema.InitialUID when there's
-// none. The old value is deleted, and the new one added, in one request,
-// which fails when another manager has changed it, so it's tried again.
-func (manager *Manager) nextUID(ctx context.Context) (int, error) {
-	dn := lastUID + "," + manager.dn.String()
-	for range uidRetries {
+// nextID returns the next ID, from the serialNumber of the entry with the
+// name, such as cn=lastuid, under the base DN, which is created with the
+// initial ID when there's none. The old value is deleted, and the new one
+// added, in one request, which fails when another manager has changed it,
+// so it's tried again.
+func (manager *Manager) nextID(ctx context.Context, name string, initial int) (int, error) {
+	dn := "cn=" + name + "," + manager.dn.String()
+	for range idRetries {
 		entry, err := manager.get(ctx, dn, "serialNumber")
 		if errors.Is(err, httpresponse.ErrNotFound) {
 			_, err := manager.create(ctx, dn, url.Values{
 				"objectClass":  {"top", "device"},
-				"cn":           {strings.TrimPrefix(lastUID, "cn=")},
-				"serialNumber": {strconv.Itoa(schema.InitialUID)},
+				"cn":           {name},
+				"serialNumber": {strconv.Itoa(initial)},
 			})
 			if errors.Is(err, httpresponse.ErrConflict) {
 				continue
 			} else if err != nil {
 				return 0, err
 			}
-			return schema.InitialUID, nil
+			return initial, nil
 		} else if err != nil {
 			return 0, err
 		}
@@ -327,7 +329,7 @@ func (manager *Manager) nextUID(ctx context.Context) (int, error) {
 		}
 		return current + 1, nil
 	}
-	return 0, httpresponse.ErrConflict.With("The next user ID is taken, try again")
+	return 0, httpresponse.ErrConflict.With("The next ID is taken, try again")
 }
 
 // create adds the entry at the absolute DN, with the attributes, and

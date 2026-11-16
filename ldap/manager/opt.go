@@ -107,8 +107,8 @@ func WithUserDN(dn string, classes ...string) Opt {
 	}
 }
 
-// WithGroupDN sets the DN of the groups
-func WithGroupDN(dn string) Opt {
+// WithGroupDN sets the DN of the groups, and their object classes
+func WithGroupDN(dn string, classes ...string) Opt {
 	return func(o *opt) error {
 		if dn == "" {
 			return httpresponse.ErrBadRequest.With("DN is empty")
@@ -117,7 +117,7 @@ func WithGroupDN(dn string) Opt {
 		if err != nil {
 			return httpresponse.ErrBadRequest.Withf("DN is invalid: %v", err)
 		}
-		o.groups = types.Ptr(schema.Group{DN: bdn})
+		o.groups = types.Ptr(schema.Group{DN: bdn, ObjectClass: classes})
 		return nil
 	}
 }
