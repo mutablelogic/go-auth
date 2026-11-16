@@ -107,6 +107,7 @@ func Test_ldaperr(t *testing.T) {
 		ldapv3.LDAPResultConstraintViolation:    httpresponse.ErrConflict,
 		ldapv3.LDAPResultNotAllowedOnNonLeaf:    httpresponse.ErrConflict,
 		ldapv3.LDAPResultUndefinedAttributeType: httpresponse.ErrBadRequest,
+		ldapv3.LDAPResultNotAllowedOnRDN:        httpresponse.ErrBadRequest,
 		ldapv3.LDAPResultBusy:                   httpresponse.ErrInternalError,
 	} {
 		err := ldaperr(&ldapv3.Error{ResultCode: code, Err: errors.New("reason")})
@@ -149,23 +150,24 @@ func Test_renameTarget(t *testing.T) {
 }
 
 func Test_modifyRequest(t *testing.T) {
-	dn, err := schema.NewDN("cn=eng,ou=groups,dc=example,dc=com")
-	require.NoError(t, err)
-
-	// After a rename, the RDN's attribute is set already. Values replace,
-	// and none deletes, in order.
+	// Values replace, including all of the RDN's attribute's after a
+	// rename, and none deletes, in order
 	modify := modifyRequest("cn=eng2,ou=groups,dc=example,dc=com", url.Values{
-		"cn":          {"eng2"},
+		"cn":          {"eng2", "engineering"},
 		"mail":        nil,
 		"description": {"Engineering"},
-	}, dn, true)
-	require.Len(t, modify.Changes, 2)
-	assert.Equal(t, "description", modify.Changes[0].Modification.Type)
+	}, nil)
+	require.Len(t, modify.Changes, 3)
+	assert.Equal(t, "cn", modify.Changes[0].Modification.Type)
 	assert.Equal(t, uint(ldapv3.ReplaceAttribute), modify.Changes[0].Operation)
-	assert.Equal(t, "mail", modify.Changes[1].Modification.Type)
-	assert.Equal(t, uint(ldapv3.DeleteAttribute), modify.Changes[1].Operation)
+	assert.Equal(t, []string{"eng2", "engineering"}, modify.Changes[0].Modification.Vals)
+	assert.Equal(t, "description", modify.Changes[1].Modification.Type)
+	assert.Equal(t, uint(ldapv3.ReplaceAttribute), modify.Changes[1].Operation)
+	assert.Equal(t, "mail", modify.Changes[2].Modification.Type)
+	assert.Equal(t, uint(ldapv3.DeleteAttribute), modify.Changes[2].Operation)
 
-	// Without a rename, it's kept
-	modify = modifyRequest(dn.String(), url.Values{"cn": {"eng"}}, dn, false)
-	assert.Len(t, modify.Changes, 1)
+	// Those to skip, in any case, aren't
+	modify = modifyRequest("cn=eng2,ou=groups,dc=example,dc=com", url.Values{"CN": {"eng2"}, "description": {"Engineering"}}, map[string]bool{"cn": true})
+	require.Len(t, modify.Changes, 1)
+	assert.Equal(t, "description", modify.Changes[0].Modification.Type)
 }

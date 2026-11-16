@@ -129,7 +129,9 @@ func (manager *Manager) Create(ctx context.Context, dn string, attrs schema.Attr
 
 // Update replaces the entry's attributes which have values, and deletes
 // those which have none, and returns it. Changing a value of the entry's
-// RDN renames it first, keeping it under the same parent.
+// RDN renames it first, keeping it under the same parent, then replaces
+// the RDN's attribute with all its values, unless the rename has set them.
+// When the changes fail, the rename is undone.
 func (manager *Manager) Update(ctx context.Context, dn string, attrs schema.Attrs) (_ *schema.Object, err error) {
 	ctx, endSpan := otel.StartSpan(manager.tracer, ctx, "ldapmanager.Update", manager.spanAttrs(attribute.String("arg.dn", dn), attrNames(attrs))...)
 	defer func() { endSpan(err) }()
@@ -158,10 +160,15 @@ func (manager *Manager) Update(ctx context.Context, dn string, attrs schema.Attr
 			return nil, ldaperr(err)
 		}
 	}
-	if modify := modifyRequest(target, values, absdn, rdn != ""); len(modify.Changes) > 0 {
-		if err := manager.conn.Modify(modify); err != nil {
-			return nil, ldaperr(err)
+	if err := manager.modify(ctx, target, values); err != nil {
+		// Undo the rename, so the entry is as it was
+		if rdn != "" {
+			undo := ldap.NewModifyDNRequest(target, absdn.RDNs[0].String(), true, "")
+			if undoErr := manager.conn.ModifyDN(undo); undoErr != nil {
+				return nil, errors.Join(err, ldaperr(undoErr))
+			}
 		}
+		return nil, err
 	}
 	return manager.get(ctx, target)
 }
@@ -306,18 +313,64 @@ func renameTarget(dn *schema.DN, attrs url.Values) (string, string, error) {
 	return target, rdn.String(), nil
 }
 
-// modifyRequest replaces the attributes with values, and deletes those
-// without. After a rename, the RDN's attributes are already set.
-func modifyRequest(dn string, attrs url.Values, from *schema.DN, renamed bool) *ldap.ModifyRequest {
-	skip := map[string]bool{}
-	if renamed {
-		for _, attr := range from.RDNs[0].Attributes {
-			if attr != nil {
-				skip[strings.ToLower(attr.Type)] = true
-			}
+// modify replaces the entry's attributes with values, and deletes those
+// without, other than those of its RDN which are done
+func (manager *Manager) modify(ctx context.Context, dn string, attrs url.Values) error {
+	skip, err := manager.rdnDone(ctx, dn, attrs)
+	if err != nil {
+		return err
+	}
+	if modify := modifyRequest(dn, attrs, skip); len(modify.Changes) > 0 {
+		if err := manager.conn.Modify(modify); err != nil {
+			return ldaperr(err)
 		}
 	}
+	return nil
+}
 
+// rdnDone returns the attributes of the entry's RDN which the update sets
+// to the RDN's value alone, and which the entry has alone, so a rename has
+// set them, or they're unchanged. They're left out of the modify request,
+// since Active Directory refuses to modify them, even to the same value.
+func (manager *Manager) rdnDone(ctx context.Context, dn string, attrs url.Values) (map[string]bool, error) {
+	target, err := schema.NewDN(dn)
+	if err != nil {
+		return nil, httpresponse.ErrBadRequest.Withf("Invalid DN: %v", err)
+	}
+
+	// The RDN's attributes which the update has
+	rdn := map[string]string{}
+	names := []string{}
+	for _, attr := range target.RDNs[0].Attributes {
+		if _, ok := attrValues(attrs, attr.Type); ok {
+			rdn[strings.ToLower(attr.Type)] = attr.Value
+			names = append(names, attr.Type)
+		}
+	}
+	if len(names) == 0 {
+		return nil, nil
+	}
+
+	// Those which are the RDN's value alone, in the update and the entry
+	current, err := manager.get(ctx, dn, names...)
+	if err != nil {
+		return nil, err
+	}
+	skip := map[string]bool{}
+	for _, name := range names {
+		value := rdn[strings.ToLower(name)]
+		requested, _ := attrValues(attrs, name)
+		existing := current.GetAll(name)
+		if len(requested) == 1 && requested[0] == value && len(existing) == 1 && strings.EqualFold(existing[0], value) {
+			skip[strings.ToLower(name)] = true
+		}
+	}
+	return skip, nil
+}
+
+// modifyRequest replaces the attributes with values, and deletes those
+// without, other than those to skip, in any case
+func modifyRequest(dn string, attrs url.Values, skip map[string]bool) *ldap.ModifyRequest {
 	// In a fixed order
 	keys := make([]string, 0, len(attrs))
 	for key := range attrs {

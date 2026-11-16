@@ -84,8 +84,9 @@ var servers = []Server{
 			"INSECURE_LDAP":             "true",
 			"INSECURE_PASSWORDSETTINGS": "true",
 		},
-		ConnectTimeout: 90 * time.Second,
-		options:        smbldsTLSOpts,
+		ActiveDirectory: true,
+		ConnectTimeout:  90 * time.Second,
+		options:         smbldsTLSOpts,
 	},
 }
 

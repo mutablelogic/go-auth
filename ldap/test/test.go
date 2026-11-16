@@ -60,6 +60,10 @@ type Server struct {
 	// Its certificate isn't trusted.
 	URL string
 
+	// ActiveDirectory is true when the directory is Active Directory, or
+	// like it, whose users have the "user" class, and unicodePwd passwords
+	ActiveDirectory bool
+
 	// ConnectTimeout is how long the directory can take to accept a bind,
 	// once its container has started
 	ConnectTimeout time.Duration
@@ -210,14 +214,21 @@ func deleteTree(ctx context.Context, m *manager.Manager, dn string) error {
 	if err != nil {
 		return err
 	}
-	list, err := m.List(ctx, schema.ObjectListRequest{Attr: []string{"1.1"}})
-	if err != nil {
-		return err
-	}
+	// Every page, before any is deleted, which would move the offsets
 	tree := []*schema.DN{parent}
-	for _, object := range list.Body {
-		if child, err := schema.NewDN(object.DN); err == nil && (*ldap.DN)(parent).AncestorOfFold((*ldap.DN)(child)) {
-			tree = append(tree, child)
+	for offset := uint64(0); ; {
+		list, err := m.List(ctx, schema.ObjectListRequest{OffsetLimit: schema.OffsetLimit{Offset: offset}, Attr: []string{"1.1"}})
+		if err != nil {
+			return err
+		}
+		for _, object := range list.Body {
+			if child, err := schema.NewDN(object.DN); err == nil && (*ldap.DN)(parent).AncestorOfFold((*ldap.DN)(child)) {
+				tree = append(tree, child)
+			}
+		}
+		offset += uint64(len(list.Body))
+		if len(list.Body) == 0 || offset >= list.Count {
+			break
 		}
 	}
 	sort.Slice(tree, func(i, j int) bool { return len(tree[i].RDNs) > len(tree[j].RDNs) })
