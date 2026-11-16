@@ -19,6 +19,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	// Packages
@@ -57,6 +58,10 @@ type AuthFlags struct {
 	Allow      []string      `name:"allow" help:"Only those with a verified email address at the domain, such as example.com, can sign in. Can be specified more than once."`
 	Sessions   string        `name:"sessions" help:"Directory of the sessions. Without it, it's in the user's configuration directory."`
 	TTL        time.Duration `name:"ttl" default:"24h" help:"How long a session lasts"`
+
+	// The OAuth server, which issues sessions to clients, such as MCP's
+	OAuth          bool     `name:"oauth" help:"Be an OAuth authorization server for the API, which clients, such as MCP clients, register with, and are authorized by whoever's signed in"`
+	OAuthRedirects []string `name:"oauth.redirect" help:"Redirect URI, other than a loopback one, such as https://app.example.com/callback, which clients can register. Can be specified more than once."`
 }
 
 // GoogleFlags configure signing in with Google
@@ -102,13 +107,27 @@ func (flags AuthFlags) withHandlers(ctx server.Cmd, credentials credential.Crede
 	if err != nil {
 		return err
 	}
-	scheme, err := security.New(sessions)
-	if err != nil {
-		return err
-	}
 	opts := []authhandler.Opt{authhandler.WithExchange(exchanger.Exchange, store.ResponseSchema()), authhandler.WithSessions(sessions)}
 	if flags.URL != "" {
 		opts = append(opts, authhandler.WithBaseURL(flags.URL))
+	}
+
+	// As an OAuth server, a 401 says where its metadata is
+	var schemeOpts []security.Opt
+	if flags.OAuth {
+		metadata := authhandler.ResourceMetadataPath(ctx.HTTPPrefix())
+		if flags.URL != "" {
+			metadata = strings.TrimSuffix(flags.URL, "/") + metadata
+		}
+		opts = append(opts, authhandler.WithOAuth(flags.OAuthRedirects...))
+		schemeOpts = append(schemeOpts, security.WithResourceMetadata(metadata))
+		ctx.Logger().InfoContext(ctx.Context(), "OAuth server", "metadata", metadata)
+	} else if len(flags.OAuthRedirects) > 0 {
+		return httpresponse.ErrBadRequest.With("--auth.oauth.redirect needs --auth.oauth")
+	}
+	scheme, err := security.New(sessions, schemeOpts...)
+	if err != nil {
+		return err
 	}
 	for _, p := range providers {
 		ctx.Logger().InfoContext(ctx.Context(), "Sign in", "provider", p.Meta().Name)

@@ -39,6 +39,7 @@ type Session struct {
 	ID        string    `json:"id" help:"Identifier of the session, which isn't its token"`
 	User      User      `json:"user" help:"Who signed in"`
 	Provider  string    `json:"provider" help:"Provider which was signed in with"`
+	Client    string    `json:"client,omitempty" help:"Name of the OAuth client the session was issued to"`
 	Scopes    []string  `json:"scopes,omitempty" help:"Scopes the user had, when they signed in"`
 	CreatedAt time.Time `json:"created_at" help:"When the session was made"`
 	ExpiresAt time.Time `json:"expires_at" help:"When the session expires"`

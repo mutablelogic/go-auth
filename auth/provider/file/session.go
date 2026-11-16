@@ -28,6 +28,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -53,6 +54,7 @@ type Sessions struct {
 type Opt func(*Sessions)
 
 var _ store.SessionStore = (*Sessions)(nil)
+var _ store.Consumer = (*Sessions)(nil)
 
 ///////////////////////////////////////////////////////////////////////////////
 // GLOBALS
@@ -63,6 +65,9 @@ const (
 
 	// tokenBytes is how much is random in a token
 	tokenBytes = 32
+
+	// consumed is the directory of the IDs which have been consumed
+	consumed = "consumed"
 )
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -158,6 +163,28 @@ func (s *Sessions) Revoke(_ context.Context, id string) error {
 	return nil
 }
 
+// Consume consumes the ID, until it expires, as a file, named by its hash,
+// which is created only when it isn't there, so it's consumed once, by any
+// server which shares the directory, or after a restart. Those which have
+// expired are removed.
+func (s *Sessions) Consume(_ context.Context, id string, expires time.Time) error {
+	dir := filepath.Join(s.dir, consumed)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.pruneConsumed(dir)
+	f, err := os.OpenFile(filepath.Join(dir, hash(id)), os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	if errors.Is(err, fs.ErrExist) {
+		return httpresponse.ErrConflict.With("It's been used")
+	} else if err != nil {
+		return err
+	}
+	_, err = f.WriteString(strconv.FormatInt(expires.Unix(), 10))
+	return errors.Join(err, f.Close())
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 // PRIVATE METHODS
 
@@ -219,6 +246,28 @@ func (s *Sessions) write(session schema.Session) error {
 		return err
 	}
 	return os.Rename(tmp.Name(), s.path(session.ID))
+}
+
+// pruneConsumed removes the consumed IDs which have expired. One which
+// can't be read is kept, as it may be being written.
+func (s *Sessions) pruneConsumed(dir string) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return
+	}
+	now := s.now().Unix()
+	for _, entry := range entries {
+		if !validID(entry.Name()) {
+			continue
+		}
+		data, err := os.ReadFile(filepath.Join(dir, entry.Name()))
+		if err != nil {
+			continue
+		}
+		if expires, err := strconv.ParseInt(string(data), 10, 64); err == nil && now > expires {
+			_ = os.Remove(filepath.Join(dir, entry.Name()))
+		}
+	}
 }
 
 // prune removes the sessions which have expired, or can't be read

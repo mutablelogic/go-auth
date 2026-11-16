@@ -21,6 +21,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"net/url"
 	"slices"
 	"strings"
 
@@ -39,7 +40,11 @@ import (
 // the scopes an operation has
 type Scheme struct {
 	sessions store.SessionStore
+	metadata string
 }
+
+// Opt is an option of the scheme
+type Opt func(*Scheme) error
 
 type sessionKey struct{}
 
@@ -62,11 +67,35 @@ const (
 // LIFECYCLE
 
 // New returns the scheme, with the sessions, which tokens are of
-func New(sessions store.SessionStore) (*Scheme, error) {
+func New(sessions store.SessionStore, opts ...Opt) (*Scheme, error) {
 	if sessions == nil {
 		return nil, httpresponse.ErrBadRequest.With("The security scheme needs sessions")
 	}
-	return &Scheme{sessions: sessions}, nil
+	self := &Scheme{sessions: sessions}
+	for _, opt := range opts {
+		if err := opt(self); err != nil {
+			return nil, err
+		}
+	}
+	return self, nil
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// OPTIONS
+
+// WithResourceMetadata says where the API's protected resource metadata
+// is, in a 401's challenge, as RFC 9728 has it, so an OAuth client finds
+// how to be authorized: its URL, or its path, such as
+// /.well-known/oauth-protected-resource/api, which is on the request's host
+func WithResourceMetadata(metadata string) Opt {
+	return func(s *Scheme) error {
+		u, err := url.Parse(metadata)
+		if err != nil || (u.Scheme == "" && (!strings.HasPrefix(metadata, "/") || u.Host != "")) || (u.Scheme != "" && ((u.Scheme != "http" && u.Scheme != "https") || u.Host == "")) || strings.ContainsAny(metadata, `"\`) {
+			return httpresponse.ErrBadRequest.Withf("Invalid resource metadata %q", metadata)
+		}
+		s.metadata = metadata
+		return nil
+	}
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -80,12 +109,12 @@ func (s *Scheme) Wrap(handler http.HandlerFunc, scopes []string) http.HandlerFun
 	return func(w http.ResponseWriter, r *http.Request) {
 		token := Token(r)
 		if token == "" {
-			unauthorized(w, "invalid_request", "A session's token, as a bearer token, or its cookie, is needed")
+			s.unauthorized(w, r, "invalid_request", "A session's token, as a bearer token, or its cookie, is needed")
 			return
 		}
 		session, err := s.sessions.Session(r.Context(), token)
 		if errors.Is(err, httpresponse.ErrNotAuthorized) {
-			unauthorized(w, "invalid_token", err.Error())
+			s.unauthorized(w, r, "invalid_token", err.Error())
 			return
 		} else if err != nil {
 			// The store failed, which isn't the token's fault, so it isn't
@@ -95,7 +124,7 @@ func (s *Scheme) Wrap(handler http.HandlerFunc, scopes []string) http.HandlerFun
 		}
 		for _, scope := range scopes {
 			if !slices.Contains(session.Scopes, scope) {
-				w.Header().Set("WWW-Authenticate", `Bearer error="insufficient_scope", scope="`+strings.Join(scopes, " ")+`"`)
+				w.Header().Set("WWW-Authenticate", s.challenge(r, `error="insufficient_scope", scope="`+strings.Join(scopes, " ")+`"`))
 				_ = httpresponse.Error(w, httpresponse.ErrForbidden.Withf("The session needs the %q scope", scope))
 				return
 			}
@@ -140,7 +169,24 @@ func Token(r *http.Request) string {
 // PRIVATE METHODS
 
 // unauthorized writes 401, with the bearer scheme's challenge
-func unauthorized(w http.ResponseWriter, code, reason string) {
-	w.Header().Set("WWW-Authenticate", `Bearer error="`+code+`"`)
+func (s *Scheme) unauthorized(w http.ResponseWriter, r *http.Request, code, reason string) {
+	w.Header().Set("WWW-Authenticate", s.challenge(r, `error="`+code+`"`))
 	_ = httpresponse.Error(w, httpresponse.ErrNotAuthorized.With(reason))
+}
+
+// challenge returns the bearer scheme's challenge, with the parameters,
+// and where the resource metadata is
+func (s *Scheme) challenge(r *http.Request, params string) string {
+	if s.metadata == "" {
+		return "Bearer " + params
+	}
+	metadata := s.metadata
+	if strings.HasPrefix(metadata, "/") {
+		scheme := "http"
+		if r.TLS != nil {
+			scheme = "https"
+		}
+		metadata = scheme + "://" + r.Host + metadata
+	}
+	return `Bearer resource_metadata="` + metadata + `", ` + params
 }

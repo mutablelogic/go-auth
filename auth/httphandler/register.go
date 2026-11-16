@@ -53,6 +53,11 @@ type options struct {
 	sessions store.SessionStore
 	ttl      time.Duration
 	now      func() time.Time
+
+	// The OAuth server
+	oauth     bool
+	redirects []string
+	signin    string
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -162,7 +167,16 @@ func RegisterHandlers(providers []provider.Provider, opt ...Opt) func(*httproute
 
 		doc := opts.ParseMarkdown(HandlerDoc)
 		router.Spec().AddTag(tagSignIn, doc.Section(2, tagSignIn).Body)
-		return registerSignIn(router, &handlers{providers: providers, byName: byName, sealer: s, options: o}, doc)
+		h := &handlers{providers: providers, byName: byName, sealer: s, options: o}
+		if err := registerSignIn(router, h, doc); err != nil {
+			return err
+		} else if !o.oauth {
+			return nil
+		} else if o.sessions == nil {
+			return httpresponse.ErrBadRequest.With("The OAuth server issues sessions, so it needs WithSessions")
+		}
+		router.Spec().AddTag(tagOAuth, doc.Section(2, tagOAuth).Body)
+		return registerOAuth(router, h, doc)
 	}
 }
 
