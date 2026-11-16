@@ -35,13 +35,26 @@ func Test_AttrsSchema(t *testing.T) {
 	assert.NoError(t, put.Validate(json.RawMessage(`{"attrs":{"userCertificate;binary":[{"base64":"AQI="}]}}`)))
 	assert.NoError(t, put.Validate(json.RawMessage(`{}`)), "no attributes")
 
+	// Null, which a nil Attrs is, and a null list, which deletes it in an
+	// update
+	data, err := json.Marshal(schema.Attrs(nil))
+	assert.NoError(t, err)
+	assert.Equal(t, "null", string(data))
+	assert.NoError(t, jsonschema.MustFor[schema.Attrs]().Validate(data))
+	assert.NoError(t, put.Validate(json.RawMessage(`{"attrs":{"description":null}}`)))
+	var req schema.ObjectPutRequest
+	assert.NoError(t, json.Unmarshal([]byte(`{"attrs":{"description":null}}`), &req))
+	values, err := req.ValidateUpdate()
+	assert.NoError(t, err)
+	assert.Empty(t, values["description"], "deletes it")
+
 	// Not anything else
 	assert.Error(t, object.Validate(json.RawMessage(`{"dn":"cn=a","attrs":{"cn":[1]}}`)))
 	assert.Error(t, object.Validate(json.RawMessage(`{"dn":"cn=a","attrs":{"cn":[{"hex":"01"}]}}`)))
 	assert.Error(t, put.Validate(json.RawMessage(`{"attrs":{"cn":"a"}}`)))
 
 	// And the values Attrs writes are valid
-	data, err := json.Marshal(schema.Object{DN: "cn=a", Values: schema.Attrs{"cn": {"a"}, "objectGUID": {string([]byte{0xff, 0x00})}}})
+	data, err = json.Marshal(schema.Object{DN: "cn=a", Values: schema.Attrs{"cn": {"a"}, "objectGUID": {string([]byte{0xff, 0x00})}}})
 	assert.NoError(t, err)
 	assert.NoError(t, object.Validate(data))
 }

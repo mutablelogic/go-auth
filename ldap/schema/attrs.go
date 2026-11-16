@@ -41,11 +41,12 @@ type binaryValue struct {
 // GLOBALS
 
 // attrsSchema is the schema of Attrs' JSON: an object of attributes, each a
-// list of values, which are strings, or {"base64": "..."}
+// list of values, which are strings, or {"base64": "..."}. It's null when
+// there are none, and a list is null in an update, which deletes it.
 var attrsSchema = must(jsonschema.FromJSON(json.RawMessage(`{
-	"type": "object",
+	"type": ["object", "null"],
 	"additionalProperties": {
-		"type": "array",
+		"type": ["array", "null"],
 		"items": {
 			"anyOf": [
 				{"type": "string"},
