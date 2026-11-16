@@ -20,6 +20,9 @@ import (
 	"encoding/json"
 	"net/url"
 	"unicode/utf8"
+
+	// Packages
+	jsonschema "github.com/mutablelogic/go-server/pkg/jsonschema"
 )
 
 //////////////////////////////////////////////////////////////////////////////////
@@ -35,6 +38,47 @@ type binaryValue struct {
 }
 
 //////////////////////////////////////////////////////////////////////////////////
+// GLOBALS
+
+// attrsSchema is the schema of Attrs' JSON: an object of attributes, each a
+// list of values, which are strings, or {"base64": "..."}
+var attrsSchema = must(jsonschema.FromJSON(json.RawMessage(`{
+	"type": "object",
+	"additionalProperties": {
+		"type": "array",
+		"items": {
+			"anyOf": [
+				{"type": "string"},
+				{
+					"type": "object",
+					"description": "A value which isn't UTF-8",
+					"properties": {"base64": {"type": "string", "contentEncoding": "base64"}},
+					"required": ["base64"],
+					"additionalProperties": false
+				}
+			]
+		}
+	}
+}`)))
+
+///////////////////////////////////////////////////////////////////////////////
+// JSON SCHEMA
+
+// JSONSchema returns the schema of the attributes' JSON, whose values are
+// strings, or {"base64": "..."}, as MarshalJSON writes them, rather than
+// strings, as the type says
+func (Attrs) JSONSchema() *jsonschema.Schema {
+	return attrsSchema
+}
+
+func must[T any](value T, err error) T {
+	if err != nil {
+		panic(err)
+	}
+	return value
+}
+
+///////////////////////////////////////////////////////////////////////////////
 // JSON
 
 func (a Attrs) MarshalJSON() ([]byte, error) {
