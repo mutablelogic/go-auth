@@ -240,10 +240,7 @@ func (manager *Manager) groupClasses(ctx context.Context) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	if classes := subschema.choose(schema.WellKnownGroupClasses, []string{"posixGroup"}); len(classes) > 0 {
-		return classes, nil
-	}
-	return schema.DefaultGroupObjectClasses, nil
+	return subschema.groupClasses(), nil
 }
 
 // changeMembers adds the users to the group, or removes them, in one

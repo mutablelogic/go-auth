@@ -43,7 +43,11 @@ type ObjectClassListRequest struct {
 	Must     []string         `json:"must,omitempty" help:"Required MUST attributes"`
 	May      []string         `json:"may,omitempty" help:"Required MAY attributes"`
 	Obsolete *bool            `json:"obsolete,omitempty" help:"Filter obsolete classes"`
+	For      *ObjectClassFor  `json:"for,omitempty" help:"Only the classes users, or groups, are created with, and their superiors" enum:"user,group"`
 }
+
+// ObjectClassFor is what's created with the classes: users or groups
+type ObjectClassFor string
 
 type ObjectClassListResponse struct {
 	Count uint64         `json:"count" help:"Total number of matching object classes before pagination"`
@@ -52,6 +56,11 @@ type ObjectClassListResponse struct {
 
 //////////////////////////////////////////////////////////////////////////////////
 // GLOBALS
+
+const (
+	ObjectClassForUser  ObjectClassFor = "user"
+	ObjectClassForGroup ObjectClassFor = "group"
+)
 
 const (
 	ObjectClassKindAbstract   ObjectClassKind = ObjectClassKind(schemadef.ObjectClassKindAbstract)

@@ -43,6 +43,7 @@ type ClassListCmd struct {
 	Kind   string   `name:"kind" enum:",ABSTRACT,STRUCTURAL,AUXILIARY" default:"" help:"ABSTRACT, STRUCTURAL or AUXILIARY"`
 	Must   []string `name:"must" help:"Only classes which need the attribute. Repeat for more than one."`
 	May    []string `name:"may" help:"Only classes which can have the attribute. Repeat for more than one."`
+	For    string   `name:"for" enum:",user,group" default:"" help:"Only the classes users, or groups, are created with, and their superiors"`
 	Offset uint64   `name:"offset" help:"Offset within the list"`
 	Limit  *uint64  `name:"limit" help:"Number of classes to list"`
 }
@@ -68,6 +69,9 @@ func (cmd *ClassListCmd) Run(ctx server.Cmd) error {
 	}
 	if cmd.Kind != "" {
 		req.Kind = types.Ptr(schema.ObjectClassKind(cmd.Kind))
+	}
+	if cmd.For != "" {
+		req.For = types.Ptr(schema.ObjectClassFor(cmd.For))
 	}
 	width, debug := ctx.IsTerm(), ctx.IsDebug()
 	return withClient(ctx, "ldap.ClassListCmd", func(child context.Context, client *httpclient.Client) error {
