@@ -16,10 +16,12 @@ package manager
 
 import (
 	"errors"
+	"net/url"
 	"testing"
 
 	// Packages
 	ldapv3 "github.com/go-ldap/ldap/v3"
+	schema "github.com/mutablelogic/go-auth/ldap/schema"
 	httpresponse "github.com/mutablelogic/go-server/pkg/httpresponse"
 	assert "github.com/stretchr/testify/assert"
 	require "github.com/stretchr/testify/require"
@@ -103,6 +105,8 @@ func Test_ldaperr(t *testing.T) {
 		ldapv3.LDAPResultNoSuchObject:           httpresponse.ErrNotFound,
 		ldapv3.LDAPResultEntryAlreadyExists:     httpresponse.ErrConflict,
 		ldapv3.LDAPResultConstraintViolation:    httpresponse.ErrConflict,
+		ldapv3.LDAPResultNotAllowedOnNonLeaf:    httpresponse.ErrConflict,
+		ldapv3.LDAPResultUndefinedAttributeType: httpresponse.ErrBadRequest,
 		ldapv3.LDAPResultBusy:                   httpresponse.ErrInternalError,
 	} {
 		err := ldaperr(&ldapv3.Error{ResultCode: code, Err: errors.New("reason")})
@@ -121,4 +125,47 @@ func Test_ldaperr(t *testing.T) {
 	assert.True(t, isIgnorableLDAPDisconnectError(&ldapv3.Error{ResultCode: ldapv3.ErrorNetwork, Err: errors.New("ldap: connection closed")}))
 	assert.True(t, isIgnorableLDAPDisconnectError(errors.New("ldap: connection closed")))
 	assert.False(t, isIgnorableLDAPDisconnectError(errors.New("some other error")))
+}
+
+func Test_renameTarget(t *testing.T) {
+	dn, err := schema.NewDN("uid=s,ou=users,dc=example,dc=com")
+	require.NoError(t, err)
+
+	// A new value of the RDN's attribute renames, under the same parent
+	target, rdn, err := renameTarget(dn, url.Values{"UID": {"sam"}})
+	require.NoError(t, err)
+	assert.Equal(t, "uid=sam", rdn)
+	assert.Equal(t, "uid=sam,ou=users,dc=example,dc=com", target)
+
+	// Others don't
+	target, rdn, err = renameTarget(dn, url.Values{"cn": {"Sam"}, "uid": {"s"}})
+	require.NoError(t, err)
+	assert.Empty(t, rdn)
+	assert.Equal(t, "uid=s,ou=users,dc=example,dc=com", target)
+
+	// The RDN's attribute can't be deleted
+	_, _, err = renameTarget(dn, url.Values{"uid": nil})
+	assert.ErrorIs(t, err, httpresponse.ErrBadRequest)
+}
+
+func Test_modifyRequest(t *testing.T) {
+	dn, err := schema.NewDN("cn=eng,ou=groups,dc=example,dc=com")
+	require.NoError(t, err)
+
+	// After a rename, the RDN's attribute is set already. Values replace,
+	// and none deletes, in order.
+	modify := modifyRequest("cn=eng2,ou=groups,dc=example,dc=com", url.Values{
+		"cn":          {"eng2"},
+		"mail":        nil,
+		"description": {"Engineering"},
+	}, dn, true)
+	require.Len(t, modify.Changes, 2)
+	assert.Equal(t, "description", modify.Changes[0].Modification.Type)
+	assert.Equal(t, uint(ldapv3.ReplaceAttribute), modify.Changes[0].Operation)
+	assert.Equal(t, "mail", modify.Changes[1].Modification.Type)
+	assert.Equal(t, uint(ldapv3.DeleteAttribute), modify.Changes[1].Operation)
+
+	// Without a rename, it's kept
+	modify = modifyRequest(dn.String(), url.Values{"cn": {"eng"}}, dn, false)
+	assert.Len(t, modify.Changes, 1)
 }

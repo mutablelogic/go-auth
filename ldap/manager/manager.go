@@ -323,7 +323,7 @@ func ldaperr(err error) error {
 	switch code {
 	case ldap.LDAPResultInvalidCredentials:
 		return httpresponse.ErrNotAuthorized.With("Invalid credentials")
-	case ldap.ErrorFilterCompile, ldap.ErrorFilterDecompile, ldap.LDAPResultFilterError, ldap.LDAPResultParamError, ldap.LDAPResultInvalidAttributeSyntax, ldap.LDAPResultObjectClassViolation, ldap.LDAPResultNamingViolation, ldap.LDAPResultUnwillingToPerform:
+	case ldap.ErrorFilterCompile, ldap.ErrorFilterDecompile, ldap.LDAPResultFilterError, ldap.LDAPResultParamError, ldap.LDAPResultInvalidAttributeSyntax, ldap.LDAPResultObjectClassViolation, ldap.LDAPResultNamingViolation, ldap.LDAPResultUnwillingToPerform, ldap.LDAPResultUndefinedAttributeType:
 		return httpresponse.ErrBadRequest.With(err.Error())
 	case ldap.LDAPResultNoSuchObject:
 		return httpresponse.ErrNotFound.With("No such object")
@@ -331,7 +331,7 @@ func ldaperr(err error) error {
 		return httpresponse.ErrConflict.With(err.Error())
 	case ldap.LDAPResultNoSuchAttribute:
 		return httpresponse.ErrNotFound.With(err.Error())
-	case ldap.LDAPResultConstraintViolation:
+	case ldap.LDAPResultConstraintViolation, ldap.LDAPResultNotAllowedOnNonLeaf:
 		return httpresponse.ErrConflict.With(err.Error())
 	default:
 		return httpresponse.ErrInternalError.With(err)

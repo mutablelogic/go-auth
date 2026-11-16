@@ -22,10 +22,12 @@ package test
 
 import (
 	"context"
+	"crypto/rand"
 	"crypto/tls"
 	"fmt"
 	"net"
 	"os"
+	"sort"
 	"strings"
 	"sync"
 	"testing"
@@ -180,8 +182,52 @@ func Servers(t *testing.T) []Server {
 	return result
 }
 
+// OU creates an organizational unit for the test, with a random name, under
+// the base DN, and returns its DN. It's deleted when the test ends, with
+// the entries under it.
+func OU(t *testing.T, ctx context.Context, m *manager.Manager) string {
+	t.Helper()
+	dn := "ou=test-" + strings.ToLower(rand.Text()[:10])
+	ou, err := m.Create(ctx, dn, schema.Attrs{
+		"objectClass": {"top", "organizationalUnit"},
+		"ou":          {strings.TrimPrefix(dn, "ou=")},
+	})
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		if err := deleteTree(context.WithoutCancel(ctx), m, ou.DN); err != nil {
+			t.Errorf("deleting %s: %v", ou.DN, err)
+		}
+	})
+	return ou.DN
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 // PRIVATE METHODS
+
+// deleteTree deletes the entry, and those under it, the deepest first
+func deleteTree(ctx context.Context, m *manager.Manager, dn string) error {
+	parent, err := schema.NewDN(dn)
+	if err != nil {
+		return err
+	}
+	list, err := m.List(ctx, schema.ObjectListRequest{Attr: []string{"1.1"}})
+	if err != nil {
+		return err
+	}
+	tree := []*schema.DN{parent}
+	for _, object := range list.Body {
+		if child, err := schema.NewDN(object.DN); err == nil && (*ldap.DN)(parent).AncestorOfFold((*ldap.DN)(child)) {
+			tree = append(tree, child)
+		}
+	}
+	sort.Slice(tree, func(i, j int) bool { return len(tree[i].RDNs) > len(tree[j].RDNs) })
+	for _, dn := range tree {
+		if _, err := m.Delete(ctx, dn.String()); err != nil {
+			return err
+		}
+	}
+	return nil
+}
 
 // start starts the server's container, once, and returns its ldaps URL, or
 // fails the test when it can't be started
