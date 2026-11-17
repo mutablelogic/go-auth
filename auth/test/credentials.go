@@ -75,6 +75,17 @@ func (c *Credentials) Set(_ context.Context, key string, value json.RawMessage) 
 	return nil
 }
 
+// Delete deletes the credential at the key, or returns not found
+func (c *Credentials) Delete(_ context.Context, key string) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if _, ok := c.values[key]; !ok {
+		return goauth.ErrNotFound.With(key)
+	}
+	delete(c.values, key)
+	return nil
+}
+
 // Expand returns the value, as it is
 func (c *Credentials) Expand(_ context.Context, value string) (string, error) {
 	return value, nil

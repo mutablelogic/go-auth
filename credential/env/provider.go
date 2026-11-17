@@ -131,3 +131,13 @@ func (self *provider) Set(ctx context.Context, key string, value json.RawMessage
 
 	return auth.ErrNotImplemented.Withf("credential %q: the environment is read-only", key)
 }
+
+// Delete returns ErrNotImplemented, since the environment can't be changed
+func (self *provider) Delete(ctx context.Context, key string) (err error) {
+	_, endSpan := otel.StartSpan(self.tracer, ctx, "credential.env.Delete",
+		attribute.String("key", key),
+	)
+	defer func() { endSpan(err) }()
+
+	return auth.ErrNotImplemented.Withf("credential %q: the environment is read-only", key)
+}

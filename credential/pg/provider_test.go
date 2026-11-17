@@ -202,6 +202,7 @@ func TestNullProvider(t *testing.T) {
 			assert.ErrorIs(t, err, auth.ErrServiceUnavailable)
 			assert.ErrorContains(t, err, "null_user")
 			assert.ErrorIs(t, provider.Set(ctx, "null_token", json.RawMessage(`"x"`)), auth.ErrServiceUnavailable)
+			assert.ErrorIs(t, provider.Delete(ctx, "null_token"), auth.ErrServiceUnavailable)
 		})
 	}
 }

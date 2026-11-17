@@ -18,6 +18,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"os"
 	"testing"
 
 	// Packages
@@ -75,4 +76,11 @@ func Test_Expand(t *testing.T) {
 func Test_Set(t *testing.T) {
 	err := env.New().Set(context.Background(), "GOAUTH_TEST_STRING", json.RawMessage(`"value"`))
 	assert.True(t, errors.Is(err, auth.ErrNotImplemented))
+}
+
+func Test_Delete(t *testing.T) {
+	t.Setenv("GOAUTH_TEST_STRING", "value")
+	err := env.New().Delete(context.Background(), "GOAUTH_TEST_STRING")
+	assert.True(t, errors.Is(err, auth.ErrNotImplemented))
+	assert.Equal(t, "value", os.Getenv("GOAUTH_TEST_STRING"), "the environment isn't changed")
 }

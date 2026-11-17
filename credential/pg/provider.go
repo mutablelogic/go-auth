@@ -276,6 +276,11 @@ func (nullProvider) Set(_ context.Context, key string, _ json.RawMessage) error 
 	return errNoPassphrase(key)
 }
 
+// Delete returns an error, as credentials can't be stored
+func (nullProvider) Delete(_ context.Context, key string) error {
+	return errNoPassphrase(key)
+}
+
 // Expand returns the value unchanged if it has no placeholders, or an error
 // if it has any
 func (nullProvider) Expand(_ context.Context, value string) (string, error) {
