@@ -73,6 +73,7 @@ type ProviderMeta struct {
 // providers, for a sign-in page
 type Config struct {
 	Providers []ProviderMeta `json:"providers" help:"Providers which can be signed in with"`
+	Required  bool           `json:"required,omitempty" help:"Whether the APIs need a session, which they don't when they're served without authentication"`
 }
 
 ///////////////////////////////////////////////////////////////////////////////

@@ -16,6 +16,14 @@
         "dist"
     ],
     "exports": {
+        "./auth": {
+            "types": "./dist/auth/index.d.ts",
+            "import": "./dist/auth/index.js"
+        },
+        "./auth/view": {
+            "types": "./dist/auth/view.d.ts",
+            "import": "./dist/auth/view.js"
+        },
         "./credential": {
             "types": "./dist/credential/index.d.ts",
             "import": "./dist/credential/index.js"

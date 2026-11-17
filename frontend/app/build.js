@@ -1,4 +1,5 @@
-// Builds the auth server's web UI into app/dist: the TypeScript, bundled,
+// Builds the auth server's web UI into app/dist: the app, and its sign-in
+// page, each bundled from its TypeScript,
 // with its styles and fonts, and the assets, such as index.html, which
 // embed.go embeds in a server built with the "frontend" tag. dist is
 // emptied first, so it has only what's built.
@@ -25,7 +26,7 @@ const carbonFonts = {
 };
 
 await esbuild.build({
-    entryPoints: [resolve(__dirname, 'index.ts')],
+    entryPoints: [resolve(__dirname, 'index.ts'), resolve(__dirname, 'login.ts')],
     bundle: true,
     outdir: distDir,
     format: 'esm',

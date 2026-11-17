@@ -32,10 +32,34 @@
             display: none;
         }
 
-        /* The server's status is at the bottom of the side navigation, and
-           its items scroll above it */
+        /* The server's status is at the bottom of the side navigation, with
+           who's signed in above it, and its items scroll above them */
         cds-side-nav-items {
-            margin-bottom: calc(3rem + 1px);
+            margin-bottom: calc(6rem + 2px);
+        }
+
+        ga-session {
+            position: absolute;
+            right: 0;
+            bottom: calc(3rem + 1px);
+            left: 0;
+            border-top: 1px solid var(--cds-border-subtle);
+        }
+
+        ga-session .ga-session {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 0.5rem;
+            height: 3rem;
+            padding: 0 0.5rem 0 1rem;
+            font-size: 0.875rem;
+        }
+
+        ga-session .ga-session-user {
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
         }
 
         gs-server-status {
@@ -109,6 +133,7 @@
     <div class="cds--g100">
         <gs-header></gs-header>
         <gs-side-nav>
+            <ga-session></ga-session>
             <gs-server-status></gs-server-status>
         </gs-side-nav>
     </div>

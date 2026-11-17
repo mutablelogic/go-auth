@@ -9,6 +9,7 @@ import '@carbon/styles/css/styles.min.css';
 import './fonts.css';
 
 // go-server's components
+import { ApiError } from '@mutablelogic/go-server/api';
 import { ChangesController } from '@mutablelogic/go-server/broadcaster';
 import { ConfigController, configClient, configSection, getConfig } from '@mutablelogic/go-server/config';
 import '@mutablelogic/go-server/config/view';
@@ -19,6 +20,8 @@ import '@mutablelogic/go-server/notification/view';
 import { Router } from '@mutablelogic/go-server/router';
 
 // go-auth's modules
+import { getSession, signInURL, type AuthConfig } from '../src/auth/index.ts';
+import '../src/auth/view.ts';
 import type { CertFeatures } from '../src/cert/schema.ts';
 import { certModule } from '../src/cert/view.ts';
 import type { CredentialFeatures } from '../src/credential/schema.ts';
@@ -40,6 +43,33 @@ const read = await getConfig().catch((error) => {
     return undefined;
 });
 const client = configClient(read ?? { prefix: '/api' });
+
+// When the server has sign-in, who's signed in. When its APIs need a
+// session, those who aren't signed in do, and return here, or else they
+// can, from the sidebar.
+// Without it, the APIs aren't authenticated.
+const auth = configSection<AuthConfig>(read, 'auth');
+if (auth) {
+    let signedOut = false;
+    const session = await getSession(client).catch((error) => {
+        if (error instanceof ApiError && error.status === 401) {
+            if (auth.required) {
+                window.location.replace(signInURL(window.location.pathname + window.location.search + window.location.hash));
+                return new Promise<never>(() => {});
+            }
+            signedOut = true;
+            return undefined;
+        }
+        notifications.error("The session couldn't be read", error);
+        return undefined;
+    });
+    const view = document.querySelector('ga-session');
+    if (view) {
+        view.client = client;
+        view.session = session;
+        view.signedOut = signedOut;
+    }
+}
 const changes = new ChangesController(client).onError((error) => notifications.error("Changes couldn't be watched", error));
 const server = new ConfigController(changes, { config: read, notifications });
 const status = document.querySelector('gs-server-status');
