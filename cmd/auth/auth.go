@@ -149,7 +149,7 @@ func (flags AuthFlags) withHandlers(ctx server.Cmd, credentials credential.Crede
 	// The configuration has the providers, for the sign-in page
 	return fn(&module{
 		register: authhandler.RegisterHandlers(providers, opts...),
-		section:  config.WithSection("auth", schema.Config{Providers: authhandler.Providers(providers)}),
+		section:  config.WithSection("auth", schema.Config{Providers: authhandler.Providers(providers), Required: !insecure}),
 		security: scheme,
 	})
 }

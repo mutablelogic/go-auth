@@ -137,23 +137,28 @@ export class SignInElement extends LitElement {
     }
 }
 
-// SessionElement is who's signed in, with a button which signs out
+// SessionElement is who's signed in, with a button which signs out, or a
+// button which signs in, when no one is, and it's signed out
 export const SessionTag = 'ga-session';
 
 export class SessionElement extends LitElement {
     static override properties = {
         client: { attribute: false },
         session: { attribute: false },
+        signedOut: { attribute: false },
         busy: { state: true },
     };
 
-    // The API's client, and the session
+    // The API's client, and the session, or whether no one's signed in,
+    // when the APIs don't need a session
     declare client?: Client;
     declare session?: Session;
+    declare signedOut: boolean;
     declare busy: boolean;
 
     constructor() {
         super();
+        this.signedOut = false;
         this.busy = false;
     }
 
@@ -165,7 +170,10 @@ export class SessionElement extends LitElement {
     override render(): TemplateResult | typeof nothing {
         const session = this.session;
         if (!session) {
-            return nothing;
+            return this.signedOut ? html`
+                <div class="ga-session">
+                    <cds-button kind="ghost" size="sm" href=${signInURL(window.location.pathname + window.location.search + window.location.hash)}>Sign in</cds-button>
+                </div>` : nothing;
         }
         const who = session.user.name || session.user.email || session.user.id;
         return html`

@@ -13,9 +13,11 @@ export interface ProviderMeta {
 }
 
 // AuthConfig is the configuration's auth section: the providers which can
-// be signed in with
+// be signed in with, and whether the APIs need a session, which they don't
+// when they're served without authentication
 export interface AuthConfig {
     providers: ProviderMeta[];
+    required?: boolean;
 }
 
 // User is who signed in

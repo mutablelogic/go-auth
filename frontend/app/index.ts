@@ -44,13 +44,21 @@ const read = await getConfig().catch((error) => {
 });
 const client = configClient(read ?? { prefix: '/api' });
 
-// When the server has sign-in, who's signed in, or else they sign in, and
-// return here. Without it, the APIs aren't authenticated.
-if (configSection<AuthConfig>(read, 'auth')) {
+// When the server has sign-in, who's signed in. When its APIs need a
+// session, those who aren't signed in do, and return here, or else they
+// can, from the sidebar.
+// Without it, the APIs aren't authenticated.
+const auth = configSection<AuthConfig>(read, 'auth');
+if (auth) {
+    let signedOut = false;
     const session = await getSession(client).catch((error) => {
         if (error instanceof ApiError && error.status === 401) {
-            window.location.replace(signInURL(window.location.pathname + window.location.search + window.location.hash));
-            return new Promise<never>(() => {});
+            if (auth.required) {
+                window.location.replace(signInURL(window.location.pathname + window.location.search + window.location.hash));
+                return new Promise<never>(() => {});
+            }
+            signedOut = true;
+            return undefined;
         }
         notifications.error("The session couldn't be read", error);
         return undefined;
@@ -59,6 +67,7 @@ if (configSection<AuthConfig>(read, 'auth')) {
     if (view) {
         view.client = client;
         view.session = session;
+        view.signedOut = signedOut;
     }
 }
 const changes = new ChangesController(client).onError((error) => notifications.error("Changes couldn't be watched", error));
