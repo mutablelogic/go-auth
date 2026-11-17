@@ -93,7 +93,8 @@ func (cmd *LoginCmd) Run(ctx server.Cmd) (err error) {
 	}, cmd.Scopes...)
 	if errors.Is(err, context.DeadlineExceeded) {
 		return goauth.ErrBadParameter.Withf("not signed in, within %v", cmd.Timeout)
-	} else if errors.Is(err, goauth.ErrNotFound) {
+	} else if errors.Is(err, httpclient.ErrNoMetadata) {
+		// Each of its well-known URLs was missing, rather than failed
 		return fmt.Errorf("%s can't be signed in to, as it isn't an OAuth server, which it is when it's run with --auth.oauth: %w", endpoint, err)
 	} else if err != nil {
 		return err
