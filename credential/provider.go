@@ -45,21 +45,22 @@ type CredentialProvider interface {
 	// Set stores the credential for the key, which is JSON, replacing any
 	// credential with the key
 	Set(ctx context.Context, key string, value json.RawMessage) error
+
+	// Delete removes the stored credential for the key, and returns
+	// ErrNotFound when there isn't one, or ErrNotImplemented when the
+	// provider can't store credentials, such as the environment. A
+	// credential from the environment can't be deleted.
+	Delete(ctx context.Context, key string) error
 }
 
 // CredentialManager is a provider which manages its stored credentials,
-// and can list and delete them
+// and can list and describe them
 type CredentialManager interface {
 	CredentialProvider
 
 	// List returns the stored credentials, in key order, without their
 	// values. Credentials from the environment aren't listed.
 	List(ctx context.Context) ([]Credential, error)
-
-	// Delete removes the stored credential for the key, and returns
-	// ErrNotFound when there isn't one. A credential from the environment
-	// can't be deleted.
-	Delete(ctx context.Context, key string) error
 
 	// Describe sets the description of the stored credential for the key,
 	// such as what it's for, or removes it, when it's empty, and returns
