@@ -18,9 +18,11 @@ import (
 	"context"
 	"crypto/subtle"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -142,6 +144,7 @@ type refresher struct {
 	grant Grant
 	token *oauth2.Token
 	fn    func(*oauth2.Token)
+	style oauth2.AuthStyle
 }
 
 // tokenResponse is a token endpoint's response, or its error
@@ -152,7 +155,20 @@ type tokenResponse struct {
 	ExpiresIn        int64  `json:"expires_in"`
 	Error            string `json:"error"`
 	ErrorDescription string `json:"error_description"`
+	ErrorURI         string `json:"error_uri"`
 }
+
+// refreshError is why a token couldn't be refreshed: ErrBadParameter, when
+// the authorization server refused it, or ErrServiceUnavailable, when it
+// failed, and the server's response, as oauth2's RetrieveError, so a
+// refused refresh, such as invalid_grant, can be told from a failed one
+type refreshError struct {
+	err      error
+	retrieve *oauth2.RetrieveError
+}
+
+func (e *refreshError) Error() string   { return e.err.Error() }
+func (e *refreshError) Unwrap() []error { return []error{e.err, e.retrieve} }
 
 // Token returns the token, while it's valid, or else refreshes it
 func (r *refresher) Token() (*oauth2.Token, error) {
@@ -164,14 +180,52 @@ func (r *refresher) Token() (*oauth2.Token, error) {
 		return nil, goauth.ErrBadParameter.With("the token has expired, and can't be refreshed")
 	}
 
-	// The refresh, with the client, which is authenticated with HTTP Basic,
-	// with a secret, as RFC 6749 has it, or else by its ID
+	// The client is authenticated with HTTP Basic, with a secret, as RFC 6749
+	// has it, or in the form, when the authorization server only supports
+	// that, or the server refuses Basic, as oauth2 does, which is kept, or
+	// else by its ID
+	style := r.style
+	if style == oauth2.AuthStyleAutoDetect && r.grant.Client.ClientSecret != "" && postOnly(r.grant.Server.TokenEndpointAuthMethodsSupported) {
+		style = oauth2.AuthStyleInParams
+	}
+	switch {
+	case r.grant.Client.ClientSecret == "":
+		style = oauth2.AuthStyleInParams
+	case style != oauth2.AuthStyleAutoDetect:
+		// It's known
+	default:
+		body, err := r.refresh(oauth2.AuthStyleInHeader)
+		var e *refreshError
+		if err == nil {
+			r.style = oauth2.AuthStyleInHeader
+			return r.keep(body), nil
+		} else if !errors.As(err, &e) || e.retrieve.Response.StatusCode >= http.StatusInternalServerError {
+			return nil, err
+		}
+		style = oauth2.AuthStyleInParams
+	}
+	body, err := r.refresh(style)
+	if err != nil {
+		return nil, err
+	}
+	if r.grant.Client.ClientSecret != "" {
+		r.style = style
+	}
+	return r.keep(body), nil
+}
+
+// refresh asks the token endpoint for a new token, with the client
+// authenticated in the style
+func (r *refresher) refresh(style oauth2.AuthStyle) (*tokenResponse, error) {
 	form := url.Values{"grant_type": {"refresh_token"}, "refresh_token": {r.token.RefreshToken}}
 	if r.grant.Resource != "" {
 		form.Set("resource", r.grant.Resource)
 	}
-	if r.grant.Client.ClientSecret == "" {
+	if style == oauth2.AuthStyleInParams {
 		form.Set("client_id", r.grant.Client.ClientID)
+		if r.grant.Client.ClientSecret != "" {
+			form.Set("client_secret", r.grant.Client.ClientSecret)
+		}
 	}
 	req, err := http.NewRequestWithContext(r.ctx, http.MethodPost, r.grant.Server.TokenEndpoint, strings.NewReader(form.Encode()))
 	if err != nil {
@@ -179,7 +233,7 @@ func (r *refresher) Token() (*oauth2.Token, error) {
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("Accept", "application/json")
-	if r.grant.Client.ClientSecret != "" {
+	if style == oauth2.AuthStyleInHeader {
 		req.SetBasicAuth(url.QueryEscape(r.grant.Client.ClientID), url.QueryEscape(r.grant.Client.ClientSecret))
 	}
 	resp, err := r.http.Do(req)
@@ -187,21 +241,37 @@ func (r *refresher) Token() (*oauth2.Token, error) {
 		return nil, goauth.ErrServiceUnavailable.Withf("refresh: %v", err)
 	}
 	defer resp.Body.Close()
-	var body tokenResponse
-	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&body); err != nil && resp.StatusCode == http.StatusOK {
+	data, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if err != nil {
 		return nil, goauth.ErrServiceUnavailable.Withf("refresh: %v", err)
 	}
-	if resp.StatusCode != http.StatusOK || body.Error != "" || body.AccessToken == "" {
-		reason := body.ErrorDescription
-		if reason == "" {
-			reason = body.Error
-		}
-		if reason == "" {
-			reason = resp.Status
-		}
-		return nil, goauth.ErrBadParameter.Withf("the token couldn't be refreshed: %s", reason)
+	var body tokenResponse
+	if err := json.Unmarshal(data, &body); err != nil && resp.StatusCode == http.StatusOK {
+		return nil, goauth.ErrServiceUnavailable.Withf("refresh: %v", err)
+	}
+	if resp.StatusCode == http.StatusOK && body.Error == "" && body.AccessToken != "" {
+		return &body, nil
 	}
 
+	// It's refused, or failed
+	reason := body.ErrorDescription
+	if reason == "" {
+		reason = body.Error
+	}
+	if reason == "" {
+		reason = resp.Status
+	}
+	e := &refreshError{retrieve: &oauth2.RetrieveError{Response: resp, Body: data, ErrorCode: body.Error, ErrorDescription: body.ErrorDescription, ErrorURI: body.ErrorURI}}
+	if resp.StatusCode >= http.StatusInternalServerError || resp.StatusCode == http.StatusTooManyRequests {
+		e.err = goauth.ErrServiceUnavailable.Withf("the token couldn't be refreshed: %s", reason)
+	} else {
+		e.err = goauth.ErrBadParameter.Withf("the token couldn't be refreshed: %s", reason)
+	}
+	return nil, e
+}
+
+// keep keeps the refreshed token, and says it
+func (r *refresher) keep(body *tokenResponse) *oauth2.Token {
 	// The new token, which keeps the refresh token, when there's no other
 	token := &oauth2.Token{AccessToken: body.AccessToken, TokenType: body.TokenType, RefreshToken: body.RefreshToken}
 	if token.RefreshToken == "" {
@@ -214,5 +284,11 @@ func (r *refresher) Token() (*oauth2.Token, error) {
 	if r.fn != nil {
 		r.fn(token)
 	}
-	return token, nil
+	return token
+}
+
+// postOnly returns true when the authorization server's token endpoint
+// supports client_secret_post, and not client_secret_basic
+func postOnly(methods []string) bool {
+	return slices.Contains(methods, "client_secret_post") && !slices.Contains(methods, "client_secret_basic")
 }
