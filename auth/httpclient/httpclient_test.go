@@ -241,6 +241,25 @@ func Test_Discover(t *testing.T) {
 		// What's missing isn't a failure: a 404, which isn't in the server's
 		// address, whose port can have 404 in it
 		assert.NotContains(t, strings.ReplaceAll(err.Error(), server.URL, ""), "404", "what's missing isn't a failure")
+		assert.NotErrorIs(t, err, httpclient.ErrNoMetadata, "it failed, rather than having none")
+	})
+
+	t.Run("NoMetadata", func(t *testing.T) {
+		// A server whose well-known URLs are all missing has no metadata,
+		// as it isn't an authorization server
+		server := httptest.NewServer(http.NotFoundHandler())
+		t.Cleanup(server.Close)
+		c, err := httpclient.New(server.URL + "/mcp")
+		require.NoError(t, err)
+		_, err = c.Discover(ctx, "")
+		assert.ErrorIs(t, err, goauth.ErrNotFound)
+		assert.ErrorIs(t, err, httpclient.ErrNoMetadata)
+
+		// But not one which can't be reached
+		server.Close()
+		_, err = c.Discover(ctx, "")
+		assert.ErrorIs(t, err, goauth.ErrNotFound)
+		assert.NotErrorIs(t, err, httpclient.ErrNoMetadata)
 	})
 
 	t.Run("Credentials", func(t *testing.T) {

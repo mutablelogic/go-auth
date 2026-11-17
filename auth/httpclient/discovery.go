@@ -189,7 +189,13 @@ func (c *Client) servers(ctx context.Context, result *Metadata, issuers []string
 		result.AuthorizationServers = append(result.AuthorizationServers, *server)
 	}
 	if len(result.AuthorizationServers) == 0 {
-		return nil, goauth.ErrNotFound.Withf("no authorization server's metadata: %v", errors.Join(errs...))
+		// It's ErrNoMetadata only when each of them was
+		for _, err := range errs {
+			if !errors.Is(err, ErrNoMetadata) {
+				return nil, goauth.ErrNotFound.Withf("no authorization server's metadata: %v", errors.Join(errs...))
+			}
+		}
+		return nil, goauth.ErrNotFound.Withf("no authorization server's metadata: %w", errors.Join(errs...))
 	}
 	return result, nil
 }
@@ -224,8 +230,14 @@ func (c *Client) server(ctx context.Context, issuer string) (*ServerMetadata, er
 	if len(errs) > 0 {
 		return nil, goauth.ErrNotFound.Withf("authorization server %q has no metadata: %v", issuer, errors.Join(errs...))
 	}
-	return nil, goauth.ErrNotFound.Withf("authorization server %q has no metadata", issuer)
+	return nil, goauth.ErrNotFound.Withf("authorization server %q has %w", issuer, ErrNoMetadata)
 }
+
+// ErrNoMetadata is wrapped by discovery's ErrNotFound when each of the
+// authorization servers' well-known URLs was missing (404 or 405), rather
+// than failed, or wasn't metadata, so the server isn't an authorization
+// server, rather than one which couldn't be discovered
+var ErrNoMetadata = errors.New("no metadata")
 
 // missing returns true when the error is that what was asked for isn't
 // there, which a well-known URL which isn't the one a server has is, so
