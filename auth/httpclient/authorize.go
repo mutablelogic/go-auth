@@ -270,7 +270,7 @@ func (r *refresher) refresh(style oauth2.AuthStyle) (*tokenResponse, error) {
 	return nil, e
 }
 
-// keep keeps the refreshed token, and says it
+// keep the refreshed token
 func (r *refresher) keep(body *tokenResponse) *oauth2.Token {
 	// The new token, which keeps the refresh token, when there's no other
 	token := &oauth2.Token{AccessToken: body.AccessToken, TokenType: body.TokenType, RefreshToken: body.RefreshToken}
