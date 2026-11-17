@@ -15,6 +15,7 @@
 package httpclient_test
 
 import (
+	"bytes"
 	"context"
 	"net/http"
 	"net/url"
@@ -201,4 +202,17 @@ func Test_Loopback(t *testing.T) {
 	defer cancel()
 	_, err = l.Wait(ctx)
 	assert.ErrorIs(t, err, context.DeadlineExceeded)
+}
+
+func Test_NewWithDiscovery(t *testing.T) {
+	// Discovery has its own options, such as a trace, and not the
+	// resource's, such as its token
+	o := test.NewOAuth(t)
+	var trace bytes.Buffer
+	c, err := httpclient.NewWithDiscovery(o.ResourceURL(), []client.ClientOpt{client.OptReqToken(client.Token{Scheme: client.Bearer, Value: "secret-token"})}, client.OptTrace(&trace, false))
+	require.NoError(t, err)
+	_, err = c.Discover(context.Background(), "")
+	require.NoError(t, err)
+	assert.Contains(t, trace.String(), "oauth-protected-resource")
+	assert.NotContains(t, trace.String(), "secret-token")
 }

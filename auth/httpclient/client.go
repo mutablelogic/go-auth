@@ -17,6 +17,7 @@ package httpclient
 import (
 	"context"
 	"net/http"
+	"slices"
 	"strings"
 
 	// Packages
@@ -48,12 +49,21 @@ type Client struct {
 // options, such as a token, which the endpoint is applied after, so an
 // option can't change it
 func New(endpoint string, opts ...client.ClientOpt) (*Client, error) {
+	return NewWithDiscovery(endpoint, opts)
+}
+
+// NewWithDiscovery returns a client of the resource at the endpoint, as New
+// does, with the options of its requests, and of those which discover how
+// it's authorized, register a client, and get a token, which can be to
+// another origin, such as a trace, a tracer, or a timeout, which mustn't
+// be credentials, such as the resource's token
+func NewWithDiscovery(endpoint string, opts []client.ClientOpt, discovery ...client.ClientOpt) (*Client, error) {
 	endpoint = strings.TrimSpace(endpoint)
-	c, err := client.New(append(opts, client.OptEndpoint(endpoint))...)
+	c, err := client.New(append(slices.Clone(opts), client.OptEndpoint(endpoint))...)
 	if err != nil {
 		return nil, err
 	}
-	metadata, err := client.New(client.OptEndpoint(endpoint))
+	metadata, err := client.New(append(slices.Clone(discovery), client.OptEndpoint(endpoint))...)
 	if err != nil {
 		return nil, err
 	}

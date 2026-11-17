@@ -70,7 +70,9 @@ func (cmd *LoginCmd) Run(ctx server.Cmd) (err error) {
 	if err != nil {
 		return err
 	}
-	c, err := httpclient.New(endpoint, secretOpts(ctx)...)
+	// Discovery, registration and the token are traced too, without their
+	// bodies, which have the token
+	c, err := httpclient.NewWithDiscovery(endpoint, secretOpts(ctx), secretOpts(ctx)...)
 	if err != nil {
 		return err
 	}
@@ -91,6 +93,9 @@ func (cmd *LoginCmd) Run(ctx server.Cmd) (err error) {
 	}, cmd.Scopes...)
 	if errors.Is(err, context.DeadlineExceeded) {
 		return goauth.ErrBadParameter.Withf("not signed in, within %v", cmd.Timeout)
+	} else if errors.Is(err, httpclient.ErrNoMetadata) {
+		// Each of its well-known URLs was missing, rather than failed
+		return fmt.Errorf("%s can't be signed in to, as it isn't an OAuth server, which it is when it's run with --auth.oauth: %w", endpoint, err)
 	} else if err != nil {
 		return err
 	}
