@@ -199,7 +199,9 @@ func (r *refresher) Token() (*oauth2.Token, error) {
 		if err == nil {
 			r.style = oauth2.AuthStyleInHeader
 			return r.keep(body), nil
-		} else if !errors.As(err, &e) || e.retrieve.Response.StatusCode >= http.StatusInternalServerError {
+		} else if !errors.As(err, &e) || errors.Is(err, goauth.ErrServiceUnavailable) {
+			// It failed, such as with a 5xx, or 429, rather than being
+			// refused, so it isn't asked again, in the form
 			return nil, err
 		}
 		style = oauth2.AuthStyleInParams

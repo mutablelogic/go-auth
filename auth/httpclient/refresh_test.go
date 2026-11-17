@@ -153,4 +153,21 @@ func Test_Refresh(t *testing.T) {
 		assert.Equal(t, int32(1), e.basic.Load())
 		assert.Equal(t, int32(0), e.post.Load())
 	})
+
+	t.Run("RateLimited", func(t *testing.T) {
+		// A rate-limited refresh is ErrServiceUnavailable, with its
+		// Retry-After, and isn't asked again
+		e, endpoint := newTokenEndpoint(t, func(w http.ResponseWriter, r *http.Request, basic bool) {
+			w.Header().Set("Retry-After", "30")
+			w.WriteHeader(http.StatusTooManyRequests)
+		})
+		_, err := c.TokenSource(ctx, expired(endpoint, "secret"), nil).Token()
+		assert.ErrorIs(t, err, goauth.ErrServiceUnavailable)
+		var retrieve *oauth2.RetrieveError
+		require.True(t, errors.As(err, &retrieve))
+		assert.Equal(t, http.StatusTooManyRequests, retrieve.Response.StatusCode)
+		assert.Equal(t, "30", retrieve.Response.Header.Get("Retry-After"))
+		assert.Equal(t, int32(1), e.basic.Load())
+		assert.Equal(t, int32(0), e.post.Load())
+	})
 }
