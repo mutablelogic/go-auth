@@ -107,6 +107,21 @@ func Test_SignIn(t *testing.T) {
 	_, err = mgr.Get(ctx, "EXAMPLE_OTHER")
 	assert.Error(t, err)
 
+	// With overlapping prefixes, no client is replaced, and a key is the
+	// sign-in of the longest prefix's server
+	other := server
+	other.Issuer = "https://other.example.com"
+	both := test.NewServer(t, httphandler.RegisterManagerHandlers(mgr, false, httphandler.WithSignIn("EXAMPLE_", server, "EXAMPLE_CLIENT"), httphandler.WithSignIn("EXAMPLE_ALT_", other, "EXAMPLE_ALT_CLIENT")))
+	require.NoError(t, mgr.Set(ctx, "EXAMPLE_CLIENT", json.RawMessage(`{"client_id":"client-1","client_secret":"secret"}`)))
+	require.NoError(t, mgr.Set(ctx, "EXAMPLE_ALT_CLIENT", json.RawMessage(`{"client_id":"client-1","client_secret":"secret"}`)))
+	status, _ = both.Do(t, http.MethodPost, "credential/EXAMPLE_ALT_CLIENT/signin", code)
+	assert.Equal(t, http.StatusBadRequest, status)
+	data, err = mgr.Get(ctx, "EXAMPLE_ALT_CLIENT")
+	require.NoError(t, err)
+	assert.JSONEq(t, `{"client_id":"client-1","client_secret":"secret"}`, string(data), "the client isn't replaced")
+	require.Equal(t, http.StatusOK, both.JSON(t, http.MethodPost, "credential/EXAMPLE_ALT_TOKEN/signin", code, &signIn))
+	assert.Equal(t, other.Issuer, signIn.Issuer)
+
 	// Without a server whose sign-ins are stored, there's no path
 	plain := test.NewServer(t, httphandler.RegisterManagerHandlers(mgr, false))
 	status, _ = plain.Do(t, http.MethodPost, "credential/EXAMPLE_TOKEN/signin", code)

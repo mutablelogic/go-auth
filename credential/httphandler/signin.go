@@ -56,7 +56,9 @@ type signIn struct {
 // client's: a code, which a client authorized at a loopback address, is
 // exchanged with the client, which is the value of the credential with the
 // client key, as its client_id and client_secret, and the grant is stored,
-// without the secret
+// without the secret. It can be given more than once: a key is the sign-in
+// of the server with the longest of its prefixes, and no key of a client is
+// a sign-in.
 func WithSignIn(prefix string, server authclient.ServerMetadata, client string) Opt {
 	return func(o *options) {
 		o.signIns = append(o.signIns, signIn{prefix: prefix, server: server, client: client})
@@ -158,15 +160,22 @@ func exchange(provider credential.CredentialProvider, signIns []signIn, w http.R
 	httpresponse.JSON(w, http.StatusOK, httprequest.Indent(r), credential.CredentialSignIn{Key: key, Issuer: grant.Server.Issuer, Scopes: grant.Scopes})
 }
 
-// match returns the server whose sign-ins the key is, which has its prefix,
-// and isn't its client's, or nil
+// match returns the server whose sign-ins the key is, of the longest of the
+// prefixes it has, or nil, when it has none, or it's the key of any server's
+// client, so a sign-in never replaces a client
 func match(signIns []signIn, key string) *signIn {
-	for i := range signIns {
-		if s := &signIns[i]; strings.HasPrefix(key, s.prefix) && key != s.client {
-			return s
+	for _, s := range signIns {
+		if key == s.client {
+			return nil
 		}
 	}
-	return nil
+	var result *signIn
+	for i := range signIns {
+		if s := &signIns[i]; strings.HasPrefix(key, s.prefix) && (result == nil || len(s.prefix) > len(result.prefix)) {
+			result = s
+		}
+	}
+	return result
 }
 
 // isLoopback returns true when the URI is http, of a loopback address, such
