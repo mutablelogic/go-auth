@@ -114,3 +114,22 @@ func Test_SignInCode(t *testing.T) {
 	_, err = httpclient.ExchangeCode(ctx, metadata, client, code)
 	assert.ErrorIs(t, err, goauth.ErrBadParameter)
 }
+
+func Test_ParseRegistration(t *testing.T) {
+	// Of its client_id and client_secret, or the file Google's console
+	// downloads, of a desktop or web client, or a string of either
+	for _, data := range []string{
+		`{"client_id":"a","client_secret":"b"}`,
+		`{"installed":{"client_id":"a","client_secret":"b"}}`,
+		`{"web":{"client_id":"a","client_secret":"b"}}`,
+		`"{\"installed\":{\"client_id\":\"a\",\"client_secret\":\"b\"}}"`,
+	} {
+		client, err := httpclient.ParseRegistration([]byte(data))
+		require.NoError(t, err, data)
+		assert.Equal(t, httpclient.Registration{ClientID: "a", ClientSecret: "b"}, *client, data)
+	}
+	for _, data := range []string{`"a"`, `{}`, `{"installed":{}}`, `[]`, `null`, `{"client_id":" "}`} {
+		_, err := httpclient.ParseRegistration([]byte(data))
+		assert.ErrorIs(t, err, goauth.ErrBadParameter, data)
+	}
+}
