@@ -22,6 +22,7 @@ import (
 
 	// Packages
 	auth "github.com/mutablelogic/go-auth"
+	authclient "github.com/mutablelogic/go-auth/auth/httpclient"
 	credential "github.com/mutablelogic/go-auth/credential"
 	client "github.com/mutablelogic/go-client"
 	types "github.com/mutablelogic/go-server/pkg/types"
@@ -112,4 +113,20 @@ func (c *Client) DeleteCredential(ctx context.Context, key string) error {
 // passphrase version. Returns auth.ErrNotModified when it already uses it.
 func (c *Client) RotateCredential(ctx context.Context, key string) error {
 	return auth.ClientError(c.DoWithContext(ctx, client.MethodPost, nil, client.OptPath("credential", key, "rotate")))
+}
+
+// SignIn sends the code of a sign-in, which was authorized at a loopback
+// address, with PKCE, to the server, which exchanges it, with its client's
+// secret, and stores the grant as the code's credential. Returns the
+// sign-in which is stored, without its tokens.
+func (c *Client) SignIn(ctx context.Context, code authclient.SignInCode) (*credential.CredentialSignIn, error) {
+	req, err := client.NewJSONRequest(credential.CredentialCode{Code: code.Code, CodeVerifier: code.CodeVerifier, RedirectURI: code.RedirectURI})
+	if err != nil {
+		return nil, err
+	}
+	var response credential.CredentialSignIn
+	if err := c.DoWithContext(ctx, req, &response, client.OptPath("credential", code.Credential, "signin")); err != nil {
+		return nil, auth.ClientError(err)
+	}
+	return &response, nil
 }

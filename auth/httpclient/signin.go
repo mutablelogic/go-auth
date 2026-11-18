@@ -16,6 +16,7 @@ package httpclient
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -106,6 +107,35 @@ func (s SignIn) AuthCodeURL(redirectURI, state, verifier string, opts ...oauth2.
 		Scopes:      s.Scopes,
 	}
 	return config.AuthCodeURL(state, append([]oauth2.AuthCodeOption{oauth2.S256ChallengeOption(verifier)}, opts...)...)
+}
+
+// ParseRegistration returns the client of the JSON, which has its
+// client_id, and client_secret, or has them in "installed" or "web", as the
+// file Google's console downloads for a client does, or is a string of that
+// JSON, as a credential from a file, or the environment, can be. Returns
+// ErrBadParameter when it isn't one, or has no client_id.
+func ParseRegistration(data []byte) (*Registration, error) {
+	var value string
+	if json.Unmarshal(data, &value) == nil {
+		data = []byte(value)
+	}
+	var object map[string]json.RawMessage
+	if err := json.Unmarshal(data, &object); err != nil || object == nil {
+		return nil, goauth.ErrBadParameter.With("not a JSON object, of the client_id and client_secret of an OAuth client")
+	}
+	for _, kind := range []string{"installed", "web"} {
+		if nested, exists := object[kind]; exists {
+			data = nested
+			break
+		}
+	}
+	var client Registration
+	if err := json.Unmarshal(data, &client); err != nil {
+		return nil, goauth.ErrBadParameter.Withf("not an OAuth client: %v", err)
+	} else if strings.TrimSpace(client.ClientID) == "" {
+		return nil, goauth.ErrBadParameter.With("an OAuth client with no client_id")
+	}
+	return &Registration{ClientID: client.ClientID, ClientSecret: client.ClientSecret}, nil
 }
 
 // ExchangeCode exchanges the code of a sign-in, with its PKCE verifier, at

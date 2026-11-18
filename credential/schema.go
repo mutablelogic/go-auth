@@ -57,3 +57,20 @@ type CredentialList struct {
 	Count uint64       `json:"count"`
 	Body  []Credential `json:"body,omitempty"`
 }
+
+// CredentialCode is the code of a sign-in, which a client authorized, at a
+// loopback address, with PKCE, which the server exchanges, with the
+// client's secret, and stores the grant of, as the credential
+type CredentialCode struct {
+	Code         string `json:"code" help:"Code of the sign-in, which the authorization server redirected with"`
+	CodeVerifier string `json:"code_verifier" help:"PKCE verifier of the code's challenge"`
+	RedirectURI  string `json:"redirect_uri" help:"Loopback address the code was redirected to"`
+}
+
+// CredentialSignIn is a sign-in which is stored, as the credential, without
+// its tokens
+type CredentialSignIn struct {
+	Key    string   `json:"key" help:"Credential key, of the sign-in"`
+	Issuer string   `json:"issuer" help:"Authorization server which was signed in with"`
+	Scopes []string `json:"scopes,omitempty" help:"Scopes the server granted, when it says"`
+}

@@ -66,6 +66,7 @@ type Opt func(*options)
 
 type options struct {
 	publisher Publisher
+	signIns   []signIn
 }
 
 // Publisher publishes changes, such as go-server's broadcaster, which a web
@@ -107,6 +108,7 @@ func register(provider credential.CredentialProvider, manager credential.Credent
 			registerCredential(router, provider, manager, auth, doc, notify),
 			registerKey(router, provider, manager, auth, doc, notify),
 			registerRotate(router, manager, auth, doc, notify),
+			registerSignIn(router, provider, o.signIns, auth, doc, notify),
 		)
 	}
 }
