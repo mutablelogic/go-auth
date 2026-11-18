@@ -15,8 +15,14 @@
 package httpclient
 
 import (
+	"context"
 	"errors"
 	"fmt"
+	"strings"
+
+	// Packages
+	goauth "github.com/mutablelogic/go-auth"
+	oauth2 "golang.org/x/oauth2"
 )
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -33,6 +39,17 @@ type SignIn struct {
 	ClientID   string         `json:"client_id"`
 	Scopes     []string       `json:"scopes,omitempty"`
 	Credential string         `json:"credential,omitempty"`
+}
+
+// SignInCode is the code of a sign-in, which a client authorized, such as at
+// a loopback address, with PKCE, which it sends to the server, which
+// exchanges it, as it has the client's secret, and stores the grant, as the
+// credential
+type SignInCode struct {
+	Credential   string `json:"credential"`
+	Code         string `json:"code"`
+	CodeVerifier string `json:"code_verifier"`
+	RedirectURI  string `json:"redirect_uri"`
 }
 
 // SignInError is the error of a resource whose user needs to sign in, such
@@ -74,4 +91,62 @@ func SignInOf(err error) *SignIn {
 		return &e.SignIn
 	}
 	return nil
+}
+
+// AuthCodeURL returns the URL a person signs in at, with the client, and
+// the scopes, which redirects to the URI, with the state, and the challenge
+// of the PKCE verifier, with the options, such as for a refresh token, when
+// the server needs one to issue it, as Google does with
+// access_type=offline
+func (s SignIn) AuthCodeURL(redirectURI, state, verifier string, opts ...oauth2.AuthCodeOption) string {
+	config := oauth2.Config{
+		ClientID:    s.ClientID,
+		Endpoint:    oauth2.Endpoint{AuthURL: s.Server.AuthorizationEndpoint},
+		RedirectURL: redirectURI,
+		Scopes:      s.Scopes,
+	}
+	return config.AuthCodeURL(state, append([]oauth2.AuthCodeOption{oauth2.S256ChallengeOption(verifier)}, opts...)...)
+}
+
+// ExchangeCode exchanges the code of a sign-in, with its PKCE verifier, at
+// the server's token endpoint, with the client, whose secret, when it has
+// one, is sent in the form, and returns the grant, with its tokens, and the
+// scopes the server granted, when it says, without the client's secret, to
+// be stored. Returns ErrBadParameter when there's no code, or verifier, or
+// the server refuses it, and ErrServiceUnavailable when it fails.
+func ExchangeCode(ctx context.Context, server ServerMetadata, client Registration, code SignInCode) (*Grant, error) {
+	switch {
+	case code.Code == "" || code.CodeVerifier == "":
+		return nil, goauth.ErrBadParameter.With("a sign-in needs its code, and verifier")
+	case server.TokenEndpoint == "":
+		return nil, goauth.ErrBadParameter.Withf("server %q has no token endpoint", server.Issuer)
+	case client.ClientID == "":
+		return nil, goauth.ErrBadParameter.With("no client")
+	}
+	config := oauth2.Config{
+		ClientID:     client.ClientID,
+		ClientSecret: client.ClientSecret,
+		Endpoint:     oauth2.Endpoint{AuthURL: server.AuthorizationEndpoint, TokenURL: server.TokenEndpoint, AuthStyle: oauth2.AuthStyleInParams},
+		RedirectURL:  code.RedirectURI,
+	}
+	token, err := config.Exchange(ctx, code.Code, oauth2.VerifierOption(code.CodeVerifier))
+	var retrieve *oauth2.RetrieveError
+	if errors.As(err, &retrieve) {
+		return nil, goauth.ErrBadParameter.Withf("signing in with %s: %w", server.Issuer, err)
+	} else if err != nil {
+		return nil, goauth.ErrServiceUnavailable.Withf("signing in with %s: %v", server.Issuer, err)
+	}
+
+	// The scopes are those the server granted, when it says
+	var scopes []string
+	if scope, ok := token.Extra("scope").(string); ok {
+		scopes = strings.Fields(scope)
+	}
+	return &Grant{
+		Server:      server,
+		Client:      Registration{ClientID: client.ClientID},
+		RedirectURI: code.RedirectURI,
+		Scopes:      scopes,
+		Token:       &oauth2.Token{AccessToken: token.AccessToken, TokenType: token.TokenType, RefreshToken: token.RefreshToken, Expiry: token.Expiry},
+	}, nil
 }
