@@ -130,11 +130,14 @@ func ExchangeCode(ctx context.Context, server ServerMetadata, client Registratio
 		RedirectURL:  code.RedirectURI,
 	}
 	token, err := config.Exchange(ctx, code.Code, oauth2.VerifierOption(code.CodeVerifier))
+	// A refusal is a bad parameter, but a failure, such as a 5xx, or 429,
+	// which oauth2 says the same way, is unavailable, so it can be tried
+	// again
 	var retrieve *oauth2.RetrieveError
-	if errors.As(err, &retrieve) {
+	if errors.As(err, &retrieve) && !retryable(retrieve) {
 		return nil, goauth.ErrBadParameter.Withf("signing in with %s: %w", server.Issuer, err)
 	} else if err != nil {
-		return nil, goauth.ErrServiceUnavailable.Withf("signing in with %s: %v", server.Issuer, err)
+		return nil, goauth.ErrServiceUnavailable.Withf("signing in with %s: %w", server.Issuer, err)
 	}
 
 	// The scopes are those the server granted, when it says
@@ -149,4 +152,10 @@ func ExchangeCode(ctx context.Context, server ServerMetadata, client Registratio
 		Scopes:      scopes,
 		Token:       &oauth2.Token{AccessToken: token.AccessToken, TokenType: token.TokenType, RefreshToken: token.RefreshToken, Expiry: token.Expiry},
 	}, nil
+}
+
+// retryable returns true when a token endpoint's error is a failure, such
+// as a 5xx, or 429, rather than a refusal
+func retryable(err *oauth2.RetrieveError) bool {
+	return err.Response != nil && (err.Response.StatusCode >= 500 || err.Response.StatusCode == 429)
 }

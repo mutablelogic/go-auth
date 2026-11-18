@@ -50,6 +50,15 @@ func Test_SignInCode(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		require.NoError(t, r.ParseForm())
 		w.Header().Set("Content-Type", "application/json")
+		if r.Form.Get("code") == "busy" {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			_, _ = w.Write([]byte(`{"error":"temporarily_unavailable"}`))
+			return
+		} else if r.Form.Get("code") == "slow" {
+			w.WriteHeader(http.StatusTooManyRequests)
+			_, _ = w.Write([]byte(`{"error":"rate_limited"}`))
+			return
+		}
 		if r.Form.Get("code") != "code" || r.Form.Get("code_verifier") != "verifier" || r.Form.Get("client_secret") != "secret" || r.Form.Get("redirect_uri") != "http://127.0.0.1:8085/callback" {
 			w.WriteHeader(http.StatusBadRequest)
 			_, _ = w.Write([]byte(`{"error":"invalid_grant"}`))
@@ -91,6 +100,16 @@ func Test_SignInCode(t *testing.T) {
 	code.Code = "other"
 	_, err = httpclient.ExchangeCode(ctx, metadata, client, code)
 	assert.ErrorIs(t, err, goauth.ErrBadParameter)
+
+	// A failure, of 5xx or 429, is unavailable, so it can be tried again,
+	// with the token endpoint's error
+	for _, failed := range []string{"busy", "slow"} {
+		code.Code = failed
+		_, err = httpclient.ExchangeCode(ctx, metadata, client, code)
+		assert.ErrorIs(t, err, goauth.ErrServiceUnavailable, failed)
+		var retrieve *oauth2.RetrieveError
+		assert.ErrorAs(t, err, &retrieve, failed)
+	}
 	code.Code, code.CodeVerifier = "code", ""
 	_, err = httpclient.ExchangeCode(ctx, metadata, client, code)
 	assert.ErrorIs(t, err, goauth.ErrBadParameter)
