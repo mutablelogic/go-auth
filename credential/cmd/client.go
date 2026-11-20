@@ -20,6 +20,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 
 	// Packages
@@ -27,6 +28,7 @@ import (
 	httpclient "github.com/mutablelogic/go-auth/credential/httpclient"
 	client "github.com/mutablelogic/go-client"
 	otel "github.com/mutablelogic/go-client/pkg/otel"
+	transport "github.com/mutablelogic/go-client/pkg/transport"
 	server "github.com/mutablelogic/go-server"
 	term "golang.org/x/term"
 )
@@ -59,7 +61,9 @@ func withSecretClient(ctx server.Cmd, span string, fn func(context.Context, *htt
 		opts = append(opts, client.OptTimeout(timeout))
 	}
 	if ctx.IsDebug() {
-		opts = append(opts, client.OptTrace(os.Stderr, false))
+		opts = append(opts, client.OptTransport(func(parent http.RoundTripper) http.RoundTripper {
+			return transport.NewLogging(os.Stderr, parent, false)
+		}))
 	}
 	opts = append(opts, authcmd.TokenOpts(ctx, endpoint)...)
 	return runClient(ctx, span, endpoint, opts, fn)

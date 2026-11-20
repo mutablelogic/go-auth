@@ -22,6 +22,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"os"
 	"os/exec"
 	"runtime"
@@ -33,6 +34,7 @@ import (
 	schema "github.com/mutablelogic/go-auth/auth/schema"
 	client "github.com/mutablelogic/go-client"
 	otel "github.com/mutablelogic/go-client/pkg/otel"
+	transport "github.com/mutablelogic/go-client/pkg/transport"
 	server "github.com/mutablelogic/go-server"
 )
 
@@ -194,7 +196,9 @@ func secretOpts(ctx server.Cmd) []client.ClientOpt {
 		opts = append(opts, client.OptTimeout(timeout))
 	}
 	if ctx.IsDebug() {
-		opts = append(opts, client.OptTrace(os.Stderr, false))
+		opts = append(opts, client.OptTransport(func(parent http.RoundTripper) http.RoundTripper {
+			return transport.NewLogging(os.Stderr, parent, false)
+		}))
 	}
 	return opts
 }

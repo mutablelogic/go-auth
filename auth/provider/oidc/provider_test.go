@@ -17,6 +17,7 @@ package oidc_test
 import (
 	"bytes"
 	"context"
+	"net/http"
 	"net/url"
 	"testing"
 	"time"
@@ -27,6 +28,7 @@ import (
 	schema "github.com/mutablelogic/go-auth/auth/schema"
 	test "github.com/mutablelogic/go-auth/auth/test"
 	client "github.com/mutablelogic/go-client"
+	transport "github.com/mutablelogic/go-client/pkg/transport"
 	httpresponse "github.com/mutablelogic/go-server/pkg/httpresponse"
 	assert "github.com/stretchr/testify/assert"
 	require "github.com/stretchr/testify/require"
@@ -133,7 +135,7 @@ func Test_ClientOptions(t *testing.T) {
 	ctx := context.Background()
 	i := test.NewOIDC(t)
 	var trace bytes.Buffer
-	p, err := oidc.New("traced", "", i.URL, test.NewCredentials().WithClient("traced", i.Audience, "secret"), "traced", oidc.WithClient(client.OptTrace(&trace, false)))
+	p, err := oidc.New("traced", "", i.URL, test.NewCredentials().WithClient("traced", i.Audience, "secret"), "traced", oidc.WithClient(client.OptTransport(func(parent http.RoundTripper) http.RoundTripper { return transport.NewLogging(&trace, parent, false) })))
 	require.NoError(t, err)
 	credential := test.SignIn(t, ctx, p, func(challenge string) string { return i.Code(challenge, map[string]any{"sub": "u1"}) })
 	_, err = p.Exchange(ctx, credential)
