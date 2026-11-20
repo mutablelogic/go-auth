@@ -18,6 +18,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"net/http"
 	"net/url"
 	"testing"
 
@@ -27,6 +28,7 @@ import (
 	schema "github.com/mutablelogic/go-auth/auth/schema"
 	test "github.com/mutablelogic/go-auth/auth/test"
 	client "github.com/mutablelogic/go-client"
+	transport "github.com/mutablelogic/go-client/pkg/transport"
 	httpresponse "github.com/mutablelogic/go-server/pkg/httpresponse"
 	assert "github.com/stretchr/testify/assert"
 	require "github.com/stretchr/testify/require"
@@ -108,7 +110,7 @@ func Test_ClientOptions(t *testing.T) {
 	ctx := context.Background()
 	g := test.NewGitHub(t)
 	var trace bytes.Buffer
-	p, err := github.New(test.NewCredentials().WithClient("github", "client", "secret"), "github", github.WithURL(g.URL, g.APIURL()), github.WithClient(client.OptTrace(&trace, false)))
+	p, err := github.New(test.NewCredentials().WithClient("github", "client", "secret"), "github", github.WithURL(g.URL, g.APIURL()), github.WithClient(client.OptTransport(func(parent http.RoundTripper) http.RoundTripper { return transport.NewLogging(&trace, parent, false) })))
 	require.NoError(t, err)
 	credential := test.SignIn(t, ctx, p, func(challenge string) string { return g.Code(challenge, octocat) })
 	_, err = p.Exchange(ctx, credential)

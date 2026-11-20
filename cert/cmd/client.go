@@ -16,6 +16,7 @@ package cert
 
 import (
 	"context"
+	"net/http"
 	"os"
 	"strings"
 
@@ -25,6 +26,7 @@ import (
 	httpclient "github.com/mutablelogic/go-auth/cert/httpclient"
 	client "github.com/mutablelogic/go-client"
 	otel "github.com/mutablelogic/go-client/pkg/otel"
+	transport "github.com/mutablelogic/go-client/pkg/transport"
 	server "github.com/mutablelogic/go-server"
 	types "github.com/mutablelogic/go-server/pkg/types"
 )
@@ -71,7 +73,9 @@ func withKeyClient(ctx server.Cmd, span string, fn func(context.Context, *httpcl
 		opts = append(opts, client.OptTimeout(timeout))
 	}
 	if ctx.IsDebug() {
-		opts = append(opts, client.OptTrace(os.Stderr, false))
+		opts = append(opts, client.OptTransport(func(parent http.RoundTripper) http.RoundTripper {
+			return transport.NewLogging(os.Stderr, parent, false)
+		}))
 	}
 	opts = append(opts, authcmd.TokenOpts(ctx, endpoint)...)
 	return runClient(ctx, span, endpoint, opts, fn)

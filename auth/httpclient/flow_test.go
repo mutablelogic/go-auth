@@ -27,6 +27,7 @@ import (
 	httpclient "github.com/mutablelogic/go-auth/auth/httpclient"
 	test "github.com/mutablelogic/go-auth/auth/test"
 	client "github.com/mutablelogic/go-client"
+	transport "github.com/mutablelogic/go-client/pkg/transport"
 	assert "github.com/stretchr/testify/assert"
 	require "github.com/stretchr/testify/require"
 	oauth2 "golang.org/x/oauth2"
@@ -209,7 +210,7 @@ func Test_NewWithDiscovery(t *testing.T) {
 	// resource's, such as its token
 	o := test.NewOAuth(t)
 	var trace bytes.Buffer
-	c, err := httpclient.NewWithDiscovery(o.ResourceURL(), []client.ClientOpt{client.OptReqToken(client.Token{Scheme: client.Bearer, Value: "secret-token"})}, client.OptTrace(&trace, false))
+	c, err := httpclient.NewWithDiscovery(o.ResourceURL(), []client.ClientOpt{client.OptReqToken(client.Token{Scheme: client.Bearer, Value: "secret-token"})}, client.OptTransport(func(parent http.RoundTripper) http.RoundTripper { return transport.NewLogging(&trace, parent, false) }))
 	require.NoError(t, err)
 	_, err = c.Discover(context.Background(), "")
 	require.NoError(t, err)
