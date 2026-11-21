@@ -77,10 +77,22 @@ func NewSignInError(signIn SignIn, err error) *SignInError {
 // already, as a credential's sign-in's errors do
 func (e *SignInError) Error() string {
 	message := fmt.Sprint(e.Err)
-	if e.Server.Issuer == "" || strings.Contains(message, e.Server.Issuer) {
+	if e.Server.Issuer == "" || namesIssuer(message, e.Server.Issuer) {
 		return message
 	}
 	return fmt.Sprintf("%s: sign in with %s", message, e.Server.Issuer)
+}
+
+// namesIssuer returns true when a word of the message is the issuer, without
+// the punctuation after it, rather than another's, of which it's a prefix,
+// such as https://id.example/tenant-other of https://id.example/tenant
+func namesIssuer(message, issuer string) bool {
+	for _, word := range strings.Fields(message) {
+		if strings.TrimRight(word, `.,:;)"'`) == issuer {
+			return true
+		}
+	}
+	return false
 }
 
 // Unwrap returns the error, so it's matched with errors.Is
