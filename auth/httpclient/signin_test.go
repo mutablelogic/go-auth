@@ -31,6 +31,11 @@ func Test_SignInError(t *testing.T) {
 	err := httpclient.NewSignInError(signIn, goauth.ErrForbidden.With("no grant"))
 	assert.Equal(t, "forbidden: no grant: sign in with https://accounts.google.com", err.Error())
 	assert.ErrorIs(t, err, goauth.ErrForbidden)
+
+	// An error which says who to sign in with already isn't told it again
+	again := httpclient.NewSignInError(signIn, goauth.ErrForbidden.With("sign in with https://accounts.google.com again"))
+	assert.Equal(t, "forbidden: sign in with https://accounts.google.com again", again.Error())
+
 	got := httpclient.SignInOf(fmt.Errorf("volume: %w", err))
 	require.NotNil(t, got)
 	assert.Equal(t, signIn, *got)
