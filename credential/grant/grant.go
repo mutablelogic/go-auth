@@ -41,6 +41,7 @@ import (
 type Config struct {
 	Server   authclient.ServerMetadata // The authorization server, such as Google
 	Client   string                    // The key of the credential of its OAuth client, such as GOOGLE_CLIENT
+	Clients  []string                  // The keys of other OAuth clients, whose sign-ins are accepted, and refreshed with them, such as GOOGLE_WEB_CLIENT, a web app's
 	Key      string                    // The key of the credential of the sign-in, such as GOOGLE_TOKEN
 	Required []string                  // The sign-in has one of these scopes
 	Scopes   []string                  // The scopes which are asked for, when signing in
@@ -63,6 +64,7 @@ type Source struct {
 	config      Config
 	credentials Credentials
 	client      authclient.Registration
+	others      []authclient.Registration
 	current     authclient.Grant
 	refresher   *authclient.Client
 }
@@ -91,6 +93,7 @@ func New(ctx context.Context, credentials Credentials, config Config) (*Source, 
 		return nil, err
 	}
 	self.client = *client
+	self.others = self.readOthers(ctx)
 	current, err := self.read(ctx)
 	if err != nil {
 		return nil, err
@@ -124,9 +127,10 @@ func (self *Source) Token(ctx context.Context) (*oauth2.Token, error) {
 		return current.Token, nil
 	}
 
-	// Refresh it, with the client's secret, which isn't stored with it
+	// Refresh it, with the secret of the client which it's of, which isn't
+	// stored with it
 	grant := *current
-	grant.Client = self.client
+	grant.Client = *self.clientOf(current)
 	token, err := self.refresher.TokenSource(ctx, &grant, nil).Token()
 	var retrieve *oauth2.RetrieveError
 	switch {
@@ -192,7 +196,7 @@ func (self *Source) read(ctx context.Context) (*authclient.Grant, error) {
 	switch {
 	case grant.Server.Issuer != issuer:
 		return nil, self.signIn(nil, auth.ErrInvalidProvider.Withf("sign-in %q isn't of %s, so sign in with it", key, issuer))
-	case grant.Client.ClientID != self.client.ClientID:
+	case self.clientOf(&grant) == nil:
 		return nil, self.signIn(&grant, auth.ErrInvalidProvider.Withf("sign-in %q is for another client than %q's, so sign in with %s again", key, self.config.Client, issuer))
 	case grant.Token == nil || (grant.Token.AccessToken == "" && grant.Token.RefreshToken == ""):
 		return nil, self.signIn(&grant, auth.ErrInvalidProvider.Withf("sign-in %q has no token, so sign in with %s again", key, issuer))
@@ -239,6 +243,35 @@ func (self *Source) readClient(ctx context.Context) (*authclient.Registration, e
 		return nil, auth.ErrBadParameter.Withf("credential %q: %v", self.config.Client, err)
 	}
 	return client, nil
+}
+
+// readOthers returns the other clients, whose sign-ins are accepted, of
+// those whose credentials are stored, and are clients, as one which isn't
+// configured isn't one whose sign-ins are made
+func (self *Source) readOthers(ctx context.Context) []authclient.Registration {
+	var result []authclient.Registration
+	for _, key := range self.config.Clients {
+		if data, err := self.credentials.Get(ctx, key); err == nil {
+			if client, err := authclient.ParseRegistration(data); err == nil {
+				result = append(result, *client)
+			}
+		}
+	}
+	return result
+}
+
+// clientOf returns the client which a sign-in is of, of its client_id, the
+// client's, or another's, or nil, when it's of none of them
+func (self *Source) clientOf(grant *authclient.Grant) *authclient.Registration {
+	if grant.Client.ClientID == self.client.ClientID {
+		return &self.client
+	}
+	for i := range self.others {
+		if grant.Client.ClientID == self.others[i].ClientID {
+			return &self.others[i]
+		}
+	}
+	return nil
 }
 
 // sameToken returns true when two tokens are the same
