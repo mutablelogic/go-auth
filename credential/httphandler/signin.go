@@ -46,6 +46,7 @@ type signIn struct {
 	prefix string
 	server authclient.ServerMetadata
 	client string
+	web    *webSignIn
 }
 
 ///////////////////////////////////////////////////////////////////////////////

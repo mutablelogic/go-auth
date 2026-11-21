@@ -67,6 +67,20 @@ type CredentialCode struct {
 	RedirectURI  string `json:"redirect_uri" help:"Loopback address the code was redirected to"`
 }
 
+// CredentialAuthorize asks for the URL a person signs in at, in a browser,
+// with a server's web client, which redirects to the server's callback,
+// rather than a loopback address, with the scopes which are asked for
+type CredentialAuthorize struct {
+	RedirectURI string   `json:"redirect_uri" help:"URL of the server's callback, credential-signin/callback, as the browser reaches it, https or http of a loopback host, which is registered with the client"`
+	Scopes      []string `json:"scopes,omitempty" help:"Scopes to ask for, such as those a sign-in error says"`
+}
+
+// CredentialAuthorization is the URL a person signs in at, in a browser,
+// which redirects to the server's callback, which stores the sign-in
+type CredentialAuthorization struct {
+	URL string `json:"url" help:"URL to sign in at, which expires after a while"`
+}
+
 // CredentialSignIn is a sign-in which is stored, as the credential, without
 // its tokens
 type CredentialSignIn struct {

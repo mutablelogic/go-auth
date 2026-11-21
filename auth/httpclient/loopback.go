@@ -37,6 +37,7 @@ import (
 // free, which a command's authorization redirects to, as RFC 8252 has it,
 // so it's waited for
 type Loopback struct {
+	host     string
 	listener net.Listener
 	server   *http.Server
 	queries  chan url.Values
@@ -54,11 +55,30 @@ const CallbackPath = "/callback"
 
 // NewLoopback listens for a callback, on 127.0.0.1, until it's closed
 func NewLoopback() (*Loopback, error) {
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	return NewLoopbackAt("127.0.0.1:0")
+}
+
+// NewLoopbackAt listens at the loopback address, such as localhost:8085,
+// whose redirect URI is of its host, as it's given, such as
+// http://localhost:8085/callback, so it can be the one a web application's
+// client registers, rather than any port, as a desktop app's can be. Returns
+// ErrBadParameter when the address isn't a loopback address's.
+func NewLoopbackAt(addr string) (*Loopback, error) {
+	host, port, err := net.SplitHostPort(addr)
+	if err != nil {
+		return nil, goauth.ErrBadParameter.Withf("loopback address %q: %v", addr, err)
+	} else if ip := net.ParseIP(host); host != "localhost" && (ip == nil || !ip.IsLoopback()) {
+		return nil, goauth.ErrBadParameter.Withf("%q isn't a loopback address", addr)
+	}
+	listen := addr
+	if host == "localhost" {
+		listen = net.JoinHostPort("127.0.0.1", port)
+	}
+	listener, err := net.Listen("tcp", listen)
 	if err != nil {
 		return nil, err
 	}
-	l := &Loopback{listener: listener, queries: make(chan url.Values, 1)}
+	l := &Loopback{host: host, listener: listener, queries: make(chan url.Values, 1)}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET "+CallbackPath, l.callback)
 	l.server = &http.Server{Handler: mux, ReadHeaderTimeout: 10 * time.Second}
@@ -76,7 +96,8 @@ func (l *Loopback) Close() error {
 
 // RedirectURI is the URI the authorization redirects to
 func (l *Loopback) RedirectURI() string {
-	return "http://" + l.listener.Addr().String() + CallbackPath
+	_, port, _ := net.SplitHostPort(l.listener.Addr().String())
+	return "http://" + net.JoinHostPort(l.host, port) + CallbackPath
 }
 
 // Wait returns the query of the first callback, which has the code, and
