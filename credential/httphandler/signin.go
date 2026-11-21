@@ -46,6 +46,7 @@ type signIn struct {
 	prefix string
 	server authclient.ServerMetadata
 	client string
+	web    *webSignIn
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -162,10 +163,10 @@ func exchange(provider credential.CredentialProvider, signIns []signIn, w http.R
 
 // match returns the server whose sign-ins the key is, of the longest of the
 // prefixes it has, or nil, when it has none, or it's the key of any server's
-// client, so a sign-in never replaces a client
+// client, or web client, so a sign-in never replaces a client
 func match(signIns []signIn, key string) *signIn {
 	for _, s := range signIns {
-		if key == s.client {
+		if key == s.client || (s.web != nil && key == s.web.client) {
 			return nil
 		}
 	}

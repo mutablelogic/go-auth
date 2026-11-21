@@ -22,6 +22,7 @@ import (
 	"html/template"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -141,8 +142,8 @@ func WithWebSignIn(prefix, client string, opts ...oauth2.AuthCodeOption) Opt {
 // clients of servers whose sign-ins are stored: asking for the URL to sign
 // in at, and the callback, which needs no scopes, as its state, which is
 // random, and done once, is the sign-in's
-func registerWebSignIn(router *httprouter.Router, provider credential.CredentialProvider, signIns []signIn, webs []webSignIn, auth bool, doc *opts.MarkdownDoc, notify notifyFunc) error {
-	if len(signIns) == 0 || len(webs) == 0 {
+func registerWebSignIn(router *httprouter.Router, provider credential.CredentialProvider, signIns []signIn, auth bool, doc *opts.MarkdownDoc, notify notifyFunc) error {
+	if !slices.ContainsFunc(signIns, func(s signIn) bool { return s.web != nil }) {
 		return nil
 	}
 	pending := &authorizations{pending: make(map[string]authorization)}
@@ -150,7 +151,7 @@ func registerWebSignIn(router *httprouter.Router, provider credential.Credential
 		router.Register("credential/{key}/authorize", jsonschema.MustFor[keyParams](), func(path httprequest.PathItem) {
 			path.Tag(tag)
 			path.Post(func(w http.ResponseWriter, r *http.Request) {
-				authorize(provider, signIns, webs, pending, w, r)
+				authorize(provider, signIns, pending, w, r)
 			}, func(op httprequest.PathOperation) {
 				op.Summary("Sign in, in a browser")
 				op.Description(doc.Section(3, "POST /credential/{key}/authorize").Body)
@@ -184,7 +185,7 @@ func registerWebSignIn(router *httprouter.Router, provider credential.Credential
 // authorize returns the URL a person signs in at, with the web client of
 // the key's server, which redirects to the callback, of a state, and a PKCE
 // verifier, which are kept until the callback, or they expire
-func authorize(provider credential.CredentialProvider, signIns []signIn, webs []webSignIn, pending *authorizations, w http.ResponseWriter, r *http.Request) {
+func authorize(provider credential.CredentialProvider, signIns []signIn, pending *authorizations, w http.ResponseWriter, r *http.Request) {
 	key := r.PathValue("key")
 	var req credential.CredentialAuthorize
 	if !types.IsIdentifier(key) {
@@ -202,8 +203,8 @@ func authorize(provider credential.CredentialProvider, signIns []signIn, webs []
 		httpresponse.Error(w, httpresponse.ErrBadRequest.Withf("credential %q isn't a sign-in's", key), key)
 		return
 	}
-	web := webOf(webs, s.prefix)
-	if web == nil || key == web.client {
+	web := s.web
+	if web == nil {
 		httpresponse.Error(w, httpresponse.ErrBadRequest.Withf("%s has no web client, so sign in with a loopback address", s.server.Issuer), key)
 		return
 	}
@@ -320,16 +321,6 @@ func page(w http.ResponseWriter, status int, key string, err error) {
 		Type, Key, Error string
 		OK               bool
 	}{Type: SignInMessage, Key: key, Error: message, OK: err == nil})
-}
-
-// webOf returns the web client of the sign-ins of the prefix, or nil
-func webOf(webs []webSignIn, prefix string) *webSignIn {
-	for i := range webs {
-		if webs[i].prefix == prefix {
-			return &webs[i]
-		}
-	}
-	return nil
 }
 
 // isCallback returns true when the URI is http, or https, of the server's

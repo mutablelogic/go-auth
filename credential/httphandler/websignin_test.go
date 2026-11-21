@@ -129,6 +129,13 @@ func Test_WebSignIn(t *testing.T) {
 	_, err = mgr.Get(ctx, "EXAMPLE_OTHER")
 	assert.Error(t, err)
 
+	// The web client isn't a sign-in, of a loopback address either
+	status, _ = s.Do(t, http.MethodPost, "credential/EXAMPLE_WEB/signin", credential.CredentialCode{Code: "code", CodeVerifier: "verifier", RedirectURI: "http://127.0.0.1:8085/callback"})
+	assert.Equal(t, http.StatusBadRequest, status)
+	data, err = mgr.Get(ctx, "EXAMPLE_WEB")
+	require.NoError(t, err)
+	assert.JSONEq(t, `{"web":{"client_id":"web-1","client_secret":"web-secret"}}`, string(data), "the web client isn't replaced")
+
 	// Errors
 	for name, test := range map[string]struct {
 		key  string

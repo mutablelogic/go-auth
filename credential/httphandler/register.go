@@ -93,6 +93,15 @@ func register(provider credential.CredentialProvider, manager credential.Credent
 	for _, opt := range with {
 		opt(&o)
 	}
+
+	// Each server's web client, of its prefix, whose key is never a sign-in
+	for i := range o.signIns {
+		for j := range o.webSignIns {
+			if o.webSignIns[j].prefix == o.signIns[i].prefix {
+				o.signIns[i].web = &o.webSignIns[j]
+			}
+		}
+	}
 	notify := func(action schema.ChangeAction, key string) {
 		if o.publisher != nil {
 			o.publisher.Publish(schema.Change{Action: action, Table: Table, Row: key})
@@ -110,7 +119,7 @@ func register(provider credential.CredentialProvider, manager credential.Credent
 			registerKey(router, provider, manager, auth, doc, notify),
 			registerRotate(router, manager, auth, doc, notify),
 			registerSignIn(router, provider, o.signIns, auth, doc, notify),
-			registerWebSignIn(router, provider, o.signIns, o.webSignIns, auth, doc, notify),
+			registerWebSignIn(router, provider, o.signIns, auth, doc, notify),
 		)
 	}
 }
