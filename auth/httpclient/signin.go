@@ -73,11 +73,14 @@ func NewSignInError(signIn SignIn, err error) *SignInError {
 ///////////////////////////////////////////////////////////////////////////////
 // PUBLIC METHODS
 
+// Error returns the error, and who to sign in with, unless it says so
+// already, as a credential's sign-in's errors do
 func (e *SignInError) Error() string {
-	if e.Server.Issuer == "" {
-		return fmt.Sprint(e.Err)
+	message := fmt.Sprint(e.Err)
+	if e.Server.Issuer == "" || strings.Contains(message, e.Server.Issuer) {
+		return message
 	}
-	return fmt.Sprintf("%v: sign in with %s", e.Err, e.Server.Issuer)
+	return fmt.Sprintf("%s: sign in with %s", message, e.Server.Issuer)
 }
 
 // Unwrap returns the error, so it's matched with errors.Is
