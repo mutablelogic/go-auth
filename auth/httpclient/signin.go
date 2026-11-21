@@ -19,6 +19,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	// Packages
@@ -138,6 +139,22 @@ func ParseRegistration(data []byte) (*Registration, error) {
 	return &Registration{ClientID: client.ClientID, ClientSecret: client.ClientSecret}, nil
 }
 
+// authStyle returns how a client authenticates at the server's token
+// endpoint, of the methods its metadata says it supports: its secret in
+// the request's body, of client_secret_post, or in its header, of
+// client_secret_basic, or else whichever the server accepts
+func authStyle(server ServerMetadata) oauth2.AuthStyle {
+	methods := server.TokenEndpointAuthMethodsSupported
+	switch {
+	case slices.Contains(methods, "client_secret_post"):
+		return oauth2.AuthStyleInParams
+	case slices.Contains(methods, "client_secret_basic"):
+		return oauth2.AuthStyleInHeader
+	default:
+		return oauth2.AuthStyleAutoDetect
+	}
+}
+
 // ClientKind returns what an OAuth client is, of the file Google's console
 // downloads: ClientDesktop, of "installed", which redirects to any loopback
 // port, ClientWeb, of "web", which redirects to the URLs it registers, or
@@ -185,7 +202,7 @@ func ExchangeCode(ctx context.Context, server ServerMetadata, client Registratio
 	config := oauth2.Config{
 		ClientID:     client.ClientID,
 		ClientSecret: client.ClientSecret,
-		Endpoint:     oauth2.Endpoint{AuthURL: server.AuthorizationEndpoint, TokenURL: server.TokenEndpoint, AuthStyle: oauth2.AuthStyleInParams},
+		Endpoint:     oauth2.Endpoint{AuthURL: server.AuthorizationEndpoint, TokenURL: server.TokenEndpoint, AuthStyle: authStyle(server)},
 		RedirectURL:  code.RedirectURI,
 	}
 	token, err := config.Exchange(ctx, code.Code, oauth2.VerifierOption(code.CodeVerifier))

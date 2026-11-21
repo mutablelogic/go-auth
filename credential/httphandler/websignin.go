@@ -16,9 +16,11 @@ package httphandler
 
 import (
 	"crypto/rand"
+	"crypto/subtle"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"html/template"
 	"net/http"
 	"net/url"
@@ -55,12 +57,16 @@ type webSignIn struct {
 
 // authorization is a sign-in which is asked for, and not done yet: the key
 // it's stored as, the PKCE verifier of its code, the URL of the callback it
-// redirects to, which the code is exchanged with, the server, and the key of
-// its client, until it expires
+// redirects to, which the code is exchanged with, the scopes it asked for,
+// the nonce of the cookie of the browser which asked for it, which only it
+// completes it with, the server, and the key of its client, until it
+// expires
 type authorization struct {
 	key      string
 	verifier string
 	redirect string
+	scopes   []string
+	nonce    string
 	server   authclient.ServerMetadata
 	client   string
 	expires  time.Time
@@ -89,9 +95,14 @@ const (
 	// authorizationTTL is how long a sign-in which is asked for can be done
 	authorizationTTL = 10 * time.Minute
 
-	// callbackPath is the path of the callback, which a web application's client
-	// redirects to, beneath the API's prefix
-	callbackPath = "credential/callback"
+	// callbackPath is the path of the callback, which a web application's
+	// client redirects to, beneath the API's prefix, which isn't beneath
+	// credential/{key}, so it isn't a credential's
+	callbackPath = "credential-signin/callback"
+
+	// signInCookie is the name of the cookie of the browser which asks for
+	// a sign-in, which completes it, of its callback
+	signInCookie = "credential_signin"
 
 	// SignInMessage is the type of the message the callback's page posts to
 	// the window which opened it, of the key, and whether it's signed in,
@@ -123,13 +134,17 @@ var callbackPage = template.Must(template.New("callback").Parse(`<!DOCTYPE html>
 // WithWebSignIn signs in, in a browser, with the client of the sign-ins of
 // the server of the prefix (see WithSignIn), which must be a web
 // application's, such as the file Google's console downloads of one, whose
-// redirect URIs are the server's callback, credential/callback, and,
+// redirect URIs are the server's callback, credential-signin/callback, and,
 // optionally, a fixed loopback address, of a command line tool, as a web
 // application's client redirects to the URIs it registers, rather than any
 // loopback port. POST credential/{key}/authorize returns the URL a person
 // signs in at, which redirects to the callback, which exchanges the code,
 // and stores the grant. The options are of the URL, such as Google's
-// access_type=offline, so the grant can be refreshed.
+// access_type=offline, so the grant can be refreshed, and prompt=consent,
+// as Google only issues a refresh token when the person consents, so a
+// sign-in again, without one, isn't stored without its refresh token. A
+// sign-in is completed only by the browser which asked for it, of a
+// cookie, which authorize sets.
 func WithWebSignIn(prefix string, opts ...oauth2.AuthCodeOption) Opt {
 	return func(o *options) {
 		o.webSignIns = append(o.webSignIns, webSignIn{prefix: prefix, opts: opts})
@@ -169,7 +184,7 @@ func registerWebSignIn(router *httprouter.Router, provider credential.Credential
 				callback(provider, pending, w, r, notify)
 			}, func(op httprequest.PathOperation) {
 				op.Summary("Sign-in callback")
-				op.Description(doc.Section(3, "GET /credential/callback").Body)
+				op.Description(doc.Section(3, "GET /credential-signin/callback").Body)
 				op.Query(jsonschema.MustFor[callbackQuery]())
 				op.Response(http.StatusOK, "text/html", "Page which says the person signed in, and tells the window which opened it")
 				op.Response(http.StatusBadRequest, "text/html", "Page which says why the person isn't signed in: a state which isn't asked for, or expired, the person refused, or the server refused the code")
@@ -231,8 +246,12 @@ func authorize(provider credential.CredentialProvider, signIns []signIn, pending
 	}
 
 	// The state, and verifier, which are kept, and the URL
-	state, verifier := random(), oauth2.GenerateVerifier()
-	pending.add(state, authorization{key: key, verifier: verifier, redirect: req.RedirectURI, server: s.server, client: s.client, expires: time.Now().Add(authorizationTTL)})
+	// The state, verifier, and nonce of the browser's cookie, which are kept,
+	// and the URL, so only the browser which asked for the sign-in completes
+	// it, rather than another's, which is sent its URL
+	state, verifier, nonce := random(), oauth2.GenerateVerifier(), random()
+	pending.add(state, authorization{key: key, verifier: verifier, redirect: req.RedirectURI, scopes: req.Scopes, nonce: nonce, server: s.server, client: s.client, expires: time.Now().Add(authorizationTTL)})
+	http.SetCookie(w, signInCookieOf(req.RedirectURI, nonce, int(authorizationTTL/time.Second)))
 	signIn := authclient.SignIn{Server: s.server, ClientID: client.ClientID, Scopes: req.Scopes, Credential: key}
 	httpresponse.JSON(w, http.StatusOK, httprequest.Indent(r), credential.CredentialAuthorization{URL: signIn.AuthCodeURL(req.RedirectURI, state, verifier, web.opts...)})
 }
@@ -243,8 +262,15 @@ func authorize(provider credential.CredentialProvider, signIns []signIn, pending
 func callback(provider credential.CredentialProvider, pending *authorizations, w http.ResponseWriter, r *http.Request, notify notifyFunc) {
 	query := r.URL.Query()
 	a, exists := pending.take(query.Get("state"))
+	cookie, _ := r.Cookie(signInCookie)
+	if exists {
+		http.SetCookie(w, signInCookieOf(a.redirect, "", -1))
+	}
 	if !exists {
 		page(w, http.StatusBadRequest, "", errors.New("the sign-in expired, or was done already, so sign in again"))
+		return
+	} else if cookie == nil || subtle.ConstantTimeCompare([]byte(cookie.Value), []byte(a.nonce)) != 1 {
+		page(w, http.StatusBadRequest, a.key, errors.New("the sign-in was asked for in another browser, so sign in again, in this one"))
 		return
 	} else if e := query.Get("error"); e != "" {
 		page(w, http.StatusBadRequest, a.key, errors.New(strings.TrimSpace(e+" "+query.Get("error_description"))))
@@ -265,9 +291,24 @@ func callback(provider credential.CredentialProvider, pending *authorizations, w
 
 	// Exchange the code, and store the grant, under the key's lock
 	grant, err := authclient.ExchangeCode(r.Context(), a.server, *client, authclient.SignInCode{Credential: a.key, Code: query.Get("code"), CodeVerifier: a.verifier, RedirectURI: a.redirect})
-	if err != nil {
+	var retrieve *oauth2.RetrieveError
+	switch {
+	case errors.As(err, &retrieve) && (retrieve.ErrorCode == "invalid_client" || retrieve.ErrorCode == "unauthorized_client"):
+		// A client which the server refuses is the server's problem
+		page(w, http.StatusServiceUnavailable, a.key, fmt.Errorf("%s refused the client of %q, so check its client_id and client_secret: %w", a.server.Issuer, a.client, err))
+		return
+	case errors.Is(err, auth.ErrServiceUnavailable):
+		page(w, http.StatusServiceUnavailable, a.key, err)
+		return
+	case err != nil:
 		page(w, http.StatusBadRequest, a.key, err)
 		return
+	}
+
+	// The scopes are those it asked for, when the server doesn't say which
+	// it granted, as it needn't, when it granted them all
+	if len(grant.Scopes) == 0 {
+		grant.Scopes = a.scopes
 	}
 	data, err := json.Marshal(grant)
 	if err != nil {
@@ -310,6 +351,18 @@ func (a *authorizations) take(state string) (authorization, bool) {
 	value, exists := a.pending[state]
 	delete(a.pending, state)
 	return value, exists && state != "" && time.Now().Before(value.expires)
+}
+
+// signInCookieOf returns the cookie of the browser which asks for a
+// sign-in, of the callback's path, which is secure when it's https, and
+// which removes it, when maxAge is negative
+func signInCookieOf(redirect, nonce string, maxAge int) *http.Cookie {
+	u, _ := url.Parse(redirect)
+	path, secure := "/", false
+	if u != nil {
+		path, secure = u.Path, u.Scheme == "https"
+	}
+	return &http.Cookie{Name: signInCookie, Value: nonce, Path: path, MaxAge: maxAge, HttpOnly: true, Secure: secure, SameSite: http.SameSiteLaxMode}
 }
 
 // page writes the callback's page, of whether the key is signed in, or why

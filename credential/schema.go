@@ -71,7 +71,7 @@ type CredentialCode struct {
 // with a server's web client, which redirects to the server's callback,
 // rather than a loopback address, with the scopes which are asked for
 type CredentialAuthorize struct {
-	RedirectURI string   `json:"redirect_uri" help:"URL of the server's callback, credential/callback, as the browser reaches it, which is registered with the web client"`
+	RedirectURI string   `json:"redirect_uri" help:"URL of the server's callback, credential-signin/callback, as the browser reaches it, which is registered with the client"`
 	Scopes      []string `json:"scopes,omitempty" help:"Scopes to ask for, such as those a sign-in error says"`
 }
 
