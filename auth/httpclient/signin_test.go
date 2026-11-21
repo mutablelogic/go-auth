@@ -35,6 +35,17 @@ func Test_SignInError(t *testing.T) {
 	// An error which says who to sign in with already isn't told it again
 	again := httpclient.NewSignInError(signIn, goauth.ErrForbidden.With("sign in with https://accounts.google.com again"))
 	assert.Equal(t, "forbidden: sign in with https://accounts.google.com again", again.Error())
+	it := httpclient.NewSignInError(signIn, goauth.ErrForbidden.With(`sign-in "GOOGLE_TOKEN" isn't of https://accounts.google.com, so sign in with it`))
+	assert.Equal(t, `forbidden: sign-in "GOOGLE_TOKEN" isn't of https://accounts.google.com, so sign in with it`, it.Error())
+
+	// An issuer which is another's prefix isn't it, so it's told who to sign
+	// in with
+	other := httpclient.NewSignInError(signIn, goauth.ErrForbidden.With("sign in with https://accounts.google.com.example again"))
+	assert.Equal(t, "forbidden: sign in with https://accounts.google.com.example again: sign in with https://accounts.google.com", other.Error())
+	tenant := signIn
+	tenant.Server.Issuer = "https://id.example/tenant"
+	prefixed := httpclient.NewSignInError(tenant, goauth.ErrForbidden.With("sign in with https://id.example/tenant-other again"))
+	assert.Equal(t, "forbidden: sign in with https://id.example/tenant-other again: sign in with https://id.example/tenant", prefixed.Error())
 
 	got := httpclient.SignInOf(fmt.Errorf("volume: %w", err))
 	require.NotNil(t, got)
