@@ -34,8 +34,8 @@ import (
 )
 
 // newWebTokenServer returns an authorization server, whose token endpoint
-// exchanges "code", for the web client "web-1", whose secret is
-// "web-secret", of the redirect, and any verifier, which it records
+// exchanges "code", for the web application's client "web-1", whose secret
+// is "web-secret", of the redirect, and any verifier, which it records
 func newWebTokenServer(t *testing.T, redirect string, verifiers *[]string) authclient.ServerMetadata {
 	t.Helper()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -70,14 +70,22 @@ func Test_WebSignIn(t *testing.T) {
 	status, _ := loopback.Do(t, http.MethodPost, "credential/EXAMPLE_TOKEN/authorize", authorize)
 	assert.Equal(t, http.StatusNotFound, status)
 
-	// Without the web client's credential, no one can sign in
+	// Without the client's credential, no one can sign in
 	s := test.NewServer(t, httphandler.RegisterManagerHandlers(mgr, false,
 		httphandler.WithSignIn("EXAMPLE_", server, "EXAMPLE_CLIENT"),
-		httphandler.WithWebSignIn("EXAMPLE_", "EXAMPLE_WEB", oauth2.AccessTypeOffline),
+		httphandler.WithWebSignIn("EXAMPLE_", oauth2.AccessTypeOffline),
 	))
 	status, _ = s.Do(t, http.MethodPost, "credential/EXAMPLE_TOKEN/authorize", authorize)
 	assert.Equal(t, http.StatusServiceUnavailable, status)
-	require.NoError(t, mgr.Set(ctx, "EXAMPLE_WEB", json.RawMessage(`{"web":{"client_id":"web-1","client_secret":"web-secret"}}`)))
+
+	// A desktop app's client can't redirect to the server
+	require.NoError(t, mgr.Set(ctx, "EXAMPLE_CLIENT", json.RawMessage(`{"installed":{"client_id":"desktop-1","client_secret":"secret"}}`)))
+	status, body := s.Do(t, http.MethodPost, "credential/EXAMPLE_TOKEN/authorize", authorize)
+	assert.Equal(t, http.StatusBadRequest, status)
+	assert.Contains(t, string(body), "desktop app's client")
+
+	// A web application's client signs in, in a browser
+	require.NoError(t, mgr.Set(ctx, "EXAMPLE_CLIENT", json.RawMessage(`{"web":{"client_id":"web-1","client_secret":"web-secret"}}`)))
 
 	// The URL to sign in at, of the web client, the callback, a state, the
 	// PKCE challenge, the scopes, and the options
@@ -98,7 +106,7 @@ func Test_WebSignIn(t *testing.T) {
 	// The callback, of its state, exchanges the code, with the web client,
 	// and the verifier, whose challenge was sent, and stores the grant,
 	// without the secret, and its page tells the window which opened it
-	status, body := s.Do(t, http.MethodGet, "credential/callback?code=code&state="+url.QueryEscape(state), nil)
+	status, body = s.Do(t, http.MethodGet, "credential/callback?code=code&state="+url.QueryEscape(state), nil)
 	require.Equal(t, http.StatusOK, status, string(body))
 	assert.Contains(t, string(body), "You're signed in")
 	assert.Contains(t, string(body), `"credential-signin"`)
@@ -129,12 +137,10 @@ func Test_WebSignIn(t *testing.T) {
 	_, err = mgr.Get(ctx, "EXAMPLE_OTHER")
 	assert.Error(t, err)
 
-	// The web client isn't a sign-in, of a loopback address either
-	status, _ = s.Do(t, http.MethodPost, "credential/EXAMPLE_WEB/signin", credential.CredentialCode{Code: "code", CodeVerifier: "verifier", RedirectURI: "http://127.0.0.1:8085/callback"})
-	assert.Equal(t, http.StatusBadRequest, status)
-	data, err = mgr.Get(ctx, "EXAMPLE_WEB")
-	require.NoError(t, err)
-	assert.JSONEq(t, `{"web":{"client_id":"web-1","client_secret":"web-secret"}}`, string(data), "the web client isn't replaced")
+	// The web application's client signs in with a loopback address, too,
+	// of a command line tool, which it registers
+	status, _ = s.Do(t, http.MethodPost, "credential/EXAMPLE_LOOPBACK/signin", credential.CredentialCode{Code: "code", CodeVerifier: "verifier", RedirectURI: redirect})
+	assert.Equal(t, http.StatusBadRequest, status, "of the server's callback, which isn't a loopback address")
 
 	// Errors
 	for name, test := range map[string]struct {
@@ -144,7 +150,6 @@ func Test_WebSignIn(t *testing.T) {
 	}{
 		"NotASignIn":  {"OTHER_TOKEN", authorize, http.StatusBadRequest},
 		"TheClient":   {"EXAMPLE_CLIENT", authorize, http.StatusBadRequest},
-		"TheWeb":      {"EXAMPLE_WEB", authorize, http.StatusBadRequest},
 		"BadKey":      {"not-a-key!", authorize, http.StatusBadRequest},
 		"NotCallback": {"EXAMPLE_TOKEN", credential.CredentialAuthorize{RedirectURI: "https://filer.example.com/other"}, http.StatusBadRequest},
 		"WithQuery":   {"EXAMPLE_TOKEN", credential.CredentialAuthorize{RedirectURI: redirect + "?next=evil"}, http.StatusBadRequest},

@@ -44,19 +44,19 @@ import (
 ///////////////////////////////////////////////////////////////////////////////
 // TYPES
 
-// webSignIn is the web client of the sign-ins of a server, of their prefix,
-// which redirects to the server's callback, with the options of the URL the
-// person signs in at, such as Google's access_type=offline
+// webSignIn is signing in, in a browser, of the sign-ins of a server, of
+// their prefix, with its client, which redirects to the server's callback,
+// with the options of the URL the person signs in at, such as Google's
+// access_type=offline
 type webSignIn struct {
 	prefix string
-	client string
 	opts   []oauth2.AuthCodeOption
 }
 
 // authorization is a sign-in which is asked for, and not done yet: the key
 // it's stored as, the PKCE verifier of its code, the URL of the callback it
-// redirects to, which the code is exchanged with, the server, and its web
-// client, until it expires
+// redirects to, which the code is exchanged with, the server, and the key of
+// its client, until it expires
 type authorization struct {
 	key      string
 	verifier string
@@ -89,7 +89,7 @@ const (
 	// authorizationTTL is how long a sign-in which is asked for can be done
 	authorizationTTL = 10 * time.Minute
 
-	// callbackPath is the path of the callback, which a web client
+	// callbackPath is the path of the callback, which a web application's client
 	// redirects to, beneath the API's prefix
 	callbackPath = "credential/callback"
 
@@ -120,18 +120,19 @@ var callbackPage = template.Must(template.New("callback").Parse(`<!DOCTYPE html>
 ///////////////////////////////////////////////////////////////////////////////
 // PUBLIC METHODS
 
-// WithWebSignIn signs in, in a browser, with the web client of the sign-ins
-// of the server of the prefix (see WithSignIn), which is the value of the
-// credential with the client key, as its client_id and client_secret, such
-// as the file Google's console downloads of a web application's client.
-// POST credential/{key}/authorize returns the URL a person signs in at,
-// which redirects to the server's callback, credential/callback, which is
-// registered with the client, which exchanges the code, and stores the
-// grant. The options are of the URL, such as Google's access_type=offline,
-// so the grant can be refreshed.
-func WithWebSignIn(prefix, client string, opts ...oauth2.AuthCodeOption) Opt {
+// WithWebSignIn signs in, in a browser, with the client of the sign-ins of
+// the server of the prefix (see WithSignIn), which must be a web
+// application's, such as the file Google's console downloads of one, whose
+// redirect URIs are the server's callback, credential/callback, and,
+// optionally, a fixed loopback address, of a command line tool, as a web
+// application's client redirects to the URIs it registers, rather than any
+// loopback port. POST credential/{key}/authorize returns the URL a person
+// signs in at, which redirects to the callback, which exchanges the code,
+// and stores the grant. The options are of the URL, such as Google's
+// access_type=offline, so the grant can be refreshed.
+func WithWebSignIn(prefix string, opts ...oauth2.AuthCodeOption) Opt {
 	return func(o *options) {
-		o.webSignIns = append(o.webSignIns, webSignIn{prefix: prefix, client: client, opts: opts})
+		o.webSignIns = append(o.webSignIns, webSignIn{prefix: prefix, opts: opts})
 	}
 }
 
@@ -157,8 +158,8 @@ func registerWebSignIn(router *httprouter.Router, provider credential.Credential
 				op.Description(doc.Section(3, "POST /credential/{key}/authorize").Body)
 				op.RequestBody(jsonschema.MustFor[credential.CredentialAuthorize]())
 				op.JSONResponse(http.StatusOK, jsonschema.MustFor[credential.CredentialAuthorization](), "URL to sign in at")
-				op.ErrorResponse(http.StatusBadRequest, "Invalid key or request body, a key which isn't a sign-in's, a server without a web client, or a redirect which isn't the server's callback")
-				op.ErrorResponse(http.StatusServiceUnavailable, "No web client, or one which isn't a client")
+				op.ErrorResponse(http.StatusBadRequest, "Invalid key or request body, a key which isn't a sign-in's, a server which isn't signed in with in a browser, a desktop app's client, or a redirect which isn't the server's callback")
+				op.ErrorResponse(http.StatusServiceUnavailable, "No client, or one which isn't a client")
 				security(op, auth, credential.ScopeCredentialWrite)
 			})
 		}),
@@ -173,7 +174,7 @@ func registerWebSignIn(router *httprouter.Router, provider credential.Credential
 				op.Response(http.StatusOK, "text/html", "Page which says the person signed in, and tells the window which opened it")
 				op.Response(http.StatusBadRequest, "text/html", "Page which says why the person isn't signed in: a state which isn't asked for, or expired, the person refused, or the server refused the code")
 				op.Response(http.StatusInternalServerError, "text/html", "Page which says the sign-in couldn't be stored")
-				op.Response(http.StatusServiceUnavailable, "text/html", "Page which says there's no web client, or it isn't one")
+				op.Response(http.StatusServiceUnavailable, "text/html", "Page which says there's no client, or it isn't one")
 			})
 		}),
 	)
@@ -182,7 +183,7 @@ func registerWebSignIn(router *httprouter.Router, provider credential.Credential
 ///////////////////////////////////////////////////////////////////////////////
 // PRIVATE METHODS - HANDLERS
 
-// authorize returns the URL a person signs in at, with the web client of
+// authorize returns the URL a person signs in at, with the client of
 // the key's server, which redirects to the callback, of a state, and a PKCE
 // verifier, which are kept until the callback, or they expire
 func authorize(provider credential.CredentialProvider, signIns []signIn, pending *authorizations, w http.ResponseWriter, r *http.Request) {
@@ -205,35 +206,39 @@ func authorize(provider credential.CredentialProvider, signIns []signIn, pending
 	}
 	web := s.web
 	if web == nil {
-		httpresponse.Error(w, httpresponse.ErrBadRequest.Withf("%s has no web client, so sign in with a loopback address", s.server.Issuer), key)
+		httpresponse.Error(w, httpresponse.ErrBadRequest.Withf("%s isn't signed in with in a browser, so sign in with a loopback address", s.server.Issuer), key)
 		return
 	}
 
-	// The web client, without its secret, which is read when the code is
-	// exchanged
-	value, err := provider.Get(r.Context(), web.client)
+	// The client, without its secret, which is read when the code is
+	// exchanged, which must be a web application's, as a desktop app's
+	// can't redirect to the server
+	value, err := provider.Get(r.Context(), s.client)
 	if errors.Is(err, auth.ErrNotFound) {
-		httpresponse.Error(w, httpresponse.ErrServiceUnavailable.Withf("no %q credential, of the web client of %s", web.client, s.server.Issuer), key)
+		httpresponse.Error(w, httpresponse.ErrServiceUnavailable.Withf("no %q credential, of the OAuth client of %s", s.client, s.server.Issuer), key)
 		return
 	} else if err != nil {
 		httpresponse.Error(w, auth.HTTPError(err), key)
 		return
+	} else if authclient.ClientKind(value) == authclient.ClientDesktop {
+		httpresponse.Error(w, httpresponse.ErrBadRequest.Withf("%q is a desktop app's client, which can't redirect to the server, so sign in with a loopback address, or make it a web application's", s.client), key)
+		return
 	}
 	client, err := authclient.ParseRegistration(value)
 	if err != nil {
-		httpresponse.Error(w, httpresponse.ErrServiceUnavailable.Withf("credential %q: %v", web.client, err), key)
+		httpresponse.Error(w, httpresponse.ErrServiceUnavailable.Withf("credential %q: %v", s.client, err), key)
 		return
 	}
 
 	// The state, and verifier, which are kept, and the URL
 	state, verifier := random(), oauth2.GenerateVerifier()
-	pending.add(state, authorization{key: key, verifier: verifier, redirect: req.RedirectURI, server: s.server, client: web.client, expires: time.Now().Add(authorizationTTL)})
+	pending.add(state, authorization{key: key, verifier: verifier, redirect: req.RedirectURI, server: s.server, client: s.client, expires: time.Now().Add(authorizationTTL)})
 	signIn := authclient.SignIn{Server: s.server, ClientID: client.ClientID, Scopes: req.Scopes, Credential: key}
 	httpresponse.JSON(w, http.StatusOK, httprequest.Indent(r), credential.CredentialAuthorization{URL: signIn.AuthCodeURL(req.RedirectURI, state, verifier, web.opts...)})
 }
 
 // callback exchanges the code of a sign-in which was asked for, of its
-// state, with the web client, and stores the grant, and returns a page
+// state, with the client, and stores the grant, and returns a page
 // which tells the window which opened it
 func callback(provider credential.CredentialProvider, pending *authorizations, w http.ResponseWriter, r *http.Request, notify notifyFunc) {
 	query := r.URL.Query()
@@ -246,7 +251,7 @@ func callback(provider credential.CredentialProvider, pending *authorizations, w
 		return
 	}
 
-	// The web client, with its secret
+	// The client, with its secret
 	value, err := provider.Get(r.Context(), a.client)
 	if err != nil {
 		page(w, http.StatusServiceUnavailable, a.key, err)
@@ -324,7 +329,7 @@ func page(w http.ResponseWriter, status int, key string, err error) {
 }
 
 // isCallback returns true when the URI is http, or https, of the server's
-// callback, of its path, which the web client has registered
+// callback, of its path, which the client has registered
 func isCallback(uri string) bool {
 	u, err := url.Parse(uri)
 	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {

@@ -138,6 +138,35 @@ func ParseRegistration(data []byte) (*Registration, error) {
 	return &Registration{ClientID: client.ClientID, ClientSecret: client.ClientSecret}, nil
 }
 
+// ClientKind returns what an OAuth client is, of the file Google's console
+// downloads: ClientDesktop, of "installed", which redirects to any loopback
+// port, ClientWeb, of "web", which redirects to the URLs it registers, or
+// "", when it doesn't say, such as of its client_id and client_secret alone
+func ClientKind(data []byte) string {
+	var value string
+	if json.Unmarshal(data, &value) == nil {
+		data = []byte(value)
+	}
+	var object map[string]json.RawMessage
+	if json.Unmarshal(data, &object) != nil {
+		return ""
+	}
+	switch {
+	case object["installed"] != nil:
+		return ClientDesktop
+	case object["web"] != nil:
+		return ClientWeb
+	default:
+		return ""
+	}
+}
+
+// The kinds of an OAuth client, of ClientKind
+const (
+	ClientDesktop = "installed"
+	ClientWeb     = "web"
+)
+
 // ExchangeCode exchanges the code of a sign-in, with its PKCE verifier, at
 // the server's token endpoint, with the client, whose secret, when it has
 // one, is sent in the form, and returns the grant, with its tokens, and the
