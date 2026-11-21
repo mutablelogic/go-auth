@@ -164,6 +164,15 @@ func Test_WebSignIn(t *testing.T) {
 	status, _ = callback(t, s, "code=code&state=other", cookie)
 	assert.Equal(t, http.StatusBadRequest, status)
 
+	// An http callback is of a loopback host, whose cookie isn't secure
+	for _, loopback := range []string{"http://localhost:8084/api/credential-signin/callback", "http://127.0.0.1:8084/api/credential-signin/callback", "http://[::1]:8084/api/credential-signin/callback"} {
+		data, err := json.Marshal(credential.CredentialAuthorize{RedirectURI: loopback, Scopes: []string{"tasks"}})
+		require.NoError(t, err)
+		status, header, body := s.Send(t, http.MethodPost, "credential/EXAMPLE_LOOPBACK/authorize", http.Header{"Content-Type": {"application/json"}}, data)
+		require.Equal(t, http.StatusOK, status, string(body))
+		assert.NotContains(t, header.Get("Set-Cookie"), "Secure", loopback)
+	}
+
 	// It's only completed by the browser which asked for it, not one which
 	// is sent its URL, without the cookie, or with another's, which ends it
 	query, _ = authorized(t, s, "EXAMPLE_VICTIM", authorize)
@@ -213,13 +222,14 @@ func Test_WebSignIn(t *testing.T) {
 		body any
 		want int
 	}{
-		"NotASignIn":  {"OTHER_TOKEN", authorize, http.StatusBadRequest},
-		"TheClient":   {"EXAMPLE_CLIENT", authorize, http.StatusBadRequest},
-		"BadKey":      {"not-a-key!", authorize, http.StatusBadRequest},
-		"NotCallback": {"EXAMPLE_TOKEN", credential.CredentialAuthorize{RedirectURI: "https://filer.example.com/other"}, http.StatusBadRequest},
-		"WithQuery":   {"EXAMPLE_TOKEN", credential.CredentialAuthorize{RedirectURI: redirect + "?next=evil"}, http.StatusBadRequest},
-		"NotHTTP":     {"EXAMPLE_TOKEN", credential.CredentialAuthorize{RedirectURI: "ftp://filer.example.com/api/credential-signin/callback"}, http.StatusBadRequest},
-		"Body":        {"EXAMPLE_TOKEN", "not a request", http.StatusBadRequest},
+		"NotASignIn":      {"OTHER_TOKEN", authorize, http.StatusBadRequest},
+		"TheClient":       {"EXAMPLE_CLIENT", authorize, http.StatusBadRequest},
+		"BadKey":          {"not-a-key!", authorize, http.StatusBadRequest},
+		"NotCallback":     {"EXAMPLE_TOKEN", credential.CredentialAuthorize{RedirectURI: "https://filer.example.com/other"}, http.StatusBadRequest},
+		"WithQuery":       {"EXAMPLE_TOKEN", credential.CredentialAuthorize{RedirectURI: redirect + "?next=evil"}, http.StatusBadRequest},
+		"NotHTTP":         {"EXAMPLE_TOKEN", credential.CredentialAuthorize{RedirectURI: "ftp://filer.example.com/api/credential-signin/callback"}, http.StatusBadRequest},
+		"Body":            {"EXAMPLE_TOKEN", "not a request", http.StatusBadRequest},
+		"HTTPNotLoopback": {"EXAMPLE_TOKEN", credential.CredentialAuthorize{RedirectURI: "http://filer.example.com/api/credential-signin/callback"}, http.StatusBadRequest},
 	} {
 		status, _ := s.Do(t, http.MethodPost, "credential/"+test.key+"/authorize", test.body)
 		assert.Equal(t, test.want, status, name)

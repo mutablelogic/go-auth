@@ -245,7 +245,6 @@ func authorize(provider credential.CredentialProvider, signIns []signIn, pending
 		return
 	}
 
-	// The state, and verifier, which are kept, and the URL
 	// The state, verifier, and nonce of the browser's cookie, which are kept,
 	// and the URL, so only the browser which asked for the sign-in completes
 	// it, rather than another's, which is sent its URL
@@ -355,7 +354,9 @@ func (a *authorizations) take(state string) (authorization, bool) {
 
 // signInCookieOf returns the cookie of the browser which asks for a
 // sign-in, of the callback's path, which is secure when it's https, and
-// which removes it, when maxAge is negative
+// which removes it, when maxAge is negative. An http callback is of a
+// loopback host only (isCallback), where it isn't secure, as Safari drops
+// a secure cookie of http://localhost
 func signInCookieOf(redirect, nonce string, maxAge int) *http.Cookie {
 	u, _ := url.Parse(redirect)
 	path, secure := "/", false
@@ -381,11 +382,14 @@ func page(w http.ResponseWriter, status int, key string, err error) {
 	}{Type: SignInMessage, Key: key, Error: message, OK: err == nil})
 }
 
-// isCallback returns true when the URI is http, or https, of the server's
-// callback, of its path, which the client has registered
+// isCallback returns true when the URI is the server's callback, of its
+// path, which the client has registered, of https, or http of a loopback
+// host, whose traffic, and cookie, doesn't leave the machine
 func isCallback(uri string) bool {
 	u, err := url.Parse(uri)
-	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+	if err != nil || u.Host == "" {
+		return false
+	} else if u.Scheme != "https" && !isLoopback(uri) {
 		return false
 	}
 	return strings.HasSuffix(u.Path, "/"+callbackPath) && u.RawQuery == "" && u.Fragment == ""
